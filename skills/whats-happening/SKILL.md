@@ -1,6 +1,6 @@
 ---
 name: whats-happening
-description:
+description: >-
   The desk for a Catalyst Cloud tenant. Use when the person asks "what's happening?", "where are we?", "why is that stuck?", "what closed?", "what's next?", or asks for something to be done rather than known. Reads the tenant contract, what is running and queued, the eligibility explainer and the open asks through the catalyst-skills CLI, and answers in one reply with ticket ids. Routes work to a project owner and decisions to what-needs-me. Never composes a URL, never polls, never answers as the human.
 allowed-tools: Bash(catalyst-skills:*) Bash(npx @catalyst-cloud/catalyst-skills:*)
 ---

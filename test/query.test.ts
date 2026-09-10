@@ -135,6 +135,35 @@ describe("subcommands", () => {
     expect((JSON.parse(ctx.out.join("\n")) as { since: number }).since).toBe(3);
     expect(await main(["query", "changes"], makeCtx(home))).toBe(1);
   });
+  // ⛔ THE CHANGEFEED EVICTS, so `--since 0` — the form the docs show — is a 409 resync envelope on
+  // any tenant whose log has rotated, and 0.2.0 surfaced it as a bare "GET /api/v1/changes failed
+  // (409)" with no way to learn a cursor that works. The head seq is stamped on the 409 itself
+  // (`x-catalyst-head-seq`), so the CLI can always say what to use instead.
+  test("an evicted --since says so and names a cursor that works", async () => {
+    await seedJoined(home, server);
+    expect(await main(["query", "changes", "--since", "0", "--json"], ctx)).toBe(1);
+    const err = ctx.err.join("\n");
+    expect(err).toMatch(/no longer in the change log|evicted/i);
+    expect(err).toContain("--since head");
+    // The actionable half: the cursor to use, read off the response the refusal itself carried.
+    expect(err).toContain(String(server.headCursor));
+  });
+  test("--since head resolves the live cursor instead of guessing one", async () => {
+    await seedJoined(home, server);
+    expect(await main(["query", "changes", "--since", "head", "--json"], ctx)).toBe(0);
+    const asked = server.requests
+      .filter((r) => r.path.startsWith("/api/v1/changes"))
+      .map((r) => new URL(r.path, "http://x").searchParams.get("since"));
+    // The probe learns the head from the header, then the real read asks for it — never "head".
+    expect(asked).toContain(String(server.headCursor));
+    expect(asked).not.toContain("head");
+    expect((JSON.parse(ctx.out.join("\n")) as { since: number }).since).toBe(server.headCursor);
+  });
+  test("a cursor past the head is refused with the same actionable line", async () => {
+    await seedJoined(home, server);
+    expect(await main(["query", "changes", "--since", "99999", "--json"], ctx)).toBe(1);
+    expect(ctx.err.join("\n")).toContain("--since head");
+  });
   test("missing subcommand or positional is a usage error", async () => {
     await seedJoined(home, server);
     expect(await main(["query"], ctx)).toBe(1);
@@ -193,8 +222,11 @@ describe("more replica reads", () => {
     const c2 = makeCtx(home);
     expect(await main(["query", "issues", "--project", "proj-a"], c2)).toBe(0);
     expect(c2.out.some((l) => l.includes("(Ana)"))).toBe(true);
+    // A caught-up cursor is the head ITSELF, not some number past it: `buildChanges` uses a strict
+    // `since > head` for the resync refusal precisely so the steady-state poll stays a 200. This read
+    // used 99 and passed only because the fixture answered every cursor 200.
     const c3 = makeCtx(home);
-    expect(await main(["query", "changes", "--since", "99", "--json"], c3)).toBe(0);
+    expect(await main(["query", "changes", "--since", String(server.headCursor), "--json"], c3)).toBe(0);
     expect((JSON.parse(c3.out.join("\n")) as { changes: unknown[] }).changes).toEqual([]);
   });
 });

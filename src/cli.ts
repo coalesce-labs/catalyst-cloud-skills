@@ -26,7 +26,7 @@ import {
 import { loadContract, pickPath } from "./contract.js";
 import { CliError, MeError, UsageError } from "./errors.js";
 import { fetchMe } from "./http.js";
-import { cmdAccounts, cmdExplain, cmdQueue, cmdRunning } from "./execution.js";
+import { cmdAccounts, cmdExplain, cmdHistory, cmdQueue, cmdRunning } from "./execution.js";
 import { cmdQuery } from "./query.js";
 import { cmdReady } from "./ready.js";
 import { cmdReplica, type ReplicaDeps } from "./replica.js";
@@ -95,9 +95,9 @@ export function usageText(): string {
     "  catalyst-skills install [--skills-dir <dir>] [--force]   (repair path; your agent's own command installs the skills)",
     "  catalyst-skills status | notice | me | ready | accounts",
     "  catalyst-skills contract [--refresh] [--path <a.b.c>]",
-    "  catalyst-skills query <issues|issue <id>|pulls|pull <id>|projects|cycles|search <terms>|changes --since <n>>",
+    "  catalyst-skills query <issues|issue <id>|pulls|pull <id>|projects|cycles|search <terms>|changes --since <cursor|head>>",
     "  catalyst-skills replica <start [--detach]|stop|status [--probe]|sql \"<select>\"|schema [table]>",
-    "  catalyst-skills explain <ticket> | running | queue [--team K]",
+    "  catalyst-skills explain <ticket> | history <ticket> | running [--ticket T --phase P] | queue [--team K]",
     "  catalyst-skills watch [--team K] [--ticket T]... [--project P] [--exec CMD]",
     "  catalyst-skills write <comment|state|label|create|reaction|attachment|session> ...",
     "  catalyst-skills ask <raise|accept|list> ...",
@@ -208,6 +208,8 @@ export async function main(argv: string[], ctx: Ctx = defaultCtx(), deps: MainDe
         return await cmdReplica(args, ctx, deps.replica);
       case "explain":
         return await cmdExplain(args, ctx);
+      case "history":
+        return await cmdHistory(args, ctx);
       case "running":
         return await cmdRunning(args, ctx);
       case "queue":
@@ -221,7 +223,7 @@ export async function main(argv: string[], ctx: Ctx = defaultCtx(), deps: MainDe
       case "ready":
         return await cmdReady(args, ctx, { skillNames: CUSTOMER_SKILLS, loadSdk: deps.loadSdk });
       case "accounts":
-        return cmdAccounts(ctx);
+        return await cmdAccounts(args, ctx);
       default:
         ctx.stderr(`unknown command: ${args.command}`);
         ctx.stderr(usageText());

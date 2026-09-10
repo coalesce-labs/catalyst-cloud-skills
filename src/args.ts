@@ -67,11 +67,15 @@ export const FLAG_TABLES: Record<string, FlagTable> = {
     "stale-ms": { value: true, help: "status: heartbeat age that counts as stale (default 15000)" },
   },
   explain: {
-    history: { value: false, help: "per-ticket execution history (not visible to an account key yet)" },
+    history: { value: false, help: "per-ticket execution history instead of the eligibility reason" },
   },
-  running: {},
+  history: {},
+  running: {
+    ticket: { value: true, help: "with --phase: also the lease attributions for this (ticket, phase)" },
+    phase: { value: true, help: "with --ticket: the phase whose lease attributions to read" },
+  },
   queue: {
-    team: { value: true, help: "team key" },
+    team: { value: true, help: "team key (default: every team the tenant contract names)" },
   },
   watch: {
     team: { value: true, help: "scope: a team key" },
@@ -126,18 +130,19 @@ export const VERB_USAGE: Record<string, string> = {
   me: "me [--json]",
   contract: "contract [--refresh] [--path <a.b.c>] [--json]",
   query:
-    "query <issues|issue <id>|pulls|pull <id>|projects|cycles|search <terms>|changes --since <n>> [--team K] [--project P] [--state S] [--limit N] [--source replica|api] [--json]",
+    "query <issues|issue <id>|pulls|pull <id>|projects|cycles|search <terms>|changes --since <cursor|head>> [--team K] [--project P] [--state S] [--limit N] [--source replica|api] [--json]",
   replica:
     "replica <start [--detach]|stop|status [--probe] [--json]|sql \"<select>\"|schema [table]> [--db <path>]",
   explain: "explain <ticket> [--history] [--json]",
-  running: "running [--json]",
+  history: "history <ticket> [--json]",
+  running: "running [--ticket T --phase P] [--json]",
   queue: "queue [--team K] [--json]",
   watch: "watch [--team K] [--ticket T]... [--project P] [--exec CMD] [--cursor-file <path>] [--from cursor|head]",
   write:
     "write <comment <ticket> --body|--stdin [--parent] [--bookkeeping] [--as-user] | state <ticket> --slot|--state-id|--state-type | label <ticket> --add... --remove... | create --team --title [--label] [--priority] | reaction <ticket>|--comment <id> --emoji <e> | attachment <ticket> --title --url | session <ticket> [--title] [--plan-file] [--activity]>",
   ask: "ask <raise --team --title [--context] [--option]... [--default] --blocks <ticket>...|--nothing-to-block [--ask-key] | accept <askTicket> --answer <commentId> --role <role> | list [--json]>",
   ready: "ready [--json]",
-  accounts: "accounts",
+  accounts: "accounts [--json]",
 };
 
 export function parseArgs(argv: string[]): ParsedArgs {

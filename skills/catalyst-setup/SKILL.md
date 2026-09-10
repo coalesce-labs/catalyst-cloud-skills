@@ -1,6 +1,6 @@
 ---
 name: catalyst-setup
-description:
+description: >-
   Am I set up? Machine readiness (Node, the tenant connection, the cached contract, the CLI path, the skills, the SDK, the optional replica) plus tenant readiness from the contract's ten per-team checks, in one verdict: what passes, what is blocked, what is merely waiting, and who can click what. Use when someone asks "am I set up", "what is missing", "why does nothing happen", "is the replica running", or right after connecting a new machine. Reports; never repairs.
 allowed-tools: Bash(catalyst-skills:*) Bash(npx @catalyst-cloud/catalyst-skills:*)
 ---

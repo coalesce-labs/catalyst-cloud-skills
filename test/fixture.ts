@@ -32,7 +32,13 @@ export interface FixtureServer {
   contract: TenantContract;
   contractVersion: string;
   headCursor: number;
+  /** The oldest seq still in the change log. A `since` below `minRetainedCursor - 1` was evicted and
+   *  is answered with the 409 resync envelope, exactly as the mirror's `buildChanges` does. */
+  minRetainedCursor: number;
   budgetExhausted: boolean;
+  /** CTC-1953/CTC-1954 ship ahead of some tenants' mirror; `false` makes those two routes 404 the
+   *  way an older cloud does, so the bundle's "needs a newer cloud" path meets a real 404. */
+  routesDeployed: boolean;
   writes: RecordedRequest[];
   requests: RecordedRequest[];
   /** Override the issue list the read routes serve. */
@@ -213,6 +219,74 @@ const FLEET_ACTIVITY = { rows: [{ ticket: "ENG-2", phase: "implement", host: "ru
 const AGENT_ROSTER = { roster: [{ role: "concierge", session: "sess-1" }] };
 const LEASES = { attributions: [{ ticket: "ENG-2", phase: "implement", holder: "runner-7" }] };
 
+/** CTC-1953's `TenantWireAccount` projection — the safe fields only. */
+const CODING_ACCOUNTS = [
+  {
+    accountSlot: "slot-a",
+    provider: "claude",
+    harness: "claude-code",
+    label: "primary",
+    declaredState: "active",
+    observedState: "healthy",
+    observedStatus: "working",
+    status: "active",
+    window5h: { usedPercent: 12, resetsAtMs: 1_756_200_000_000 },
+    window7d: { usedPercent: 40, resetsAtMs: 1_756_700_000_000 },
+    bindingWindow: "7d",
+    bindingUsedPercent: 40,
+    bindingResetsAtMs: 1_756_700_000_000,
+    usageObservedAtMs: 1_756_100_000_000,
+    lastPolledAtMs: 1_756_100_000_000,
+    walled: false,
+    quarantined: false,
+    quarantineReason: null,
+    liveHoldsCount: 1,
+    liveHolds: [{ ticket: "ENG-2", phase: "implement", leaseDeadlineMs: 1_756_100_600_000 }],
+    revokedAtMs: null,
+  },
+  {
+    accountSlot: "slot-b",
+    provider: "codex",
+    harness: "codex-cli",
+    label: null,
+    declaredState: "active",
+    observedState: "healthy",
+    observedStatus: "walled",
+    status: "walled",
+    window5h: { usedPercent: 100, resetsAtMs: 1_756_200_000_000 },
+    window7d: { usedPercent: 100, resetsAtMs: 1_756_700_000_000 },
+    bindingWindow: "5h",
+    bindingUsedPercent: 100,
+    bindingResetsAtMs: 1_756_200_000_000,
+    usageObservedAtMs: 1_756_100_000_000,
+    lastPolledAtMs: 1_756_100_000_000,
+    walled: true,
+    quarantined: false,
+    quarantineReason: null,
+    liveHoldsCount: 0,
+    liveHolds: [],
+    revokedAtMs: null,
+  },
+];
+
+/** CTC-1954's `TicketExecutionReport`, trimmed to the fields the bundle renders. */
+const TICKET_EXECUTION = {
+  ticket: "ENG-2",
+  observedAtMs: 1_756_100_000_000,
+  attemptHistory: "latest-per-phase",
+  hasLadderHistory: true,
+  phases: [
+    { phase: "research", attempt: 1, status: "completed", lastFailureClass: null, consecutiveFailures: null },
+    { phase: "implement", attempt: 2, status: "cooling", lastFailureClass: "vendor_5xx", consecutiveFailures: 1 },
+  ],
+  failure: { phase: "implement", failureMode: "vendor_5xx", failureDetail: "upstream 503", summary: null, attempt: 2 },
+  remediate: { roundsDispatched: 1, cap: 3 },
+  park: null,
+  lease: [{ phase: "implement", holder: "runner-7", generation: 4, deadlineMs: 1_756_100_600_000 }],
+  lastAdvance: { phase: "research", nonce: 1, toSlot: "plan", toStateId: "state-plan", landed: true },
+  unreadable: [],
+};
+
 // ── the server ───────────────────────────────────────────────────────────────────────────────────
 
 function readBody(req: IncomingMessage): Promise<string> {
@@ -235,7 +309,9 @@ export async function startMeFixture(
     contract: buildFixtureContract(),
     contractVersion: "1.0.0",
     headCursor: 10,
+    minRetainedCursor: 4,
     budgetExhausted: false,
+    routesDeployed: true,
     writes: [],
     requests: [],
     issues: fixtureIssues(),
@@ -337,19 +413,61 @@ export async function startMeFixture(
       const q = (url.searchParams.get("q") ?? "").toLowerCase();
       return send(200, { rows: state.issues.filter((r) => String(r.title).toLowerCase().includes(q)).map((r) => ({ kind: "issue", identifier: r.identifier, title: r.title })) });
     }
+    // ⛔ The changefeed EVICTS. A cursor before the oldest retained seq is a 409
+    // `{error:"cursor_underflow", resync:true}`, and one past the head is a 409
+    // `{error:"cursor_ahead_of_head", resync:true, head}` — `buildChanges` in the mirror's
+    // `do/changefeed.ts`. Both stamp `x-catalyst-head-seq` (CTC-137), which is the ONLY way a
+    // caller learns a cursor that works. The fixture answered every `since` with a 200 until 0.2.1,
+    // so `query changes --since 0` — the form the docs show — passed here and 409'd for any tenant
+    // whose log had rotated.
     if (path === "/api/v1/changes") {
       const since = Number(url.searchParams.get("since") ?? "0");
+      res.setHeader("x-catalyst-head-seq", String(state.headCursor));
+      res.setHeader("x-catalyst-server-time-ms", String(Date.now()));
+      if (since > state.headCursor) return send(409, { error: "cursor_ahead_of_head", resync: true, head: state.headCursor });
+      if (since < state.minRetainedCursor - 1) return send(409, { error: "cursor_underflow", resync: true });
       return send(200, { since, head: state.headCursor, changes: since < state.headCursor ? [{ seq: since + 1, entity: "issues", entityId: "lin-eng-1", op: "upsert" }] : [] });
     }
     if (path === "/api/v1/workflow-stages") return send(200, WORKFLOW_STAGES);
+    // CTC-1953 / CTC-1954 — the two tenant-facing routes the bundle reads. `routesDeployed: false`
+    // makes the fixture answer 404 the way a tenant on an older mirror does, so the "needs a newer
+    // cloud" path is tested against a real 404 rather than a mocked branch.
+    if (path === "/api/v1/coding-accounts") {
+      return state.routesDeployed ? send(200, { accounts: CODING_ACCOUNTS }) : send(404, { error: "not found" });
+    }
+    const executionMatch = /^\/api\/v1\/issues\/([^/]+)\/execution$/.exec(path);
+    if (executionMatch) {
+      if (!state.routesDeployed) return send(404, { error: "not found" });
+      const ticket = decodeURIComponent(executionMatch[1]!);
+      return send(200, { ...TICKET_EXECUTION, ticket });
+    }
     if (path === "/api/v1/work-eligibility") {
       if (!url.searchParams.get("team")) return send(400, { error: "team is required" });
       return send(200, { ...ELIGIBILITY, team: url.searchParams.get("team"), capabilities: url.searchParams.get("capabilities") });
     }
-    if (path === "/api/v1/dispatch-queue/current") return send(200, DISPATCH_QUEUE);
+    // ⛔ The team is REQUIRED, and the refusal is the mirror's own: a plain-text "bad team" 400 from
+    // handleDispatchQueueCurrent, not JSON. The fixture answered 200 to a bare call until 0.2.1,
+    // which is why `queue` with no --team passed here and 400'd against every real tenant.
+    if (path === "/api/v1/dispatch-queue/current") {
+      const team = url.searchParams.get("team");
+      if (!team || !/^[A-Z][A-Z0-9]{1,9}$/.test(team)) {
+        res.writeHead(400, { "content-type": "text/plain" });
+        return res.end("bad team");
+      }
+      return send(200, { ...DISPATCH_QUEUE, team });
+    }
     if (path === "/api/v1/fleet-activity/current") return send(200, FLEET_ACTIVITY);
     if (path === "/api/v1/agent-roster/current") return send(200, AGENT_ROSTER);
-    if (path === "/api/v1/lease/attributions") return send(200, LEASES);
+    // ⛔ Per (ticket, phase), and BOTH are required — `MirrorDO.handleLeaseAttributions` answers a
+    // missing one with 400 `{error:"invalid_field", field}`. The fixture used to serve a bare call
+    // 200, so `running`'s unconditional call looked fine in tests and 400'd for every tenant.
+    if (path === "/api/v1/lease/attributions") {
+      const ticket = url.searchParams.get("ticket");
+      const phase = url.searchParams.get("phase");
+      if (!ticket) return send(400, { error: "invalid_field", field: "ticket" });
+      if (!phase) return send(400, { error: "invalid_field", field: "phase" });
+      return send(200, { ticket, phase, ...LEASES });
+    }
 
     if (req.method === "POST" && postRoutes().has(path)) {
       if (state.budgetExhausted) {

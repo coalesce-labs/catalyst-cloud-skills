@@ -1,6 +1,6 @@
 {
   "name": "@catalyst-cloud/catalyst-skills",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Customer skill bundle for Catalyst Cloud: eight skills named from the executive's seat (whats-happening, what-needs-me, run-this-project, catalyst-setup, catalyst-linear, catalyst-github, how-catalyst-works, connect-me) plus the catalyst-skills CLI that reads through the Catalyst Cloud SDK, writes through the agent proxy, and connects your machine to your tenant with one command.",
   "license": "MIT",
   "type": "module",
@@ -35,7 +35,7 @@
   "scripts": {
     "typecheck": "tsc --noEmit",
     "build": "tsc -p tsconfig.build.json",
-    "prepack": "tsc -p tsconfig.build.json",
+    "prepare": "tsc -p tsconfig.build.json",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
     "version:sync": "node scripts/sync-plugin-version.mjs"
@@ -47,6 +47,7 @@
     "@types/node": "^26.3.0",
     "@vitest/coverage-v8": "^4.1.11",
     "typescript": "^7.0.2",
-    "vitest": "^4.1.11"
+    "vitest": "^4.1.11",
+    "yaml": "^2.9.0"
   }
 }
