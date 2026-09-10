@@ -426,7 +426,16 @@ export async function startMeFixture(
       res.setHeader("x-catalyst-server-time-ms", String(Date.now()));
       if (since > state.headCursor) return send(409, { error: "cursor_ahead_of_head", resync: true, head: state.headCursor });
       if (since < state.minRetainedCursor - 1) return send(409, { error: "cursor_underflow", resync: true });
-      return send(200, { since, head: state.headCursor, changes: since < state.headCursor ? [{ seq: since + 1, entity: "issues", entityId: "lin-eng-1", op: "upsert" }] : [] });
+      // ⛔ AND THE 200 IS NDJSON, NOT JSON — `buildChanges` ends in `streamNdjson`, one
+      // `{accountId, seq, entity, entityId, op, row}` object per line. The fixture answered JSON, so
+      // the CLI's `getJson` read fine here and could never read a real success: every 200 from a live
+      // tenant came back "GET /api/v1/changes returned a non-JSON body". Nothing caught it because
+      // `--since 0` 409s on a rotated feed before a 200 is ever reached.
+      const lines = since < state.headCursor
+        ? [JSON.stringify({ accountId: FIXTURE_ACCOUNT, seq: since + 1, entity: "issues", entityId: "lin-eng-1", op: "upsert", row: { id: "lin-eng-1" } })]
+        : [];
+      res.writeHead(200, { "content-type": "application/x-ndjson", "x-catalyst-head-seq": String(state.headCursor), "x-catalyst-server-time-ms": String(Date.now()) });
+      return res.end(lines.length > 0 ? `${lines.join("\n")}\n` : "");
     }
     if (path === "/api/v1/workflow-stages") return send(200, WORKFLOW_STAGES);
     // CTC-1953 / CTC-1954 — the two tenant-facing routes the bundle reads. `routesDeployed: false`

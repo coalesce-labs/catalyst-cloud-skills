@@ -132,7 +132,14 @@ describe("subcommands", () => {
     expect(await main(["query", "changes", "--since", "3", "--json"], ctx)).toBe(0);
     const req = server.requests.find((r) => r.path.startsWith("/api/v1/changes"));
     expect(req?.path).toContain("since=3");
-    expect((JSON.parse(ctx.out.join("\n")) as { since: number }).since).toBe(3);
+    // ⛔ The 200 is NDJSON (`streamNdjson`), not JSON. Reading it with getJson made every real
+    // success "returned a non-JSON body"; asserting only the exit code would not have noticed,
+    // because a refusal IS JSON and the smoke never reached a 200. Assert the parsed rows.
+    const body = JSON.parse(ctx.out.join("\n")) as { since: number; head: number; changes: Record<string, unknown>[] };
+    expect(body.since).toBe(3);
+    expect(body.head).toBe(server.headCursor);
+    expect(body.changes).toHaveLength(1);
+    expect(body.changes[0]).toMatchObject({ seq: 4, entity: "issues", entityId: "lin-eng-1", op: "upsert" });
     expect(await main(["query", "changes"], makeCtx(home))).toBe(1);
   });
   // ⛔ THE CHANGEFEED EVICTS, so `--since 0` — the form the docs show — is a 409 resync envelope on

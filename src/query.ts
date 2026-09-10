@@ -158,9 +158,17 @@ const HEAD_SEQ_HEADER = "x-catalyst-head-seq";
  */
 async function readChanges(api: ReturnType<typeof apiClient>, since: string, limit: number): Promise<unknown> {
   const resolved = since === "head" ? String(await headCursor(api)) : since;
-  const res = await api.getJson<unknown>("/api/v1/changes", { query: { since: resolved, limit }, accept: [409] });
-  if (res.status !== 409) return res.body;
+  // ⛔ NDJSON ON 200, JSON ON A REFUSAL — see `getNdjson`. Reading this with `getJson` turned every
+  // real success into "returned a non-JSON body" while every refusal parsed, which is why the verb
+  // looked fine: `--since 0` 409s on a rotated feed, so no 200 was ever reached to fail on.
+  const res = await api.getNdjson<Record<string, unknown>>("/api/v1/changes", {
+    query: { since: resolved, limit },
+    accept: [409],
+  });
   const head = res.headers.get(HEAD_SEQ_HEADER);
+  if (res.status !== 409) {
+    return { since: Number(resolved), head: head === null ? null : Number(head), changes: res.body };
+  }
   const where = head === null ? "" : ` The feed's live cursor is ${head}.`;
   throw new CliError(
     `cursor ${resolved} is not usable: it is either past the feed's head or no longer in the change log, which keeps only recent changes.${where} Re-run with \`--since head\` to start from now, or with a cursor the feed still holds.`,
@@ -173,7 +181,7 @@ async function readChanges(api: ReturnType<typeof apiClient>, since: string, lim
 /** The live head, read off any `/changes` response's own header — a 409 carries it too, which is
  *  what makes this work on a tenant whose log has rotated past every cursor the caller could guess. */
 async function headCursor(api: ReturnType<typeof apiClient>): Promise<number> {
-  const probe = await api.getJson<unknown>("/api/v1/changes", { query: { since: "0", limit: 1 }, accept: [409] });
+  const probe = await api.getNdjson<unknown>("/api/v1/changes", { query: { since: "0", limit: 1 }, accept: [409] });
   const raw = probe.headers.get(HEAD_SEQ_HEADER);
   const head = raw === null ? Number.NaN : Number(raw);
   if (!Number.isFinite(head)) {
