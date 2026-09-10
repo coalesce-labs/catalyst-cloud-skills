@@ -1,0 +1,6 @@
+interface:
+  display_name: "Join"
+  short_description: "Bind this machine to your Catalyst Cloud tenant with the account key, cache the tenant contract, and verify"
+  default_prompt: "Use $join to connect this machine to my Catalyst Cloud tenant."
+policy:
+  allow_implicit_invocation: false

@@ -1,0 +1,5 @@
+identity: { pack: catalyst-cloud-skills, skill: join }
+effects: [workspace-write]
+mutating: true
+invocation: explicit
+exposure: [catalog]

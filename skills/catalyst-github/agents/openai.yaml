@@ -1,0 +1,6 @@
+interface:
+  display_name: "Catalyst's GitHub"
+  short_description: "Show a ticket's pull request with its checks, reviews and threads, and say whether it is mergeable under this repository's policy"
+  default_prompt: "Use $catalyst-github to show me the PR for this ticket and whether it can merge."
+policy:
+  allow_implicit_invocation: true

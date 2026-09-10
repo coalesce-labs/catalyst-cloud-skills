@@ -1,0 +1,6 @@
+interface:
+  display_name: "Run this project"
+  short_description: "Own one Catalyst project end to end: react to its events, make tickets ready, chase stalls, escalate inward"
+  default_prompt: "Use $run-this-project to run project <id> for me until it closes."
+policy:
+  allow_implicit_invocation: false

@@ -1,0 +1,6 @@
+interface:
+  display_name: "What needs me"
+  short_description: "Your decision inbox on Catalyst Cloud, ranked by what each answer releases; raises and settles asks"
+  default_prompt: "Use $what-needs-me to show me what is waiting on my decision."
+policy:
+  allow_implicit_invocation: false

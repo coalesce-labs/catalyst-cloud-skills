@@ -1,0 +1,165 @@
+// cli.test.ts — the dispatcher's own branches: version, bare usage, the update notice going to
+// stderr for a machine-read verb, status after join, install, join --start-replica, join against a
+// contract outside the range, a MeError exit, and the SDK loader's failure line.
+import { afterAll, beforeAll, beforeEach, describe, expect, test } from "vitest";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { CUSTOMER_SKILLS, main, saveConfig } from "../src/cli";
+import { contractPathFor, defaultReplicaDbFor, defaultSkillsDirFor } from "../src/config";
+import { loadSdk, resetSdkCache } from "../src/sdk";
+import { installTsDepsLoader, makeHooks } from "../src/ts-deps-loader";
+import { startMeFixture, type FixtureServer } from "./fixture";
+import { joinedConfig, makeCtx, seedJoined, tempHome, type TestCtx } from "./helpers";
+
+let server: FixtureServer;
+let home: string;
+let ctx: TestCtx;
+
+beforeAll(async () => {
+  server = await startMeFixture();
+});
+afterAll(async () => {
+  await server.close();
+});
+beforeEach(() => {
+  home = tempHome();
+  ctx = makeCtx(home);
+  server.contractVersion = "1.0.0";
+});
+
+describe("dispatcher", () => {
+  test("--version and bare usage", async () => {
+    expect(await main(["--version"], ctx)).toBe(0);
+    expect(ctx.out[0]).toMatch(/^@catalyst-cloud\/catalyst-skills \d+\.\d+\.\d+ \(tenant contract range: /);
+    const c2 = makeCtx(home);
+    expect(await main([], c2)).toBe(0);
+    expect(c2.out.join("\n")).toContain("Usage:");
+    const c3 = makeCtx(home);
+    expect(await main(["--wat"], c3)).toBe(1);
+    expect(c3.err[0]).toContain("unknown option");
+  });
+  test("the update notice goes to stderr for a machine-read verb and to stdout for a human one", async () => {
+    saveConfig(home, joinedConfig(server, { lastSkillBundleVersion: "0.0.1" }));
+    expect(await main(["me"], ctx)).toBe(0);
+    expect(ctx.out.some((l) => l.startsWith("[catalyst-skills]"))).toBe(false);
+    expect(ctx.err.some((l) => l.startsWith("[catalyst-skills] updated 0.0.1"))).toBe(true);
+    saveConfig(home, joinedConfig(server, { lastSkillBundleVersion: "0.0.1" }));
+    const c2 = makeCtx(home);
+    expect(await main(["notice"], c2)).toBe(0);
+    expect(c2.out.some((l) => l.startsWith("[catalyst-skills] updated 0.0.1"))).toBe(true);
+  });
+  test("status after join names the CLI path and the contract cache", async () => {
+    await seedJoined(home, server);
+    expect(await main(["status"], ctx)).toBe(0);
+    const text = ctx.out.join("\n");
+    expect(text).toMatch(/^CLI: .*bin\/catalyst-skills\.js$/m);
+    expect(text).toContain(`Contract: ${contractPathFor(home)}`);
+    const home2 = tempHome();
+    await seedJoined(home2, server, { contract: false, config: { cliPath: `${home2}/gone.js` } });
+    const c2 = makeCtx(home2);
+    expect(await main(["status"], c2)).toBe(0);
+    expect(c2.out.join("\n")).toContain("(missing — re-run join)");
+    expect(c2.out.join("\n")).toContain("not cached");
+  });
+  test("install places the skills and names a skipped foreign dir", async () => {
+    const dir = join(home, "sk");
+    mkdirSync(join(dir, "join"), { recursive: true });
+    writeFileSync(join(dir, "join", "SKILL.md"), "mine");
+    expect(await main(["install", "--skills-dir", dir], ctx)).toBe(0);
+    expect(ctx.out.join("\n")).toContain('Skipped "join"');
+    expect(ctx.out.join("\n")).toContain("Skills installed to");
+    const allForeign = join(home, "foreign");
+    for (const name of CUSTOMER_SKILLS) {
+      mkdirSync(join(allForeign, name), { recursive: true });
+      writeFileSync(join(allForeign, name, "SKILL.md"), "mine");
+    }
+    const c2 = makeCtx(home);
+    expect(await main(["install", "--skills-dir", allForeign], c2)).toBe(0);
+    expect(c2.out.join("\n")).toContain("already had them");
+  });
+  test("join --start-replica spawns the detached writer", async () => {
+    const spawned: string[][] = [];
+    const code = await main(["join", "--key", "fixture-key", "--base-url", server.url, "--start-replica"], ctx, {
+      replica: { detach: (argv) => (spawned.push(argv), { pid: process.pid }) },
+    });
+    expect(code).toBe(0);
+    expect(spawned).toHaveLength(1);
+    expect(spawned[0]![0]).toMatch(/bin\/catalyst-skills\.js$/);
+    expect(spawned[0]!.slice(1)).toEqual(["replica", "start"]);
+    expect(existsSync(`${defaultReplicaDbFor(home)}.pid`)).toBe(true);
+    expect(ctx.out.join("\n")).toContain("replica writer started in the background");
+  });
+  test("join against a contract outside the range still joins and says so on stderr", async () => {
+    server.contractVersion = "2.0.0";
+    expect(await main(["join", "--key", "fixture-key", "--base-url", server.url], ctx)).toBe(0);
+    expect(ctx.err.join("\n")).toMatch(/2\.0\.0 but this bundle accepts 1\.x/);
+    expect(existsSync(contractPathFor(home))).toBe(false);
+    expect(existsSync(join(defaultSkillsDirFor(home), "join", "SKILL.md"))).toBe(true);
+  });
+  test("join keeps an existing replicaDb and tolerates a corrupt previous config", async () => {
+    mkdirSync(join(home, ".config", "catalyst-cloud"), { recursive: true });
+    writeFileSync(join(home, ".config", "catalyst-cloud", "customer.json"), "{corrupt");
+    expect(await main(["join", "--key", "fixture-key", "--base-url", server.url], ctx)).toBe(0);
+    const cfg = JSON.parse(readFileSync(join(home, ".config", "catalyst-cloud", "customer.json"), "utf8")) as { replicaDb: string };
+    expect(cfg.replicaDb).toBe(defaultReplicaDbFor(home));
+    saveConfig(home, joinedConfig(server, { replicaDb: "/elsewhere/replica.db" }));
+    expect(await main(["join", "--key", "fixture-key", "--base-url", server.url], makeCtx(home))).toBe(0);
+    expect((JSON.parse(readFileSync(join(home, ".config", "catalyst-cloud", "customer.json"), "utf8")) as { replicaDb: string }).replicaDb).toBe("/elsewhere/replica.db");
+  });
+  test("a dead server is a MeError exit 2 for me; a contract positional is a usage error", async () => {
+    await seedJoined(home, server, { contract: false, config: { baseUrl: "http://127.0.0.1:1" } });
+    expect(await main(["me"], ctx)).toBe(2);
+    expect(ctx.err.join("\n")).toContain("could not reach");
+    await seedJoined(home, server);
+    expect(await main(["contract", "extra"], makeCtx(home))).toBe(1);
+    const c3 = makeCtx(home);
+    expect(await main(["contract", "--refresh", "--path", "vocabulary.bookkeeping.marker"], c3)).toBe(0);
+    expect(c3.out.join("\n")).toBe("[bookkeeping-fixture]");
+    expect(c3.err[0]).toMatch(/^contract: 1\.0\.0 from (network|revalidated)/);
+  });
+});
+
+describe("sdk loader", () => {
+  test("loadSdk wraps an import failure in one CliError line and does not cache it", async () => {
+    resetSdkCache();
+    const err = (await loadSdk(async () => {
+      throw new Error("ERR_SOMETHING: nope\nsecond line");
+    }).catch((e: unknown) => e)) as Error;
+    expect(err.message).toMatch(/could not be loaded on Node .*: ERR_SOMETHING: nope — this verb needs the SDK/);
+    resetSdkCache();
+    expect(typeof (await loadSdk()).nodeSqliteEngine).toBe("function");
+    expect(await loadSdk()).toBe(await loadSdk());
+  });
+  test("installTsDepsLoader names the missing API, and is a no-op once installed", () => {
+    expect(installTsDepsLoader()).toEqual({ installed: true });
+    expect(installTsDepsLoader({})).toEqual({ installed: true });
+  });
+  test("the hook pair: only node_modules .ts files are stripped, and only a failed .js → .ts relative import is remapped", () => {
+    const hooks = makeHooks(
+      (src) => `stripped:${src}`,
+      (p) => p.endsWith("/node_modules/pkg/src/mirror.ts"),
+      (p) => `source of ${p}`,
+    );
+    const notFound = Object.assign(new Error("nf"), { code: "ERR_MODULE_NOT_FOUND" });
+    const next = () => {
+      throw notFound;
+    };
+    const parent = "file:///x/node_modules/pkg/src/index.ts";
+    expect(hooks.resolve("./mirror.js", { parentURL: parent }, next)).toEqual({ url: "file:///x/node_modules/pkg/src/mirror.ts", format: "module", shortCircuit: true });
+    expect(hooks.resolve("./mirror", { parentURL: parent }, next).url).toBe("file:///x/node_modules/pkg/src/mirror.ts");
+    expect(() => hooks.resolve("./other.js", { parentURL: parent }, next)).toThrow(notFound);
+    expect(() => hooks.resolve("./mirror.js", { parentURL: "file:///x/src/app.ts" }, next)).toThrow(notFound);
+    expect(() => hooks.resolve("pkg", { parentURL: parent }, next)).toThrow(notFound);
+    const other = Object.assign(new Error("boom"), { code: "ERR_OTHER" });
+    expect(() =>
+      hooks.resolve("./mirror.js", { parentURL: parent }, () => {
+        throw other;
+      }),
+    ).toThrow(other);
+    expect(hooks.resolve("./ok.js", { parentURL: parent }, () => ({ url: "file:///ok.js" }))).toEqual({ url: "file:///ok.js" });
+    const passthrough = { format: "module", source: "x" };
+    expect(hooks.load("file:///x/node_modules/pkg/src/mirror.ts", {}, () => passthrough)).toEqual({ format: "module", shortCircuit: true, source: "stripped:source of /x/node_modules/pkg/src/mirror.ts" });
+    expect(hooks.load("file:///x/src/app.ts", {}, () => passthrough)).toBe(passthrough);
+    expect(hooks.load("file:///x/node_modules/pkg/dist/index.js", {}, () => passthrough)).toBe(passthrough);
+  });
+});

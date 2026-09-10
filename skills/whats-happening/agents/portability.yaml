@@ -1,0 +1,4 @@
+identity: { pack: catalyst-cloud-skills, skill: whats-happening }
+effects: []
+invocation: implicit
+exposure: [catalog]

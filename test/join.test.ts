@@ -1,11 +1,13 @@
-// join.test.ts — CTC-1926 unit + flow coverage: tenant discovery from the key (GET /me, PR #3332),
-// config write, skill install, and the Tier-2 one-line update notice.
+// join.test.ts — unit + flow coverage for join: tenant discovery from the key (GET /me), the 0600
+// config write with the CLI path, the cached contract, the eight-skill install, the login alias, and
+// the one-line update notice a new version prints on its next session.
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from "vitest";
 import {
   chmodSync,
   existsSync,
   mkdirSync,
   readFileSync,
+  readdirSync,
   writeFileSync,
   mkdtempSync,
   statSync,
@@ -21,6 +23,7 @@ import {
   PROVENANCE_MARKER,
   UsageError,
   configPathFor,
+  contractPathFor,
   defaultCtx,
   defaultSkillsDirFor,
   fetchMe,
@@ -37,7 +40,7 @@ import {
   type CustomerConfig,
   type Ctx,
 } from "../src/cli";
-import { FIXTURE_ME_BODY, startMeFixture, type FixtureServer } from "./fixture";
+import { FIXTURE_ME_BODY, FIXTURE_USER_KEY, startMeFixture, type FixtureServer } from "./fixture";
 
 let home: string;
 let out: string[];
@@ -115,8 +118,16 @@ describe("parseArgs", () => {
   test("unknown option is a UsageError", () => {
     expect(() => parseArgs(["--wat"])).toThrow(UsageError);
   });
-  test("two positional arguments is a UsageError", () => {
-    expect(() => parseArgs(["join", "extra"])).toThrow(UsageError);
+  test("a second positional is the subcommand and the rest are positionals", () => {
+    const a = parseArgs(["query", "issue", "ABC-1", "--json"]);
+    expect(a.command).toBe("query");
+    expect(a.subcommand).toBe("issue");
+    expect(a.rest).toEqual(["ABC-1"]);
+    expect(a.json).toBe(true);
+    expect(parseArgs(["join", "extra"])).toMatchObject({ command: "join", subcommand: "extra", rest: [] });
+  });
+  test("a flag another verb owns is a UsageError for join", () => {
+    expect(() => parseArgs(["join", "--refresh"])).toThrow(UsageError);
   });
   test("help and version flags", () => {
     expect(parseArgs(["--help"]).help).toBe(true);
@@ -258,28 +269,33 @@ describe("changelog + Tier 2 notice", () => {
 });
 
 describe("installSkills", () => {
-  test("installs all six customer skills, idempotently", () => {
+  test("installs all eight customer skills with their references, scripts and sidecars, idempotently", () => {
     const target = join(home, "skills");
     const first = installSkills(target, {});
     expect(first.installed.sort()).toEqual([...CUSTOMER_SKILLS]);
     expect(first.skipped).toEqual([]);
     const second = installSkills(target, {});
     expect(second.installed.sort()).toEqual([...CUSTOMER_SKILLS]);
-    expect(readFileSync(join(target, "concierge", "SKILL.md"), "utf8")).toContain(
+    expect(readFileSync(join(target, "whats-happening", "SKILL.md"), "utf8")).toContain(
       PROVENANCE_MARKER,
     );
+    for (const name of CUSTOMER_SKILLS) {
+      expect(existsSync(join(target, name, "scripts", "lib", "cli.mjs")), `${name} scripts must install`).toBe(true);
+      expect(existsSync(join(target, name, "agents", "portability.yaml")), `${name} sidecars must install`).toBe(true);
+      expect(readdirSync(join(target, name, "references")).length, `${name} references must install`).toBeGreaterThan(0);
+    }
   });
   test("a foreign skill dir is skipped without --force and replaced with it", () => {
     const target = join(home, "skills");
-    mkdirSync(join(target, "concierge"), { recursive: true });
-    writeFileSync(join(target, "concierge", "SKILL.md"), "---\nname: concierge\n---\nmine");
+    mkdirSync(join(target, "whats-happening"), { recursive: true });
+    writeFileSync(join(target, "whats-happening", "SKILL.md"), "---\nname: whats-happening\n---\nmine");
     const skipped = installSkills(target, {});
-    expect(skipped.installed).not.toContain("concierge");
-    expect(skipped.skipped).toEqual([{ name: "concierge", reason: "foreign-skill-dir" }]);
-    expect(readFileSync(join(target, "concierge", "SKILL.md"), "utf8")).toContain("mine");
+    expect(skipped.installed).not.toContain("whats-happening");
+    expect(skipped.skipped).toEqual([{ name: "whats-happening", reason: "foreign-skill-dir" }]);
+    expect(readFileSync(join(target, "whats-happening", "SKILL.md"), "utf8")).toContain("mine");
     const forced = installSkills(target, { force: true });
-    expect(forced.installed).toContain("concierge");
-    expect(readFileSync(join(target, "concierge", "SKILL.md"), "utf8")).toContain(
+    expect(forced.installed).toContain("whats-happening");
+    expect(readFileSync(join(target, "whats-happening", "SKILL.md"), "utf8")).toContain(
       PROVENANCE_MARKER,
     );
   });
