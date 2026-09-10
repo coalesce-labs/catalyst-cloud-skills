@@ -9,7 +9,7 @@ import type { ChangeFrame, WebSocketLike } from "@catalyst-cloud/sdk/node";
 import { main } from "../src/cli";
 import { watchCursorPathFor } from "../src/config";
 import { CursorFileError, readCursorFile, writeCursorFile } from "../src/watch/cursor-file";
-import { inScope, runWatch, type IssueResolver } from "../src/watch";
+import { execReaction, inScope, runWatch, type IssueResolver } from "../src/watch";
 import { FIXTURE_ACCOUNT } from "./fixture-contract";
 import { startMeFixture, type FixtureServer } from "./fixture";
 import { makeCtx, seedJoined, tempHome, waitFor, type TestCtx } from "./helpers";
@@ -110,6 +110,22 @@ describe("watch", () => {
     expect(ctx.err.join("\n")).toMatch(/reaction failed for issues seq=11; cursor left at 10/);
     s.stop();
     await s.done;
+  });
+
+  test("a child that exits before reading the frame is judged by its exit code, not by the broken pipe", async () => {
+    // A frame larger than the pipe buffer cannot be written in one shot, so the write is guaranteed
+    // to still be in flight when a command that reads nothing exits. That is the shape of any real
+    // handler that fails fast or dies. Without the stdin error handler in execReaction, the EPIPE
+    // arrives with no listener and Node rethrows it as an unhandled error, killing the whole watch;
+    // vitest surfaces that as a failed file even when every assertion passed. With the handler, the
+    // exit code stays the only verdict.
+    const big = frame(11, "issues", { id: "lin-eng-1", identifier: "ENG-1", blob: "x".repeat(512 * 1024) });
+
+    await expect(execReaction("exit 3", process.env)(big)).rejects.toThrow(/--exec exited 3/);
+
+    // And a handler that exits 0 without reading (`grep -q`, `head -1`, `true`) succeeded by its
+    // own report: a broken pipe alone must never be turned into a failed reaction.
+    await expect(execReaction("exit 0", process.env)(big)).resolves.toBeUndefined();
   });
 
   test("a succeeding --exec receives the frame on stdin and advances the cursor", async () => {

@@ -91,14 +91,30 @@ export function apiIssueResolver(cfg: CustomerConfig, ctx: Ctx): IssueResolver {
   };
 }
 
-/** Run `--exec CMD` once with the frame on stdin; a non-zero exit is a failed reaction. */
+/**
+ * Run `--exec CMD` once with the frame on stdin; a non-zero exit is a failed reaction.
+ *
+ * The child's EXIT CODE is the whole contract, and a broken pipe is not a failure on its own. A
+ * handler that exits before reading the frame is ordinary and often correct — `grep -q`, `head -1`,
+ * a script that fails fast — and so is one that simply died. In every one of those cases the write
+ * lands on a pipe with nothing at the other end and raises EPIPE asynchronously. Node delivers that
+ * as an `error` event on the child's stdin, and a stream with no `error` listener rethrows it as an
+ * unhandled error, which takes down the whole watch: one misbehaving handler and the customer stops
+ * receiving their tenant's events. So the pipe is allowed to break, and the exit code still decides.
+ */
 export function execReaction(cmd: string, env: NodeJS.ProcessEnv): (frame: ChangeFrame) => Promise<void> {
   return (frame) =>
     new Promise<void>((resolve, reject) => {
       const child = spawn("sh", ["-c", cmd], { stdio: ["pipe", "inherit", "inherit"], env });
       child.on("error", reject);
       child.on("close", (code) => (code === 0 ? resolve() : reject(new Error(`--exec exited ${code}`))));
-      child.stdin.end(`${JSON.stringify(frame)}\n`);
+      // Listen before writing: attaching afterwards races the synchronous part of `end()`.
+      child.stdin.on("error", () => {});
+      try {
+        if (child.stdin.writable) child.stdin.end(`${JSON.stringify(frame)}\n`);
+      } catch {
+        // A stdin already destroyed throws here rather than emitting; same verdict, wait for close.
+      }
     });
 }
 
