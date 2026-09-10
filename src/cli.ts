@@ -498,7 +498,7 @@ async function cmdJoin(args: ParsedArgs, ctx: Ctx, manifest: Manifest): Promise<
     );
   }
   ctx.stdout(
-    `Tenant contract range: ${manifest.tenantContractRange} (placeholder until the tenant contract route lands — CTC-1924)`,
+    `Tenant contract range: ${manifest.tenantContractRange}`,
   );
   if (previous && previous !== manifest.version) {
     const entry = parseChangelogEntry(readChangelog(), manifest.version);

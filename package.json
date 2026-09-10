@@ -1,6 +1,6 @@
 {
   "name": "@catalyst-cloud/catalyst-skills",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Customer skill bundle for catalyst-cloud: install the concierge, steward, ask, linearis, join and setup skills from npm and join your tenant with one command. No catalyst repository checkout required.",
   "license": "MIT",
   "type": "module",
