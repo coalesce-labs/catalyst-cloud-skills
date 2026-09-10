@@ -1,0 +1,48 @@
+{
+  "name": "@catalyst-cloud/catalyst-skills",
+  "version": "0.1.1",
+  "description": "Customer skill bundle for catalyst-cloud: install the concierge, steward, ask, linearis, join and setup skills from npm and join your tenant with one command. No catalyst repository checkout required.",
+  "license": "MIT",
+  "type": "module",
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/coalesce-labs/catalyst-cloud-skills.git"
+  },
+  "homepage": "https://github.com/coalesce-labs/catalyst-cloud-skills#readme",
+  "bugs": {
+    "url": "https://github.com/coalesce-labs/catalyst-cloud-skills/issues"
+  },
+  "engines": {
+    "node": ">=18.17"
+  },
+  "bin": {
+    "catalyst-skills": "bin/catalyst-skills.js"
+  },
+  "files": [
+    "bin",
+    "dist",
+    "skills",
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE"
+  ],
+  "catalystCloud": {
+    "tenantContractRange": "0.x"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "build": "tsc -p tsconfig.build.json",
+    "prepack": "tsc -p tsconfig.build.json",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage"
+  },
+  "devDependencies": {
+    "@types/node": "^26.3.0",
+    "@vitest/coverage-v8": "^4.1.11",
+    "typescript": "^7.0.2",
+    "vitest": "^4.1.11"
+  }
+}

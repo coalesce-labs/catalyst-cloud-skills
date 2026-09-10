@@ -1,0 +1,69 @@
+# CTC-1949: publish @catalyst-cloud/catalyst-skills to npm from a tag, never from a laptop. This
+# repository is the package's one home (moved out of the catalyst-cloud monorepo's
+# packages/skill-bundle, which is the same source this workflow ran against there). The smoke test
+# (pack the real tarball, install into a clean directory, run join against a fixture /me server)
+# runs FIRST — a broken publish cannot ship. Publishing credentials live as the repository secret
+# NPM_PUBLISH_TOKEN (an npm automation token with publish rights on the @catalyst-cloud scope). A
+# workflow_dispatch run publishes with --dry-run by default so the whole path can be rehearsed
+# before the first real tag.
+name: skills-bundle publish
+
+on:
+  push:
+    tags:
+      - "skills-bundle-v*"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Rehearse the publish with npm --dry-run (no upload, secret still required).
+        required: false
+        type: boolean
+        default: true
+
+concurrency:
+  group: skills-bundle-publish-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+
+      - name: Install (frozen)
+        run: bun install --frozen-lockfile
+
+      - name: Smoke — pack, clean-dir install, join against the fixture
+        run: bun run test:coverage
+
+      - name: Tag must name the version being published
+        if: github.event_name == 'push'
+        run: |
+          pkg_version="$(node -p 'require("./package.json").version')"
+          tag_version="${GITHUB_REF_NAME#skills-bundle-v}"
+          if [ "$pkg_version" != "$tag_version" ]; then
+            echo "tag skills-bundle-v$tag_version does not match package version $pkg_version" >&2
+            exit 1
+          fi
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 20
+          registry-url: https://registry.npmjs.org
+
+      - name: npm publish (prepack builds dist; files gate ships bin/dist/skills/README/CHANGELOG/LICENSE)
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.dry_run }}" = "true" ]; then
+            npm publish --access public --dry-run
+          else
+            npm publish --access public
+          fi
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_PUBLISH_TOKEN }}
