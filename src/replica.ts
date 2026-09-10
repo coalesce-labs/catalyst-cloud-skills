@@ -135,7 +135,7 @@ export function replicaStatus(ctx: Ctx, cfg: CustomerConfig | null, opts: Status
 export function statusLine(s: ReplicaStatus): string {
   switch (s.verdict) {
     case "not-configured":
-      return "replica: not configured — run join first";
+      return "replica: not configured — run login first";
     case "absent":
       return `replica: absent at ${s.dbPath} — start it with: catalyst-skills replica start --detach`;
     case "fresh":

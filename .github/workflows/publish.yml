@@ -1,8 +1,8 @@
 # CTC-1949: publish @catalyst-cloud/catalyst-skills to npm from a tag, never from a laptop. This
 # repository is the package's one home (moved out of the catalyst-cloud monorepo's
-# packages/skill-bundle, which is the same source this workflow ran against there). The smoke test
-# (pack the real tarball, install into a clean directory, run join against a fixture /me server)
-# runs FIRST — a broken publish cannot ship. Publishing credentials live as the repository secret
+# packages/skill-bundle, which is the same source this workflow ran against there). The whole test
+# suite runs FIRST, and it carries the pack-and-install smoke (pack the real tarball, install into a
+# clean directory, run the installed login against a fixture /me server) — a broken publish cannot ship. Publishing credentials live as the repository secret
 # NPM_PUBLISH_TOKEN (an npm automation token with publish rights on the @catalyst-cloud scope). A
 # workflow_dispatch run publishes with --dry-run by default so the whole path can be rehearsed
 # before the first real tag.
@@ -44,7 +44,7 @@ jobs:
       - name: Install (frozen)
         run: bun install --frozen-lockfile
 
-      - name: Smoke — pack, clean-dir install, join against the fixture
+      - name: Test suite with coverage, including the pack-and-install smoke
         run: bun run test:coverage
 
       - name: Tag must name the version being published

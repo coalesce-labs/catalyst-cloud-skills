@@ -2,8 +2,6 @@
 
 [![skills.sh](https://skills.sh/b/coalesce-labs/catalyst-cloud-skills)](https://skills.sh/coalesce-labs/catalyst-cloud-skills)
 
-Eight skills that let your coding agent run your own Catalyst Cloud tenant (https://catalystcloud.dev) from your seat: what is happening, what needs you, and what to do about it. They read your tenant through the Catalyst Cloud SDK, write to it through the tenant's agent proxy, and never compose a URL or run a tool of their own; every read, write and subscription is a `catalyst-skills` verb with `--help`. Every skill is plain Markdown under `skills/<name>/SKILL.md` in this repository, and the account key from your tenant admin is the only credential.
-
 ## Install
 
 Two ways in. The plugin installs the set as a managed bundle that updates when we ship. `npx skills` copies editable files into your project. Pick one; installing both leaves you with every skill twice.
@@ -45,22 +43,25 @@ npx skills@latest add coalesce-labs/catalyst-cloud-skills
 The installer asks which skills to take and which agents to install them on. Add `-g` to install into your home directory instead of the project. Skills installed this way do not auto-update; run `npx skills update -y` to refresh them.
 </details>
 
-## Connect to your tenant
+### Then connect to your tenant
 
-The skills call one CLI, and the CLI holds your credential. Install it once:
+The skills call one CLI, and the CLI holds your credential. Install it once and connect this machine with your account key:
 
 ```sh
 npm install -g @catalyst-cloud/catalyst-skills
-```
-
-Then connect this machine to your tenant with your account key:
-
-```sh
 CATALYST_CLOUD_TOKEN=<your-account-key> catalyst-skills login
 catalyst-skills ready
 ```
 
 Passing the key as an environment variable is the recommended form, because a key typed into a command line lands in your shell history. With no key in the environment and a terminal attached, `catalyst-skills login` prompts for it without echoing it; `--key <your-account-key>` is the third form, for a script. `npx @catalyst-cloud/catalyst-skills login` works without the global install, and `bunx` works in place of `npx`. A non-default cloud is set with `CATALYST_CLOUD_BASE_URL` or `--base-url <url>`.
+
+That is the whole setup. Everything below explains what you just installed.
+
+## What this is
+
+Eight skills that let your coding agent run your own Catalyst Cloud tenant (https://catalystcloud.dev) from your seat: what is happening, what needs you, and what to do about it. They read your tenant through the Catalyst Cloud SDK, write to it through the tenant's agent proxy, and never compose a URL or run a tool of their own; every read, write and subscription is a `catalyst-skills` verb with `--help`. Every skill is plain Markdown under `skills/<name>/SKILL.md` in this repository, and the account key from your tenant admin is the only credential.
+
+## What connecting does
 
 `login` does three things: it calls `GET /api/v1/me` with your key, which discovers your tenant from the key alone; it writes `~/.config/catalyst-cloud/customer.json` with file mode `0600`, holding your key and the absolute path of the CLI so every skill script can spawn the same binary; and it fetches the tenant contract (`GET /api/v1/agent/contract`) and caches it at `~/.config/catalyst-cloud/contract.json` with its ETag, so stage names and ids, label ids, the ask template, thresholds and the route table come from your tenant, live, and no skill restates them.
 

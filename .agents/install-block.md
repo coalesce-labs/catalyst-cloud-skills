@@ -48,7 +48,10 @@ The installer asks which skills to take and which agents to install them on. Add
 your home directory instead of the project. Skills installed this way do not auto-update; run
 `npx skills update -y` to refresh them.
 
-## Connect to your tenant
+### Then connect to your tenant
+
+The skills call one CLI, and the CLI holds your credential. Install it once and connect this machine
+with your account key:
 
 ```sh
 npm install -g @catalyst-cloud/catalyst-skills
@@ -59,3 +62,7 @@ catalyst-skills ready
 `npx @catalyst-cloud/catalyst-skills login` works without the global install. Passing the key as an
 environment variable keeps it out of your shell history; `catalyst-skills login` with no key and a
 terminal attached prompts for it without echoing it.
+
+The connect step is a `###` under `## Install`, never its own top-level section. It has to sit
+beside the install commands, in the same block a reader copies, or half of them stop at the install
+and never connect.

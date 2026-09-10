@@ -56,7 +56,7 @@ export async function readyReport(ctx: Ctx, deps: ReadyDeps): Promise<ReadyRepor
         : { id: "config", ok: false, line: "config: not connected", fix: "CATALYST_CLOUD_TOKEN=<account key> npx @catalyst-cloud/catalyst-skills login", who: "you (the key comes from your tenant admin)" },
     );
   } catch (err) {
-    checks.push({ id: "config", ok: false, line: `config: ${err instanceof CliError ? err.message : String(err)}`, fix: "re-run join to rewrite it", who: "you" });
+    checks.push({ id: "config", ok: false, line: `config: ${err instanceof CliError ? err.message : String(err)}`, fix: "re-run login to rewrite it", who: "you" });
   }
 
   const cache = readContractCache(ctx.home);

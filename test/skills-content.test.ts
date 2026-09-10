@@ -256,7 +256,13 @@ describe("the install page (README) states what a customer needs, in the order t
   test("the install section leads, and it is the ecosystem's own command per tool, never ours", () => {
     const install = readme.indexOf("\n## Install\n");
     expect(install, "README must carry an ## Install section").toBeGreaterThan(0);
-    for (const later of ["## Connect to your tenant", "## Requirements", "## The skills"]) {
+    // Nothing may sit between the title and the install block. A what-it-is preamble first is the
+    // failure this asserts against: the headline IS the install command, never an explanation.
+    const firstSection = readme.indexOf("\n## ");
+    expect(firstSection, "## Install must be the FIRST section in the README").toBe(install);
+    const beforeInstall = readme.slice(0, install);
+    expect(beforeInstall.split("\n").filter((l) => l.trim().length > 0), "only the title and the badge precede ## Install").toHaveLength(2);
+    for (const later of ["## What this is", "## Requirements", "## The skills"]) {
       expect(readme.indexOf(`\n${later}\n`), `${later} must come after ## Install`).toBeGreaterThan(install);
     }
     for (const cmd of [
@@ -278,10 +284,19 @@ describe("the install page (README) states what a customer needs, in the order t
     expect(readme).toContain("skills.sh/b/coalesce-labs/catalyst-cloud-skills");
   });
 
-  test("connecting is a separate step, named login, with the env form first and no install verb in the headline", () => {
-    const connect = readme.indexOf("\n## Connect to your tenant\n");
-    expect(connect).toBeGreaterThan(0);
+  test("the credential step sits inside the install block, named login, with the env form first", () => {
+    const install = readme.indexOf("\n## Install\n");
     const envForm = "CATALYST_CLOUD_TOKEN=<your-account-key> catalyst-skills login";
+    // "Beside the install commands" is the property: the connect step is a sub-heading of Install,
+    // and the login command lands before the next top-level section starts.
+    const connect = readme.indexOf("\n### Then connect to your tenant\n");
+    expect(connect, "the connect step must be a ### inside ## Install").toBeGreaterThan(install);
+    const nextSection = readme.indexOf("\n## ", install + 1);
+    expect(nextSection).toBeGreaterThan(0);
+    expect(readme.indexOf(envForm), "the login command must be inside the install section").toBeLessThan(nextSection);
+    expect(connect).toBeLessThan(nextSection);
+    // The README claims to quote the canonical block; that claim has to be checkable.
+    expect(installBlock).toContain("### Then connect to your tenant");
     expect(readme).toContain(envForm);
     expect(readme).toContain("npm install -g @catalyst-cloud/catalyst-skills");
     expect(readme).toContain("catalyst-skills ready");

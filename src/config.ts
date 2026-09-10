@@ -27,7 +27,9 @@ export interface CustomerConfig {
   principal: "service" | "session";
   joinedAt: string;
   lastSkillBundleVersion: string;
-  /** Where join copied the skills, so an update can refresh the same copies. */
+  /** Where a copy this package made lives. Kept for back-compat: 0.2 no longer copies skills on
+   *  login (your agent's own install command does), and the update notice only refreshes what is
+   *  already there. Still read, still written, so an older config keeps working. */
   skillsDir?: string;
   /** Absolute path of bin/catalyst-skills.js, so a skill script can spawn this exact CLI. */
   cliPath?: string;
@@ -74,7 +76,7 @@ export function defaultSkillsDirFor(home: string): string {
   return join(home, ".claude", "skills");
 }
 
-/** The CLI launcher this very package ships — recorded by join so skill scripts can spawn it. */
+/** The CLI launcher this very package ships — recorded by login so skill scripts can spawn it. */
 export function cliPath(): string {
   return fileURLToPath(new URL("../bin/catalyst-skills.js", import.meta.url));
 }
@@ -99,11 +101,11 @@ export function loadConfig(home: string): CustomerConfig | null {
   try {
     parsed = JSON.parse(readFileSync(path, "utf8"));
   } catch {
-    throw new CliError(`config at ${path} is not valid JSON — re-run join to rewrite it`, "config-corrupt");
+    throw new CliError(`config at ${path} is not valid JSON — re-run login to rewrite it`, "config-corrupt");
   }
   const cfg = parsed as Partial<CustomerConfig>;
   if (typeof cfg.account !== "string" || typeof cfg.key !== "string" || typeof cfg.baseUrl !== "string") {
-    throw new CliError(`config at ${path} is missing required fields — re-run join to rewrite it`, "config-corrupt");
+    throw new CliError(`config at ${path} is missing required fields — re-run login to rewrite it`, "config-corrupt");
   }
   return cfg as CustomerConfig;
 }
