@@ -46,7 +46,7 @@ Every skill session opens with these, in this order, before doing anything else:
 | when | read |
 | -- | -- |
 | the person wants the replica writer to survive a reboot, or asks what it stores and whether anything needs cleaning | `references/keeping-the-replica-running.md` |
-| the full readiness vector and what each check means | the `am-i-set-up` skill |
+| the full readiness vector and what each check means | the `catalyst-setup` skill |
 
 ## Rules
 

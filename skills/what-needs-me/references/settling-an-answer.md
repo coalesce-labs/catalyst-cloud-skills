@@ -34,4 +34,4 @@ The role that raised the ask, or the owner of the scope it belongs to. The desk 
 
 - The comment id is not on the ask: post the answer on the ask first, then settle with the new id.
 - The write budget for the day is spent: the CLI names the budget from the contract and exits 2. Say so; the record waits, the human's answer is not lost.
-- The ask is on a team the contract does not list: the tenant admin maps the team in settings; the `am-i-set-up` skill reads readiness.
+- The ask is on a team the contract does not list: the tenant admin maps the team in settings; the `catalyst-setup` skill reads readiness.

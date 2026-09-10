@@ -29,9 +29,9 @@ const manifest = JSON.parse(readFileSync(join(pkgRoot, "package.json"), "utf8"))
 };
 
 const EIGHT = [
-  "am-i-set-up",
   "catalyst-github",
   "catalyst-linear",
+  "catalyst-setup",
   "connect-me",
   "how-catalyst-works",
   "run-this-project",
@@ -212,7 +212,7 @@ describe("no internal name reaches a customer", () => {
 
 describe("each skill's scripts spawn the catalyst-skills verbs it teaches", () => {
   const verbs: Record<(typeof EIGHT)[number], RegExp[]> = {
-    "am-i-set-up": [/"ready"/, /"replica",\s*"status"/],
+    "catalyst-setup": [/"ready"/, /"replica",\s*"status"/],
     "catalyst-github": [/"query",\s*"pull"/, /"contract"/, /"replica",\s*"status"/],
     "catalyst-linear": [/"query",\s*"issue"/, /"query",\s*"search"/, /"write",\s*"comment"/, /"write",\s*"state"/, /"write",\s*"label"/, /"write",\s*"create"/],
     "how-catalyst-works": [/"explain"/, /"running"/, /"queue"/, /"accounts"/, /"contract",\s*"--path"/],
@@ -242,7 +242,7 @@ describe("each skill's scripts spawn the catalyst-skills verbs it teaches", () =
     expect(skill("whats-happening")).toContain("catalyst-linear");
     expect(skill("whats-happening")).toContain("catalyst-github");
     expect(skill("whats-happening")).toContain("what-needs-me");
-    expect(skill("connect-me")).toContain("am-i-set-up");
+    expect(skill("connect-me")).toContain("catalyst-setup");
     expect(skill("run-this-project")).toContain("what-needs-me");
   });
 });

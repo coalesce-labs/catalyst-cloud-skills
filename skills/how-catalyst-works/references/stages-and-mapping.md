@@ -51,4 +51,4 @@ Reading it for a question:
 
 ## Readiness over the mapping
 
-The contract carries a ten-check readiness vector per team (`teams[].readiness`), including whether every mapped state exists, whether the mapping is total, whether the types are compatible, whether the labels are present, whether writes land and whether the webhook covers the team. A check the cloud could not run is `unknown`, never `pass`. `am-i-set-up` reads this vector; this skill only points at it.
+The contract carries a ten-check readiness vector per team (`teams[].readiness`), including whether every mapped state exists, whether the mapping is total, whether the types are compatible, whether the labels are present, whether writes land and whether the webhook covers the team. A check the cloud could not run is `unknown`, never `pass`. `catalyst-setup` reads this vector; this skill only points at it.

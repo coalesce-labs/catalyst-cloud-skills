@@ -50,7 +50,7 @@ This reference restates an invariant: the vocabulary the cloud's eligibility exp
 
 ## When the cloud could not judge
 
-A status of `unknown` with a reason such as `ordering_never_published`, `ordering_stale`, `workflow_mapping_unknown`, `ticket_unknown`, `dependency_snapshot_unknown`, `blocker_unknown`, `label_snapshot_unknown`, `prior_artifact_unknown`, `scope_unknown`, `scope_occupancy_unknown` or `branch_snapshot_unknown` means the evaluator failed closed rather than guessing. Most clear on the cloud's next pass. If one persists for a team, the readiness checks (`am-i-set-up`) are the next read.
+A status of `unknown` with a reason such as `ordering_never_published`, `ordering_stale`, `workflow_mapping_unknown`, `ticket_unknown`, `dependency_snapshot_unknown`, `blocker_unknown`, `label_snapshot_unknown`, `prior_artifact_unknown`, `scope_unknown`, `scope_occupancy_unknown` or `branch_snapshot_unknown` means the evaluator failed closed rather than guessing. Most clear on the cloud's next pass. If one persists for a team, the readiness checks (`catalyst-setup`) are the next read.
 
 ## The one advisory
 

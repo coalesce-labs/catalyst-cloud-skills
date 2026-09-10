@@ -1,7 +1,7 @@
 {
   "name": "@catalyst-cloud/catalyst-skills",
   "version": "0.2.0",
-  "description": "Customer skill bundle for Catalyst Cloud: eight skills named from the executive's seat (whats-happening, what-needs-me, run-this-project, am-i-set-up, catalyst-linear, catalyst-github, how-catalyst-works, connect-me) plus the catalyst-skills CLI that reads through the Catalyst Cloud SDK, writes through the agent proxy, and connects your machine to your tenant with one command.",
+  "description": "Customer skill bundle for Catalyst Cloud: eight skills named from the executive's seat (whats-happening, what-needs-me, run-this-project, catalyst-setup, catalyst-linear, catalyst-github, how-catalyst-works, connect-me) plus the catalyst-skills CLI that reads through the Catalyst Cloud SDK, writes through the agent proxy, and connects your machine to your tenant with one command.",
   "license": "MIT",
   "type": "module",
   "publishConfig": {

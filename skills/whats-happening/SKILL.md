@@ -29,7 +29,7 @@ For a single ticket's comments, relations and linked PRs use the `catalyst-linea
 | "do this one first", "why is that not next", "stop that" | `references/reprioritising.md` |
 | the person asks for work to be done, or a decision surfaces | `references/routing-work.md` |
 
-For depth beyond these, load the fact skills: `how-catalyst-works` (the ladder, slots and mapping, failure layers, queue order, coding accounts), `catalyst-linear` (what a ticket accumulates, reading and writing), `catalyst-github` (what a PR accumulates, mergeability), `am-i-set-up` (readiness).
+For depth beyond these, load the fact skills: `how-catalyst-works` (the ladder, slots and mapping, failure layers, queue order, coding accounts), `catalyst-linear` (what a ticket accumulates, reading and writing), `catalyst-github` (what a PR accumulates, mergeability), `catalyst-setup` (readiness).
 
 ## Rules
 

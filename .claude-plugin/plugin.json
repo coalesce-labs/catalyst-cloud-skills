@@ -6,9 +6,9 @@
     "name": "Coalesce Labs"
   },
   "skills": [
-    "./skills/am-i-set-up",
     "./skills/catalyst-github",
     "./skills/catalyst-linear",
+    "./skills/catalyst-setup",
     "./skills/connect-me",
     "./skills/how-catalyst-works",
     "./skills/run-this-project",

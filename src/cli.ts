@@ -68,9 +68,9 @@ export {
 export type { Ctx, CustomerConfig, MeIdentity, ParsedArgs, SkillsInstallResult };
 
 export const CUSTOMER_SKILLS = [
-  "am-i-set-up",
   "catalyst-github",
   "catalyst-linear",
+  "catalyst-setup",
   "connect-me",
   "how-catalyst-works",
   "run-this-project",
