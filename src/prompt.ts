@@ -1,32 +1,38 @@
 // prompt.ts — the one interactive read in the CLI: asking for the account key on a terminal without
-// echoing it. Excluded from coverage (it needs a real TTY); everything that calls it takes it as an
-// injectable dependency so the tests never touch this file.
+// echoing it. The streams are parameters so the tests can drive it without a real TTY.
 import { createInterface } from "node:readline";
 
-/** True when there is a terminal to prompt on. */
+export interface PromptIo {
+  input: NodeJS.ReadableStream;
+  output: NodeJS.WritableStream;
+}
+
+/** True when there is a terminal to prompt on. Both ends matter: the question needs somewhere to go. */
 export function stdinIsTty(): boolean {
   return Boolean(process.stdin.isTTY && process.stdout.isTTY);
 }
 
 /**
- * Read one line from the terminal without echoing it. The muted output stream swallows everything
- * readline would write after the question itself, so the key never reaches the screen or a scrollback
- * buffer; the caller still gets it back.
+ * Read one line without echoing it. Everything readline would write after the question itself goes
+ * to a muted stream, so the key never reaches the screen or a scrollback buffer; the caller still
+ * gets it back, trimmed.
  */
-export async function promptSecret(question: string): Promise<string> {
+export async function promptSecret(question: string, io?: PromptIo): Promise<string> {
+  const input = io?.input ?? process.stdin;
+  const target = io?.output ?? process.stdout;
   let muted = false;
-  const output = Object.create(process.stdout) as NodeJS.WritableStream & { write: (chunk: string) => boolean };
-  output.write = (chunk: string): boolean => {
-    if (!muted) process.stdout.write(chunk);
+  const output = Object.create(target) as NodeJS.WritableStream;
+  output.write = (chunk: string | Uint8Array): boolean => {
+    if (!muted) target.write(chunk);
     return true;
   };
-  const rl = createInterface({ input: process.stdin, output, terminal: true });
+  const rl = createInterface({ input, output, terminal: true });
   try {
     const answer = await new Promise<string>((resolve) => {
       rl.question(question, (value) => resolve(value));
       muted = true;
     });
-    process.stdout.write("\n");
+    target.write("\n");
     return answer.trim();
   } finally {
     rl.close();
