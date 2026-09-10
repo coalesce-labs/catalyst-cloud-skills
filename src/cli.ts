@@ -30,6 +30,7 @@ import { cmdAccounts, cmdExplain, cmdQueue, cmdRunning } from "./execution.js";
 import { cmdQuery } from "./query.js";
 import { cmdReady } from "./ready.js";
 import { cmdReplica, type ReplicaDeps } from "./replica.js";
+import { promptSecret, stdinIsTty } from "./prompt.js";
 import { PROVENANCE_MARKER } from "./skill-shape.js";
 import { installSkills, parseChangelogEntry, readChangelog, resolveSkillsDir, skillsSourceDir, updateNoticeLine, type SkillsInstallResult } from "./skills.js";
 import { cmdWatch, type WatchDeps } from "./watch.js";
@@ -70,27 +71,28 @@ export const CUSTOMER_SKILLS = [
   "am-i-set-up",
   "catalyst-github",
   "catalyst-linear",
+  "connect-me",
   "how-catalyst-works",
-  "join",
   "run-this-project",
   "what-needs-me",
   "whats-happening",
 ] as const;
 
-/** `login` is the name the skills print for the connect step; it is the same verb as `join`. */
-const VERB_ALIASES: Record<string, string> = { login: "join" };
+/** `login` is the verb; `join` is the 0.1 name, kept as a deprecated alias for one minor version. */
+const VERB_ALIASES: Record<string, string> = { join: "login" };
 
 /** Verbs whose stdout is for a human, so the update notice may share it. Every other verb's stdout
  *  is machine-read by a skill script and the notice goes to stderr. */
-const HUMAN_VERBS = new Set(["join", "install", "status", "notice"]);
+const HUMAN_VERBS = new Set(["login", "install", "status", "notice"]);
 
 export function usageText(): string {
   return [
-    `${PACKAGE_NAME} — the Catalyst Cloud customer CLI: join your tenant, read through the SDK, write through the agent proxy`,
+    `${PACKAGE_NAME} — the Catalyst Cloud customer CLI: connect to your tenant, read through the SDK, write through the agent proxy`,
     "",
     "Usage:",
-    "  catalyst-skills join [--key <account-key>] [--base-url <url>] [--skills-dir <dir>] [--start-replica]   (alias: login)",
-    "  catalyst-skills install [--skills-dir <dir>] [--force]",
+    "  catalyst-skills login [--key <account-key>] [--base-url <url>] [--start-replica]",
+    "  catalyst-skills join ...   (deprecated alias of login; removed in the next minor version)",
+    "  catalyst-skills install [--skills-dir <dir>] [--force]   (repair path; your agent's own command installs the skills)",
     "  catalyst-skills status | notice | me | ready | accounts",
     "  catalyst-skills contract [--refresh] [--path <a.b.c>]",
     "  catalyst-skills query <issues|issue <id>|pulls|pull <id>|projects|cycles|search <terms>|changes --since <n>>",
@@ -105,9 +107,11 @@ export function usageText(): string {
     "The key may also come from CATALYST_CLOUD_TOKEN; the base URL defaults to",
     `CATALYST_CLOUD_BASE_URL or ${DEFAULT_BASE_URL}.`,
     "",
-    "join calls GET /api/v1/me to discover your tenant from the key alone, installs the skills",
-    "(default ~/.claude/skills), writes ~/.config/catalyst-cloud/customer.json (0600) with the key",
-    "and this CLI's path, and caches the tenant contract beside it.",
+    "login calls GET /api/v1/me to discover your tenant from the key alone, writes",
+    "~/.config/catalyst-cloud/customer.json (0600) with the key and this CLI's path, and caches the",
+    "tenant contract beside it. With no key in the environment and a terminal attached it prompts",
+    "for the key without echoing it. It does not install skills: your agent's own install command",
+    "does that, and `install` is only here to repair a copy this package made.",
   ].join("\n");
 }
 
@@ -116,6 +120,9 @@ export interface MainDeps {
   watch?: WatchDeps;
   write?: WriteDeps;
   loadSdk?: () => Promise<unknown>;
+  /** Injected by the tests so no suite ever touches a real terminal. */
+  isTty?: () => boolean;
+  promptSecret?: (question: string) => Promise<string>;
 }
 
 /**
@@ -141,7 +148,7 @@ function maybePrintUpdateNotice(args: ParsedArgs, ctx: Ctx): void {
   const skillsDir = resolveSkillsDir(args, ctx, cfg);
   let refreshed: SkillsInstallResult;
   try {
-    refreshed = installSkills(skillsDir, { force: false });
+    refreshed = installSkills(skillsDir, { force: false, onlyExisting: true });
   } catch (err) {
     ctx.stderr(
       `[catalyst-skills] could not refresh the skills at ${skillsDir} (${err instanceof Error ? err.message : String(err)}) — the ${manifest.version} skills are not installed yet; run: catalyst-skills install`,
@@ -183,8 +190,8 @@ export async function main(argv: string[], ctx: Ctx = defaultCtx(), deps: MainDe
   try {
     maybePrintUpdateNotice(args, ctx);
     switch (args.command) {
-      case "join":
-        return await cmdJoin(args, ctx, deps);
+      case "login":
+        return await cmdLogin(args, ctx, deps);
       case "install":
         return cmdInstall(args, ctx);
       case "notice":
@@ -239,13 +246,16 @@ export async function main(argv: string[], ctx: Ctx = defaultCtx(), deps: MainDe
 }
 
 const VERB_HELP_KNOWN: Record<string, true> = Object.fromEntries(
-  ["join", "install", "status", "notice", "me", "contract", "query", "replica", "explain", "running", "queue", "watch", "write", "ask", "ready", "accounts"].map((v) => [v, true]),
+  ["login", "join", "install", "status", "notice", "me", "contract", "query", "replica", "explain", "running", "queue", "watch", "write", "ask", "ready", "accounts"].map((v) => [v, true]),
 );
 
-async function cmdJoin(args: ParsedArgs, ctx: Ctx, deps: MainDeps): Promise<number> {
+async function cmdLogin(args: ParsedArgs, ctx: Ctx, deps: MainDeps): Promise<number> {
   const manifest = readManifest();
-  const key = (args.key ?? ctx.env.CATALYST_CLOUD_TOKEN ?? "").trim();
-  if (!key) throw new UsageError("join needs an account key: pass --key <account-key> or set CATALYST_CLOUD_TOKEN");
+  let key = (args.key ?? ctx.env.CATALYST_CLOUD_TOKEN ?? "").trim();
+  if (!key && (deps.isTty ?? stdinIsTty)()) {
+    key = (await (deps.promptSecret ?? promptSecret)("Account key (not echoed): ")).trim();
+  }
+  if (!key) throw new UsageError("login needs an account key: pass --key <account-key> or set CATALYST_CLOUD_TOKEN");
   const baseUrl = normalizeBaseUrl(args.baseUrl ?? ctx.env.CATALYST_CLOUD_BASE_URL ?? DEFAULT_BASE_URL);
   const me = await fetchMe(baseUrl, key, ctx.fetch);
   let existing: CustomerConfig | null;
@@ -256,7 +266,6 @@ async function cmdJoin(args: ParsedArgs, ctx: Ctx, deps: MainDeps): Promise<numb
   }
   const previous = existing?.lastSkillBundleVersion ?? null;
   const skillsDir = resolveSkillsDir(args, ctx, existing);
-  const result = installSkills(skillsDir, { force: args.force });
   const config: CustomerConfig = {
     baseUrl,
     key,
@@ -272,20 +281,12 @@ async function cmdJoin(args: ParsedArgs, ctx: Ctx, deps: MainDeps): Promise<numb
     replicaDb: existing?.replicaDb ?? defaultReplicaDbFor(ctx.home),
   };
   const written = writeConfig(ctx.home, config);
-  ctx.stdout(`Joined ${me.name} (${me.slug}) — account ${me.account}`);
+  ctx.stdout(`Connected to ${me.name} (${me.slug}) — account ${me.account}`);
   ctx.stdout(
     `Config written to ${written.path} (mode ${formatMode(written.mode)}, holds your key and the CLI path)${
       written.mode === CONFIG_MODE ? "" : ` — expected ${formatMode(CONFIG_MODE)}; chmod it by hand`
     }`,
   );
-  ctx.stdout(
-    result.installed.length > 0
-      ? `Skills installed to ${skillsDir}: ${result.installed.join(", ")}`
-      : `No skills installed — ${skillsDir} already had them`,
-  );
-  for (const s of result.skipped) {
-    ctx.stdout(`Skipped "${s.name}": ${skillsDir}/${s.name} exists and was not installed by this package (use --force to replace)`);
-  }
   ctx.stdout(`Tenant contract range: ${manifest.tenantContractRange}`);
   try {
     const loaded = await loadContract(ctx, config, { refresh: true });
@@ -335,13 +336,13 @@ function cmdStatus(ctx: Ctx): number {
   const manifest = readManifest();
   const cfg = loadConfig(ctx.home);
   if (!cfg) {
-    ctx.stdout(`Not joined yet — run: npx ${PACKAGE_NAME} join --key <your account key>`);
+    ctx.stdout(`Not connected yet — run: CATALYST_CLOUD_TOKEN=<your account key> npx ${PACKAGE_NAME} login`);
     return 0;
   }
   ctx.stdout(`Tenant: ${cfg.name} (${cfg.slug}) — account ${cfg.account}`);
   ctx.stdout(`API: ${cfg.baseUrl} (principal: ${cfg.principal})`);
   ctx.stdout(`Bundle: ${PACKAGE_NAME} ${manifest.version} (tenant contract range: ${manifest.tenantContractRange})`);
-  if (cfg.cliPath) ctx.stdout(`CLI: ${cfg.cliPath}${existsSync(cfg.cliPath) ? "" : " (missing — re-run join)"}`);
+  if (cfg.cliPath) ctx.stdout(`CLI: ${cfg.cliPath}${existsSync(cfg.cliPath) ? "" : " (missing — re-run login)"}`);
   ctx.stdout(`Contract: ${existsSync(contractPathFor(ctx.home)) ? contractPathFor(ctx.home) : "not cached (run: catalyst-skills contract --refresh)"}`);
   return 0;
 }

@@ -21,7 +21,7 @@ Options:
   --cursor-file <p>   where the cursor lives (default ~/.config/catalyst-cloud/watch-cursor.json)
   --help              this text
 
-Exit codes: 2 not joined; 1 no scope given; otherwise the CLI's own exit code.
+Exit codes: 2 not connected; 1 no scope given; otherwise the CLI's own exit code.
 
 In Claude Code, arm a monitor on this command and react to each line in the same turn. In a harness
 with no monitor, pass --exec so the reaction still happens per frame and nothing polls.`;

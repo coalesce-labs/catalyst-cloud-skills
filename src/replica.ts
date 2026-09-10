@@ -103,7 +103,7 @@ export function replicaStatus(ctx: Ctx, cfg: CustomerConfig | null, opts: Status
     writerAlive: false,
     reasons: [],
   };
-  if (!cfg) return { ...base, reasons: ["not joined"] };
+  if (!cfg) return { ...base, reasons: ["not connected"] };
   const dbPath = opts.dbPath ?? replicaDbPath(cfg, ctx.home);
   if (!existsSync(dbPath)) return { ...base, verdict: "absent", exitCode: 3, dbPath, reasons: ["no replica file"] };
   const staleMs = opts.staleMs ?? DEFAULT_STALE_MS;
@@ -186,7 +186,7 @@ export async function cmdReplica(args: ParsedArgs, ctx: Ctx, deps: ReplicaDeps =
   if (!sub) throw new UsageError("replica needs a subcommand: start | stop | status | sql | schema");
   if (sub === "status") return cmdStatus(args, ctx);
   const cfg = loadConfig(ctx.home);
-  if (!cfg) throw new CliError("not joined yet — run join first", "not-configured");
+  if (!cfg) throw new CliError("not connected yet — run login first", "not-configured");
   const dbPath = flagString(args, "db") ?? replicaDbPath(cfg, ctx.home);
   switch (sub) {
     case "start":

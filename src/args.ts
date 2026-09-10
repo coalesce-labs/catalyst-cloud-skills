@@ -40,8 +40,8 @@ const GLOBAL_FLAGS: FlagTable = {
 
 /** Per-verb flag tables. A verb absent here accepts only the global flags. */
 export const FLAG_TABLES: Record<string, FlagTable> = {
-  join: {
-    "start-replica": { value: false, help: "run `replica start --detach` after joining" },
+  login: {
+    "start-replica": { value: false, help: "run `replica start --detach` after connecting" },
   },
   install: {},
   status: {},
@@ -119,7 +119,7 @@ export const FLAG_TABLES: Record<string, FlagTable> = {
 };
 
 export const VERB_USAGE: Record<string, string> = {
-  join: "join [--key <account-key>] [--base-url <url>] [--skills-dir <dir>] [--force] [--start-replica]",
+  login: "login [--key <account-key>] [--base-url <url>] [--start-replica]",
   install: "install [--skills-dir <dir>] [--force]",
   status: "status",
   notice: "notice",

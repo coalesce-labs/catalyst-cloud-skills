@@ -2,9 +2,9 @@
 // lib/cli.mjs — the one way a skill script reaches Catalyst Cloud: by spawning the catalyst-skills
 // CLI. The CLI holds the SDK and the account key; this file holds neither. It reads
 // ~/.config/catalyst-cloud/customer.json (under CATALYST_SKILLS_HOME when set, else HOME) for the
-// CLI path that join recorded and falls back to `npx @catalyst-cloud/catalyst-skills`.
+// CLI path that login recorded and falls back to `npx @catalyst-cloud/catalyst-skills`.
 //
-// Exit codes every script built on this file shares: 2 = this machine is not joined, 1 = the
+// Exit codes every script built on this file shares: 2 = this machine is not connected, 1 = the
 // script's own check failed, 0 = fine.
 import { spawn } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
@@ -27,7 +27,7 @@ export function configPath() {
   return join(configDir(), "customer.json");
 }
 
-/** The joined config, or null when the file is absent or unreadable. Never throws. */
+/** The stored config, or null when the file is absent or unreadable. Never throws. */
 export function loadCustomerConfig() {
   const path = configPath();
   if (!existsSync(path)) return null;
@@ -40,11 +40,11 @@ export function loadCustomerConfig() {
   }
 }
 
-/** Print the one not-joined line and exit 2. */
+/** Print the one not-connected line and exit 2. */
 export function requireConfigured() {
   const cfg = loadCustomerConfig();
   if (cfg) return cfg;
-  console.error(`not joined: ${configPath()} is missing or unreadable — run: CATALYST_CLOUD_TOKEN=<account key> npx ${PACKAGE_NAME} join`);
+  console.error(`not connected: ${configPath()} is missing or unreadable — run: CATALYST_CLOUD_TOKEN=<account key> npx ${PACKAGE_NAME} login`);
   process.exit(NOT_CONFIGURED_EXIT);
 }
 
@@ -59,7 +59,7 @@ export function cliCommand(cfg = loadCustomerConfig()) {
 
 /**
  * Run one CLI verb and capture its output. Resolves `{code, stdout, stderr, notConfigured}`;
- * `notConfigured` is true when the CLI itself said the machine is not joined.
+ * `notConfigured` is true when the CLI itself said the machine is not connected.
  */
 export function runCli(args, { stdin } = {}) {
   const { command, prefix } = cliCommand();
@@ -75,7 +75,7 @@ export function runCli(args, { stdin } = {}) {
     child.stderr.on("data", (d) => (stderr += String(d)));
     child.on("error", reject);
     child.on("close", (code) => {
-      resolve({ code: code ?? 1, stdout, stderr, notConfigured: /not joined/i.test(stderr) || /not joined/i.test(stdout) });
+      resolve({ code: code ?? 1, stdout, stderr, notConfigured: /not (joined|connected)/i.test(stderr) || /not (joined|connected)/i.test(stdout) });
     });
     if (stdin !== undefined) child.stdin.end(stdin);
   });
@@ -118,7 +118,7 @@ export function parseJson(stdout) {
   }
 }
 
-/** Exit 2 with the CLI's own not-joined line when a call reports it; otherwise return the result. */
+/** Exit 2 with the CLI's own not-connected line when a call reports it; otherwise return the result. */
 export function guard(result) {
   if (result.notConfigured) {
     process.stderr.write(result.stderr || result.stdout);
@@ -175,7 +175,7 @@ export function wantsHelp(argv) {
 
 const HELP = `lib/cli.mjs — shared helper; not a command.
 
-Resolves the catalyst-skills CLI (the path join recorded in ${configPath()}, else npx ${PACKAGE_NAME})
+Resolves the catalyst-skills CLI (the path login recorded in ${configPath()}, else npx ${PACKAGE_NAME})
 and runs one verb for the script that imports it. Run any sibling script with --help instead.`;
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {

@@ -53,7 +53,7 @@ export async function readyReport(ctx: Ctx, deps: ReadyDeps): Promise<ReadyRepor
     checks.push(
       cfg
         ? { id: "config", ok: true, line: `config: joined ${cfg.name} (${cfg.slug}) as ${cfg.principal}` }
-        : { id: "config", ok: false, line: "config: not joined", fix: "CATALYST_CLOUD_TOKEN=<account key> npx @catalyst-cloud/catalyst-skills join", who: "you (the key comes from your tenant admin)" },
+        : { id: "config", ok: false, line: "config: not connected", fix: "CATALYST_CLOUD_TOKEN=<account key> npx @catalyst-cloud/catalyst-skills login", who: "you (the key comes from your tenant admin)" },
     );
   } catch (err) {
     checks.push({ id: "config", ok: false, line: `config: ${err instanceof CliError ? err.message : String(err)}`, fix: "re-run join to rewrite it", who: "you" });
@@ -73,17 +73,23 @@ export async function readyReport(ctx: Ctx, deps: ReadyDeps): Promise<ReadyRepor
     checks.push(
       cfg.cliPath && existsSync(cfg.cliPath)
         ? { id: "cliPath", ok: true, line: `cliPath: ${cfg.cliPath}` }
-        : { id: "cliPath", ok: false, line: `cliPath: ${cfg.cliPath ? `${cfg.cliPath} does not exist` : "not recorded"}`, fix: "re-run join so the skill scripts can find this CLI", who: "you" },
+        : { id: "cliPath", ok: false, line: `cliPath: ${cfg.cliPath ? `${cfg.cliPath} does not exist` : "not recorded"}`, fix: "re-run login so the skill scripts can find this CLI", who: "you" },
     );
   }
 
+  // The skills are installed by the customer's own agent (a plugin, or `npx skills add`), so an
+  // empty copy directory is the normal case and must not read as NOT READY. A PARTIAL copy is the
+  // one broken state this check can see: half a set this package put there and never finished.
   const skillsDir = cfg?.skillsDir ?? defaultSkillsDirFor(ctx.home);
-  const missing = deps.skillNames.filter((n) => !existsSync(join(skillsDir, n, "SKILL.md")));
-  checks.push(
-    missing.length === 0
-      ? { id: "skills", ok: true, line: `skills: all ${deps.skillNames.length} present in ${skillsDir}` }
-      : { id: "skills", ok: false, line: `skills: missing ${missing.join(", ")} in ${skillsDir}`, fix: "catalyst-skills install", who: "you" },
-  );
+  const present = deps.skillNames.filter((n) => existsSync(join(skillsDir, n, "SKILL.md")));
+  const missing = deps.skillNames.filter((n) => !present.includes(n));
+  if (present.length === 0) {
+    checks.push({ id: "skills", ok: true, note: true, line: `skills: none copied to ${skillsDir} — you are reading one, so your agent installed them its own way` });
+  } else if (missing.length === 0) {
+    checks.push({ id: "skills", ok: true, line: `skills: all ${deps.skillNames.length} present in ${skillsDir}` });
+  } else {
+    checks.push({ id: "skills", ok: false, line: `skills: ${present.length} of ${deps.skillNames.length} in ${skillsDir}, missing ${missing.join(", ")}`, fix: "catalyst-skills install", who: "you" });
+  }
 
   try {
     await (deps.loadSdk ?? loadSdk)();

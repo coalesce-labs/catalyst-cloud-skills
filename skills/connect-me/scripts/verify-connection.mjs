@@ -1,19 +1,19 @@
 #!/usr/bin/env node
-// verify-join.mjs — did join land? One line each for the tenant, the contract version and the
-// replica, from the CLI's own verbs. The machine is joined when `status` names a tenant.
+// verify-connection.mjs — did the connect step land? One line each for the tenant, the contract version and the
+// replica, from the CLI's own verbs. The machine is connected when `status` names a tenant.
 import { CHECK_FAILED_EXIT, cliCommand, loadCustomerConfig, parseFlags, runCli, wantsHelp } from "./lib/cli.mjs";
 
-const HELP = `Usage: node scripts/verify-join.mjs [--json]
+const HELP = `Usage: node scripts/verify-connection.mjs [--json]
 
 Runs catalyst-skills status, contract --path contractVersion, and replica status, and prints one
-line for each: the tenant this machine is joined to, the cached contract version, and the replica
+line for each: the tenant this machine is connected to, the cached contract version, and the replica
 verdict. Nothing is written.
 
 Options:
   --json   one JSON document instead of three lines
   --help   this text
 
-Exit codes: 1 when status reports the machine is not joined (or the CLI could not be run);
+Exit codes: 1 when status reports the machine is not connected (or the CLI could not be run);
 0 otherwise, whatever the replica verdict is, because the replica is optional.`;
 
 const argv = process.argv.slice(2);
@@ -29,7 +29,7 @@ if (positionals.length > 0) {
 
 const cfg = loadCustomerConfig();
 const { via } = cliCommand(cfg);
-const out = { cli: via, joined: false, tenant: null, contractVersion: null, replica: null };
+const out = { cli: via, connected: false, tenant: null, contractVersion: null, replica: null };
 
 let status;
 try {
@@ -39,10 +39,10 @@ try {
   process.exit(CHECK_FAILED_EXIT);
 }
 const tenantLine = status.stdout.split("\n").find((l) => l.startsWith("Tenant:"));
-out.joined = status.code === 0 && Boolean(tenantLine) && !status.notConfigured;
+out.connected = status.code === 0 && Boolean(tenantLine) && !status.notConfigured;
 out.tenant = tenantLine ? tenantLine.slice("Tenant:".length).trim() : null;
 
-if (out.joined) {
+if (out.connected) {
   const contract = await runCli(["contract", "--path", "contractVersion"]);
   out.contractVersion = contract.code === 0 ? contract.stdout.trim() : null;
   out.contractError = contract.code === 0 ? undefined : (contract.stderr || contract.stdout).trim().split("\n").at(-1);
@@ -57,12 +57,12 @@ if (out.joined) {
 
 if (flags.json) {
   console.log(JSON.stringify(out));
-} else if (!out.joined) {
-  console.log(`not joined (${via}): ${(status.stdout || status.stderr).trim().split("\n")[0] ?? "status printed nothing"}`);
+} else if (!out.connected) {
+  console.log(`not connected (${via}): ${(status.stdout || status.stderr).trim().split("\n")[0] ?? "status printed nothing"}`);
 } else {
   console.log(`tenant: ${out.tenant}`);
   console.log(out.contractVersion ? `contract: version ${out.contractVersion} cached` : `contract: not cached (${out.contractError ?? "unknown reason"}) — run: catalyst-skills contract --refresh`);
   const r = out.replica;
   console.log(`replica: ${r.verdict}${r.cursor !== null && r.cursor !== undefined ? ` (cursor ${r.cursor})` : ""}${r.reasons && r.reasons.length ? ` — ${r.reasons.join("; ")}` : ""}${r.verdict === "absent" ? " — optional; start it with: catalyst-skills replica start --detach" : ""}`);
 }
-process.exit(out.joined ? 0 : CHECK_FAILED_EXIT);
+process.exit(out.connected ? 0 : CHECK_FAILED_EXIT);

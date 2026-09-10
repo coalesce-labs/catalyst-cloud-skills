@@ -108,12 +108,12 @@ export function loadConfig(home: string): CustomerConfig | null {
   return cfg as CustomerConfig;
 }
 
-/** Load the config or refuse with the one line every verb prints when the machine is not joined. */
+/** Load the config or refuse with the one line every verb prints when the machine is not connected. */
 export function requireConfig(ctx: Ctx): CustomerConfig {
   const cfg = loadConfig(ctx.home);
   if (!cfg) {
     throw new CliError(
-      `not joined yet — run: CATALYST_CLOUD_TOKEN=<account key> npx ${PACKAGE_NAME} join`,
+      `not connected yet — run: CATALYST_CLOUD_TOKEN=<account key> npx ${PACKAGE_NAME} login`,
       "not-configured",
     );
   }

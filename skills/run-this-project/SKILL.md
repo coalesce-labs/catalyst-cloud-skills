@@ -20,7 +20,7 @@ Scripts are run, never read. Each prints its own `--help`.
 3. `node scripts/make-ready.mjs <ticket>` to dispatch; `--park` to stop; `--note <why>` to record it.
 4. `catalyst-skills explain <ticket>` whenever a ticket is not moving: one paragraph naming the reason and what releases it.
 
-Every script exits 2 when this machine is not joined (run `join`), 1 when its own check fails.
+Every script exits 2 when this machine is not connected (run `catalyst-skills login`), 1 when its own check fails.
 
 ## Load on demand
 

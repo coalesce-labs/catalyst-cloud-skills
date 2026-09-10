@@ -1,6 +1,6 @@
 // skills.ts — copying the bundled skills into the user's skills directory, and the one-line update
 // notice a new version prints on its next session.
-import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { PACKAGE_NAME, defaultSkillsDirFor, type Ctx, type CustomerConfig } from "./config.js";
@@ -15,14 +15,23 @@ export function skillsSourceDir(): string {
   return fileURLToPath(new URL("../skills", import.meta.url));
 }
 
-/** Copy every `skills/<name>/` that has a SKILL.md. A target directory whose SKILL.md lacks the
- *  provenance marker was not installed by this package and is skipped unless `force`. */
+/**
+ * Copy every `skills/<name>/` that has a SKILL.md. A target directory whose SKILL.md lacks the
+ * provenance marker was not installed by this package and is skipped unless `force`.
+ *
+ * `onlyExisting` is the update path: it refreshes copies this package already made and creates
+ * none. That is what keeps the update notice from planting a second copy of every skill beside a
+ * set the customer's agent installed as a plugin.
+ */
 export function installSkills(
   targetDir: string,
-  opts: { force?: boolean },
+  opts: { force?: boolean; onlyExisting?: boolean },
   sourceDir: string = skillsSourceDir(),
 ): SkillsInstallResult {
   const result: SkillsInstallResult = { installed: [], skipped: [] };
+  if (existsSync(targetDir) && !statSync(targetDir).isDirectory()) {
+    throw new Error(`${targetDir} is not a directory`);
+  }
   const names = readdirSync(sourceDir, { withFileTypes: true })
     .filter((e) => e.isDirectory())
     .map((e) => e.name)
@@ -32,6 +41,7 @@ export function installSkills(
     if (!existsSync(join(src, "SKILL.md"))) continue;
     const dst = join(targetDir, name);
     const existingMd = join(dst, "SKILL.md");
+    if (opts.onlyExisting && !existsSync(existingMd)) continue;
     if (existsSync(existingMd) && !opts.force) {
       const existing = readFileSync(existingMd, "utf8");
       if (!existing.includes(PROVENANCE_MARKER)) {
@@ -70,5 +80,5 @@ export function readChangelog(): string {
 
 export function updateNoticeLine(previous: string, current: string, entry: string | null): string {
   const summary = entry ?? "see CHANGELOG.md";
-  return `[catalyst-skills] updated ${previous} → ${current}: ${summary} · update with: npm update -g ${PACKAGE_NAME} (or: npx ${PACKAGE_NAME}@latest join)`;
+  return `[catalyst-skills] updated ${previous} → ${current}: ${summary} · update with: npm update -g ${PACKAGE_NAME} (or: npx ${PACKAGE_NAME}@latest login)`;
 }

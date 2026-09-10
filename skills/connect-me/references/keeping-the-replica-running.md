@@ -32,7 +32,7 @@ The first start seeds the file from the cloud's snapshot (one full copy of the t
 
 ## Freshness, as the status check judges it
 
-`replica status` needs no network. It answers fresh when the pidfile's process is alive, the writer lock's heartbeat is younger than the staleness threshold (15 seconds by default; `--stale-ms` overrides), and the cursor row is non-empty. Anything else is stale (exit 1) with the reasons listed, absent (exit 3) when there is no file, or not configured (exit 2) when the machine is not joined. `--probe` adds the one network call, fetching the cloud head to print how far behind the local cursor is. Every read verb prints `source: replica (cursor N)` or `source: api (replica stale|absent|not configured)` on standard error, so the answer always names where it came from.
+`replica status` needs no network. It answers fresh when the pidfile's process is alive, the writer lock's heartbeat is younger than the staleness threshold (15 seconds by default; `--stale-ms` overrides), and the cursor row is non-empty. Anything else is stale (exit 1) with the reasons listed, absent (exit 3) when there is no file, or not configured (exit 2) when the machine is not connected. `--probe` adds the one network call, fetching the cloud head to print how far behind the local cursor is. Every read verb prints `source: replica (cursor N)` or `source: api (replica stale|absent|not configured)` on standard error, so the answer always names where it came from.
 
 ## Surviving a reboot
 

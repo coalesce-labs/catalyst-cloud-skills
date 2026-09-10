@@ -1,0 +1,13 @@
+{
+  "name": "catalyst-cloud",
+  "owner": {
+    "name": "Coalesce Labs"
+  },
+  "plugins": [
+    {
+      "name": "catalyst",
+      "source": "./",
+      "description": "Run your Catalyst Cloud tenant from your agent: what is happening, what needs you, and what to do about it."
+    }
+  ]
+}

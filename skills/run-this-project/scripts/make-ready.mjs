@@ -20,7 +20,7 @@ After a dispatch move the script asks the eligibility explainer about the ticket
 verdict. A verdict about a stale or unpublished ordering right after a move is normal: the cloud
 re-derives the queue within a pass; ask again in a minute.
 
-Exit codes: 2 not joined; 1 the move was refused (the CLI's reason is printed); 0 moved.`;
+Exit codes: 2 not connected; 1 the move was refused (the CLI's reason is printed); 0 moved.`;
 
 const argv = process.argv.slice(2);
 if (wantsHelp(argv)) {
