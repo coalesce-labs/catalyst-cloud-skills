@@ -1,6 +1,6 @@
 ---
 name: connect-me
-description:
+description: >-
   Connect this machine to the customer's Catalyst Cloud tenant with their account key, cache the tenant contract, and verify. Use when a person is getting started, when their config is missing or broken, when they rotated their key, when a skill script exits 2 saying the machine is not connected, or when they ask which tenant this machine belongs to. The key names the tenant, so nobody types an account id. Installing the skills is not this skill's job; the agent's own install command did that.
 disable-model-invocation: true
 allowed-tools: Bash(catalyst-skills:*) Bash(npx @catalyst-cloud/catalyst-skills:*)

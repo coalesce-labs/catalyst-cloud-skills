@@ -48,6 +48,37 @@ export class ApiClient {
     return { status: res.status, body: await this.parseBody<T>(res, `GET ${path}`), headers: res.headers };
   }
 
+  /**
+   * A GET whose success body is NDJSON — one JSON object per line, the shape `streamNdjson` sends.
+   *
+   * ⛔ `/changes` and `/snapshot` ANSWER NDJSON ON 200 AND JSON ON A REFUSAL, so a caller that only
+   * has `getJson` reads every real success as "returned a non-JSON body" while its refusals parse
+   * perfectly. That asymmetry is why `query changes` looked like it worked: nothing reached a 200.
+   * `accept` behaves as it does on `getJson` — those statuses come back with `rows: []` for the
+   * caller to branch on, and their (JSON) body is deliberately not parsed here.
+   */
+  async getNdjson<T = unknown>(path: string, opts: GetOptions = {}): Promise<JsonResponse<T[]>> {
+    const url = this.url(path, opts.query);
+    const res = await this.send(url, {
+      method: "GET",
+      headers: { authorization: `Bearer ${this.cfg.key}`, accept: "application/x-ndjson, application/json" },
+    });
+    if (opts.accept?.includes(res.status)) return { status: res.status, body: [], headers: res.headers };
+    await this.refuseIfNotOk(res, `GET ${path}`);
+    const text = await res.text();
+    const rows: T[] = [];
+    for (const line of text.split("\n")) {
+      const trimmed = line.trim();
+      if (trimmed === "") continue;
+      try {
+        rows.push(JSON.parse(trimmed) as T);
+      } catch {
+        throw new MeError(`GET ${path} returned a line that is not JSON: ${trimmed.slice(0, 120)}`, "shape");
+      }
+    }
+    return { status: res.status, body: rows, headers: res.headers };
+  }
+
   async postJson<T = unknown>(path: string, body: unknown): Promise<JsonResponse<T>> {
     const url = this.url(path);
     const res = await this.send(url, {

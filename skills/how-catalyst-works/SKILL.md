@@ -1,6 +1,6 @@
 ---
 name: how-catalyst-works
-description:
+description: >-
   How Catalyst Cloud runs a ticket on the customer's own tenant, as facts an agent loads on demand: the eight-phase ladder and what each phase produces, the eleven board slots and this team's live stage map, what happens when a phase fails (retry, backoff, Remediate, park), how the queue is ordered and routed and every reason a ticket is excluded, and the coding-account model. Use when a person asks "how does this work?", "why did it do that?", "why is this stuck?", "what runs next?" or "how does it prioritise?". Read-only; its scripts explain one ticket's eligibility in plain English, show what is running and queued, and print the tenant's stage map and thresholds straight from the contract.
 allowed-tools: Bash(catalyst-skills:*) Bash(npx @catalyst-cloud/catalyst-skills:*)
 ---

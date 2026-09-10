@@ -4,7 +4,7 @@
 // them and the read-model package is not a declared dependency of this bundle).
 import { flagInt, flagString, positionals, type ParsedArgs } from "./args.js";
 import { requireConfig, replicaDbPath, type Ctx, type CustomerConfig } from "./config.js";
-import { UsageError } from "./errors.js";
+import { CliError, UsageError } from "./errors.js";
 import { apiClient } from "./http.js";
 import { engineFor, replicaStatus, type EngineDeps } from "./replica.js";
 import { loadSdk } from "./sdk.js";
@@ -135,13 +135,63 @@ async function fromApi(ctx: Ctx, cfg: CustomerConfig, sub: string, rest: string[
     }
     case "changes": {
       const since = flagString(args, "since");
-      if (since === undefined) throw new UsageError("changes needs --since <cursor>");
-      const res = await api.getJson<unknown>("/api/v1/changes", { query: { since, limit: f.limit } });
-      return res.body;
+      if (since === undefined) throw new UsageError("changes needs --since <cursor>, or --since head to start from now");
+      return await readChanges(api, since, f.limit);
     }
     default:
       throw new UsageError(`unknown query subcommand: ${sub}`);
   }
+}
+
+/** CTC-137 stamps the live head seq on EVERY `/changes` response — the 200 stream and both 409s. */
+const HEAD_SEQ_HEADER = "x-catalyst-head-seq";
+
+/**
+ * `query changes --since <cursor|head>`.
+ *
+ * ⛔ THE CHANGEFEED EVICTS, so a refusal must name a cursor that works. `buildChanges` answers a
+ * `since` below the oldest retained seq with 409 `cursor_underflow`, and one past the head with 409
+ * `cursor_ahead_of_head` — both `{resync: true}`. `--since 0`, the form the docs show, is therefore
+ * a 409 on any tenant whose log has rotated, and 0.2.0 surfaced it as a bare "GET /api/v1/changes
+ * failed (409)" that left the customer with no way to learn a usable cursor. The head is stamped on
+ * the refusal itself, so there is always something actionable to say.
+ */
+async function readChanges(api: ReturnType<typeof apiClient>, since: string, limit: number): Promise<unknown> {
+  const resolved = since === "head" ? String(await headCursor(api)) : since;
+  // ⛔ NDJSON ON 200, JSON ON A REFUSAL — see `getNdjson`. Reading this with `getJson` turned every
+  // real success into "returned a non-JSON body" while every refusal parsed, which is why the verb
+  // looked fine: `--since 0` 409s on a rotated feed, so no 200 was ever reached to fail on.
+  const res = await api.getNdjson<Record<string, unknown>>("/api/v1/changes", {
+    query: { since: resolved, limit },
+    accept: [409],
+  });
+  const head = res.headers.get(HEAD_SEQ_HEADER);
+  if (res.status !== 409) {
+    return { since: Number(resolved), head: head === null ? null : Number(head), changes: res.body };
+  }
+  const where = head === null ? "" : ` The feed's live cursor is ${head}.`;
+  throw new CliError(
+    `cursor ${resolved} is not usable: it is either past the feed's head or no longer in the change log, which keeps only recent changes.${where} Re-run with \`--since head\` to start from now, or with a cursor the feed still holds.`,
+    "changefeed-resync",
+    1,
+    409,
+  );
+}
+
+/** The live head, read off any `/changes` response's own header — a 409 carries it too, which is
+ *  what makes this work on a tenant whose log has rotated past every cursor the caller could guess. */
+async function headCursor(api: ReturnType<typeof apiClient>): Promise<number> {
+  const probe = await api.getNdjson<unknown>("/api/v1/changes", { query: { since: "0", limit: 1 }, accept: [409] });
+  const raw = probe.headers.get(HEAD_SEQ_HEADER);
+  const head = raw === null ? Number.NaN : Number(raw);
+  if (!Number.isFinite(head)) {
+    throw new CliError(
+      `--since head needs the feed's live cursor, and this cloud did not send one (no ${HEAD_SEQ_HEADER} header). Pass an explicit --since <cursor>.`,
+      "changefeed-head-unknown",
+      1,
+    );
+  }
+  return head;
 }
 
 function needArg(rest: string[], usage: string): string {

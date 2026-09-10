@@ -424,10 +424,10 @@ describe("the package manifest", () => {
     }
   });
 
-  test("the version matches the CHANGELOG's top entry, which is 0.2.0", () => {
+  test("the version matches the CHANGELOG's top entry, which is 0.2.1", () => {
     const changelog = readFileSync(join(pkgRoot, "CHANGELOG.md"), "utf8");
     expect(changelog).toContain(`## ${manifest.version}\n`);
-    expect(changelog.indexOf("## 0.2.0")).toBe(changelog.indexOf("## "));
-    expect(manifest.version).toBe("0.2.0");
+    expect(changelog.indexOf("## 0.2.1")).toBe(changelog.indexOf("## "));
+    expect(manifest.version).toBe("0.2.1");
   });
 });

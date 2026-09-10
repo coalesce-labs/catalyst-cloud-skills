@@ -1,6 +1,6 @@
 ---
 name: run-this-project
-description:
+description: >-
   Own one Catalyst Cloud project end to end until it closes. Use when the person says "run this project for me", "own this until it ships", "keep this moving", or hands you a project id or a set of tickets to drive. Subscribes to the tenant stream for the scope through the catalyst-skills CLI, reacts to each change in the same turn, makes tickets ready and moves them to dispatch, parks what should stop, chases stalls, escalates inward, and keeps one status summary current. Writes to Linear as the app actor; never polls.
 disable-model-invocation: true
 allowed-tools: Bash(catalyst-skills:*) Bash(npx @catalyst-cloud/catalyst-skills:*)

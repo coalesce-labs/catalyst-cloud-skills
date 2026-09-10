@@ -4,7 +4,7 @@
 import { flagBool, flagString, positionals, type ParsedArgs } from "./args.js";
 import { normalizeBaseUrl, requireConfig, type Ctx } from "./config.js";
 import { loadContract } from "./contract.js";
-import { UsageError } from "./errors.js";
+import { CliError, UsageError } from "./errors.js";
 import { apiClient } from "./http.js";
 
 /** Every exclusion reason the eligibility evaluator names, in plain English. */
@@ -114,10 +114,8 @@ export async function cmdExplain(args: ParsedArgs, ctx: Ctx): Promise<number> {
   const [ticket] = positionals(args);
   if (!ticket) throw new UsageError("explain needs a ticket: explain <ticket>");
   const cfg = requireConfig(ctx);
-  if (flagBool(args, "history")) {
-    ctx.stdout(`${ticket}: per-ticket execution history is not visible to an account key yet — read it at ${normalizeBaseUrl(cfg.baseUrl)}/settings`);
-    return 0;
-  }
+  // `explain --history` is the same read as `history <ticket>`; both go to CTC-1954's route.
+  if (flagBool(args, "history")) return await cmdHistory(args, ctx, ticket);
   const { doc } = await loadContract(ctx, cfg);
   const dash = ticket.indexOf("-");
   if (dash <= 0) throw new UsageError(`"${ticket}" is not a ticket identifier (expected KEY-123)`);
@@ -136,35 +134,222 @@ export async function cmdExplain(args: ParsedArgs, ctx: Ctx): Promise<number> {
   return 0;
 }
 
+/**
+ * `running` — the fleet-wide "what is Catalyst doing right now?".
+ *
+ * ⛔ `/api/v1/lease/attributions` IS NOT A FLEET-WIDE ROUTE. It answers "who wrote this transition,
+ * holding which lease?" for ONE (ticket, phase) pair and 400s `invalid_field` without both — 0.2.0
+ * called it bare on every `running`, so the headline verb (and `whats-running.mjs`, and
+ * `snapshot.mjs`) failed for every tenant. The tenant-wide question is answered by
+ * `/fleet-activity/current` (what is executing) and `/agent-roster/current` (who is coordinating),
+ * neither of which takes coordinates. Lease attributions stay available, behind the coordinates the
+ * route requires.
+ */
 export async function cmdRunning(args: ParsedArgs, ctx: Ctx): Promise<number> {
   const cfg = requireConfig(ctx);
+  const ticket = flagString(args, "ticket");
+  const phase = flagString(args, "phase");
+  if ((ticket === undefined) !== (phase === undefined)) {
+    throw new UsageError(
+      "running: --ticket and --phase go together — lease attributions are recorded per (ticket, phase), and the route refuses either one alone",
+    );
+  }
   const api = apiClient(cfg, ctx);
-  const [activity, roster, leases] = await Promise.all([
+  const [activity, roster] = await Promise.all([
     api.getJson<unknown>("/api/v1/fleet-activity/current"),
     api.getJson<unknown>("/api/v1/agent-roster/current"),
-    api.getJson<unknown>("/api/v1/lease/attributions"),
   ]);
-  const out = { fleetActivity: activity.body, agentRoster: roster.body, leaseAttributions: leases.body };
+  const out: Record<string, unknown> = { fleetActivity: activity.body, agentRoster: roster.body };
+  if (ticket !== undefined && phase !== undefined) {
+    const leases = await api.getJson<unknown>("/api/v1/lease/attributions", { query: { ticket, phase } });
+    out.leaseAttributions = leases.body;
+  }
   if (args.json) {
     ctx.stdout(JSON.stringify(out));
     return 0;
   }
   ctx.stdout(`fleet activity: ${JSON.stringify(out.fleetActivity)}`);
   ctx.stdout(`agent roster: ${JSON.stringify(out.agentRoster)}`);
-  ctx.stdout(`lease attributions: ${JSON.stringify(out.leaseAttributions)}`);
+  if (out.leaseAttributions !== undefined) {
+    ctx.stdout(`lease attributions (${ticket} ${phase}): ${JSON.stringify(out.leaseAttributions)}`);
+  }
   return 0;
 }
 
+/**
+ * `queue` — the dispatch order. The route is per-team and REQUIRES `?team=` ("bad team", 400), but
+ * a customer asking "what is next?" rarely means one team, so an omitted `--team` reads every team
+ * the tenant contract names rather than sending a call the route will refuse.
+ */
 export async function cmdQueue(args: ParsedArgs, ctx: Ctx): Promise<number> {
   const cfg = requireConfig(ctx);
   const api = apiClient(cfg, ctx);
-  const res = await api.getJson<unknown>("/api/v1/dispatch-queue/current", { query: { team: flagString(args, "team") } });
-  ctx.stdout(args.json ? JSON.stringify(res.body) : JSON.stringify(res.body, null, 2));
+  const named = flagString(args, "team");
+  let teams: string[];
+  if (named !== undefined) {
+    teams = [named];
+  } else {
+    const { doc } = await loadContract(ctx, cfg);
+    teams = doc.teams.map((t) => t.key).filter((k): k is string => typeof k === "string" && k !== "");
+    if (teams.length === 0) {
+      throw new UsageError("queue needs --team: the tenant contract names no team to read a queue for");
+    }
+  }
+  const bodies = await Promise.all(
+    teams.map(async (team) => [team, (await api.getJson<unknown>("/api/v1/dispatch-queue/current", { query: { team } })).body] as const),
+  );
+  // One team asked for → its envelope, unwrapped, exactly as before. Several → keyed by team, so a
+  // caller can tell whose queue a row belongs to.
+  const out = bodies.length === 1 && named !== undefined ? bodies[0]![1] : Object.fromEntries(bodies);
+  ctx.stdout(args.json ? JSON.stringify(out) : JSON.stringify(out, null, 2));
   return 0;
 }
 
-export function cmdAccounts(ctx: Ctx): number {
+/** The five status words `/api/v1/coding-accounts` reports, in the words a customer reads. */
+export const ACCOUNT_STATUS: Record<string, string> = {
+  "expired-or-revoked": "expired or revoked — re-enrol it before it can take work",
+  walled: "walled — the provider's usage limit is spent for now",
+  active: "active — observed working",
+  attested: "attested — healthy at last check, no work observed since",
+  unobserved: "unobserved — enrolled, but nothing has been seen from it yet",
+};
+
+export interface CodingAccount {
+  accountSlot?: string;
+  provider?: string;
+  harness?: string | null;
+  label?: string | null;
+  status?: string;
+  walled?: boolean;
+  quarantined?: boolean;
+  quarantineReason?: string | null;
+  bindingWindow?: string | null;
+  bindingUsedPercent?: number | null;
+  bindingResetsAtMs?: number | null;
+  liveHoldsCount?: number;
+  liveHolds?: { ticket: string; phase: string; leaseDeadlineMs: number }[];
+  [k: string]: unknown;
+}
+
+/** One slot as a line a human reads: who it is, what state it is in, and what it is spending on. */
+export function renderAccount(a: CodingAccount): string {
+  const name = a.label ? `${a.accountSlot ?? "?"} (${a.label})` : (a.accountSlot ?? "?");
+  const harness = a.harness ? `/${a.harness}` : "";
+  const status = a.status ? (ACCOUNT_STATUS[a.status] ?? a.status) : "status unknown";
+  const bits = [`${name}  ${a.provider ?? "?"}${harness}  ${status}`];
+  if (typeof a.bindingUsedPercent === "number") {
+    const resets = typeof a.bindingResetsAtMs === "number" ? `, resets ${new Date(a.bindingResetsAtMs).toISOString()}` : "";
+    bits.push(`usage ${a.bindingUsedPercent}% of the ${a.bindingWindow ?? "binding"} window${resets}`);
+  }
+  if (a.quarantined) bits.push(`quarantined${a.quarantineReason ? `: ${a.quarantineReason}` : ""}`);
+  const holds = a.liveHolds ?? [];
+  if (holds.length > 0) bits.push(`holding ${holds.map((h) => `${h.ticket}/${h.phase}`).join(", ")}`);
+  else if (a.liveHoldsCount) bits.push(`${a.liveHoldsCount} live hold(s)`);
+  return bits.join("  ·  ");
+}
+
+/**
+ * ⛔ A ROUTE THIS TENANT'S CLOUD DOES NOT SERVE IS SAID OUT LOUD, never rendered as an empty success.
+ * `GET /api/v1/coding-accounts` (CTC-1953) and `GET /api/v1/issues/:id/execution` (CTC-1954) ship
+ * ahead of some tenants' deployed mirror; a 404 there means "your cloud is older than this bundle",
+ * which is a different fact from "you have no coding accounts" and must never print as the latter.
+ */
+function needsNewerCloud(what: string, cfg: { baseUrl: string }): CliError {
+  return new CliError(
+    `${what} needs a newer Catalyst Cloud than ${normalizeBaseUrl(cfg.baseUrl)} is running — the route answered 404. Nothing is wrong with your tenant; ask your operator when the mirror last deployed.`,
+    "route-not-deployed",
+    3,
+    404,
+  );
+}
+
+export async function cmdAccounts(args: ParsedArgs, ctx: Ctx): Promise<number> {
   const cfg = requireConfig(ctx);
-  ctx.stdout(`coding-account status is not visible to an account key yet — read it at ${normalizeBaseUrl(cfg.baseUrl)}/settings/coding-accounts`);
+  const api = apiClient(cfg, ctx);
+  const res = await api.getJson<{ accounts?: CodingAccount[] } | CodingAccount[]>("/api/v1/coding-accounts", {
+    accept: [404],
+  });
+  if (res.status === 404) throw needsNewerCloud("coding-account status", cfg);
+  const accounts = Array.isArray(res.body) ? res.body : (res.body?.accounts ?? []);
+  if (args.json) {
+    ctx.stdout(JSON.stringify(res.body));
+    return 0;
+  }
+  if (accounts.length === 0) {
+    ctx.stdout(`No coding accounts are enrolled on this tenant — enrol one at ${normalizeBaseUrl(cfg.baseUrl)}/settings/coding-accounts`);
+    return 0;
+  }
+  for (const a of accounts) ctx.stdout(renderAccount(a));
   return 0;
+}
+
+/**
+ * `history <ticket>` (and `explain --history`) — the ticket's execution history: per-phase attempts
+ * and outcomes, remediate rounds against the cap, the park sentinel and what releases it, the live
+ * lease, the last advance. Reads `GET /api/v1/issues/:identifier/execution` (CTC-1954).
+ */
+export async function cmdHistory(args: ParsedArgs, ctx: Ctx, ticketArg?: string): Promise<number> {
+  const ticket = ticketArg ?? positionals(args)[0];
+  if (!ticket) throw new UsageError("history needs a ticket: history <ticket>");
+  const cfg = requireConfig(ctx);
+  const api = apiClient(cfg, ctx);
+  const res = await api.getJson<TicketExecution>(`/api/v1/issues/${encodeURIComponent(ticket)}/execution`, {
+    accept: [404],
+  });
+  if (res.status === 404) throw needsNewerCloud(`execution history for ${ticket}`, cfg);
+  if (args.json) {
+    ctx.stdout(JSON.stringify(res.body));
+    return 0;
+  }
+  for (const line of renderHistory(ticket, res.body)) ctx.stdout(line);
+  return 0;
+}
+
+export interface TicketExecution {
+  ticket?: string;
+  hasLadderHistory?: boolean;
+  note?: string;
+  attemptHistory?: string;
+  phases?: { phase: string; attempt?: number; status?: string; lastFailureClass?: string | null; consecutiveFailures?: number | null }[] | null;
+  failure?: { phase: string; failureMode: string; failureDetail?: string | null; summary?: string | null; attempt?: number } | null;
+  remediate?: { roundsDispatched?: number; cap?: number } | null;
+  park?: { sentinel: string; selfReleases: boolean; releasedBy: string; phase?: string } | null;
+  lease?: { phase: string; holder: string | null; deadlineMs: number }[] | null;
+  lastAdvance?: { phase: string; toSlot?: string | null; landed?: boolean } | null;
+  unreadable?: { table: string; error: string }[];
+  [k: string]: unknown;
+}
+
+/** ⛔ `null` is UNREADABLE, never "nothing happened" — the report's own contract, kept in the prose. */
+export function renderHistory(ticket: string, doc: TicketExecution): string[] {
+  const lines: string[] = [];
+  if (doc.hasLadderHistory === false) {
+    lines.push(`${ticket}: no ladder history recorded${doc.note ? ` — ${doc.note}` : ""}.`);
+  }
+  const phases = doc.phases;
+  if (phases === null || phases === undefined) {
+    lines.push(`${ticket}: the per-phase table could not be read (unreadable, not empty).`);
+  } else {
+    lines.push(`${ticket} phases (${doc.attemptHistory ?? "latest-per-phase"}):`);
+    for (const p of phases) {
+      const fail = p.lastFailureClass ? `, last failure ${p.lastFailureClass}${p.consecutiveFailures ? ` ×${p.consecutiveFailures}` : ""}` : "";
+      lines.push(`  ${p.phase}: ${p.status ?? "?"} (attempt ${p.attempt ?? "?"})${fail}`);
+    }
+  }
+  if (doc.failure) {
+    const f = doc.failure;
+    lines.push(`Last failure: ${f.phase} — ${f.failureMode}${f.failureDetail ? ` (${f.failureDetail})` : ""}${f.summary ? `: ${f.summary}` : ""}`);
+  }
+  if (doc.remediate && typeof doc.remediate.roundsDispatched === "number") {
+    lines.push(`Remediate rounds dispatched: ${doc.remediate.roundsDispatched}${typeof doc.remediate.cap === "number" ? ` (cap ${doc.remediate.cap})` : ""}`);
+  }
+  if (doc.park) {
+    lines.push(`Parked at ${doc.park.phase ?? "?"} (${doc.park.sentinel}): ${doc.park.selfReleases ? "releases itself" : "needs an operator"} — ${doc.park.releasedBy}`);
+  }
+  for (const l of doc.lease ?? []) lines.push(`Live lease: ${l.phase} held by ${l.holder ?? "?"} until ${new Date(l.deadlineMs).toISOString()}`);
+  if (doc.lastAdvance) {
+    lines.push(`Last advance: ${doc.lastAdvance.phase} → ${doc.lastAdvance.toSlot ?? "?"} (${doc.lastAdvance.landed ? "landed" : "not landed"})`);
+  }
+  for (const u of doc.unreadable ?? []) lines.push(`Unreadable: ${u.table} (${u.error}) — absent from this report, not absent from the ticket.`);
+  return lines;
 }
