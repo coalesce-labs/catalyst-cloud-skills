@@ -1,9 +1,9 @@
-// smoke-publish.test.ts — CTC-1926's broken-publish gate: pack the REAL tarball (prepack builds
-// dist), install it into a clean directory as npm would, and run the installed `join` against a
-// fixture /me server with a redirected HOME. If any publish-facing seam breaks — prepack build,
-// bin wiring, skills/ omitted from files, dist missing — this fails before npm publish can ship it.
+// smoke-publish.test.ts — the broken-publish gate: pack the REAL tarball (prepack builds dist),
+// install it into a clean directory as npm would, and run the installed `login` against a fixture
+// /me server with a redirected HOME. If any publish-facing seam breaks — prepack build, bin wiring,
+// skills/ omitted from files, dist missing — this fails before npm publish can ship it.
 import { spawn, spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -19,6 +19,14 @@ const SMOKE_TIMEOUT = 240_000;
 let tarball: string;
 let packDir: string;
 let server: FixtureServer;
+
+// The installed CLI must run under the REAL node binary — never the bare string "node", which bun may
+// alias to itself and which would then transpile the SDK's TypeScript dependencies for us and hide
+// exactly the runtime seam this smoke exists to cover (the built-in node:sqlite engine, the
+// type-stripping loader). `process.execPath` under vitest is node; it is resolved and printed.
+const NODE = realpathSync(process.execPath);
+if (!/node/.test(NODE)) throw new Error(`smoke needs a real node binary, got ${NODE}`);
+console.log(`runtime: ${NODE} ${process.version}`);
 
 function run(cmd: string, args: string[], opts: { cwd?: string; env?: NodeJS.ProcessEnv } = {}) {
   return spawnSync(cmd, args, {
@@ -66,7 +74,7 @@ afterAll(async () => {
 });
 
 test(
-  "a clean-directory install of the packed tarball joins against a fixture /me",
+  "a clean-directory install of the packed tarball connects against a fixture /me",
   { timeout: SMOKE_TIMEOUT },
   async () => {
     const installDir = mkdtempSync(join(tmpdir(), "catalyst-skills-clean-"));
@@ -91,15 +99,16 @@ test(
     );
     expect(existsSync(binPath)).toBe(true);
 
-    const joined = await runAsync(
-      "node",
-      [binPath, "join", "--key", "fixture-key", "--base-url", server.url],
+    const connected = await runAsync(
+      NODE,
+      [binPath, "login", "--key", "fixture-key", "--base-url", server.url],
       {
         env: { ...process.env, HOME: fakeHome, CATALYST_SKILLS_HOME: fakeHome },
       },
     );
-    expect(joined.status, `join failed:\n${joined.stdout}\n${joined.stderr}`).toBe(0);
-    expect(joined.stdout).toContain(`Joined ${FIXTURE_ME_BODY.name} (${FIXTURE_ME_BODY.slug})`);
+    expect(connected.status, `login failed:\n${connected.stdout}\n${connected.stderr}`).toBe(0);
+    expect(connected.stdout).toContain(`Connected to ${FIXTURE_ME_BODY.name} (${FIXTURE_ME_BODY.slug})`);
+    expect(connected.stdout).toContain("Tenant contract 1.0.0 cached at");
 
     const configPath = join(fakeHome, ".config", "catalyst-cloud", "customer.json");
     expect(existsSync(configPath)).toBe(true);
@@ -107,16 +116,43 @@ test(
     expect(cfg.account).toBe(FIXTURE_ME_BODY.account);
     expect(cfg.key).toBe("fixture-key");
 
+    // login installs nothing; the repair verb is what proves skills/ actually shipped in the
+    // tarball, which is the publish-facing seam this test exists to catch.
+    expect(existsSync(join(fakeHome, ".claude", "skills")), "login must copy no skills").toBe(false);
+    const repaired = await runAsync(NODE, [binPath, "install"], {
+      env: { ...process.env, HOME: fakeHome, CATALYST_SKILLS_HOME: fakeHome },
+    });
+    expect(repaired.status, `install failed:\n${repaired.stdout}\n${repaired.stderr}`).toBe(0);
     const placed = readdirSync(join(fakeHome, ".claude", "skills"), { withFileTypes: true })
       .filter((e) => e.isDirectory())
       .map((e) => e.name)
       .sort();
     expect(placed).toEqual([...CUSTOMER_SKILLS]);
 
-    const status = await runAsync("node", [binPath, "status"], {
+    const status = await runAsync(NODE, [binPath, "status"], {
       env: { ...process.env, HOME: fakeHome, CATALYST_SKILLS_HOME: fakeHome },
     });
     expect(status.status).toBe(0);
     expect(status.stdout).toContain(FIXTURE_ME_BODY.name);
+
+    // The SDK dependency actually shipped: contract --help exits 0 from the installed tarball, and
+    // `ready` proves the SDK loads under plain node (the type-stripping loader over the TS-source
+    // dependencies) and names the replica as absent rather than failing on it.
+    const help = await runAsync(NODE, [binPath, "contract", "--help"], {
+      env: { ...process.env, HOME: fakeHome, CATALYST_SKILLS_HOME: fakeHome },
+    });
+    expect(help.status, help.stderr).toBe(0);
+    expect(help.stdout).toContain("--refresh");
+    const ready = await runAsync(NODE, [binPath, "ready"], {
+      env: { ...process.env, HOME: fakeHome, CATALYST_SKILLS_HOME: fakeHome },
+    });
+    expect(ready.stdout, ready.stderr).toMatch(/^ok {3}sdk: loads/m);
+    expect(ready.stdout).toMatch(/^note {2}replica: absent/m);
+    expect(ready.stdout.trim().split("\n").at(-1)).toBe("READY");
+    expect(ready.status).toBe(0);
+    const schema = await runAsync(NODE, [binPath, "replica", "schema"], {
+      env: { ...process.env, HOME: fakeHome, CATALYST_SKILLS_HOME: fakeHome },
+    });
+    expect(schema.status).toBe(3);
   },
 );

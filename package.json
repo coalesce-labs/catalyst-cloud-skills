@@ -1,7 +1,7 @@
 {
   "name": "@catalyst-cloud/catalyst-skills",
-  "version": "0.1.1",
-  "description": "Customer skill bundle for catalyst-cloud: install the concierge, steward, ask, linearis, join and setup skills from npm and join your tenant with one command. No catalyst repository checkout required.",
+  "version": "0.2.0",
+  "description": "Customer skill bundle for Catalyst Cloud: eight skills named from the executive's seat (whats-happening, what-needs-me, run-this-project, catalyst-setup, catalyst-linear, catalyst-github, how-catalyst-works, connect-me) plus the catalyst-skills CLI that reads through the Catalyst Cloud SDK, writes through the agent proxy, and connects your machine to your tenant with one command.",
   "license": "MIT",
   "type": "module",
   "publishConfig": {
@@ -16,7 +16,7 @@
     "url": "https://github.com/coalesce-labs/catalyst-cloud-skills/issues"
   },
   "engines": {
-    "node": ">=18.17"
+    "node": ">=22"
   },
   "bin": {
     "catalyst-skills": "bin/catalyst-skills.js"
@@ -30,14 +30,18 @@
     "LICENSE"
   ],
   "catalystCloud": {
-    "tenantContractRange": "0.x"
+    "tenantContractRange": "1.x"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
     "build": "tsc -p tsconfig.build.json",
     "prepack": "tsc -p tsconfig.build.json",
     "test": "vitest run",
-    "test:coverage": "vitest run --coverage"
+    "test:coverage": "vitest run --coverage",
+    "version:sync": "node scripts/sync-plugin-version.mjs"
+  },
+  "dependencies": {
+    "@catalyst-cloud/sdk": "^0.8.49"
   },
   "devDependencies": {
     "@types/node": "^26.3.0",

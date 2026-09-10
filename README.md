@@ -1,111 +1,167 @@
 # @catalyst-cloud/catalyst-skills
 
-The customer skill bundle for Catalyst Cloud (https://catalystcloud.dev). One command installs six Claude Code skills — `concierge`, `steward`, `ask`, `linearis`, `join`, and `setup` — into `~/.claude/skills` and joins your machine to your own tenant. It is for catalyst-cloud customers: every skill is plain Markdown you can read in this repository before you install it, the installer is this npm package, and the account key from your tenant admin is the only credential.
+[![skills.sh](https://skills.sh/b/coalesce-labs/catalyst-cloud-skills)](https://skills.sh/coalesce-labs/catalyst-cloud-skills)
 
-## Read the skills first
+## Install
 
-Every skill is a plain Markdown file under `skills/<name>/SKILL.md` in this repository. Read them before you install anything:
+Two ways in. The plugin installs the set as a managed bundle that updates when we ship. `npx skills` copies editable files into your project. Pick one; installing both leaves you with every skill twice.
 
-- [`skills/ask/SKILL.md`](skills/ask/SKILL.md)
-- [`skills/concierge/SKILL.md`](skills/concierge/SKILL.md)
-- [`skills/join/SKILL.md`](skills/join/SKILL.md)
-- [`skills/linearis/SKILL.md`](skills/linearis/SKILL.md)
-- [`skills/setup/SKILL.md`](skills/setup/SKILL.md)
-- [`skills/steward/SKILL.md`](skills/steward/SKILL.md)
+<details><summary><strong>Claude Code</strong></summary>
 
-## Requirements
+```
+/plugin marketplace add coalesce-labs/catalyst-cloud-skills
+/plugin install catalyst@catalyst-cloud
+```
+</details>
 
-- Claude Code 2.0 or newer, which discovers skills in `~/.claude/skills`.
-- Node 18.17 or newer (20 or newer recommended), which supplies the `npx` used below.
-- Bun 1.0 or newer, optional, only if you prefer `bunx` over `npx`.
-- An account key from your tenant admin. The key is the only tenant selector: you never type a tenant or account id.
+<details><summary><strong>Codex</strong></summary>
 
-## Install and join
-
-The recommended form passes the key as an environment variable, because a key typed into a command line lands in your shell history:
+Run this command in your project:
 
 ```sh
-CATALYST_CLOUD_TOKEN=<your-account-key> npx @catalyst-cloud/catalyst-skills join
+npx skills@latest add coalesce-labs/catalyst-cloud-skills -a codex
 ```
+</details>
 
-If you accept the shell-history trade-off, the `--key` form is equivalent:
+<details><summary><strong>Cursor</strong></summary>
+
+Run this command in your project:
 
 ```sh
-npx @catalyst-cloud/catalyst-skills join --key <your-account-key>
+npx skills@latest add coalesce-labs/catalyst-cloud-skills -a cursor
+```
+</details>
+
+<details><summary><strong>OpenCode, Amp, Windsurf and the rest</strong></summary>
+
+Run this command in your project:
+
+```sh
+npx skills@latest add coalesce-labs/catalyst-cloud-skills
 ```
 
-Or install the package globally once and run the command directly:
+The installer asks which skills to take and which agents to install them on. Add `-g` to install into your home directory instead of the project. Skills installed this way do not auto-update; run `npx skills update -y` to refresh them.
+</details>
+
+### Then connect to your tenant
+
+The skills call one CLI, and the CLI holds your credential. Install it once and connect this machine with your account key:
 
 ```sh
 npm install -g @catalyst-cloud/catalyst-skills
-CATALYST_CLOUD_TOKEN=<your-account-key> catalyst-skills join
+CATALYST_CLOUD_TOKEN=<your-account-key> catalyst-skills login
+catalyst-skills ready
 ```
 
-`bunx @catalyst-cloud/catalyst-skills join` works in place of the `npx` form. A non-default cloud is set with `CATALYST_CLOUD_BASE_URL` or `--base-url <url>`.
+Passing the key as an environment variable is the recommended form, because a key typed into a command line lands in your shell history. With no key in the environment and a terminal attached, `catalyst-skills login` prompts for it without echoing it; `--key <your-account-key>` is the third form, for a script. `npx @catalyst-cloud/catalyst-skills login` works without the global install, and `bunx` works in place of `npx`. A non-default cloud is set with `CATALYST_CLOUD_BASE_URL` or `--base-url <url>`.
 
-`join` does all of this in one run:
+That is the whole setup. Everything below explains what you just installed.
 
-1. Installs the six skills into your skills directory, `~/.claude/skills` by default (`--skills-dir <dir>` overrides it).
-2. Calls `GET /api/v1/me` on the cloud with your key, which discovers your tenant from the key alone.
-3. Writes `~/.config/catalyst-cloud/customer.json` with file mode `0600`; that file holds your key.
-4. Prints what it did: the tenant it joined (`Joined <name> (<slug>) — account <account>`), the config path and mode, the skills installed, and the tenant contract range the package pins.
+## What this is
 
-Re-running `join` after a key rotation rewrites the config. `catalyst-skills status` prints which tenant this machine is joined to; `catalyst-skills --version` prints the package version and its pinned tenant contract range.
+Eight skills that let your coding agent run your own Catalyst Cloud tenant (https://catalystcloud.dev) from your seat: what is happening, what needs you, and what to do about it. They read your tenant through the Catalyst Cloud SDK, write to it through the tenant's agent proxy, and never compose a URL or run a tool of their own; every read, write and subscription is a `catalyst-skills` verb with `--help`. Every skill is plain Markdown under `skills/<name>/SKILL.md` in this repository, and the account key from your tenant admin is the only credential.
+
+## What connecting does
+
+`login` does three things: it calls `GET /api/v1/me` with your key, which discovers your tenant from the key alone; it writes `~/.config/catalyst-cloud/customer.json` with file mode `0600`, holding your key and the absolute path of the CLI so every skill script can spawn the same binary; and it fetches the tenant contract (`GET /api/v1/agent/contract`) and caches it at `~/.config/catalyst-cloud/contract.json` with its ETag, so stage names and ids, label ids, the ask template, thresholds and the route table come from your tenant, live, and no skill restates them.
+
+`login` does not install skills; the install command above did that. Re-running `login` after a key rotation rewrites the config. `catalyst-skills status` prints which tenant this machine is connected to, `catalyst-skills ready` prints one READY or NOT READY verdict with the fix for each failure and who can apply it, and `catalyst-skills --version` prints the package version and its pinned tenant contract range.
+
+The setup skill Catalyst seeds into your repository ends by pointing at this same command. That served skill lives in the Catalyst Cloud application, not here; this is the only connect step a customer runs, and the credential is called the account key in both places.
+
+## Requirements
+
+- Node 22 or newer. The bundle uses Node's built-in SQLite module for the optional local replica, so there is no native dependency to build; if `better-sqlite3` resolves on the machine it is used instead. `catalyst-skills ready` names the exact reason when an older Node is found.
+- An account key from your tenant admin. The key is the only tenant selector: you never type a tenant or account id.
+- An agent that discovers skills. Claude Code loads the plugin; Codex, Cursor, OpenCode and the rest read the `skills/<name>/SKILL.md` files the `npx skills` installer writes.
+- Bun is optional, only if you prefer `bunx` over `npx`.
 
 ## First use
 
-Open a new Claude Code session and talk to the concierge about your own tenant — it reads the config `join` wrote. For example:
+Open a new session and ask about your own tenant. The skills read the config `login` wrote. For example:
 
-- Which tenant is this machine joined to, and who am I on it?
-- Give me a status summary of my projects this cycle.
+- What's happening? Where are we, why is that stuck, what closed, what's next?
+- What needs me?
+- Run this project for me until it closes.
+- Am I set up?
+
+## What has to be running
+
+Nothing, by default. After `login`, every read, write, ask and explanation goes to the cloud's origin-fresh API with the config file and the cached contract on disk. Two optional processes exist for people who want them:
+
+| process | needed for | what it holds on disk | lifetime |
+| --- | --- | --- | --- |
+| none | every read, write, ask and explain | `customer.json` and `contract.json` | the default after login |
+| `catalyst-skills replica start` | local SQL, cheap repeated reads, `replica sql` and `replica schema` | one SQLite file (`~/.config/catalyst-cloud/replica.db`), a writer lock with a heartbeat beside it, and a cursor row inside the database | long-running; foreground by default, `--detach` writes a pidfile beside the database and returns; `login --start-replica` does the same at the end of login |
+| `catalyst-skills watch` | a project owner reacting to its scope | one cursor file (`~/.config/catalyst-cloud/watch-cursor.json`) stamped with the tenant | lives inside the session that armed it; exits with it |
+
+The check every skill runs first is `catalyst-skills replica status`, which needs no network: is the pidfile's process alive, is the writer-lock heartbeat younger than the staleness threshold, and is the cursor non-empty. It exits `0` for fresh, `1` for present but stale, `2` for not connected, `3` for absent, and prints one line either way (`--json` for scripts). A fresh replica is used; anything else falls back to the API and the skill says so in its answer. A skill never refuses to work because the replica is down and never silently reads a stale one. `replica status --probe` compares the local cursor against the cloud's head for the honest "how far behind" number; that is the only form that touches the network. `catalyst-skills replica stop` stops a detached writer.
+
+Nothing rotates. The replica is upserts and deletes into one file, the cursor is a row, and the watch cursor is a few bytes; there is no directory of old files to clean. It is a Node process, not a service: the supported path is the plain command, and `skills/connect-me/references/keeping-the-replica-running.md` gives launchd and systemd examples for people who want the writer to survive a reboot.
 
 ## The skills
 
-| skill | purpose | file |
-| --- | --- | --- |
-| `concierge` | The one agent a human talks to on their tenant: status summaries, routing work to stewards, filing new work, and questions their tenant data answers. | [`SKILL.md`](skills/concierge/SKILL.md) |
-| `steward` | The long-running owner of one initiative or project: makes work ready and visible, watches tickets until they close, and never writes product code itself. | [`SKILL.md`](skills/steward/SKILL.md) |
-| `ask` | Records a decision request when active work is gated on a decision or action only the human can make. | [`SKILL.md`](skills/ask/SKILL.md) |
-| `linearis` | Reads and writes Linear tickets for your tenant through its catalyst-cloud mirror, with freshness-gated reads. | [`SKILL.md`](skills/linearis/SKILL.md) |
-| `join` | Joins this machine to your tenant in one step: installs the bundle and discovers the tenant from the account key. | [`SKILL.md`](skills/join/SKILL.md) |
-| `setup` | Runs readiness checks before first real use of the bundle, and confirms everything lines up right after `join`. | [`SKILL.md`](skills/setup/SKILL.md) |
+| skill | what the person says | what it does | file |
+| --- | --- | --- | --- |
+| `whats-happening` | "What's happening? Where are we? Why is that stuck? What's next?" | The desk for a tenant: reads the contract, what is running and queued, the eligibility explainer and the open asks, and answers in one reply with ticket ids. Routes work to a project owner and decisions to `what-needs-me`. | [`SKILL.md`](skills/whats-happening/SKILL.md) |
+| `what-needs-me` | "What needs me? What am I blocking?" | The human's decision inbox, ranked by what each answer releases, and the one way an agent raises a decision on their behalf: files an ask through the cloud's ask route with the tenant's own template and records the answer so the held work releases. | [`SKILL.md`](skills/what-needs-me/SKILL.md) |
+| `run-this-project` | "Run this project for me. Own it until it closes." | Single-threaded owner of one project: subscribes to the tenant stream for its scope, reacts to each change in the same turn, makes tickets ready and moves them to dispatch, parks what should stop, chases stalls, escalates inward, and keeps one status summary current. Never polls. | [`SKILL.md`](skills/run-this-project/SKILL.md) |
+| `catalyst-setup` | "Am I set up? What is missing?" | Machine readiness plus tenant readiness from the contract's per-team checks, in one verdict: what passes, what is blocked, what is merely waiting, and who can click what. Reports; never repairs. | [`SKILL.md`](skills/catalyst-setup/SKILL.md) |
+| `catalyst-linear` | "Show me the ticket, the history, what Catalyst wrote on it." | Reads a ticket with its comments, relations, labels, linked pull requests and agent sessions inline, from the replica when fresh and the API otherwise, always naming the source; writes comments, card moves, labels and new tickets as the app actor; knows what a ticket accumulates as Catalyst works it. | [`SKILL.md`](skills/catalyst-linear/SKILL.md) |
+| `catalyst-github` | "Show me the PR, the checks, the review, the queue." | A ticket's pull request with its checks, reviews and review threads; whether it is mergeable under the repository's policy; what a PR accumulates as the ticket moves (the branch, the draft, the rewrite, the force-pushes, the labels, the queue). | [`SKILL.md`](skills/catalyst-github/SKILL.md) |
+| `how-catalyst-works` | "How does this work? Why did it do that? How does it prioritise?" | The execution model as references loaded on demand: the eight-phase ladder, the eleven board slots and this team's live stage map, what happens when a phase fails, how the queue is ordered and routed, every exclusion reason, and the coding-account model. Scripts explain one ticket's eligibility in plain English. | [`SKILL.md`](skills/how-catalyst-works/SKILL.md) |
+| `connect-me` | "Connect this machine to my tenant." | Connects the machine to the tenant with the account key, caches the tenant contract, verifies, and offers to start the replica. | [`SKILL.md`](skills/connect-me/SKILL.md) |
+
+Four skills only read (`whats-happening`, `catalyst-setup`, `catalyst-github`, `how-catalyst-works`). The four that write anything (`catalyst-linear`, `what-needs-me`, `run-this-project`, `connect-me`) are marked so an agent cannot invoke them on its own; the person asks for them. Every skill declares `allowed-tools` scoped to this package's own binary, so none of them needs a blanket shell grant.
+
+## What a key cannot see yet
+
+Two facts have no tenant-facing route today, and the skills say so by name rather than guess:
+
+- Coding-account status (provider, declared and observed state, window usage, walls, quarantine). `catalyst-skills accounts` prints "not visible to an account key yet" and points at `<your cloud>/settings/coding-accounts`, where the tenant's settings page shows it.
+- Per-ticket execution history (phase attempts, remediation rounds, park state). `catalyst-skills explain --history <ticket>` prints the same kind of line and points at `<your cloud>/settings`. What a key can see is the eligibility explainer, the dispatch queue, fleet activity, agent sessions and lease attributions, which is what `explain`, `running` and `queue` read.
 
 ## Versions and origins
 
-The package pins the tenant contract range `0.x`, recorded in `package.json` under `catalystCloud.tenantContractRange`, and reports it in `--version`, `status`, and `join`. The four vendored skills (`concierge`, `steward`, `ask`, `linearis`) carry a `vendored-from:` line naming their origin, the catalyst repository's catalyst-dev plugin; `join` and `setup` are written in this repository.
+The package pins the tenant contract range `1.x`, recorded in `package.json` under `catalystCloud.tenantContractRange`, and reports it in `--version`, `status` and `login`. A tenant whose contract version falls outside that range is refused with one line naming both versions; update the bundle. Every skill carries a `vendored-from:` line naming this package as its origin; all eight are written in this repository for customer tenants.
 
 ## What it writes on your machine
 
-- Six skill directories under `~/.claude/skills/`: `ask`, `concierge`, `join`, `linearis`, `setup`, `steward`.
-- One config file, `~/.config/catalyst-cloud/customer.json`, written with mode `0600`.
+- `~/.config/catalyst-cloud/customer.json`, written with mode `0600`, holding your account key and the CLI path.
+- `~/.config/catalyst-cloud/contract.json`, the cached tenant contract.
+- Only if you start them: `~/.config/catalyst-cloud/replica.db` with its `.pid` and `.writer.lock` sidecars, and `~/.config/catalyst-cloud/watch-cursor.json`.
 
-Nothing else. Your account key goes into that one config file and nowhere else.
+The skill files themselves are written by whichever install command you ran, in that tool's own location. Your account key goes into that one config file and nowhere else.
 
 ## Updating
 
-Update the package with `npm update -g @catalyst-cloud/catalyst-skills`, or run any command against the latest publish with `npx @catalyst-cloud/catalyst-skills@latest join`. The next `catalyst-skills` run prints a one-line notice:
+A plugin install updates when we ship. Skills copied by `npx skills add` do not; run `npx skills update -y` to refresh them. Update the CLI with `npm update -g @catalyst-cloud/catalyst-skills`, or run any command against the latest publish with `npx @catalyst-cloud/catalyst-skills@latest login`. The next `catalyst-skills` run prints a one-line notice:
 
 ```
-[catalyst-skills] updated 0.1.0 → 0.2.0: <that version's CHANGELOG.md summary> · update with: npm update -g @catalyst-cloud/catalyst-skills (or: npx @catalyst-cloud/catalyst-skills@latest join)
+[catalyst-skills] updated 0.1.1 → 0.2.0: <that version's CHANGELOG.md summary> · update with: npm update -g @catalyst-cloud/catalyst-skills (or: npx @catalyst-cloud/catalyst-skills@latest login)
 ```
 
-The same run refreshes the installed skill copies to the new bundle before it records the new version, so a published skill fix reaches your machine. A skill directory you hand-edited is left alone and named in the output; `catalyst-skills install --force` replaces it. If the refresh fails, the old version stays recorded and the next command tries again and tells you to run `catalyst-skills install`.
+A `customer.json` written by an older bundle is still read unchanged; it gains the CLI path and the cached contract the next time you run `catalyst-skills login`.
 
 ## Uninstalling
 
+Remove the skills the way you installed them: `/plugin uninstall catalyst@catalyst-cloud` in Claude Code, or delete the eight directories (`catalyst-github`, `catalyst-linear`, `catalyst-setup`, `connect-me`, `how-catalyst-works`, `run-this-project`, `what-needs-me`, `whats-happening`) from wherever `npx skills add` wrote them. Then remove what the CLI wrote:
+
 ```sh
-rm -rf ~/.claude/skills/ask ~/.claude/skills/concierge ~/.claude/skills/join ~/.claude/skills/linearis ~/.claude/skills/setup ~/.claude/skills/steward
-rm ~/.config/catalyst-cloud/customer.json
+catalyst-skills replica stop
+rm -f ~/.config/catalyst-cloud/customer.json ~/.config/catalyst-cloud/contract.json ~/.config/catalyst-cloud/watch-cursor.json
+rm -f ~/.config/catalyst-cloud/replica.db ~/.config/catalyst-cloud/replica.db.pid ~/.config/catalyst-cloud/replica.db.writer.lock
+npm uninstall -g @catalyst-cloud/catalyst-skills
 ```
 
-If you joined with `--skills-dir <dir>`, remove the six directories there instead. If you installed the package globally, also run `npm uninstall -g @catalyst-cloud/catalyst-skills`.
+## If login fails
 
-## If join fails
-
-- `catalyst-skills: GET /me failed (401): credential not accepted — ask your tenant admin for a valid account key` — the key is stale or mistyped. Ask your tenant admin for a valid account key, then run `join` again.
+- `catalyst-skills: GET /me failed (401): credential not accepted — ask your tenant admin for a valid account key` — the key is stale or mistyped. Ask your tenant admin for a valid account key, then run `login` again.
 - `catalyst-skills: GET /me failed (403): account-not-operational` — the tenant is suspended. This is an admin conversation on the tenant, not a local fix.
 - `catalyst-skills: could not reach <url>: <detail>` — the machine cannot reach the cloud. The URL is named in the message; check `CATALYST_CLOUD_BASE_URL` or `--base-url`.
+- A line naming two contract versions after `Connected to` — the tenant serves a contract outside this bundle's `1.x` range. The config is written; update the bundle before using the other skills.
+- `[catalyst-skills] GET /api/v1/agent/contract refused (403): the contract needs an account key` on stderr — the key is a workstation key, which connects but cannot read the contract or the machine-only routes. Ask your tenant admin for an account key for the full set.
 
 ## License
 
-MIT — see [LICENSE](LICENSE). How to contribute and how releases happen are described in [CONTRIBUTING.md](CONTRIBUTING.md).
+MIT — see [LICENSE](LICENSE). How to contribute and how releases happen are described in [CONTRIBUTING.md](CONTRIBUTING.md). The install commands above are one canonical block kept in [`.agents/install-block.md`](.agents/install-block.md); change them there first.

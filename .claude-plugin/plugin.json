@@ -1,0 +1,18 @@
+{
+  "name": "catalyst",
+  "description": "Run your Catalyst Cloud tenant from your agent: what is happening, what needs you, and what to do about it.",
+  "version": "0.2.0",
+  "author": {
+    "name": "Coalesce Labs"
+  },
+  "skills": [
+    "./skills/catalyst-github",
+    "./skills/catalyst-linear",
+    "./skills/catalyst-setup",
+    "./skills/connect-me",
+    "./skills/how-catalyst-works",
+    "./skills/run-this-project",
+    "./skills/what-needs-me",
+    "./skills/whats-happening"
+  ]
+}

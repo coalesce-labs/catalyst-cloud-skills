@@ -1,0 +1,15 @@
+{
+  "$comment": "Stall thresholds in minutes, per workflow slot, for scope-status.mjs. This is local policy a human sets once, not a cloud value: copy this file to ~/.config/catalyst-cloud/stall-policy.json and edit it there. A ticket counts as stalled when it has sat in a slot longer than the threshold with no update and nothing running or leased on it. 'dispatch' is how long a card may wait in the dispatch column before you ask why nothing picked it up; 'pr' is how long a card may wait for merge evidence; 'default' covers any slot not named.",
+  "minutes": {
+    "dispatch": 60,
+    "intake": 60,
+    "research": 90,
+    "plan": 90,
+    "implement": 120,
+    "remediate": 120,
+    "verify": 90,
+    "review": 90,
+    "pr": 240,
+    "default": 120
+  }
+}

@@ -1,0 +1,6 @@
+interface:
+  display_name: "Catalyst Linear"
+  short_description: "Read a ticket and what Catalyst wrote on it; comment, move, label and file tickets as the app actor"
+  default_prompt: "Use $catalyst-linear to show me the ticket, its history, and what Catalyst wrote on it."
+policy:
+  allow_implicit_invocation: false

@@ -1,0 +1,6 @@
+interface:
+  display_name: "Am I set up?"
+  short_description: "Machine and tenant readiness in one verdict: what passes, what is blocked, and who can click what"
+  default_prompt: "Use $catalyst-setup to tell me whether this machine and my tenant are ready, and what is missing."
+policy:
+  allow_implicit_invocation: true

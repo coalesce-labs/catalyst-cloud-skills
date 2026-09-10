@@ -1,0 +1,77 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Catalyst status reply",
+  "description": "The one-reply shape a status answer follows. Every line names a ticket identifier; nothing in it is a guess. Fill it from scripts/snapshot.mjs and scripts/explain.mjs, then render it as prose in this order.",
+  "type": "object",
+  "required": ["asOf", "source", "inFlight", "blocked", "closed", "next"],
+  "properties": {
+    "asOf": { "type": "string", "format": "date-time", "description": "When the snapshot was taken (snapshot.takenAt)." },
+    "source": {
+      "type": "string",
+      "description": "Where the facts came from, in one clause: the API, or the replica with its cursor and heartbeat age. Copy the snapshot's source line; never omit it when the replica was stale."
+    },
+    "scope": { "type": "string", "description": "The team key or project the reply covers, when the human asked about one." },
+    "inFlight": {
+      "type": "array",
+      "description": "Tickets a phase is running on right now, or that sit mid-ladder with a live lease. One entry per ticket.",
+      "items": { "$ref": "#/$defs/line" }
+    },
+    "blocked": {
+      "type": "array",
+      "description": "Tickets nothing is offered for, each with the reason in the human's words and who or what releases it.",
+      "items": {
+        "allOf": [
+          { "$ref": "#/$defs/line" },
+          {
+            "properties": {
+              "reason": { "type": "string", "description": "The explainer's reason, translated (references/why-is-it-stuck.md)." },
+              "onWhom": { "type": "string", "description": "The human, a named role, the cloud itself, or a clock — never blank." }
+            },
+            "required": ["reason", "onWhom"]
+          }
+        ]
+      }
+    },
+    "waitingOnHuman": {
+      "type": "array",
+      "description": "Open asks, ranked by what each holds. Taken from snapshot.waitingOnHuman; the what-needs-me skill owns the detail.",
+      "items": {
+        "type": "object",
+        "required": ["ticket", "question", "holds"],
+        "properties": {
+          "ticket": { "type": "string" },
+          "question": { "type": "string" },
+          "holds": { "type": "array", "items": { "type": "string" }, "description": "Ticket identifiers the answer releases." }
+        }
+      }
+    },
+    "closed": {
+      "type": "array",
+      "description": "Tickets that reached the done slot since the window the human asked about (or since the last reply).",
+      "items": { "$ref": "#/$defs/line" }
+    },
+    "next": {
+      "type": "array",
+      "description": "What the queue will pick up next, in queue order, with the phase each will run.",
+      "items": { "$ref": "#/$defs/line" }
+    },
+    "cannotSee": {
+      "type": "array",
+      "description": "Facts the account key cannot read yet, named, with where the human can read them (the CLI prints the URL).",
+      "items": { "type": "string" }
+    }
+  },
+  "$defs": {
+    "line": {
+      "type": "object",
+      "required": ["ticket", "summary"],
+      "properties": {
+        "ticket": { "type": "string", "description": "The identifier, KEY-123 shape." },
+        "summary": { "type": "string", "description": "One clause: what it is and where it stands." },
+        "stage": { "type": "string", "description": "The stage name as the contract spells it for this team." },
+        "phase": { "type": "string", "description": "The ladder phase running or offered, when known." },
+        "age": { "type": "string", "description": "How long it has sat where it is, in human units." }
+      }
+    }
+  }
+}
