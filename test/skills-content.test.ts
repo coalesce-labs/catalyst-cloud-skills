@@ -32,15 +32,15 @@ const EIGHT = [
   "am-i-set-up",
   "catalyst-github",
   "catalyst-linear",
+  "connect-me",
   "how-catalyst-works",
-  "join",
   "run-this-project",
   "what-needs-me",
   "whats-happening",
 ] as const;
 
 /** The four skills whose scripts write something; they carry the mutating triple. */
-const MUTATING = new Set(["catalyst-linear", "what-needs-me", "run-this-project", "join"]);
+const MUTATING = new Set(["catalyst-linear", "what-needs-me", "run-this-project", "connect-me"]);
 
 function walk(dir: string): string[] {
   const out: string[] = [];
@@ -123,7 +123,10 @@ describe("the eight customer skills ship, with provenance", () => {
       const lib = readFileSync(join(skillsRoot, name, "scripts", "lib", "cli.mjs"), "utf8");
       expect(lib).toContain("customer.json");
       expect(lib).toContain("cliPath");
-      expect(lib).toContain("npx @catalyst-cloud/catalyst-skills");
+      // The fallback when no CLI path is recorded: npx, with this package as the target. Some libs
+      // build that argv from a constant, so assert the two parts rather than one joined literal.
+      expect(lib, `${name} lib must fall back to npx`).toMatch(/["']npx["']/);
+      expect(lib, `${name} lib must name this package`).toContain("@catalyst-cloud/catalyst-skills");
     });
 
     test(`${name}: the mutating triple is ${MUTATING.has(name) ? "present as a set" : "absent as a set"}`, () => {
@@ -213,7 +216,7 @@ describe("each skill's scripts spawn the catalyst-skills verbs it teaches", () =
     "catalyst-github": [/"query",\s*"pull"/, /"contract"/, /"replica",\s*"status"/],
     "catalyst-linear": [/"query",\s*"issue"/, /"query",\s*"search"/, /"write",\s*"comment"/, /"write",\s*"state"/, /"write",\s*"label"/, /"write",\s*"create"/],
     "how-catalyst-works": [/"explain"/, /"running"/, /"queue"/, /"accounts"/, /"contract",\s*"--path"/],
-    join: [/"status"/, /"contract",\s*"--path"/, /"replica",\s*"status"/],
+    "connect-me": [/"status"/, /"contract",\s*"--path"/, /"replica",\s*"status"/],
     "run-this-project": [/"watch"/, /"write",\s*"state"/, /"write",\s*"comment"/],
     "what-needs-me": [/"ask",\s*"list"/, /"ask",\s*"raise"/, /"ask",\s*"accept"/],
     "whats-happening": [/"contract"/, /"running"/, /"queue"/, /"ask",\s*"list"/, /"replica",\s*"status"/, /"explain"/],
@@ -239,7 +242,7 @@ describe("each skill's scripts spawn the catalyst-skills verbs it teaches", () =
     expect(skill("whats-happening")).toContain("catalyst-linear");
     expect(skill("whats-happening")).toContain("catalyst-github");
     expect(skill("whats-happening")).toContain("what-needs-me");
-    expect(skill("join")).toContain("am-i-set-up");
+    expect(skill("connect-me")).toContain("am-i-set-up");
     expect(skill("run-this-project")).toContain("what-needs-me");
   });
 });
@@ -248,16 +251,47 @@ describe("the install page (README) states what a customer needs, in the order t
   const readme = readFileSync(join(pkgRoot, "README.md"), "utf8");
   const contributing = readFileSync(join(pkgRoot, "CONTRIBUTING.md"), "utf8");
 
-  test("one-step install: the env-var form leads, the --key form follows, then npm install -g", () => {
-    const envForm = "CATALYST_CLOUD_TOKEN=<your-account-key> npx @catalyst-cloud/catalyst-skills join";
-    const keyForm = "npx @catalyst-cloud/catalyst-skills join --key <your-account-key>";
-    expect(readme).toContain(envForm);
-    expect(readme).toContain(keyForm);
-    expect(readme.indexOf(envForm), "a key on the command line lands in shell history; the env form must come first").toBeLessThan(
-      readme.indexOf(keyForm),
+  const installBlock = readFileSync(join(pkgRoot, ".agents", "install-block.md"), "utf8");
+
+  test("the install section leads, and it is the ecosystem's own command per tool, never ours", () => {
+    const install = readme.indexOf("\n## Install\n");
+    expect(install, "README must carry an ## Install section").toBeGreaterThan(0);
+    for (const later of ["## Connect to your tenant", "## Requirements", "## The skills"]) {
+      expect(readme.indexOf(`\n${later}\n`), `${later} must come after ## Install`).toBeGreaterThan(install);
+    }
+    for (const cmd of [
+      "/plugin marketplace add coalesce-labs/catalyst-cloud-skills",
+      "/plugin install catalyst@catalyst-cloud",
+      "npx skills@latest add coalesce-labs/catalyst-cloud-skills -a codex",
+      "npx skills@latest add coalesce-labs/catalyst-cloud-skills -a cursor",
+      "npx skills@latest add coalesce-labs/catalyst-cloud-skills",
+      "npx skills update -y",
+    ]) {
+      expect(readme, `the install block must carry ${cmd}`).toContain(cmd);
+      expect(installBlock, `.agents/install-block.md must carry ${cmd}`).toContain(cmd);
+    }
+    expect(readme, "two rails without an exclusivity sentence leave every skill installed twice").toMatch(
+      /installing both leaves you with every skill twice/i,
     );
+    expect(installBlock).toMatch(/installing both leaves you with every skill twice/i);
+    expect(readme, "the copied rail does not auto-update and the README must say so").toMatch(/do not auto-update/i);
+    expect(readme).toContain("skills.sh/b/coalesce-labs/catalyst-cloud-skills");
+  });
+
+  test("connecting is a separate step, named login, with the env form first and no install verb in the headline", () => {
+    const connect = readme.indexOf("\n## Connect to your tenant\n");
+    expect(connect).toBeGreaterThan(0);
+    const envForm = "CATALYST_CLOUD_TOKEN=<your-account-key> catalyst-skills login";
+    expect(readme).toContain(envForm);
     expect(readme).toContain("npm install -g @catalyst-cloud/catalyst-skills");
-    expect(readme).toContain("catalyst-skills login");
+    expect(readme).toContain("catalyst-skills ready");
+    expect(installBlock).toContain(envForm);
+    expect(readme.indexOf("--key <your-account-key>"), "the env form must come before the --key form").toBeGreaterThan(
+      readme.indexOf(envForm),
+    );
+    // The 0.1 verb must not lead, and `install` is a repair path that never appears as a headline step.
+    expect(readme).not.toMatch(/^.*catalyst-skills join\b/m);
+    expect(readme.indexOf("catalyst-skills install"), "install is a repair path, never part of the install headline").toBe(-1);
   });
 
   test("tenant discovery from the key alone via GET /api/v1/me; config path, mode and the contract cache stated", () => {
@@ -276,13 +310,13 @@ describe("the install page (README) states what a customer needs, in the order t
     expect(readme).not.toMatch(/marketplace add[^\n]*is how (customers|you) install/);
   });
 
-  test("states the minimum versions: Claude Code 2.0, Node 22 with its built-in SQLite, Bun optional", () => {
-    expect(readme).toMatch(/Claude Code 2\.0/);
+  test("states the minimum versions: Node 22 with its built-in SQLite, better-sqlite3 if it resolves, Bun optional", () => {
+    expect(readme).toMatch(/^## Requirements$/m);
     expect(readme).toMatch(/Node 22/);
     expect(readme).not.toMatch(/Node 18/);
     expect(readme).toMatch(/built-in SQLite/);
     expect(readme).toMatch(/better-sqlite3/);
-    expect(readme).toMatch(/Bun 1\.0/);
+    expect(readme).toMatch(/Bun is optional/);
   });
 
   test("states the pinned tenant contract range in present tense, with no internal ticket ids anywhere", () => {
@@ -298,18 +332,18 @@ describe("the install page (README) states what a customer needs, in the order t
     expect(readme).toContain("catalyst-skills replica start");
     expect(readme).toContain("--detach");
     expect(readme).toContain("catalyst-skills replica status");
-    expect(readme).toMatch(/`0` for fresh, `1` for present but stale, `2` for not joined, `3` for absent/);
+    expect(readme).toMatch(/`0` for fresh, `1` for present but stale, `2` for not connected, `3` for absent/);
     expect(readme).toContain("catalyst-skills watch");
     expect(readme).toContain("Nothing rotates");
   });
 
-  test("names what a key cannot see yet and where those facts live, and the one join", () => {
+  test("names what a key cannot see yet and where those facts live, and the one connect step", () => {
     expect(readme).toMatch(/^## What a key cannot see yet$/m);
     expect(readme).toContain("settings/coding-accounts");
     expect(readme).toContain("not visible to an account key yet");
     expect(readme).toContain("explain --history");
-    expect(readme).toMatch(/^### One join$/m);
     expect(readme).toContain("setup skill");
+    expect(readme).toContain("the only connect step a customer runs");
     expect(readme).toContain("account key");
     expect(readme).not.toMatch(/\bAPI key\b/);
   });
@@ -317,7 +351,7 @@ describe("the install page (README) states what a customer needs, in the order t
   test("documents the one-line update notice and the uninstall of everything it wrote; the publish secret lives in CONTRIBUTING", () => {
     expect(readme).toContain("[catalyst-skills] updated");
     expect(readme).toContain("npm update -g @catalyst-cloud/catalyst-skills");
-    for (const name of CUSTOMER_SKILLS) expect(readme).toContain(`~/.claude/skills/${name}`);
+    for (const name of CUSTOMER_SKILLS) expect(readme, `uninstall must name ${name}`).toContain(`\`${name}\``);
     for (const f of ["customer.json", "contract.json", "replica.db", "replica.db.pid", "replica.db.writer.lock", "watch-cursor.json"]) {
       expect(readme, `uninstall must name ${f}`).toContain(f);
     }
@@ -342,6 +376,37 @@ describe("the package manifest", () => {
     expect(existsSync(join(pkgRoot, manifest.bin["catalyst-skills"]!))).toBe(true);
     expect(manifest.engines.node).toBe(">=22");
     expect(manifest.catalystCloud?.tenantContractRange).toBe("1.x");
+  });
+
+  test("the plugin manifests make this repository its own marketplace, at the package's version", () => {
+    const marketplace = JSON.parse(readFileSync(join(pkgRoot, ".claude-plugin", "marketplace.json"), "utf8")) as {
+      name: string;
+      owner: { name: string };
+      plugins: { name: string; source: string; description?: string }[];
+    };
+    expect(marketplace.name).toBe("catalyst-cloud");
+    expect(marketplace.owner.name).toBe("Coalesce Labs");
+    expect(marketplace.plugins).toHaveLength(1);
+    expect(marketplace.plugins[0]).toMatchObject({ name: "catalyst", source: "./" });
+    expect(marketplace.plugins[0]!.description, "the gallery row needs a one-liner").toBeTruthy();
+
+    const plugin = JSON.parse(readFileSync(join(pkgRoot, ".claude-plugin", "plugin.json"), "utf8")) as {
+      name: string;
+      description: string;
+      version: string;
+      author: { name: string };
+      skills: string[];
+    };
+    expect(plugin.name).toBe("catalyst");
+    expect(plugin.author.name).toBe("Coalesce Labs");
+    expect(plugin.description).toBeTruthy();
+    // A plugin whose version never moves looks to Claude Code like a bundle that never shipped;
+    // `npm run version:sync` is what keeps these two equal, and --check fails CI on drift.
+    expect(plugin.version, "run: npm run version:sync").toBe(manifest.version);
+    expect(plugin.skills).toEqual(CUSTOMER_SKILLS.map((n) => `./skills/${n}`));
+    for (const p of plugin.skills) {
+      expect(existsSync(join(pkgRoot, p, "SKILL.md")), `${p} must exist`).toBe(true);
+    }
   });
 
   test("the version matches the CHANGELOG's top entry, which is 0.2.0", () => {

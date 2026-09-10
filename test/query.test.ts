@@ -54,7 +54,7 @@ describe("source selection", () => {
     expect(ctx.out[0]).toMatch(/^ENG-1  Todo  Title of ENG-1/);
     const c2 = makeCtx(tempHome());
     expect(await main(["query", "issues"], c2)).toBe(2);
-    expect(c2.err.join("\n")).toContain("not joined");
+    expect(c2.err.join("\n")).toContain("not connected");
   });
   test("--source forces each; forcing the replica when absent is a usage error", async () => {
     await seedJoined(home, server);

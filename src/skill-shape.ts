@@ -12,7 +12,9 @@ export const MAX_DESCRIPTION_CHARS = 1024;
 /** Strings no customer-facing skill file may contain. */
 export const FORBIDDEN_CONTENT: { name: string; re: RegExp }[] = [
   { name: "the maintainer tenant (tenant-0)", re: /tenant-0/ },
-  { name: "the private catalyst repository (coalesce-labs/catalyst)", re: /coalesce-labs\/catalyst/ },
+  // The public bundle repository is `coalesce-labs/catalyst-cloud-skills`, whose name CONTAINS the
+  // private repository's, so this one has to end at a word boundary or it bans its own README.
+  { name: "the private catalyst repository (coalesce-labs/catalyst)", re: /coalesce-labs\/catalyst(?![-\w])/ },
   { name: "the fleet thoughts repository (thoughts/)", re: /thoughts\// },
   { name: "an internal ticket id", re: /\bC[TL]C-\d+\b/ },
   { name: "a Linear CLI name (linearis)", re: /linearis/i },

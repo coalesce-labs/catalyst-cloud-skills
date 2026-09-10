@@ -1,6 +1,6 @@
-// join.test.ts — unit + flow coverage for join: tenant discovery from the key (GET /me), the 0600
-// config write with the CLI path, the cached contract, the eight-skill install, the login alias, and
-// the one-line update notice a new version prints on its next session.
+// join.test.ts — unit + flow coverage for login (and its deprecated `join` alias): tenant discovery
+// from the key (GET /me), the 0600 config write with the CLI path, the cached contract, the fact
+// that login installs no skills, and the one-line update notice a new version prints next session.
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from "vitest";
 import {
   chmodSync,
@@ -93,9 +93,9 @@ beforeAll(async () => {
 });
 
 describe("parseArgs", () => {
-  test("parses join with flags", () => {
+  test("parses login with flags", () => {
     const a = parseArgs([
-      "join",
+      "login",
       "--key",
       "k",
       "--base-url",
@@ -105,7 +105,7 @@ describe("parseArgs", () => {
       "--force",
     ]);
     expect(a).toMatchObject({
-      command: "join",
+      command: "login",
       key: "k",
       baseUrl: "http://x",
       skillsDir: "/s",
@@ -113,7 +113,7 @@ describe("parseArgs", () => {
     });
   });
   test("missing flag value is a UsageError", () => {
-    expect(() => parseArgs(["join", "--key"])).toThrow(UsageError);
+    expect(() => parseArgs(["login", "--key"])).toThrow(UsageError);
   });
   test("unknown option is a UsageError", () => {
     expect(() => parseArgs(["--wat"])).toThrow(UsageError);
@@ -124,10 +124,10 @@ describe("parseArgs", () => {
     expect(a.subcommand).toBe("issue");
     expect(a.rest).toEqual(["ABC-1"]);
     expect(a.json).toBe(true);
-    expect(parseArgs(["join", "extra"])).toMatchObject({ command: "join", subcommand: "extra", rest: [] });
+    expect(parseArgs(["login", "extra"])).toMatchObject({ command: "login", subcommand: "extra", rest: [] });
   });
-  test("a flag another verb owns is a UsageError for join", () => {
-    expect(() => parseArgs(["join", "--refresh"])).toThrow(UsageError);
+  test("a flag another verb owns is a UsageError for login", () => {
+    expect(() => parseArgs(["login", "--refresh"])).toThrow(UsageError);
   });
   test("help and version flags", () => {
     expect(parseArgs(["--help"]).help).toBe(true);
@@ -301,14 +301,14 @@ describe("installSkills", () => {
   });
 });
 
-describe("main — join", () => {
-  test("happy path: discovers the tenant from the key, installs skills, writes 0600 config", async () => {
-    const code = await main(["join", "--key", "fixture-key", "--base-url", server.url], ctx());
+describe("main — login (and the deprecated join alias)", () => {
+  test("happy path: discovers the tenant from the key and writes the 0600 config, installing no skills", async () => {
+    const code = await main(["login", "--key", "fixture-key", "--base-url", server.url], ctx());
     expect(code).toBe(0);
     expect(err).toEqual([]);
-    expect(out.join("\n")).toContain(`Joined ${FIXTURE_ME_BODY.name} (${FIXTURE_ME_BODY.slug})`);
+    expect(out.join("\n")).toContain(`Connected to ${FIXTURE_ME_BODY.name} (${FIXTURE_ME_BODY.slug})`);
     expect(out.join("\n")).toContain(FIXTURE_ME_BODY.account);
-    expect(out.join("\n")).toContain("0.x");
+    expect(out.join("\n")).toContain("1.x");
     const cfg = readConfig();
     expect(cfg).toMatchObject({
       account: "tenant-3",
@@ -316,36 +316,60 @@ describe("main — join", () => {
       baseUrl: server.url,
     });
     expect(cfg.key).toBe("fixture-key");
+    expect(cfg.cliPath, "the skill scripts spawn the CLI login recorded").toMatch(/bin\/catalyst-skills\.js$/);
     expect(statSync(configPathFor(home)).mode & 0o777).toBe(0o600);
+    // Installing is the agent's own command. A login that also copied the set would leave a plugin
+    // user with every skill twice, which is the one thing the README's install section warns about.
+    expect(out.join("\n")).not.toMatch(/Skills installed/);
     for (const name of CUSTOMER_SKILLS) {
-      expect(existsSync(join(defaultSkillsDirFor(home), name, "SKILL.md"))).toBe(true);
+      expect(existsSync(join(defaultSkillsDirFor(home), name, "SKILL.md")), `${name} must not be copied by login`).toBe(false);
     }
+  });
+  test("join is still accepted, dispatches to login, and is the same run", async () => {
+    const code = await main(["join", "--key", "fixture-key", "--base-url", server.url], ctx());
+    expect(code).toBe(0);
+    expect(out.join("\n")).toContain(`Connected to ${FIXTURE_ME_BODY.name}`);
+    expect(readConfig().account).toBe("tenant-3");
+  });
+  test("with no key and a terminal attached, login prompts for it without echo", async () => {
+    const asked: string[] = [];
+    const code = await main(["login", "--base-url", server.url], ctx(), {
+      isTty: () => true,
+      promptSecret: async (q) => {
+        asked.push(q);
+        return " fixture-key \n";
+      },
+    });
+    expect(code).toBe(0);
+    expect(asked).toHaveLength(1);
+    expect(asked[0]).toMatch(/not echoed/i);
+    expect(readConfig().key, "the prompted key is trimmed before it is stored").toBe("fixture-key");
   });
   test("key and base URL fall back to CATALYST_CLOUD_TOKEN / CATALYST_CLOUD_BASE_URL", async () => {
     const code = await main(
-      ["join"],
+      ["login"],
       ctx({ env: { CATALYST_CLOUD_TOKEN: "fixture-key", CATALYST_CLOUD_BASE_URL: server.url } }),
     );
     expect(code).toBe(0);
     expect(readConfig().baseUrl).toBe(server.url);
   });
-  test("no key anywhere is a usage error (exit 1), not a network call", async () => {
-    const code = await main(["join", "--base-url", server.url], ctx());
+  test("no key anywhere and no terminal is a usage error (exit 1), not a network call", async () => {
+    const code = await main(["login", "--base-url", server.url], ctx(), { isTty: () => false });
     expect(code).toBe(1);
     expect(err.join("\n")).toContain("CATALYST_CLOUD_TOKEN");
     expect(existsSync(configPathFor(home))).toBe(false);
   });
   test("a rejected key is exit 2 with a human-readable cause and no config", async () => {
-    const code = await main(["join", "--key", "wrong-key", "--base-url", server.url], ctx());
+    const code = await main(["login", "--key", "wrong-key", "--base-url", server.url], ctx());
     expect(code).toBe(2);
     expect(err.join("\n")).toContain("credential not accepted");
     expect(err.join("\n")).not.toContain("wrong-key");
     expect(existsSync(configPathFor(home))).toBe(false);
   });
-  test("join overwrites a corrupt config instead of refusing to repair it", async () => {
+  test("login overwrites a corrupt config instead of refusing to repair it", async () => {
     mkdirSync(join(home, ".config", "catalyst-cloud"), { recursive: true });
     writeFileSync(configPathFor(home), "{corrupt");
-    const code = await main(["join", "--key", "fixture-key", "--base-url", server.url], ctx());
+    const code = await main(["login", "--key", "fixture-key", "--base-url", server.url], ctx());
     expect(code).toBe(0);
     expect(readConfig().account).toBe("tenant-3");
   });
@@ -354,21 +378,38 @@ describe("main — join", () => {
     mkdirSync(join(home, ".config", "catalyst-cloud"), { recursive: true });
     writeFileSync(path, "{corrupt");
     chmodSync(path, 0o644);
-    const code = await main(["join", "--key", "fixture-key", "--base-url", server.url], ctx());
+    const code = await main(["login", "--key", "fixture-key", "--base-url", server.url], ctx());
     expect(code).toBe(0);
     expect(statSync(path).mode & 0o777).toBe(0o600);
     const modeLine = out.find((l) => l.startsWith("Config written to"));
     expect(modeLine).toContain("(mode 0600,");
     expect(modeLine).not.toContain("chmod it by hand");
   });
-  test("join records the skills dir it copied into, so a later update refreshes the same copies", async () => {
+  test("login records the skills dir, so a later update refreshes copies that already live there", async () => {
     const skillsDir = join(home, "elsewhere", "skills");
     const code = await main(
-      ["join", "--key", "fixture-key", "--base-url", server.url, "--skills-dir", skillsDir],
+      ["login", "--key", "fixture-key", "--base-url", server.url, "--skills-dir", skillsDir],
       ctx(),
     );
     expect(code).toBe(0);
     expect(readConfig().skillsDir).toBe(skillsDir);
+  });
+
+  test("login caches the tenant contract beside the config", async () => {
+    const code = await main(["login", "--key", "fixture-key", "--base-url", server.url], ctx());
+    expect(code).toBe(0);
+    expect(existsSync(contractPathFor(home))).toBe(true);
+    const cached = JSON.parse(readFileSync(contractPathFor(home), "utf8")) as { contractVersion: string };
+    expect(cached.contractVersion).toBe("1.0.0");
+    expect(out.join("\n")).toContain("Tenant contract 1.0.0 cached at");
+  });
+
+  test("a workstation key still connects; the contract refusal is one stderr line, not a failure", async () => {
+    const code = await main(["login", "--key", FIXTURE_USER_KEY, "--base-url", server.url], ctx());
+    expect(code).toBe(0);
+    expect(readConfig().key).toBe(FIXTURE_USER_KEY);
+    expect(err.join("\n")).toMatch(/account key/);
+    expect(existsSync(contractPathFor(home))).toBe(false);
   });
 });
 
@@ -386,9 +427,9 @@ describe("main — Tier 2 notice (a new version's next session)", () => {
     expect(code).toBe(0);
     expect(out.filter((l) => l.startsWith("[catalyst-skills]"))).toHaveLength(0);
   });
-  test("join after an update also prints the one-line notice", async () => {
+  test("login after an update also prints the one-line notice", async () => {
     saveConfig(home, seededConfig({ baseUrl: server.url }));
-    const code = await main(["join", "--key", "fixture-key", "--base-url", server.url], ctx());
+    const code = await main(["login", "--key", "fixture-key", "--base-url", server.url], ctx());
     expect(code).toBe(0);
     expect(out.filter((l) => l.startsWith("[catalyst-skills] updated"))).toHaveLength(1);
     expect(readConfig().lastSkillBundleVersion).not.toBe("0.0.9");
@@ -433,20 +474,20 @@ describe("main — Codex P2: an update refreshes the copied skills before record
     seedStaleCopies(skillsDir);
     saveConfig(home, seededConfig());
     await main(["notice"], ctx());
-    expect(readFileSync(join(skillsDir, "ask", "SKILL.md"), "utf8")).not.toContain("STALE COPY");
+    expect(readFileSync(join(skillsDir, "whats-happening", "SKILL.md"), "utf8")).not.toContain("STALE COPY");
     expect(readConfig().skillsDir).toBe(skillsDir);
   });
 
   test("a customer-authored skill dir is left alone and named; the bundle-owned ones still refresh", async () => {
     const skillsDir = defaultSkillsDirFor(home);
     seedStaleCopies(skillsDir);
-    writeFileSync(join(skillsDir, "steward", "SKILL.md"), "---\nname: steward\n---\nmine");
+    writeFileSync(join(skillsDir, "connect-me", "SKILL.md"), "---\nname: connect-me\n---\nmine");
     saveConfig(home, seededConfig());
     const code = await main(["notice"], ctx());
     expect(code).toBe(0);
-    expect(readFileSync(join(skillsDir, "steward", "SKILL.md"), "utf8")).toContain("mine");
-    expect(readFileSync(join(skillsDir, "ask", "SKILL.md"), "utf8")).not.toContain("STALE COPY");
-    expect(out.join("\n")).toContain('left "steward" alone');
+    expect(readFileSync(join(skillsDir, "connect-me", "SKILL.md"), "utf8")).toContain("mine");
+    expect(readFileSync(join(skillsDir, "whats-happening", "SKILL.md"), "utf8")).not.toContain("STALE COPY");
+    expect(out.join("\n")).toContain('left "connect-me" alone');
     expect(readConfig().lastSkillBundleVersion).not.toBe("0.0.9");
   });
 
@@ -468,48 +509,38 @@ describe("main — Codex P2: an update refreshes the copied skills before record
     const code = await main(["status"], ctx());
     expect(code).toBe(0);
     expect(out.filter((l) => l.startsWith("[catalyst-skills] updated"))).toHaveLength(0);
-    expect(readFileSync(join(skillsDir, "join", "SKILL.md"), "utf8")).not.toContain("STALE COPY");
+    expect(readFileSync(join(skillsDir, "connect-me", "SKILL.md"), "utf8")).not.toContain("STALE COPY");
     expect(readConfig().lastSkillBundleVersion).not.toBe("");
   });
 });
 
 describe("main — status / install / help / version", () => {
-  test("status before join says how to join", async () => {
+  test("status before login says how to connect, naming login and the env form", async () => {
     const code = await main(["status"], ctx());
     expect(code).toBe(0);
-    expect(out.join("\n")).toContain(`npx ${PACKAGE_NAME} join`);
+    expect(out.join("\n")).toContain(`npx ${PACKAGE_NAME} login`);
+    expect(out.join("\n")).toContain("CATALYST_CLOUD_TOKEN");
   });
-  test("status after join names the tenant and contract range", async () => {
-    await main(["join", "--key", "fixture-key", "--base-url", server.url], ctx());
+  test("status after login names the tenant and contract range", async () => {
+    await main(["login", "--key", "fixture-key", "--base-url", server.url], ctx());
     out = [];
     const code = await main(["status"], ctx());
     expect(code).toBe(0);
     expect(out.join("\n")).toContain(FIXTURE_ME_BODY.name);
-    expect(out.join("\n")).toContain("0.x");
+    expect(out.join("\n")).toContain("1.x");
   });
   test("install places skills without touching config, and names a skipped foreign dir", async () => {
     const skillsDir = join(home, "claude-skills");
-    mkdirSync(join(skillsDir, "concierge"), { recursive: true });
-    writeFileSync(join(skillsDir, "concierge", "SKILL.md"), "mine");
+    mkdirSync(join(skillsDir, "whats-happening"), { recursive: true });
+    writeFileSync(join(skillsDir, "whats-happening", "SKILL.md"), "mine");
     const code = await main(["install", "--skills-dir", skillsDir], ctx());
     expect(code).toBe(0);
     expect(out.join("\n")).toContain("Skills installed to");
-    expect(out.join("\n")).toContain('Skipped "concierge"');
+    expect(out.join("\n")).toContain('Skipped "whats-happening"');
     expect(existsSync(configPathFor(home))).toBe(false);
   });
-  test("join names a skipped foreign skill dir too", async () => {
-    const skillsDir = join(home, "claude-skills");
-    mkdirSync(join(skillsDir, "steward"), { recursive: true });
-    writeFileSync(join(skillsDir, "steward", "SKILL.md"), "mine");
-    const code = await main(
-      ["join", "--key", "fixture-key", "--base-url", server.url, "--skills-dir", skillsDir],
-      ctx(),
-    );
-    expect(code).toBe(0);
-    expect(out.join("\n")).toContain('Skipped "steward"');
-  });
   test("an empty --key value is a usage error, not an empty credential", async () => {
-    const code = await main(["join", "--key", ""], ctx());
+    const code = await main(["login", "--key", ""], ctx());
     expect(code).toBe(1);
     expect(err.join("\n")).toContain("--key requires a value");
   });
@@ -527,7 +558,7 @@ describe("main — status / install / help / version", () => {
     const code = await main(["--version"], ctx());
     expect(code).toBe(0);
     expect(out.join("\n")).toContain(PACKAGE_NAME);
-    expect(out.join("\n")).toContain("0.x");
+    expect(out.join("\n")).toContain("1.x");
   });
 });
 

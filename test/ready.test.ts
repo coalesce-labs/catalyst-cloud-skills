@@ -61,12 +61,15 @@ describe("ready", () => {
     });
     expect(report.ready).toBe(false);
     const failed = report.checks.filter((c) => !c.ok && !c.note).map((c) => c.id);
-    expect(failed).toEqual(["node", "config", "contract", "skills", "sdk"]);
+    // "skills" is a note, not a failure: the customer's own agent installs them, so a copy
+    // directory with none of ours in it is the normal plugin case.
+    expect(failed).toEqual(["node", "config", "contract", "sdk"]);
+    expect(report.checks.find((c) => c.id === "skills")).toMatchObject({ ok: true, note: true });
     for (const c of report.checks.filter((c) => !c.ok && !c.note)) {
       expect(c.fix, `${c.id} must name a fix`).toBeTruthy();
       expect(c.who, `${c.id} must name who`).toBeTruthy();
     }
-    expect(report.checks.find((c) => c.id === "config")?.fix).toContain("npx @catalyst-cloud/catalyst-skills join");
+    expect(report.checks.find((c) => c.id === "config")?.fix).toContain("npx @catalyst-cloud/catalyst-skills login");
     expect(report.checks.find((c) => c.id === "sdk")?.line).toContain("no registerHooks");
     expect(await main(["ready"], ctx)).toBe(1);
     expect(ctx.out.join("\n")).toMatch(/NOT READY$/);

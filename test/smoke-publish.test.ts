@@ -1,7 +1,7 @@
-// smoke-publish.test.ts — CTC-1926's broken-publish gate: pack the REAL tarball (prepack builds
-// dist), install it into a clean directory as npm would, and run the installed `join` against a
-// fixture /me server with a redirected HOME. If any publish-facing seam breaks — prepack build,
-// bin wiring, skills/ omitted from files, dist missing — this fails before npm publish can ship it.
+// smoke-publish.test.ts — the broken-publish gate: pack the REAL tarball (prepack builds dist),
+// install it into a clean directory as npm would, and run the installed `login` against a fixture
+// /me server with a redirected HOME. If any publish-facing seam breaks — prepack build, bin wiring,
+// skills/ omitted from files, dist missing — this fails before npm publish can ship it.
 import { spawn, spawnSync } from "node:child_process";
 import { existsSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -74,7 +74,7 @@ afterAll(async () => {
 });
 
 test(
-  "a clean-directory install of the packed tarball joins against a fixture /me",
+  "a clean-directory install of the packed tarball connects against a fixture /me",
   { timeout: SMOKE_TIMEOUT },
   async () => {
     const installDir = mkdtempSync(join(tmpdir(), "catalyst-skills-clean-"));
@@ -99,16 +99,16 @@ test(
     );
     expect(existsSync(binPath)).toBe(true);
 
-    const joined = await runAsync(
+    const connected = await runAsync(
       NODE,
-      [binPath, "join", "--key", "fixture-key", "--base-url", server.url],
+      [binPath, "login", "--key", "fixture-key", "--base-url", server.url],
       {
         env: { ...process.env, HOME: fakeHome, CATALYST_SKILLS_HOME: fakeHome },
       },
     );
-    expect(joined.status, `join failed:\n${joined.stdout}\n${joined.stderr}`).toBe(0);
-    expect(joined.stdout).toContain(`Joined ${FIXTURE_ME_BODY.name} (${FIXTURE_ME_BODY.slug})`);
-    expect(joined.stdout).toContain("Tenant contract 1.0.0 cached at");
+    expect(connected.status, `login failed:\n${connected.stdout}\n${connected.stderr}`).toBe(0);
+    expect(connected.stdout).toContain(`Connected to ${FIXTURE_ME_BODY.name} (${FIXTURE_ME_BODY.slug})`);
+    expect(connected.stdout).toContain("Tenant contract 1.0.0 cached at");
 
     const configPath = join(fakeHome, ".config", "catalyst-cloud", "customer.json");
     expect(existsSync(configPath)).toBe(true);
@@ -116,6 +116,13 @@ test(
     expect(cfg.account).toBe(FIXTURE_ME_BODY.account);
     expect(cfg.key).toBe("fixture-key");
 
+    // login installs nothing; the repair verb is what proves skills/ actually shipped in the
+    // tarball, which is the publish-facing seam this test exists to catch.
+    expect(existsSync(join(fakeHome, ".claude", "skills")), "login must copy no skills").toBe(false);
+    const repaired = await runAsync(NODE, [binPath, "install"], {
+      env: { ...process.env, HOME: fakeHome, CATALYST_SKILLS_HOME: fakeHome },
+    });
+    expect(repaired.status, `install failed:\n${repaired.stdout}\n${repaired.stderr}`).toBe(0);
     const placed = readdirSync(join(fakeHome, ".claude", "skills"), { withFileTypes: true })
       .filter((e) => e.isDirectory())
       .map((e) => e.name)

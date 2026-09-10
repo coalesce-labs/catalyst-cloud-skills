@@ -5,7 +5,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, test } from "vitest"
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { CUSTOMER_SKILLS, main, saveConfig } from "../src/cli";
-import { contractPathFor, defaultReplicaDbFor, defaultSkillsDirFor } from "../src/config";
+import { configPathFor, contractPathFor, defaultReplicaDbFor, defaultSkillsDirFor } from "../src/config";
 import { loadSdk, resetSdkCache } from "../src/sdk";
 import { installTsDepsLoader, makeHooks } from "../src/ts-deps-loader";
 import { startMeFixture, type FixtureServer } from "./fixture";
@@ -48,7 +48,7 @@ describe("dispatcher", () => {
     expect(await main(["notice"], c2)).toBe(0);
     expect(c2.out.some((l) => l.startsWith("[catalyst-skills] updated 0.0.1"))).toBe(true);
   });
-  test("status after join names the CLI path and the contract cache", async () => {
+  test("status after login names the CLI path and the contract cache", async () => {
     await seedJoined(home, server);
     expect(await main(["status"], ctx)).toBe(0);
     const text = ctx.out.join("\n");
@@ -58,15 +58,15 @@ describe("dispatcher", () => {
     await seedJoined(home2, server, { contract: false, config: { cliPath: `${home2}/gone.js` } });
     const c2 = makeCtx(home2);
     expect(await main(["status"], c2)).toBe(0);
-    expect(c2.out.join("\n")).toContain("(missing — re-run join)");
+    expect(c2.out.join("\n")).toContain("(missing — re-run login)");
     expect(c2.out.join("\n")).toContain("not cached");
   });
   test("install places the skills and names a skipped foreign dir", async () => {
     const dir = join(home, "sk");
-    mkdirSync(join(dir, "join"), { recursive: true });
-    writeFileSync(join(dir, "join", "SKILL.md"), "mine");
+    mkdirSync(join(dir, "connect-me"), { recursive: true });
+    writeFileSync(join(dir, "connect-me", "SKILL.md"), "mine");
     expect(await main(["install", "--skills-dir", dir], ctx)).toBe(0);
-    expect(ctx.out.join("\n")).toContain('Skipped "join"');
+    expect(ctx.out.join("\n")).toContain('Skipped "connect-me"');
     expect(ctx.out.join("\n")).toContain("Skills installed to");
     const allForeign = join(home, "foreign");
     for (const name of CUSTOMER_SKILLS) {
@@ -77,9 +77,9 @@ describe("dispatcher", () => {
     expect(await main(["install", "--skills-dir", allForeign], c2)).toBe(0);
     expect(c2.out.join("\n")).toContain("already had them");
   });
-  test("join --start-replica spawns the detached writer", async () => {
+  test("login --start-replica spawns the detached writer", async () => {
     const spawned: string[][] = [];
-    const code = await main(["join", "--key", "fixture-key", "--base-url", server.url, "--start-replica"], ctx, {
+    const code = await main(["login", "--key", "fixture-key", "--base-url", server.url, "--start-replica"], ctx, {
       replica: { detach: (argv) => (spawned.push(argv), { pid: process.pid }) },
     });
     expect(code).toBe(0);
@@ -89,14 +89,15 @@ describe("dispatcher", () => {
     expect(existsSync(`${defaultReplicaDbFor(home)}.pid`)).toBe(true);
     expect(ctx.out.join("\n")).toContain("replica writer started in the background");
   });
-  test("join against a contract outside the range still joins and says so on stderr", async () => {
+  test("login against a contract outside the range still connects and says so on stderr", async () => {
     server.contractVersion = "2.0.0";
-    expect(await main(["join", "--key", "fixture-key", "--base-url", server.url], ctx)).toBe(0);
+    expect(await main(["login", "--key", "fixture-key", "--base-url", server.url], ctx)).toBe(0);
     expect(ctx.err.join("\n")).toMatch(/2\.0\.0 but this bundle accepts 1\.x/);
     expect(existsSync(contractPathFor(home))).toBe(false);
-    expect(existsSync(join(defaultSkillsDirFor(home), "join", "SKILL.md"))).toBe(true);
+    // The config is still written, so the customer can update the bundle and re-read the contract.
+    expect(existsSync(configPathFor(home))).toBe(true);
   });
-  test("join keeps an existing replicaDb and tolerates a corrupt previous config", async () => {
+  test("login keeps an existing replicaDb and tolerates a corrupt previous config", async () => {
     mkdirSync(join(home, ".config", "catalyst-cloud"), { recursive: true });
     writeFileSync(join(home, ".config", "catalyst-cloud", "customer.json"), "{corrupt");
     expect(await main(["join", "--key", "fixture-key", "--base-url", server.url], ctx)).toBe(0);
