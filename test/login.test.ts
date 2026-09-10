@@ -1,4 +1,4 @@
-// join.test.ts — unit + flow coverage for login (and its deprecated `join` alias): tenant discovery
+// login.test.ts — unit + flow coverage for login (and its deprecated `join` alias): tenant discovery
 // from the key (GET /me), the 0600 config write with the CLI path, the cached contract, the fact
 // that login installs no skills, and the one-line update notice a new version prints next session.
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from "vitest";
