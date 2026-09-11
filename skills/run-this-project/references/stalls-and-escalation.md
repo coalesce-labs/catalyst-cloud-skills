@@ -40,7 +40,7 @@ Where the explainer names a reason not in this table, it prints the raw reason; 
 
 ## Capacity and fleet conditions are one note, not many asks
 
-When several tickets in scope are offered and nothing picks them up, or the explainer names a routing, slot, provider or image condition, the cause is shared: coding-account headroom, a provider outage, a paused repository, a poisoned runner image. Write one line in the status summary naming the condition and the tickets it holds. Do not file an ask per ticket. Coding-account status is not visible to an account key yet; `catalyst-skills accounts` says so and names the settings page where a human can read it, and that page, not you, is where the answer lives.
+When several tickets in scope are offered and nothing picks them up, or the explainer names a routing, slot, provider or image condition, the cause is shared: coding-account headroom, a provider outage, a paused repository, a poisoned runner image. Write one line in the status summary naming the condition and the tickets it holds. Do not file an ask per ticket. `catalyst-skills accounts` reads coding-account status (state, usage windows, walls, quarantine); enrolling, pausing or removing an account is the settings page, not you.
 
 ## Escalate inward, never outward
 

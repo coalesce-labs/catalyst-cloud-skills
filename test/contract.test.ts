@@ -98,19 +98,25 @@ describe("loadContract", () => {
     expect(await main(["contract", "--path", "nope.nothing"], c2)).toBe(2);
   });
 
-  test("a workstation key gets the account-key line", async () => {
+  test("⭐ a personal key reads and caches the contract (CTC-2076)", async () => {
     await seedJoined(home, server, { contract: false, config: { key: FIXTURE_USER_KEY } });
     const code = await main(["contract"], ctx);
-    expect(code).toBe(2);
-    expect(ctx.err.join("\n")).toMatch(/needs an account key/);
-    expect(existsSync(contractPathFor(home))).toBe(false);
+    expect(code).toBe(0);
+    expect(existsSync(contractPathFor(home))).toBe(true);
+    expect(ctx.err.join("\n")).not.toMatch(/account key/);
   });
 
-  test("join with a workstation key still succeeds and prints the contract line to stderr", async () => {
-    const code = await main(["join", "--key", FIXTURE_USER_KEY, "--base-url", server.url], ctx);
-    expect(code).toBe(0);
-    expect(ctx.err.join("\n")).toMatch(/needs an account key/);
-    expect(existsSync(contractPathFor(home))).toBe(false);
+  test("a 403 from an OLDER cloud on the contract is one named line (update the cloud), never a crash", async () => {
+    await seedJoined(home, server, { contract: false, config: { key: FIXTURE_USER_KEY } });
+    server.contractRefusesPersonalKey = true;
+    try {
+      const code = await main(["contract"], ctx);
+      expect(code).toBe(2);
+      expect(ctx.err.join("\n")).toMatch(/older than the bundle/);
+      expect(existsSync(contractPathFor(home))).toBe(false);
+    } finally {
+      server.contractRefusesPersonalKey = false;
+    }
   });
 
   test("join records cliPath and caches the contract", async () => {

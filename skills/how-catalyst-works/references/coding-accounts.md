@@ -1,6 +1,6 @@
 # Coding accounts: slots, windows, walls, and what a key cannot read yet
 
-This reference restates the model, which does not vary per tenant. Your tenant's actual accounts, their usage and their state are NOT readable with an account key today: `node scripts/whats-running.mjs --accounts` prints that by name, with the settings page where the facts live. When a tenant-facing read ships, the same script will print the live rows and this reference stays true.
+This reference restates the model, which does not vary per tenant. Your tenant's actual accounts — provider, harness, declared and observed state, usage windows, walls, quarantine — are readable with your key: `node scripts/whats-running.mjs --accounts` prints the live rows (`catalyst-skills accounts`). No credential or email ever rides in that read; the settings page (`/settings/coding-accounts`) is where an admin enrols, pauses or removes one.
 
 ## What a slot is
 
@@ -45,7 +45,7 @@ Your tenant's coding-accounts page lists each slot with a five-value status, fir
 Coding-account status (provider, declared and observed state, window percentages and resets, walls, quarantine, live holds) is served only behind the tenant's admin gate. So when a human asks "why is nothing running?":
 
 1. Run `node scripts/explain-ticket.mjs <ticket>` for a stuck ticket. `routing_unavailable` with a detail naming a slot or provider, or `no_eligible_account_slot` in the routing block, points at accounts.
-2. Say plainly that the account key cannot read account state, and give the settings link the script prints. Do not guess a wall or a quarantine from silence.
+2. Read the live rows with `catalyst-skills accounts` and say what they show; an empty list means no account is enrolled, and the script prints the settings link. Do not guess a wall or a quarantine from silence — a wall is the `walled` field, a quarantine is `quarantined` with its reason.
 3. Treat it as ONE fleet-level cause for every ticket it holds, never as a per-ticket escalation.
 
 The customer session never holds or mints a coding-account credential; phases run in the cloud on the enrolled accounts, and repository access is a per-phase installation token.

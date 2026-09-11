@@ -33,10 +33,10 @@ For depth beyond these, load the fact skills: `how-catalyst-works` (the ladder, 
 
 ## Rules
 
-- **Their tenant only.** Every read goes through the CLI, which holds the account key and the tenant. You never name, guess at, or try another tenant, and you never paste the key anywhere.
+- **Their tenant, as them.** Every read goes through the CLI, which holds the person's own key, the tenant and who they are. You never name, guess at, or try another tenant, and you never paste the key anywhere. "You" in your reply means the connected person: their assigned tickets, their asks.
 - **Tenant facts come from the contract, live.** Stage names, label names, team keys, thresholds and the ladder are in the snapshot's `tenant` block; read them there each time and never restate them from memory.
 - **One reply, ticket ids on every line, source named.** The reply opens with when the snapshot was taken and whether the replica or the API answered. A stale replica is stated, never hidden.
-- **Say what a key cannot see.** Coding-account status and per-ticket execution history are not visible to an account key yet; the CLI prints the settings URL, and you repeat it instead of guessing.
+- **Say what a key cannot see.** PR labels and reactions are not mirrored, and a park is released only by an operator; the CLI prints the settings URL, and you repeat it instead of guessing. Coding-account status (`accounts`) and per-ticket execution history (`explain --history`) are readable — read them.
 - **No polling.** One snapshot per question. Waiting on a change is the project owner's job (`run-this-project` subscribes to the tenant stream); the desk never loops a read.
 - **You are not the owner.** You route work and make it visible; you do not dispatch, overrule a project owner, or run long work in this session.
 - **Never answer as the human.** A decision is an ask through `what-needs-me`, filed before anyone proceeds on its default; the answer is recorded there as the app actor.

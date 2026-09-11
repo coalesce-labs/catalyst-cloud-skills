@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // lib/cli.mjs — the one way a skill script reaches the Catalyst Cloud SDK and API: by spawning the
 // catalyst-skills CLI this bundle installed. It reads customer.json to find that CLI and nothing
-// else; it never holds the account key itself. This file is a library — run a sibling script with
+// else; it never holds the key itself. This file is a library — run a sibling script with
 // --help for usage. Identical in every skill of this bundle on purpose (skills install one directory
 // at a time, so nothing shared outside the skill would ever be installed).
 import { spawnSync } from "node:child_process";
@@ -10,7 +10,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 export const PACKAGE = "@catalyst-cloud/catalyst-skills";
-export const CONNECT_HINT = `this machine is not connected to a tenant yet — run: CATALYST_CLOUD_TOKEN=<account key> npx ${PACKAGE} login`;
+export const CONNECT_HINT = `this machine is not connected to a tenant yet — run: CATALYST_CLOUD_TOKEN=<your personal key> npx ${PACKAGE} login`;
 
 /** ~/.config/catalyst-cloud/customer.json, honouring CATALYST_SKILLS_HOME before HOME. */
 export function configPath() {

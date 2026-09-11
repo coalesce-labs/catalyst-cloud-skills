@@ -57,7 +57,7 @@
     },
     "cannotSee": {
       "type": "array",
-      "description": "Facts the account key cannot read yet, named, with where the human can read them (the CLI prints the URL).",
+      "description": "Facts your key cannot read (PR labels and reactions; an operator-only park release), named, with where the human can read them (the CLI prints the URL).",
       "items": { "type": "string" }
     }
   },

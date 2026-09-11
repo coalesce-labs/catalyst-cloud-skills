@@ -73,7 +73,7 @@ describe("ready", () => {
     expect(report.checks.find((c) => c.id === "sdk")?.line).toContain("no registerHooks");
     expect(await main(["ready"], ctx)).toBe(1);
     expect(ctx.out.join("\n")).toMatch(/NOT READY$/);
-    expect(ctx.out.join("\n")).toMatch(/fix: CATALYST_CLOUD_TOKEN=<account key> npx/);
+    expect(ctx.out.join("\n")).toMatch(/fix: CATALYST_CLOUD_TOKEN=<your personal key> npx/);
   });
   test("a missing cliPath, an out-of-range contract, and a corrupt config each fail by name", async () => {
     await seedJoined(home, server, { config: { cliPath: `${home}/nope.js` } });

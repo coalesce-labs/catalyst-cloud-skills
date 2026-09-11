@@ -12,7 +12,7 @@ This reference restates the write mechanism. The live values it depends on — t
 | a new ticket | `node scripts/create-ticket.mjs --team <key> --title <text>` |
 | a decision for a human | not here: the `what-needs-me` skill raises an ask with options, a default and what it blocks |
 
-Each script wraps one `catalyst-skills write` verb, which posts to the route the contract names, as the tenant's app actor, with the account key this machine connected with. No script composes a URL, and none needs a Linear credential of its own.
+Each script wraps one `catalyst-skills write` verb, which posts to the route the contract names, as the tenant's app actor, with the personal key this machine connected with — so the write carries the person's identity for attribution, and an ask names them. No script composes a URL, and none needs a Linear credential of its own.
 
 ## App actor versus personal identity
 

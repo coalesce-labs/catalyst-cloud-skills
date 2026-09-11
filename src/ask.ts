@@ -2,7 +2,7 @@
 // renders the body from its own template, so this passes fields, never headings), record an answer
 // through ask-accept, and list open asks ranked by the work each one holds.
 import { flagBool, flagList, flagString, positionals, type ParsedArgs } from "./args.js";
-import { requireConfig, type Ctx } from "./config.js";
+import { requireConfig, type Ctx, type CustomerConfig } from "./config.js";
 import { loadContract, teamByKey } from "./contract.js";
 import type { TenantContract } from "./contract-types.js";
 import { UsageError } from "./errors.js";
@@ -25,7 +25,7 @@ export async function cmdAsk(args: ParsedArgs, ctx: Ctx): Promise<number> {
     case "accept":
       return accept(args, ctx, doc, api, rest);
     case "list":
-      return list(args, ctx, doc, api);
+      return list(args, ctx, doc, api, cfg);
     default:
       throw new UsageError(`unknown ask subcommand: ${sub}`);
   }
@@ -75,6 +75,26 @@ export interface RankedAsk {
   state: string;
   blocks: string[];
   score: number;
+  /** The Linear user id the ask is assigned to, when the row carries one. */
+  assigneeId: string | null;
+}
+
+/** The three answers to "whose asks?" — the CLI names which one it gave, so an empty list is never
+ *  mistaken for "nothing needs anyone". */
+export type InboxScope =
+  | { kind: "mine"; linearUserId: string; label: string }
+  | { kind: "anyone" }
+  | { kind: "unmatched"; label: string }
+  | { kind: "no-person" };
+
+/** Decide the inbox scope from the connected identity and the `--anyone` flag. A personal key with a
+ *  matched Linear identity reads "mine" by default; `--anyone` widens; an unmatched identity or a
+ *  host key cannot mean "me" and says so rather than filtering to nothing. */
+export function inboxScope(cfg: { user?: { label: string; linearUserId: string | null } }, anyone: boolean): InboxScope {
+  if (anyone) return { kind: "anyone" };
+  if (!cfg.user) return { kind: "no-person" };
+  if (!cfg.user.linearUserId) return { kind: "unmatched", label: cfg.user.label };
+  return { kind: "mine", linearUserId: cfg.user.linearUserId, label: cfg.user.label };
 }
 
 /** Rank open asks by the priority-weighted count of open tickets each one blocks. Priority 1 (urgent)
@@ -109,23 +129,31 @@ export function rankAsks(issues: Record<string, unknown>[], doc: TenantContract,
       state: String(issue.state ?? ""),
       blocks: blocked,
       score: blocked.reduce((sum, id) => sum + weight(byIdentifier.get(id)), 0),
+      assigneeId: typeof issue.assignee_id === "string" && issue.assignee_id !== "" ? issue.assignee_id : null,
     });
   }
   return out.sort((a, b) => b.score - a.score || a.identifier.localeCompare(b.identifier));
 }
 
-async function list(args: ParsedArgs, ctx: Ctx, doc: TenantContract, api: ApiClient): Promise<number> {
+async function list(args: ParsedArgs, ctx: Ctx, doc: TenantContract, api: ApiClient, cfg: CustomerConfig): Promise<number> {
   const [issuesRes, states] = await Promise.all([api.getJson<unknown>("/api/v1/issues", { query: { limit: 500 } }), fetchWorkflowStates(api)]);
   const issues = rowsOf(issuesRes.body);
   const terminal = new Set(states.filter((s) => ["completed", "canceled", "cancelled"].includes(s.type.toLowerCase())).map((s) => s.name.toLowerCase()));
   const openState = (issue: Record<string, unknown>) => !terminal.has(String(issue.state ?? "").toLowerCase());
-  const ranked = rankAsks(issues, doc, openState);
+  const all = rankAsks(issues, doc, openState);
+  const scope = inboxScope(cfg, flagBool(args, "anyone"));
+  const ranked = scope.kind === "mine" ? all.filter((a) => a.assigneeId === scope.linearUserId) : all;
   if (args.json) {
-    ctx.stdout(JSON.stringify(ranked));
+    ctx.stdout(JSON.stringify({ scope, asks: ranked }));
     return 0;
   }
+  if (scope.kind === "unmatched") {
+    ctx.stderr(`[catalyst-skills] your Linear identity is not matched yet (an admin matches it in Settings → Members), so this is every open ask, not only yours`);
+  } else if (scope.kind === "no-person") {
+    ctx.stderr(`[catalyst-skills] connected with the tenant's account key, which names no person — this is every open ask; log in with your personal key to see only yours`);
+  }
   if (ranked.length === 0) {
-    ctx.stdout("no open asks");
+    ctx.stdout(scope.kind === "mine" ? `no open asks assigned to ${scope.label} (${all.length} open in the tenant — add --anyone to see them)` : "no open asks");
     return 0;
   }
   for (const a of ranked) ctx.stdout(`${a.identifier}  holds ${a.blocks.length} ticket${a.blocks.length === 1 ? "" : "s"} (weight ${a.score})${a.blocks.length ? `: ${a.blocks.join(", ")}` : ""}  ${a.title}`);

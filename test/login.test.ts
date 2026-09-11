@@ -40,7 +40,7 @@ import {
   type CustomerConfig,
   type Ctx,
 } from "../src/cli";
-import { FIXTURE_ME_BODY, FIXTURE_USER_KEY, startMeFixture, type FixtureServer } from "./fixture";
+import { FIXTURE_ME_BODY, FIXTURE_ME_USER, FIXTURE_USER_KEY, startMeFixture, type FixtureServer } from "./fixture";
 
 let home: string;
 let out: string[];
@@ -302,20 +302,22 @@ describe("installSkills", () => {
 });
 
 describe("main — login (and the deprecated join alias)", () => {
-  test("happy path: discovers the tenant from the key and writes the 0600 config, installing no skills", async () => {
-    const code = await main(["login", "--key", "fixture-key", "--base-url", server.url], ctx());
+  test("happy path: a personal key discovers the tenant AND the person, writes the 0600 config, installs no skills", async () => {
+    const code = await main(["login", "--key", FIXTURE_USER_KEY, "--base-url", server.url], ctx());
     expect(code).toBe(0);
     expect(err).toEqual([]);
     expect(out.join("\n")).toContain(`Connected to ${FIXTURE_ME_BODY.name} (${FIXTURE_ME_BODY.slug})`);
     expect(out.join("\n")).toContain(FIXTURE_ME_BODY.account);
+    expect(out.join("\n")).toContain(`Connected as ${FIXTURE_ME_USER.label} (${FIXTURE_ME_USER.role})`);
     expect(out.join("\n")).toContain("1.x");
     const cfg = readConfig();
     expect(cfg).toMatchObject({
       account: "tenant-3",
       slug: "hagale-technologies",
       baseUrl: server.url,
+      user: FIXTURE_ME_USER,
     });
-    expect(cfg.key).toBe("fixture-key");
+    expect(cfg.key).toBe(FIXTURE_USER_KEY);
     expect(cfg.cliPath, "the skill scripts spawn the CLI login recorded").toMatch(/bin\/catalyst-skills\.js$/);
     expect(statSync(configPathFor(home)).mode & 0o777).toBe(0o600);
     // Installing is the agent's own command. A login that also copied the set would leave a plugin
@@ -404,12 +406,28 @@ describe("main — login (and the deprecated join alias)", () => {
     expect(out.join("\n")).toContain("Tenant contract 1.0.0 cached at");
   });
 
-  test("a workstation key still connects; the contract refusal is one stderr line, not a failure", async () => {
-    const code = await main(["login", "--key", FIXTURE_USER_KEY, "--base-url", server.url], ctx());
+  test("the tenant's account key still connects, but says it names no person and points at a personal key", async () => {
+    const code = await main(["login", "--key", "fixture-key", "--base-url", server.url], ctx());
     expect(code).toBe(0);
-    expect(readConfig().key).toBe(FIXTURE_USER_KEY);
-    expect(err.join("\n")).toMatch(/account key/);
-    expect(existsSync(contractPathFor(home))).toBe(false);
+    expect(readConfig().key).toBe("fixture-key");
+    expect(readConfig().user).toBeUndefined();
+    expect(err.join("\n")).toMatch(/account key \(a host credential\)/);
+    expect(err.join("\n")).toMatch(/Settings → API keys/);
+    expect(out.join("\n")).not.toContain("Connected as");
+    // The contract is still cached: since CTC-2076 nothing a person reads is refused by class.
+    expect(existsSync(contractPathFor(home))).toBe(true);
+  });
+
+  test("a personal key whose Linear identity is unmatched says so on login and still connects", async () => {
+    server.meUser = { ...FIXTURE_ME_USER, linearUserId: null };
+    try {
+      const code = await main(["login", "--key", FIXTURE_USER_KEY, "--base-url", server.url], ctx());
+      expect(code).toBe(0);
+      expect(out.join("\n")).toMatch(/Connected as Tony \(admin\) — your Linear identity is not matched yet/);
+      expect(readConfig().user?.linearUserId).toBeNull();
+    } finally {
+      server.meUser = undefined;
+    }
   });
 });
 

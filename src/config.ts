@@ -9,12 +9,24 @@ export const PACKAGE_NAME = "@catalyst-cloud/catalyst-skills";
 export const DEFAULT_BASE_URL = "https://staging.catalystcloud.dev";
 export const CONFIG_MODE = 0o600;
 
+/** The person behind a personal key (`ctc_user_`), as `GET /api/v1/me` names them. Absent for an
+ *  account (host) key. `linearUserId` is the resolved Linear identity or `null` when the tenant has
+ *  not matched it yet — it is what "what needs me" filters on, so it is never guessed. */
+export interface MeUser {
+  id: string;
+  label: string;
+  email: string | null;
+  role: "owner" | "admin" | "member";
+  linearUserId: string | null;
+}
+
 export interface MeIdentity {
   account: string;
   slug: string;
   name: string;
   permissions: string[] | null;
   principal: "service" | "session";
+  user?: MeUser;
 }
 
 export interface CustomerConfig {
@@ -25,6 +37,9 @@ export interface CustomerConfig {
   name: string;
   permissions: string[] | null;
   principal: "service" | "session";
+  /** Who this machine is connected AS. Present when the key is a personal key; a config written by
+   *  an older bundle, or with an account (host) key, has none. */
+  user?: MeUser;
   joinedAt: string;
   lastSkillBundleVersion: string;
   /** Where a copy this package made lives. Kept for back-compat: 0.2 no longer copies skills on
@@ -115,7 +130,7 @@ export function requireConfig(ctx: Ctx): CustomerConfig {
   const cfg = loadConfig(ctx.home);
   if (!cfg) {
     throw new CliError(
-      `not connected yet — run: CATALYST_CLOUD_TOKEN=<account key> npx ${PACKAGE_NAME} login`,
+      `not connected yet — run: CATALYST_CLOUD_TOKEN=<your personal key> npx ${PACKAGE_NAME} login`,
       "not-configured",
     );
   }

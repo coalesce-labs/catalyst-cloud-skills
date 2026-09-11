@@ -23,10 +23,10 @@ You answer one question with one verdict and one list. The verdict is READY or N
 
 ## Rules
 
-- Report, never repair. No tenant-reachable repair verb exists for an account key yet; the settings page is where a tenant owner or admin fixes a mapping, a connection or a label, and you say which one.
+- Report, never repair. No tenant-reachable repair verb exists for a key yet; the settings page is where a tenant owner or admin fixes a mapping, a connection or a label, and you say which one.
 - End every answer with the verdict and the who-can-click-what list, in that order.
 - A stale or absent replica is a note, never a failure: every skill reads the API meanwhile and says so. Do not tell the person to start it unless they want local SQL or cheaper repeated reads.
-- Not connected (exit 2) means the connect step, not a retry: `CATALYST_CLOUD_TOKEN=<account key> npx @catalyst-cloud/catalyst-skills login`, with the key from their tenant admin. Never guess a tenant; the key is the only selector.
+- Not connected (exit 2) means the connect step, not a retry: `CATALYST_CLOUD_TOKEN=<your personal key> npx @catalyst-cloud/catalyst-skills login`, with the person's own key from Settings → API keys. Never guess a tenant; the key is the only selector.
 - Waiting is not failing. "No write observed", "no delivery observed" and "no host connected" clear themselves the first time the thing happens; say that instead of raising them.
 - Unknown is not a pass. A check the engine could not run is reported as such, never rounded up.
 - Never run a check in a loop. If the person wants to know when a waiting check clears, that is the project-running skill's watch.

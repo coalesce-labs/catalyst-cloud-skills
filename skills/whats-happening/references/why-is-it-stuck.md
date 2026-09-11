@@ -38,7 +38,7 @@ This reference restates an invariant: the vocabulary the cloud's eligibility exp
 
 | reason | what it means | note |
 | -- | -- | -- |
-| `cooling_down` (parked after repeated failures, or the round cap was spent) | the phase is parked and does not release itself | an operator unparks it; an account key has no unpark verb yet, so the reply names the park and the settings page |
+| `cooling_down` (parked after repeated failures, or the round cap was spent) | the phase is parked and does not release itself | an operator unparks it; your key has no unpark verb, so the reply names the park (from `explain --history`) and the settings page |
 | `remediate_parked` | the repair phase itself is parked, so the failing phase has nowhere to be repaired | as above |
 | `validate_class_spent` | this validate failure already spent its one repair round in this episode | as above; a human comment may release the hold |
 | `no_branch_to_remediate` / `branch_missing` / `branch_gone` | a branch-dependent phase has no branch to clone | the cloud releases missing-branch parks on its own budget; a deleted branch needs a human to decide |

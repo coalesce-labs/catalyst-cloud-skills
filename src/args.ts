@@ -31,7 +31,7 @@ export interface FlagSpec {
 export type FlagTable = Record<string, FlagSpec>;
 
 const GLOBAL_FLAGS: FlagTable = {
-  key: { value: true, help: "account key (or CATALYST_CLOUD_TOKEN)" },
+  key: { value: true, help: "your personal key (or CATALYST_CLOUD_TOKEN)" },
   "base-url": { value: true, help: "Catalyst Cloud origin (or CATALYST_CLOUD_BASE_URL)" },
   "skills-dir": { value: true, help: "where the skills are copied (default ~/.claude/skills)" },
   force: { value: false, help: "replace a skill directory this package did not install" },
@@ -114,6 +114,7 @@ export const FLAG_TABLES: Record<string, FlagTable> = {
     default: { value: true, help: "raise: the default if silent" },
     blocks: { value: true, repeat: true, help: "raise: a ticket this decision blocks (repeatable)" },
     "nothing-to-block": { value: false, help: "raise: declare that nothing is blocked" },
+    anyone: { value: false, help: "list: every open ask in the tenant, not only the ones assigned to you" },
     "ask-key": { value: true, help: "raise: idempotency key" },
     answer: { value: true, help: "accept: the answering comment id" },
     role: { value: true, help: "accept: the role recording the answer" },
@@ -140,7 +141,7 @@ export const VERB_USAGE: Record<string, string> = {
   watch: "watch [--team K] [--ticket T]... [--project P] [--exec CMD] [--cursor-file <path>] [--from cursor|head]",
   write:
     "write <comment <ticket> --body|--stdin [--parent] [--bookkeeping] [--as-user] | state <ticket> --slot|--state-id|--state-type | label <ticket> --add... --remove... | create --team --title [--label] [--priority] | reaction <ticket>|--comment <id> --emoji <e> | attachment <ticket> --title --url | session <ticket> [--title] [--plan-file] [--activity]>",
-  ask: "ask <raise --team --title [--context] [--option]... [--default] --blocks <ticket>...|--nothing-to-block [--ask-key] | accept <askTicket> --answer <commentId> --role <role> | list [--json]>",
+  ask: "ask <raise --team --title [--context] [--option]... [--default] --blocks <ticket>...|--nothing-to-block [--ask-key] | accept <askTicket> --answer <commentId> --role <role> | list [--anyone] [--json]>",
   ready: "ready [--json]",
   accounts: "accounts [--json]",
 };

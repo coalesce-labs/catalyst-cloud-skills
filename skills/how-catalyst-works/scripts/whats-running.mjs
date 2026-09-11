@@ -9,8 +9,7 @@ Prints what is executing on your tenant. Wraps: catalyst-skills running, queue, 
 
   --queue        also print the dispatch queue (what runs next, in order)
   --team <key>   with --queue: one team's queue
-  --accounts     also print the coding-account line (today: where to read it, since an account key
-                 cannot see coding-account status yet)
+  --accounts     also print the coding-account line (provider, state, windows — never a credential)
   --json         one JSON document: { running, queue?, accounts? }
   --help         this text
 

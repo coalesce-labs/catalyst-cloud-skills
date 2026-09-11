@@ -1,7 +1,7 @@
 // http.ts — the thin authenticated fetch every read outside the replica and every write goes through.
 // One bearer, one 15s timeout, three error kinds (http | network | shape), and the four status lines a
 // customer will actually see: 401, 403, 429 (the write budget), and everything else with its reason.
-import type { Ctx, CustomerConfig } from "./config.js";
+import type { Ctx, CustomerConfig, MeIdentity, MeUser } from "./config.js";
 import { normalizeBaseUrl } from "./config.js";
 import { CliError, MeError } from "./errors.js";
 
@@ -123,7 +123,7 @@ export class ApiClient {
     }
     if (res.status === 401) {
       throw new CliError(
-        `${what} failed (401): credential not accepted — ask your tenant admin for a valid account key`,
+        `${what} failed (401): credential not accepted — mint a personal key at Settings → API keys and log in again`,
         "unauthorized",
         2,
         401,
@@ -131,7 +131,7 @@ export class ApiClient {
     }
     if (res.status === 403) {
       throw new CliError(
-        `${what} failed (403): this key may not reach that route${reason ? ` (${reason})` : ""} — a machine-gated route needs an account key (ctc_acct_…), not a workstation key`,
+        `${what} failed (403): this key may not reach that route${reason ? ` (${reason})` : ""} — a route that acts as a host (claiming work, publishing artifacts) needs the tenant's account key; every read and write a person makes takes your personal key`,
         "forbidden",
         2,
         403,
@@ -161,7 +161,7 @@ export async function fetchMe(
   key: string,
   fetchImpl: typeof fetch,
   timeoutMs = REQUEST_TIMEOUT_MS,
-): Promise<{ account: string; slug: string; name: string; permissions: string[] | null; principal: "service" | "session" }> {
+): Promise<MeIdentity> {
   const url = `${normalizeBaseUrl(baseUrl)}/api/v1/me`;
   let res: Response;
   try {
@@ -182,11 +182,18 @@ export async function fetchMe(
     }
     const detail =
       res.status === 401
-        ? "credential not accepted — ask your tenant admin for a valid account key"
+        ? "credential not accepted — mint a personal key at Settings → API keys and log in again"
         : reason || `HTTP ${res.status}`;
     throw new MeError(`GET /me failed (${res.status}): ${detail}`, "http", res.status);
   }
-  let body: Partial<{ account: string; slug: string; name: string; permissions: string[] | null; principal: string }>;
+  let body: Partial<{
+    account: string;
+    slug: string;
+    name: string;
+    permissions: string[] | null;
+    principal: string;
+    user: unknown;
+  }>;
   try {
     body = (await res.json()) as typeof body;
   } catch {
@@ -201,11 +208,31 @@ export async function fetchMe(
   ) {
     throw new MeError("GET /me returned an unexpected shape", "shape");
   }
+  const user = parseMeUser(body.user);
   return {
     account: body.account,
     slug: body.slug,
     name: body.name,
     permissions: body.permissions as string[] | null,
     principal: body.principal,
+    ...(user ? { user } : {}),
   };
+}
+
+/** The `user` block a personal key gets from /me. Absent (undefined) is "a host key, no person";
+ *  present-but-malformed is a shape error like any other field, never silently dropped. */
+function parseMeUser(raw: unknown): MeUser | undefined {
+  if (raw === undefined) return undefined;
+  if (typeof raw !== "object" || raw === null) throw new MeError("GET /me returned an unexpected user shape", "shape");
+  const u = raw as Record<string, unknown>;
+  if (
+    typeof u.id !== "string" ||
+    typeof u.label !== "string" ||
+    (u.email !== null && typeof u.email !== "string") ||
+    (u.role !== "owner" && u.role !== "admin" && u.role !== "member") ||
+    (u.linearUserId !== null && typeof u.linearUserId !== "string")
+  ) {
+    throw new MeError("GET /me returned an unexpected user shape", "shape");
+  }
+  return { id: u.id, label: u.label, email: u.email as string | null, role: u.role, linearUserId: u.linearUserId as string | null };
 }

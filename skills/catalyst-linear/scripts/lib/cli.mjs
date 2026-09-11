@@ -8,7 +8,7 @@ import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 
 export const PACKAGE = "@catalyst-cloud/catalyst-skills";
-export const CONNECT_HINT = `CATALYST_CLOUD_TOKEN=<account key> npx ${PACKAGE} login`;
+export const CONNECT_HINT = `CATALYST_CLOUD_TOKEN=<your personal key> npx ${PACKAGE} login`;
 
 /** ~/.config/catalyst-cloud/customer.json, honouring CATALYST_SKILLS_HOME (used by tests) over HOME. */
 export function configPath() {
