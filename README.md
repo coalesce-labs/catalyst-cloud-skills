@@ -2,7 +2,9 @@
 
 [![skills.sh](https://skills.sh/b/coalesce-labs/catalyst-cloud-skills)](https://skills.sh/coalesce-labs/catalyst-cloud-skills)
 
-## Start here: paste one sentence into your coding agent
+## Install
+
+Start by pasting one sentence into the coding agent you already use:
 
 ```
 Help me understand and set up Catalyst Cloud. Read https://staging.catalystcloud.dev/agent-guide.md first, then walk me through it step by step.
@@ -10,9 +12,7 @@ Help me understand and set up Catalyst Cloud. Read https://staging.catalystcloud
 
 Your agent reads the guide, explains Catalyst Cloud in terms of your own repositories and tickets, finds out where it is running and what is already installed, and does the setup below itself — asking once before it writes to your machine. Everything else on this page is the reference it follows.
 
-## Install
-
-One command, for every coding agent on the machine:
+Or by hand. One command, for every coding agent on the machine:
 
 ```sh
 npx skills@latest add coalesce-labs/catalyst-cloud-skills --all
