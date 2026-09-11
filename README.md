@@ -2,11 +2,27 @@
 
 [![skills.sh](https://skills.sh/b/coalesce-labs/catalyst-cloud-skills)](https://skills.sh/coalesce-labs/catalyst-cloud-skills)
 
+## Start here: paste one sentence into your coding agent
+
+```
+Help me understand and set up Catalyst Cloud. Read https://staging.catalystcloud.dev/agent-guide.md first, then walk me through it step by step.
+```
+
+Your agent reads the guide, explains Catalyst Cloud in terms of your own repositories and tickets, finds out where it is running and what is already installed, and does the setup below itself — asking once before it writes to your machine. Everything else on this page is the reference it follows.
+
 ## Install
 
-Two ways in. The plugin installs the set as a managed bundle that updates when we ship. `npx skills` copies editable files into your project. Pick one; installing both leaves you with every skill twice.
+One command, for every coding agent on the machine:
 
-<details><summary><strong>Claude Code</strong></summary>
+```sh
+npx skills@latest add coalesce-labs/catalyst-cloud-skills --all
+```
+
+It installs all eight skills for each agent it detects (Claude Code, Codex, Cursor, OpenCode and the rest). Add `-g` to install into your home directory instead of the project. Skills installed this way do not auto-update; run `npx skills update -y` to refresh them.
+
+<details><summary><strong>Alternative for Claude Code: the plugin marketplace</strong></summary>
+
+The plugin installs the set as a managed bundle that updates when we ship. It needs a GitHub SSH key, and it does not load into the session you are already in — run `/reload-plugins` or restart afterwards. Pick one rail; installing both leaves you with every skill twice.
 
 ```
 /plugin marketplace add coalesce-labs/catalyst-cloud-skills
@@ -14,33 +30,27 @@ Two ways in. The plugin installs the set as a managed bundle that updates when w
 ```
 </details>
 
-<details><summary><strong>Codex</strong></summary>
+<details><summary><strong>One agent at a time</strong></summary>
 
-Run this command in your project:
+Codex:
 
 ```sh
 npx skills@latest add coalesce-labs/catalyst-cloud-skills -a codex
 ```
-</details>
 
-<details><summary><strong>Cursor</strong></summary>
-
-Run this command in your project:
+Cursor:
 
 ```sh
 npx skills@latest add coalesce-labs/catalyst-cloud-skills -a cursor
 ```
-</details>
 
-<details><summary><strong>OpenCode, Amp, Windsurf and the rest</strong></summary>
-
-Run this command in your project:
+OpenCode, Amp, Windsurf and the rest:
 
 ```sh
 npx skills@latest add coalesce-labs/catalyst-cloud-skills
 ```
 
-The installer asks which skills to take and which agents to install them on. Add `-g` to install into your home directory instead of the project. Skills installed this way do not auto-update; run `npx skills update -y` to refresh them.
+Without `--all` the installer asks which skills to take and which agents to install them on.
 </details>
 
 ### Then connect to your tenant
@@ -59,7 +69,7 @@ That is the whole setup. Everything below explains what you just installed.
 
 ## What this is
 
-Eight skills that let your coding agent run your own Catalyst Cloud tenant (https://catalystcloud.dev) from your seat: what is happening, what needs you, and what to do about it. They read your tenant through the Catalyst Cloud SDK, write to it through the tenant's agent proxy, and never compose a URL or run a tool of their own; every read, write and subscription is a `catalyst-skills` verb with `--help`. Every skill is plain Markdown under `skills/<name>/SKILL.md` in this repository, and the account key from your tenant admin is the only credential.
+Eight skills that let your coding agent run your own Catalyst Cloud tenant (https://staging.catalystcloud.dev) from your seat: what is happening, what needs you, and what to do about it. They read your tenant through the Catalyst Cloud SDK, write to it through the tenant's agent proxy, and never compose a URL or run a tool of their own; every read, write and subscription is a `catalyst-skills` verb with `--help`. Every skill is plain Markdown under `skills/<name>/SKILL.md` in this repository, and the account key from your tenant admin is the only credential.
 
 ## What connecting does
 
