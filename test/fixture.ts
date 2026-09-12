@@ -69,6 +69,11 @@ export interface OauthFixture {
   /** Answer the device grant with `access_denied` / `expired_token` instead of a token. */
   denied: boolean;
   expired: boolean;
+  /** `expires_in` the device-authorize response advertises (the poll's own deadline). Default 300. */
+  deviceExpiresIn: number;
+  /** Answer the first N device-code polls with this transient status (408/429/5xx) — retried, not fatal. */
+  pollTransientStatus: number | null;
+  pollTransientTimes: number;
   /** Answer a refresh with `invalid_grant` (revoked / inactive session). */
   refreshInvalidGrant: boolean;
   /** Answer the first N refreshes with this status (429/5xx) before rotating. */
@@ -374,6 +379,9 @@ export async function startMeFixture(
       slowDownOnce: false,
       denied: false,
       expired: false,
+      deviceExpiresIn: 300,
+      pollTransientStatus: null,
+      pollTransientTimes: 0,
       refreshInvalidGrant: false,
       refreshFailStatus: null,
       refreshFailTimes: 0,
@@ -458,7 +466,7 @@ export async function startMeFixture(
         user_code: "WXYZ-1234",
         verification_uri: `${state.url}/activate`,
         verification_uri_complete: `${state.url}/activate?user_code=WXYZ-1234`,
-        expires_in: 300,
+        expires_in: o.deviceExpiresIn,
         interval: 5,
       });
     }
@@ -477,7 +485,12 @@ export async function startMeFixture(
         const rotated = o.refreshEchoesToken ? (o.lastRefreshToken ?? `refresh-${o.refreshCount + 1}`) : `refresh-${o.refreshCount + 1}`;
         return send(200, { access_token: mintJwt(), refresh_token: rotated, token_type: "Bearer" });
       }
-      // device_code grant
+      // device_code grant. Transient failures are answered FIRST and do NOT advance the pending
+      // countdown — the bundle must retry them, not exit.
+      if (o.pollTransientStatus !== null && o.pollTransientTimes > 0) {
+        o.pollTransientTimes -= 1;
+        return send(o.pollTransientStatus, { error: "server_error" });
+      }
       o.tokenPollCount += 1;
       if (o.denied) return send(400, { error: "access_denied", error_description: "the request was denied" });
       if (o.expired) return send(400, { error: "expired_token", error_description: "the device code expired" });

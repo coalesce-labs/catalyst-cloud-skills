@@ -3,7 +3,7 @@
 // silently. The bundle only ever DECODES the access token (for its `exp`/`sid`); the cloud verifies
 // it. Public-client throughout: the refresh carries `client_id` and NEVER a `client_secret`.
 import type { AuthStrategy } from "@catalyst-cloud/sdk/node";
-import { discoveryCachePathFor, normalizeBaseUrl, writeConfig, type Ctx, type CustomerConfig, type OauthAuth } from "./config.js";
+import { discoveryCachePathFor, loadConfig, normalizeBaseUrl, writeConfig, type Ctx, type CustomerConfig, type OauthAuth } from "./config.js";
 import { CliError } from "./errors.js";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 
@@ -34,6 +34,7 @@ const DISCOVERY_TTL_MS = 60 * 60_000;
 const REFRESH_SKEW_MS = 60_000;
 const REQUEST_TIMEOUT_MS = 15_000;
 const SLOW_DOWN_BUMP_MS = 5_000;
+const MAX_POLL_BACKOFF_MS = 30_000;
 const REFRESH_MAX_ATTEMPTS = 4;
 const REFRESH_BASE_BACKOFF_MS = 500;
 
@@ -141,17 +142,36 @@ export async function deviceFlowLogin(ctx: Ctx, baseUrl: string, deps: DeviceFlo
   }
   ctx.stdout("Waiting for you to approve… (Ctrl-C to cancel)");
 
+  // Terminal states print ONE clear, actionable line and exit 2 (CliError's default). The duration
+  // comes from the device code's own `expires_in`, so it is right whatever the server set.
+  const mins = Math.round(auth.expires_in / 60);
+  const expired = () =>
+    new CliError(
+      `the login code expired${mins >= 1 ? ` after ${mins} minute${mins === 1 ? "" : "s"}` : ""} — run: catalyst-skills login again`,
+      "login-expired",
+    );
   const deadline = AbortSignal.timeout(auth.expires_in * 1_000);
   let intervalMs = Math.max(1, auth.interval) * 1_000;
   for (;;) {
-    if (deadline.aborted) throw new CliError("login timed out before you approved it — run: catalyst-skills login", "login-expired");
     await sleep(intervalMs);
-    const res = await safeFetch(
-      ctx,
-      discovery.tokenUrl,
-      { method: "POST", headers: formHeaders(), body: form({ grant_type: "urn:ietf:params:oauth:grant-type:device_code", device_code: auth.device_code, client_id: discovery.clientId }) },
-      deadline,
-    );
+    // The device code's own lifetime bounds the loop: once it lapses, say so plainly rather than
+    // letting the next fetch's aborted signal surface as a generic network error (Codex P2).
+    if (deadline.aborted) throw expired();
+    let res: Response;
+    try {
+      res = await safeFetch(
+        ctx,
+        discovery.tokenUrl,
+        { method: "POST", headers: formHeaders(), body: form({ grant_type: "urn:ietf:params:oauth:grant-type:device_code", device_code: auth.device_code, client_id: discovery.clientId }) },
+        deadline,
+      );
+    } catch (err) {
+      // The deadline firing mid-fetch is an expiry, not a failure; anything else is a transient
+      // network blip — retry with backoff until the deadline, never abandon the login (CTC-2112 P1).
+      if (deadline.aborted) throw expired();
+      intervalMs = backoff(intervalMs);
+      continue;
+    }
     if (res.ok) {
       const pair = (await parseJson(res, discovery.tokenUrl)) as Partial<TokenPair>;
       if (typeof pair.access_token !== "string" || typeof pair.refresh_token !== "string") {
@@ -166,9 +186,42 @@ export async function deviceFlowLogin(ctx: Ctx, baseUrl: string, deps: DeviceFlo
       continue;
     }
     if (err === "access_denied") throw new CliError("login was denied — run: catalyst-skills login to try again", "login-denied");
-    if (err === "expired_token") throw new CliError("the login code expired before you approved it — run: catalyst-skills login", "login-expired");
+    if (err === "expired_token") throw expired();
+    // A transient HTTP failure (request timeout, rate limit, server error) is retried, honouring
+    // Retry-After for a 429; only a genuine, non-transient refusal ends the loop.
+    if (res.status === 408 || res.status === 429 || res.status >= 500) {
+      const retryAfter = Number(res.headers.get("retry-after"));
+      intervalMs = Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter * 1_000 : backoff(intervalMs);
+      continue;
+    }
     throw new CliError(`login failed (${res.status}): ${err}`, "login-failed");
   }
+}
+
+/** Grow the poll interval on a transient failure, capped, so retries never hammer the endpoint. */
+function backoff(intervalMs: number): number {
+  return Math.min(intervalMs * 2, MAX_POLL_BACKOFF_MS);
+}
+
+/**
+ * Persist a rotated token pair WITHOUT clobbering a newer login (Codex P1). A long-running watch or
+ * detached replica holds the `cfg` it started with; if the person meanwhile re-ran `login` (a new
+ * session, a different tenant, or the key rail), that config is already on disk and must survive. So
+ * we reload disk and only write when it is still the same session we just refreshed — or when there
+ * is nothing on disk yet. The reloaded doc is written (not our in-memory `cfg`), so its tenant, user
+ * and CLI-path fields are preserved and only the auth block advances.
+ */
+function persistRotation(ctx: Ctx, cfg: CustomerConfig, sessionId: string, rotated: OauthAuth): void {
+  let disk: CustomerConfig | null;
+  try {
+    disk = loadConfig(ctx.home);
+  } catch {
+    return; // a corrupt/unreadable disk config: don't overwrite what we can't understand
+  }
+  if (disk && disk.auth?.sessionId !== sessionId) return; // a newer login (or a switch to a key) — leave it
+  const target = disk ?? cfg;
+  target.auth = rotated;
+  writeConfig(ctx.home, target); // atomic; the rotated pair survives a crash
 }
 
 async function deviceAuthorize(ctx: Ctx, discovery: CliDiscovery): Promise<DeviceAuthorization> {
@@ -227,8 +280,8 @@ async function refreshAndPersist(ctx: Ctx, cfg: CustomerConfig, deps: RefreshDep
       const pair = (await parseJson(res, discovery.tokenUrl)) as Partial<TokenPair>;
       if (typeof pair.access_token !== "string" || typeof pair.refresh_token !== "string") throw new CliError("the refresh response was missing a token", "session-refresh-shape");
       const rotated = tokensToAuth(ctx, pair.access_token, pair.refresh_token, current.sessionId);
-      cfg.auth = rotated; // update the in-memory config in place
-      writeConfig(ctx.home, cfg); // atomic; the rotated pair survives a crash
+      cfg.auth = rotated; // this process keeps using its own refreshed token
+      persistRotation(ctx, cfg, current.sessionId, rotated);
       return rotated;
     }
     lastStatus = res.status;

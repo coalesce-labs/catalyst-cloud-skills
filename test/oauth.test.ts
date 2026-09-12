@@ -3,6 +3,7 @@
 // endpoints; every clock and every sleep is injected so nothing here waits on the wall clock.
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { CustomerConfig } from "../src/config";
+import { loadConfig, writeConfig } from "../src/config";
 import { CliError } from "../src/errors";
 import { authStrategyFor, bearerFor, deviceFlowLogin, fetchDiscovery, resetDiscoveryCache, type OauthAuth } from "../src/oauth";
 import { startMeFixture, type FixtureServer } from "./fixture";
@@ -123,6 +124,45 @@ describe("deviceFlowLogin", () => {
     // 300s vs 900s must actually differ — proof the value is read, not baked in
     expect(longTtl - shortTtl).toBeGreaterThan(500_000);
   });
+
+  it("⭐ retries a transient network failure during polling (one timeout, then success completes the login)", async () => {
+    server.oauth.pendingPolls = 0;
+    let thrown = false;
+    const flakyFetch: typeof fetch = async (input, init) => {
+      const url = String(input instanceof Request ? input.url : input);
+      if (!thrown && url.endsWith("/oauth/token")) {
+        thrown = true;
+        throw new Error("The operation was aborted due to timeout"); // the peer's observed failure
+      }
+      return fetch(input as Parameters<typeof fetch>[0], init);
+    };
+    const c = makeCtx(home, { now: () => FIXED_NOW, fetch: flakyFetch });
+    const { sleep } = fakeSleep();
+    const auth = await deviceFlowLogin(c, server.url, { isTty: () => false, sleep });
+    expect(auth.kind).toBe("oauth"); // the login completed despite the transient failure
+    expect(thrown).toBe(true);
+    expect(server.oauth.tokenPollCount).toBe(1); // only the successful poll reached the server
+  });
+
+  it("retries a transient 5xx during polling until the token pair arrives", async () => {
+    server.oauth.pollTransientStatus = 503;
+    server.oauth.pollTransientTimes = 2;
+    server.oauth.pendingPolls = 0;
+    const { sleep } = fakeSleep();
+    const auth = await deviceFlowLogin(ctx, server.url, { isTty: () => false, sleep });
+    expect(auth.kind).toBe("oauth");
+    expect(server.oauth.tokenPollCount).toBe(1); // the two 503s did not advance the pending countdown
+  });
+
+  it("an expired device code reports login-expired, NOT a generic network error (Codex P2)", async () => {
+    server.oauth.deviceExpiresIn = 0; // the poll deadline fires during the first wait
+    const realSleep = (_ms: number) => new Promise<void>((r) => setTimeout(r, 25));
+    const err = await deviceFlowLogin(ctx, server.url, { isTty: () => false, sleep: realSleep }).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(CliError);
+    expect((err as CliError).code).toBe("login-expired");
+    expect((err as CliError).code).not.toBe("network");
+    expect(server.oauth.tokenPollCount).toBe(0); // never polled past the deadline
+  });
 });
 
 describe("bearerFor — the silent refresh", () => {
@@ -154,6 +194,32 @@ describe("bearerFor — the silent refresh", () => {
     expect(saved.auth?.refreshToken).toBe("refresh-2");
     // and the in-memory cfg was updated in place
     expect(cfg.auth?.accessToken).toBe(token);
+  });
+
+  it("does NOT clobber a newer on-disk login: a daemon's refresh of its old session leaves a re-login intact (Codex P1)", async () => {
+    server.oauth.sessionId = "session_OLD";
+    // Someone re-logged-in on disk to a DIFFERENT session (e.g. switched tenant) while an old process runs.
+    const newer = oauthConfig({ sessionId: "session_NEW", accessToken: "new-at", refreshToken: "new-rt", expiresAt: new Date(FIXED_NOW.getTime() + 15 * 60_000).toISOString() });
+    writeConfig(home, newer);
+    // The old process still holds its own near-expiry session and refreshes it.
+    const old = oauthConfig({ sessionId: "session_OLD", expiresAt: new Date(FIXED_NOW.getTime() + 30_000).toISOString() });
+    await bearerFor(ctx, old);
+    // The on-disk re-login is preserved, not overwritten with the daemon's rotated old-session tokens.
+    const saved = loadConfig(home)!;
+    expect(saved.auth?.sessionId).toBe("session_NEW");
+    expect(saved.auth?.accessToken).toBe("new-at");
+    expect(saved.auth?.refreshToken).toBe("new-rt");
+  });
+
+  it("merges the rotated tokens into the on-disk config when it is still the same session, preserving its other fields", async () => {
+    server.oauth.sessionId = "session_fixture";
+    const onDisk = oauthConfig({ expiresAt: new Date(FIXED_NOW.getTime() + 30_000).toISOString() });
+    onDisk.name = "Preserved Tenant Name";
+    writeConfig(home, onDisk);
+    const token = await bearerFor(ctx, oauthConfig({ expiresAt: new Date(FIXED_NOW.getTime() + 30_000).toISOString() }));
+    const saved = loadConfig(home)!;
+    expect(saved.auth?.accessToken).toBe(token); // rotated
+    expect(saved.name).toBe("Preserved Tenant Name"); // other fields survive the merge
   });
 
   it("single-flights concurrent refreshes: two callers at expiry produce exactly one refresh", async () => {

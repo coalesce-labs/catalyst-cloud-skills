@@ -1,6 +1,7 @@
 // config.ts — ~/.config/catalyst-cloud/customer.json and its siblings. The ONLY place the base URL
 // and the `/api/v1` prefix are joined: the SDK wants the base with the prefix, GET /me without.
 import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { randomBytes } from "node:crypto";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { CliError } from "./errors.js";
@@ -190,7 +191,10 @@ export function isOauthAuth(v: unknown): v is OauthAuth {
 export function writeConfig(home: string, cfg: CustomerConfig): { path: string; mode: number } {
   const path = configPathFor(home);
   mkdirSync(dirname(path), { recursive: true });
-  const tmp = `${path}.tmp`;
+  // A UNIQUE sibling temp per write (pid + randomness): two concurrent CLI processes reaching the
+  // OAuth refresh window must not share `customer.json.tmp`, or one renames/removes it out from under
+  // the other and the second write fails with ENOENT or lands the wrong contents (Codex P2).
+  const tmp = `${path}.${process.pid}.${randomBytes(6).toString("hex")}.tmp`;
   try {
     writeFileSync(tmp, JSON.stringify(cfg, null, 2) + "\n", { mode: CONFIG_MODE });
     chmodSync(tmp, CONFIG_MODE);

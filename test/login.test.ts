@@ -358,6 +358,29 @@ describe("main — login (and the deprecated join alias)", () => {
     expect(cfg.auth?.sessionId).toBe("session_fixture");
     expect(statSync(configPathFor(home)).mode & 0o777).toBe(0o600);
   });
+  test("keyless login on an EXPIRED device code prints one clear actionable line (with the duration) and exits 2", async () => {
+    server.oauth.expired = true;
+    try {
+      const code = await main(["login", "--base-url", server.url], ctx(), { isTty: () => false, sleep: async () => {} });
+      expect(code).toBe(2);
+      expect(err.join("\n")).toMatch(/expired after 5 minutes/);
+      expect(err.join("\n")).toContain("catalyst-skills login");
+      expect(existsSync(configPathFor(home)), "no config written on a failed login").toBe(false);
+    } finally {
+      server.oauth.expired = false;
+    }
+  });
+  test("keyless login DENIED prints one clear actionable line and exits 2", async () => {
+    server.oauth.denied = true;
+    try {
+      const code = await main(["login", "--base-url", server.url], ctx(), { isTty: () => false, sleep: async () => {} });
+      expect(code).toBe(2);
+      expect(err.join("\n")).toMatch(/denied/);
+      expect(err.join("\n")).toContain("catalyst-skills login");
+    } finally {
+      server.oauth.denied = false;
+    }
+  });
   test("keyless login names the role from /me.user.role, NOT the token's role claim (probe: token said member for a D1 admin)", async () => {
     const before = server.oauth.jwtRole;
     server.oauth.jwtRole = "member"; // the unreliable JWT claim
