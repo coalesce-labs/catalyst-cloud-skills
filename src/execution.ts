@@ -133,9 +133,11 @@ export async function cmdExplain(args: ParsedArgs, ctx: Ctx): Promise<number> {
   const rows = res.body.eligibility?.rows ?? res.body.rows ?? [];
   const row = rows.find((r) => String(r.ticket ?? "").toUpperCase() === ticket.toUpperCase()) ?? null;
   // No dispatch row is not proof of non-existence: probe the mirror so a Backlog ticket reads as known.
+  // The mirror compares identifiers exactly, so normalize (uppercase) as the row lookup above does —
+  // otherwise `explain eng-7` probes a lowercase id, 404s, and reports an existing ENG-7 as unknown.
   let knownState: string | null = null;
   if (!row) {
-    const probe = await api.getJson<{ state?: unknown }>(`/api/v1/issues/${encodeURIComponent(ticket)}`, { accept: [404] });
+    const probe = await api.getJson<{ state?: unknown }>(`/api/v1/issues/${encodeURIComponent(ticket.toUpperCase())}`, { accept: [404] });
     if (probe.status !== 404) knownState = typeof probe.body?.state === "string" ? probe.body.state : "unknown";
   }
   if (args.json) {

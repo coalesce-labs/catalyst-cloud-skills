@@ -63,6 +63,15 @@ describe("explain", () => {
     expect(await main(["explain", "ENG-404"], ctx)).toBe(0);
     expect(ctx.out.join("\n")).toBe("ENG-404: not in the ENG eligibility explainer — the ticket is unknown to the mirror, terminal, or on another team.");
   });
+  test("a lowercase id is normalized before the mirror probe, so an existing Backlog ticket is not mislabeled unknown", async () => {
+    // The mirror compares identifiers exactly (uppercase), so the probe must normalize the id the same
+    // way the eligibility-row lookup does — otherwise `explain eng-7` reports an existing ENG-7 unknown.
+    server.issues = fixtureIssues().map((i) => (i.identifier === "ENG-7" ? { ...i, state: "Backlog" } : i));
+    expect(await main(["explain", "eng-7"], ctx)).toBe(0);
+    const text = ctx.out.join("\n");
+    expect(text).toContain("known to the mirror; state Backlog is not a dispatch state");
+    expect(text).not.toContain("unknown");
+  });
   // ⛔ 0.2.0 printed a "not visible to an account key yet" placeholder here and called nothing.
   // CTC-1954's route is the real answer; --history is an alias of the `history` verb.
   test("--history reads the execution route, not a placeholder, and skips the eligibility call", async () => {

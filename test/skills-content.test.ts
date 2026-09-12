@@ -372,6 +372,8 @@ describe("the install page (README) states what a customer needs, in the order t
   test("documents the one-line update notice and the uninstall of everything it wrote; the publish secret lives in CONTRIBUTING", () => {
     expect(readme).toContain("[catalyst-skills] updated");
     expect(readme).toContain("npm install -g @catalyst-cloud/catalyst-skills@latest");
+    // The install alone does not rewrite customer.json.cliPath — the re-login step must be documented.
+    expect(readme).toMatch(/npm install -g @catalyst-cloud\/catalyst-skills@latest && catalyst-skills login/);
     expect(readme).not.toMatch(/npm update -g/);
     for (const name of CUSTOMER_SKILLS) expect(readme, `uninstall must name ${name}`).toContain(`\`${name}\``);
     for (const f of ["customer.json", "contract.json", "replica.db", "replica.db.pid", "replica.db.writer.lock", "watch-cursor.json"]) {

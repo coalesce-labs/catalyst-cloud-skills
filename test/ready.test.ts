@@ -84,8 +84,9 @@ describe("ready", () => {
     const text = ctx.out.join("\n");
     expect(text).toMatch(/^FAIL {2}cliPath: .*does not exist/m);
     expect(text).toMatch(/^FAIL {2}contract: version 3\.0\.0 is outside/m);
-    // The out-of-range fix must pin @latest: `npm update -g` never crosses a caret below 1.0.0.
-    expect(text).toContain("fix: npm install -g @catalyst-cloud/catalyst-skills@latest");
+    // The out-of-range fix must pin @latest (`npm update -g` never crosses a caret below 1.0.0) AND
+    // re-login so the new global bin rewrites customer.json.cliPath.
+    expect(text).toContain("fix: npm install -g @catalyst-cloud/catalyst-skills@latest && catalyst-skills login");
     expect(text).not.toContain("npm update");
     writeFileSync(`${home}/.config/catalyst-cloud/customer.json`, "{corrupt");
     const c2 = makeCtx(home);
@@ -149,7 +150,7 @@ describe("more ready branches", () => {
     const note = j.checks.find((c) => c.id === "bundle");
     expect(note).toMatchObject({ note: true });
     expect(note!.line).toContain("9.9.9");
-    expect(note!.line).toContain("npm install -g @catalyst-cloud/catalyst-skills@latest");
+    expect(note!.line).toContain("npm install -g @catalyst-cloud/catalyst-skills@latest && catalyst-skills login");
     expect(note!.line).not.toContain("npm update");
   });
   test("no bundle note when the installed bundle meets the contract's minimum", async () => {
