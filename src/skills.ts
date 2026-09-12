@@ -80,5 +80,9 @@ export function readChangelog(): string {
 
 export function updateNoticeLine(previous: string, current: string, entry: string | null): string {
   const summary = entry ?? "see CHANGELOG.md";
-  return `[catalyst-skills] updated ${previous} → ${current}: ${summary} · update with: npm update -g ${PACKAGE_NAME} (or: npx ${PACKAGE_NAME}@latest login)`;
+  // `npm update -g` treats a global install as a caret range, and a caret below 1.0.0 never moves a
+  // minor — so it never crosses 0.2.x → 0.3.0. Pin @latest via `npm install`, THEN re-run login: the
+  // install alone does not rewrite customer.json.cliPath, so the skill helpers would keep spawning the
+  // stale recorded bundle and repeat this notice forever; the new global bin records its own path.
+  return `[catalyst-skills] updated ${previous} → ${current}: ${summary} · update with: npm install -g ${PACKAGE_NAME}@latest && catalyst-skills login`;
 }
