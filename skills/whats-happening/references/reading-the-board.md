@@ -35,7 +35,7 @@ Everything else is **waiting**, and the reply says what it is waiting on. Callin
 
 ## The signals the cloud posts on the ticket itself
 
-Before declaring anything, read the ticket's comments (`catalyst-skills query issue <id>`; the `catalyst-linear` skill explains each shape). The cloud posts a phase-outcome card on every completion and failure, a remediate-attempt card per repair round, a board-health note when it detects a stall itself, and a merge-wait note when a merge is held. Those comments are the execution history a key can read today; the per-ticket ledger behind them is not visible to an account key yet, and `explain --history` says so.
+Before declaring anything, read the ticket's comments (`catalyst-skills query issue <id>`; the `catalyst-linear` skill explains each shape). The cloud posts a phase-outcome card on every completion and failure, a remediate-attempt card per repair round, a board-health note when it detects a stall itself, and a merge-wait note when a merge is held. Those comments are the narrative; the per-ticket ledger behind them — attempts, rounds against the cap, park state — is `catalyst-skills explain --history <ticket>`, and the two must agree.
 
 ## Two things that look like work and are not
 

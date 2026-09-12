@@ -8,8 +8,8 @@ you change a command, change it here first.
 ship. `npx skills` copies editable files into your project. A reader who runs both ends up with every
 skill twice, so every rendering of this block keeps the exclusivity sentence.
 
-**The credential is separate from the install.** No install command carries a key. The account key
-enters once, through `catalyst-skills login`, and lands in a `0600` config file. Keep the connect step
+**The credential is separate from the install.** No install command carries a key. The person's own
+personal key enters once, through `catalyst-skills login`, and lands in a `0600` config file. Keep the connect step
 beside the install commands, never inside them.
 
 ---
@@ -51,11 +51,11 @@ your home directory instead of the project. Skills installed this way do not aut
 ### Then connect to your tenant
 
 The skills call one CLI, and the CLI holds your credential. Install it once and connect this machine
-with your account key:
+with your own **personal key** — mint it at Settings → API keys in the Catalyst Cloud app (every member can; no admin needed):
 
 ```sh
 npm install -g @catalyst-cloud/catalyst-skills
-CATALYST_CLOUD_TOKEN=<your-account-key> catalyst-skills login
+CATALYST_CLOUD_TOKEN=<your-personal-key> catalyst-skills login
 catalyst-skills ready
 ```
 

@@ -75,7 +75,7 @@ export interface LoadContractOptions {
  * Load the contract per the cloud's own cache policy: a cache younger than `doc.cache.maxAgeSeconds`
  * is used as-is; otherwise a conditional GET revalidates it (304 refreshes `fetchedAt`, 200 replaces
  * the document). A network failure on a cache older than `staleRefusalSeconds` refuses; a 403 (a
- * workstation key) refuses naming the account key; a major version outside the bundle's range refuses
+ * personal key on an older cloud) refuses naming the cloud version; a major version outside the bundle's range refuses
  * naming both versions.
  */
 export async function loadContract(
@@ -108,7 +108,7 @@ export async function loadContract(
   } catch (err) {
     if (err instanceof CliError && err.status === 403) {
       throw new CliError(
-        `GET ${CONTRACT_ROUTE} refused (403): the contract needs an account key (ctc_acct_…); this key is a workstation key — ask your tenant admin for an account key`,
+        `GET ${CONTRACT_ROUTE} refused (403): this cloud is older than the bundle and does not yet admit a personal key on the contract — update the cloud, or log in with the tenant's account key until it is`,
         "contract-forbidden",
         2,
         403,

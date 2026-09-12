@@ -55,34 +55,34 @@ Without `--all` the installer asks which skills to take and which agents to inst
 
 ### Then connect to your tenant
 
-The skills call one CLI, and the CLI holds your credential. Install it once and connect this machine with your account key:
+The skills call one CLI, and the CLI holds your credential. Install it once and connect this machine with your own **personal key** — mint it at Settings → API keys in the Catalyst Cloud app (every member can; no admin needed):
 
 ```sh
 npm install -g @catalyst-cloud/catalyst-skills
-CATALYST_CLOUD_TOKEN=<your-account-key> catalyst-skills login
+CATALYST_CLOUD_TOKEN=<your-personal-key> catalyst-skills login
 catalyst-skills ready
 ```
 
-Passing the key as an environment variable is the recommended form, because a key typed into a command line lands in your shell history. With no key in the environment and a terminal attached, `catalyst-skills login` prompts for it without echoing it; `--key <your-account-key>` is the third form, for a script. `npx @catalyst-cloud/catalyst-skills login` works without the global install, and `bunx` works in place of `npx`. A non-default cloud is set with `CATALYST_CLOUD_BASE_URL` or `--base-url <url>`.
+Passing the key as an environment variable is the recommended form, because a key typed into a command line lands in your shell history. With no key in the environment and a terminal attached, `catalyst-skills login` prompts for it without echoing it; `--key <your-personal-key>` is the third form, for a script. `npx @catalyst-cloud/catalyst-skills login` works without the global install, and `bunx` works in place of `npx`. A non-default cloud is set with `CATALYST_CLOUD_BASE_URL` or `--base-url <url>`.
 
 That is the whole setup. Everything below explains what you just installed.
 
 ## What this is
 
-Eight skills that let your coding agent run your own Catalyst Cloud tenant (https://staging.catalystcloud.dev) from your seat: what is happening, what needs you, and what to do about it. They read your tenant through the Catalyst Cloud SDK, write to it through the tenant's agent proxy, and never compose a URL or run a tool of their own; every read, write and subscription is a `catalyst-skills` verb with `--help`. Every skill is plain Markdown under `skills/<name>/SKILL.md` in this repository, and the account key from your tenant admin is the only credential.
+Eight skills that let your coding agent run your own Catalyst Cloud tenant (https://staging.catalystcloud.dev) from your seat: what is happening, what needs you, and what to do about it. They read your tenant through the Catalyst Cloud SDK, write to it through the tenant's agent proxy, and never compose a URL or run a tool of their own; every read, write and subscription is a `catalyst-skills` verb with `--help`. Every skill is plain Markdown under `skills/<name>/SKILL.md` in this repository, and your own personal key is the only credential. Your agent acts as you: the asks it raises and the comments it posts carry your name, and "what needs me" means you.
 
 ## What connecting does
 
-`login` does three things: it calls `GET /api/v1/me` with your key, which discovers your tenant from the key alone; it writes `~/.config/catalyst-cloud/customer.json` with file mode `0600`, holding your key and the absolute path of the CLI so every skill script can spawn the same binary; and it fetches the tenant contract (`GET /api/v1/agent/contract`) and caches it at `~/.config/catalyst-cloud/contract.json` with its ETag, so stage names and ids, label ids, the ask template, thresholds and the route table come from your tenant, live, and no skill restates them.
+`login` does three things: it calls `GET /api/v1/me` with your key, which discovers your tenant and who you are from the key alone; it writes `~/.config/catalyst-cloud/customer.json` with file mode `0600`, holding your key, who you are (id, label, role, your Linear user id) and the absolute path of the CLI so every skill script can spawn the same binary; and it fetches the tenant contract (`GET /api/v1/agent/contract`) and caches it at `~/.config/catalyst-cloud/contract.json` with its ETag, so stage names and ids, label ids, the ask template, thresholds and the route table come from your tenant, live, and no skill restates them.
 
-`login` does not install skills; the install command above did that. Re-running `login` after a key rotation rewrites the config. `catalyst-skills status` prints which tenant this machine is connected to, `catalyst-skills ready` prints one READY or NOT READY verdict with the fix for each failure and who can apply it, and `catalyst-skills --version` prints the package version and its pinned tenant contract range.
+`login` does not install skills; the install command above did that. Re-running `login` after a key rotation rewrites the config. `catalyst-skills status` prints which tenant this machine is connected to and as whom, `catalyst-skills ready` prints one READY or NOT READY verdict with the fix for each failure and who can apply it, and `catalyst-skills --version` prints the package version and its pinned tenant contract range.
 
-The setup skill Catalyst seeds into your repository ends by pointing at this same command. That served skill lives in the Catalyst Cloud application, not here; this is the only connect step a customer runs, and the credential is called the account key in both places.
+The setup skill Catalyst seeds into your repository ends by pointing at this same command. That served skill lives in the Catalyst Cloud application, not here; this is the only connect step a customer runs. The tenant's **account key** (Settings → Account keys, admin-minted) is a different credential — for a host or daemon that runs unattended — and is not what a person connects their own agent with: it would strip your name from everything your agent writes, and `login` says so if you use one.
 
 ## Requirements
 
 - Node 22 or newer. The bundle uses Node's built-in SQLite module for the optional local replica, so there is no native dependency to build; if `better-sqlite3` resolves on the machine it is used instead. `catalyst-skills ready` names the exact reason when an older Node is found.
-- An account key from your tenant admin. The key is the only tenant selector: you never type a tenant or account id.
+- Your personal key, minted by you at Settings → API keys. The key is the only tenant selector: you never type a tenant or account id. If your Linear identity is not matched yet, `login` says so; an admin matches it in Settings → Members, and until then "what needs me" shows everyone's asks.
 - An agent that discovers skills. Claude Code loads the plugin; Codex, Cursor, OpenCode and the rest read the `skills/<name>/SKILL.md` files the `npx skills` installer writes.
 - Bun is optional, only if you prefer `bunx` over `npx`.
 
@@ -120,16 +120,16 @@ Nothing rotates. The replica is upserts and deletes into one file, the cursor is
 | `catalyst-linear` | "Show me the ticket, the history, what Catalyst wrote on it." | Reads a ticket with its comments, relations, labels, linked pull requests and agent sessions inline, from the replica when fresh and the API otherwise, always naming the source; writes comments, card moves, labels and new tickets as the app actor; knows what a ticket accumulates as Catalyst works it. | [`SKILL.md`](skills/catalyst-linear/SKILL.md) |
 | `catalyst-github` | "Show me the PR, the checks, the review, the queue." | A ticket's pull request with its checks, reviews and review threads; whether it is mergeable under the repository's policy; what a PR accumulates as the ticket moves (the branch, the draft, the rewrite, the force-pushes, the labels, the queue). | [`SKILL.md`](skills/catalyst-github/SKILL.md) |
 | `how-catalyst-works` | "How does this work? Why did it do that? How does it prioritise?" | The execution model as references loaded on demand: the eight-phase ladder, the eleven board slots and this team's live stage map, what happens when a phase fails, how the queue is ordered and routed, every exclusion reason, and the coding-account model. Scripts explain one ticket's eligibility in plain English. | [`SKILL.md`](skills/how-catalyst-works/SKILL.md) |
-| `connect-me` | "Connect this machine to my tenant." | Connects the machine to the tenant with the account key, caches the tenant contract, verifies, and offers to start the replica. | [`SKILL.md`](skills/connect-me/SKILL.md) |
+| `connect-me` | "Connect this machine to my tenant." | Connects the machine to the tenant with your own personal key, caches the tenant contract, verifies, and offers to start the replica. | [`SKILL.md`](skills/connect-me/SKILL.md) |
 
 Four skills only read (`whats-happening`, `catalyst-setup`, `catalyst-github`, `how-catalyst-works`). The four that write anything (`catalyst-linear`, `what-needs-me`, `run-this-project`, `connect-me`) are marked so an agent cannot invoke them on its own; the person asks for them. Every skill declares `allowed-tools` scoped to this package's own binary, so none of them needs a blanket shell grant.
 
 ## What a key cannot see yet
 
-Two facts have no tenant-facing route today, and the skills say so by name rather than guess:
+Your personal key reads everything the skills need — tickets, pull requests, the eligibility explainer, the dispatch queue, fleet activity, per-ticket execution history (`catalyst-skills explain --history <ticket>`: phase attempts, remediation rounds, park state) and coding-account status (`catalyst-skills accounts`: provider, declared and observed state, window usage, walls, quarantine — never a credential; enrolling or pausing one is `<your cloud>/settings/coding-accounts`). Two things it cannot do, and the skills say so by name rather than guess:
 
-- Coding-account status (provider, declared and observed state, window usage, walls, quarantine). `catalyst-skills accounts` prints "not visible to an account key yet" and points at `<your cloud>/settings/coding-accounts`, where the tenant's settings page shows it.
-- Per-ticket execution history (phase attempts, remediation rounds, park state). `catalyst-skills explain --history <ticket>` prints the same kind of line and points at `<your cloud>/settings`. What a key can see is the eligibility explainer, the dispatch queue, fleet activity, agent sessions and lease attributions, which is what `explain`, `running` and `queue` read.
+- Release a park. When a ticket is parked after repeated failures, an operator releases it; the skill names the park and points at `<your cloud>/settings`.
+- Read pull-request labels or the reviewer's reaction. The mirror does not carry them; GitHub's own page does.
 
 ## Versions and origins
 
@@ -137,11 +137,11 @@ The package pins the tenant contract range `1.x`, recorded in `package.json` und
 
 ## What it writes on your machine
 
-- `~/.config/catalyst-cloud/customer.json`, written with mode `0600`, holding your account key and the CLI path.
+- `~/.config/catalyst-cloud/customer.json`, written with mode `0600`, holding your personal key, who you are, and the CLI path.
 - `~/.config/catalyst-cloud/contract.json`, the cached tenant contract.
 - Only if you start them: `~/.config/catalyst-cloud/replica.db` with its `.pid` and `.writer.lock` sidecars, and `~/.config/catalyst-cloud/watch-cursor.json`.
 
-The skill files themselves are written by whichever install command you ran, in that tool's own location. Your account key goes into that one config file and nowhere else.
+The skill files themselves are written by whichever install command you ran, in that tool's own location. Your personal key goes into that one config file and nowhere else.
 
 ## Updating
 
@@ -166,11 +166,11 @@ npm uninstall -g @catalyst-cloud/catalyst-skills
 
 ## If login fails
 
-- `catalyst-skills: GET /me failed (401): credential not accepted — ask your tenant admin for a valid account key` — the key is stale or mistyped. Ask your tenant admin for a valid account key, then run `login` again.
+- `catalyst-skills: GET /me failed (401): credential not accepted — mint a personal key at Settings → API keys and log in again` — the key is stale, mistyped or revoked. Mint a new one, then run `login` again.
 - `catalyst-skills: GET /me failed (403): account-not-operational` — the tenant is suspended. This is an admin conversation on the tenant, not a local fix.
 - `catalyst-skills: could not reach <url>: <detail>` — the machine cannot reach the cloud. The URL is named in the message; check `CATALYST_CLOUD_BASE_URL` or `--base-url`.
 - A line naming two contract versions after `Connected to` — the tenant serves a contract outside this bundle's `1.x` range. The config is written; update the bundle before using the other skills.
-- `[catalyst-skills] GET /api/v1/agent/contract refused (403): the contract needs an account key` on stderr — the key is a workstation key, which connects but cannot read the contract or the machine-only routes. Ask your tenant admin for an account key for the full set.
+- `[catalyst-skills] GET /api/v1/agent/contract refused (403): this cloud is older than the bundle …` on stderr — the cloud has not yet deployed personal-key access to the contract. Update the cloud, or connect with the tenant's account key until it has.
 
 ## License
 

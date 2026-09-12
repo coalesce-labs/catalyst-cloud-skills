@@ -16,6 +16,14 @@ export const FIXTURE_ME_BODY = {
 
 export const FIXTURE_KEY = "fixture-key";
 export const FIXTURE_USER_KEY = "fixture-user-key";
+/** The person behind FIXTURE_USER_KEY, as the cloud names them on /me since CTC-2076. */
+export const FIXTURE_ME_USER = {
+  id: "d1-user-tony",
+  label: "Tony",
+  email: "tony@example.test",
+  role: "admin",
+  linearUserId: "linear-user-tony",
+} as const;
 export const FIXTURE_ETAG = '"fixture-etag-1"';
 
 export interface RecordedRequest {
@@ -39,6 +47,10 @@ export interface FixtureServer {
   /** CTC-1953/CTC-1954 ship ahead of some tenants' mirror; `false` makes those two routes 404 the
    *  way an older cloud does, so the bundle's "needs a newer cloud" path meets a real 404. */
   routesDeployed: boolean;
+  /** Simulate a cloud older than CTC-2076 that still refuses a personal key on the contract. */
+  contractRefusesPersonalKey?: boolean;
+  /** Override the person /me names for FIXTURE_USER_KEY; `null` sends no user block at all. */
+  meUser?: typeof FIXTURE_ME_USER | { id: string; label: string; email: string | null; role: string; linearUserId: string | null } | null;
   writes: RecordedRequest[];
   requests: RecordedRequest[];
   /** Override the issue list the read routes serve. */
@@ -77,6 +89,8 @@ export function fixtureIssues(): Record<string, unknown>[] {
     issue({
       identifier: "ENG-7",
       title: "Should we ship the widget now or after the audit?",
+      // Assigned to the person FIXTURE_USER_KEY names, so "what needs me" has one ask that is theirs.
+      assignee_id: FIXTURE_ME_USER.linearUserId,
       labels: [{ id: "label-ask-unscoped", name: "catalyst-ask", color: null }],
       relations: [
         { type: "blocks", issue_identifier: "ENG-7", related_identifier: "ENG-1" },
@@ -297,7 +311,9 @@ function readBody(req: IncomingMessage): Promise<string> {
   });
 }
 
-const MACHINE_ONLY = new Set(["/api/v1/agent/contract", "/api/v1/work-eligibility", "/api/v1/lease/attributions"]);
+/** Routes that act AS a host and refuse a personal key by class (CTC-2076's keep-list). None of the
+ *  bundle's own verbs touch one; the set stays so a verb that grows onto a host route reddens here. */
+const HOST_ONLY = new Set(["/api/v1/work/acquire", "/api/v1/artifacts/publish", "/api/v1/coordination/publish", "/api/v1/events/stream"]);
 
 export async function startMeFixture(
   handler?: (path: string) => { status: number; body: unknown },
@@ -343,7 +359,7 @@ export async function startMeFixture(
         (auth === `Bearer ${FIXTURE_KEY}`
           ? { status: 200, body: FIXTURE_ME_BODY }
           : auth === `Bearer ${FIXTURE_USER_KEY}`
-            ? { status: 200, body: { ...FIXTURE_ME_BODY, permissions: ["mirror:read"] } }
+            ? { status: 200, body: { ...FIXTURE_ME_BODY, permissions: ["mirror:read", "mirror:feed"], ...(state.meUser === null ? {} : { user: state.meUser ?? FIXTURE_ME_USER }) } }
             : { status: 401, body: { error: "unauthorized", reason: "credential-not-accepted" } });
       return send(out.status, out.body);
     }
@@ -351,10 +367,13 @@ export async function startMeFixture(
       return send(401, { error: "unauthorized", reason: "credential-not-accepted" });
     }
     const machine = auth === `Bearer ${FIXTURE_KEY}`;
-    if ((MACHINE_ONLY.has(path) || postRoutes().has(path)) && !machine) {
-      return send(403, { error: "forbidden", reason: "machine-principal-required" });
+    if (HOST_ONLY.has(path) && !machine) {
+      return send(403, { error: "forbidden", reason: "not-machine-principal" });
     }
 
+    if (path === "/api/v1/agent/contract" && state.contractRefusesPersonalKey && !machine) {
+      return send(403, { error: "forbidden", reason: "not-machine-principal" });
+    }
     if (path === "/api/v1/agent/contract") {
       const etag = FIXTURE_ETAG.replace("1", state.contractVersion === "1.0.0" ? "1" : "2");
       if (req.headers["if-none-match"] === etag) {

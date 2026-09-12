@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // lib/cli.mjs — the one way a skill script reaches Catalyst Cloud: by spawning the catalyst-skills
-// CLI. The CLI holds the SDK and the account key; this file holds neither. It reads
+// CLI. The CLI holds the SDK and the key; this file holds neither. It reads
 // ~/.config/catalyst-cloud/customer.json (under CATALYST_SKILLS_HOME when set, else HOME) for the
 // CLI path that login recorded and falls back to `npx @catalyst-cloud/catalyst-skills`.
 //
@@ -44,7 +44,7 @@ export function loadCustomerConfig() {
 export function requireConfigured() {
   const cfg = loadCustomerConfig();
   if (cfg) return cfg;
-  console.error(`not connected: ${configPath()} is missing or unreadable — run: CATALYST_CLOUD_TOKEN=<account key> npx ${PACKAGE_NAME} login`);
+  console.error(`not connected: ${configPath()} is missing or unreadable — run: CATALYST_CLOUD_TOKEN=<your personal key> npx ${PACKAGE_NAME} login`);
   process.exit(NOT_CONFIGURED_EXIT);
 }
 

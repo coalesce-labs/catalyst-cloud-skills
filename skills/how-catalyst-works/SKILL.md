@@ -38,5 +38,5 @@ Exit codes: 0 answered, 1 not found or a usage error, 2 this machine is not conn
 - **A reason is a layer.** Translate an exclusion reason through `references/what-runs-next.md`; name what releases it and who can do that (a clock, a comment, a push, an operator).
 - **Unknown is not absent.** An `unknown` verdict from the explainer means the cloud could not look; report it as inconclusive.
 - **System causes are one alert.** A provider outage, the runner image breaker or a paused repository holds many tickets for one reason; never escalate it ticket by ticket.
-- **Say what a key cannot see.** Coding-account status and per-ticket execution history are not readable with an account key yet; the scripts say so and name the settings page. Do not fill the gap with a guess.
+- **Say what a key cannot see.** A few PR facts are not mirrored (labels, the reviewer's reaction) and a park is released only by an operator; the scripts say so and name the settings page. Do not fill the gap with a guess.
 - **Depth lives elsewhere.** What a ticket accumulates in Linear is `catalyst-linear`; what a PR accumulates and whether it is mergeable is `catalyst-github`; raising a decision is `what-needs-me`.

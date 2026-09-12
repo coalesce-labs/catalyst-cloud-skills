@@ -42,7 +42,7 @@ Four labels matter, all named on `merge.prLabels`, all matched exactly (a queue'
 | `handStepsHold` | the cloud, automatically | the PR touches a path the queue configuration excludes (schema or migration paths, typically), so a person has to merge it by hand. |
 | `preview` | a human | "deploy me a preview and hold the merge until I have looked". Removing the label is the approval. |
 
-The mirror does not carry PR labels or reactions, so an account key cannot read which holds a PR carries or whether the reviewer reacted; the scripts say so by name. GitHub's own page, or the tenant's settings, is where those live.
+The mirror does not carry PR labels or reactions, so your key cannot read which holds a PR carries or whether the reviewer reacted; the scripts say so by name. GitHub's own page, or the tenant's settings, is where those live.
 
 ## The queue is optional and opt-out
 

@@ -1,4 +1,4 @@
-// prompt.ts — the one interactive read in the CLI: asking for the account key on a terminal without
+// prompt.ts — the one interactive read in the CLI: asking for the personal key on a terminal without
 // echoing it. The streams are parameters so the tests can drive it without a real TTY.
 import { createInterface } from "node:readline";
 

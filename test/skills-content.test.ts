@@ -286,7 +286,7 @@ describe("the install page (README) states what a customer needs, in the order t
 
   test("the credential step sits inside the install block, named login, with the env form first", () => {
     const install = readme.indexOf("\n## Install\n");
-    const envForm = "CATALYST_CLOUD_TOKEN=<your-account-key> catalyst-skills login";
+    const envForm = "CATALYST_CLOUD_TOKEN=<your-personal-key> catalyst-skills login";
     // "Beside the install commands" is the property: the connect step is a sub-heading of Install,
     // and the login command lands before the next top-level section starts.
     const connect = readme.indexOf("\n### Then connect to your tenant\n");
@@ -301,7 +301,7 @@ describe("the install page (README) states what a customer needs, in the order t
     expect(readme).toContain("npm install -g @catalyst-cloud/catalyst-skills");
     expect(readme).toContain("catalyst-skills ready");
     expect(installBlock).toContain(envForm);
-    expect(readme.indexOf("--key <your-account-key>"), "the env form must come before the --key form").toBeGreaterThan(
+    expect(readme.indexOf("--key <your-personal-key>"), "the env form must come before the --key form").toBeGreaterThan(
       readme.indexOf(envForm),
     );
     // The 0.1 verb must not lead, and `install` is a repair path that never appears as a headline step.
@@ -355,12 +355,18 @@ describe("the install page (README) states what a customer needs, in the order t
   test("names what a key cannot see yet and where those facts live, and the one connect step", () => {
     expect(readme).toMatch(/^## What a key cannot see yet$/m);
     expect(readme).toContain("settings/coding-accounts");
-    expect(readme).toContain("not visible to an account key yet");
     expect(readme).toContain("explain --history");
+    expect(readme).toContain("Release a park");
     expect(readme).toContain("setup skill");
     expect(readme).toContain("the only connect step a customer runs");
-    expect(readme).toContain("account key");
-    expect(readme).not.toMatch(/\bAPI key\b/);
+    // CTC-2077 — a person connects with their OWN key; the account key is named once, as the host
+    // credential it is; "API keys" is the settings page's name, so it may appear in that phrase only.
+    expect(readme).toContain("personal key");
+    expect(readme).toContain("<your-personal-key>");
+    expect(readme).not.toContain("<your-account-key>");
+    expect(readme).toContain("Settings → API keys");
+    expect(readme.match(/\bAPI keys?\b/g)?.every((m) => m === "API keys") ?? true).toBe(true);
+    expect(readme).not.toMatch(/not visible to an account key yet/);
   });
 
   test("documents the one-line update notice and the uninstall of everything it wrote; the publish secret lives in CONTRIBUTING", () => {
@@ -424,10 +430,10 @@ describe("the package manifest", () => {
     }
   });
 
-  test("the version matches the CHANGELOG's top entry, which is 0.2.1", () => {
+  test("the version matches the CHANGELOG's top entry, which is 0.3.0", () => {
     const changelog = readFileSync(join(pkgRoot, "CHANGELOG.md"), "utf8");
     expect(changelog).toContain(`## ${manifest.version}\n`);
-    expect(changelog.indexOf("## 0.2.1")).toBe(changelog.indexOf("## "));
-    expect(manifest.version).toBe("0.2.1");
+    expect(changelog.indexOf("## 0.3.0")).toBe(changelog.indexOf("## "));
+    expect(manifest.version).toBe("0.3.0");
   });
 });

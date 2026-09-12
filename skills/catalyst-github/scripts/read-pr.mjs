@@ -93,5 +93,5 @@ console.log(`reviews (${reviews.length}):`);
 if (reviews.length === 0) console.log("  none mirrored; a reviewer's clean pass is a reaction, which this read does not carry");
 for (const r of reviews) console.log(`  ${fmt(r.state)}  ${fmt(r.reviewer_name, fmt(r.reviewer_id))}  ${when(r.submitted_at)}`);
 
-console.log("not visible to an account key here: PR labels (holds, queue attestation) and the reviewer's reaction — see references/what-a-pr-accumulates.md");
+console.log("not mirrored here: PR labels (holds, queue attestation) and the reviewer's reaction — see references/what-a-pr-accumulates.md");
 process.exit(0);

@@ -14,7 +14,7 @@ const HELP = `Usage: node scripts/replica-status.mjs [--probe] [--json]
 Exit codes, passed through from catalyst-skills replica status:
   0  fresh: a live writer, a young heartbeat, a cursor — skills read the replica
   1  stale: the file exists but the writer is gone or behind — skills read the API and say so
-  2  not connected to a tenant — run: CATALYST_CLOUD_TOKEN=<account key> npx @catalyst-cloud/catalyst-skills login
+  2  not connected to a tenant — run: CATALYST_CLOUD_TOKEN=<your personal key> npx @catalyst-cloud/catalyst-skills login
   3  absent: no replica file — optional; start one with: catalyst-skills replica start --detach`;
 
 const args = process.argv.slice(2);

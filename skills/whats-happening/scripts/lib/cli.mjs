@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // lib/cli.mjs — the one way a skill script reaches Catalyst Cloud: spawn the catalyst-skills CLI.
-// The CLI holds the SDK and the account key; this file holds neither. It reads customer.json only
+// The CLI holds the SDK and the key; this file holds neither. It reads customer.json only
 // to learn where the CLI lives, and it exits 2 with one line when the machine is not connected.
 // Run any script beside this one with --help; this file is a library and is never run directly.
 import { spawnSync } from "node:child_process";
@@ -30,7 +30,7 @@ export function loadConfig() {
 }
 
 function notConfigured(why) {
-  process.stderr.write(`not connected (${why}) — run: CATALYST_CLOUD_TOKEN=<account key> npx ${PACKAGE} login\n`);
+  process.stderr.write(`not connected (${why}) — run: CATALYST_CLOUD_TOKEN=<your personal key> npx ${PACKAGE} login\n`);
   process.exit(NOT_CONFIGURED_EXIT);
 }
 

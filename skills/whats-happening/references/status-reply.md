@@ -14,7 +14,7 @@ The person asked one question and gets one reply. If they would need a second su
 4. **Closed.** What reached the done slot in the window the person asked about (or since your last reply). Source: `query issues` filtered by the team's done-slot stage name from the contract, or the change feed for a time window. When you did not read a window, say "since my last reply" and mean it.
 5. **Next.** What the queue picks up next, in the cloud's order, with the phase each will run. Source: the snapshot's `queue` block. Do not reorder it to what you think should be next; the levers are in `references/reprioritising.md`.
 
-A sixth block, **cannot see**, appears only when it is non-empty: the facts an account key cannot read yet (coding-account status, per-ticket execution history), each with the URL the CLI printed.
+A sixth block, **cannot see**, appears only when it is non-empty: the facts your key cannot read (PR labels and reactions, which are not mirrored; an operator-only park release), each with the URL the CLI printed.
 
 ## The header line
 

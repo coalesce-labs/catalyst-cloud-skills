@@ -103,12 +103,12 @@ describe("write", () => {
     expect(c.err.join("\n")).toMatch(/hostDailyWriteBudget is 3000/);
     expect(c.err.join("\n")).toMatch(/retry after 3600s/);
   });
-  test("a workstation key is refused with the account-key line and posts nothing", async () => {
-    await seedJoined(home, server, { contract: false, config: { key: "fixture-user-key" } });
+  test("⭐ a personal key posts through the proxy like any other (CTC-2076)", async () => {
+    await seedJoined(home, server, { config: { key: "fixture-user-key" } });
     const code = await main(["write", "comment", "ENG-1", "--body", "x"], ctx);
-    expect(code).toBe(2);
-    expect(ctx.err.join("\n")).toMatch(/403.*needs an account key/);
-    expect(server.writes).toHaveLength(0);
+    expect(code).toBe(0);
+    expect(server.writes).toHaveLength(1);
+    expect(server.writes[0]!.headers.authorization).toBe("Bearer fixture-user-key");
   });
 });
 
@@ -142,19 +142,49 @@ describe("ask", () => {
     expect(ctx.out.join("\n")).toContain("answer c-42 recorded by steward");
     expect(await main(["ask", "accept", "ENG-7"], makeCtx(home))).toBe(1);
   });
-  test("list ranks the ask that blocks more (weighted) work first and drops closed asks", async () => {
+  test("list with the tenant's account key is every open ask, ranked, and says it names no person", async () => {
     expect(await main(["ask", "list", "--json"], ctx)).toBe(0);
-    const ranked = JSON.parse(ctx.out.join("\n")) as { identifier: string; blocks: string[]; score: number }[];
-    expect(ranked.map((r) => r.identifier)).toEqual(["ENG-7", "ENG-8"]);
-    expect(ranked[0]).toMatchObject({ blocks: ["ENG-1", "ENG-2"], score: 3 + 4 });
-    expect(ranked[1]).toMatchObject({ blocks: ["ENG-3"], score: 1 });
+    const { scope, asks } = JSON.parse(ctx.out.join("\n")) as { scope: { kind: string }; asks: { identifier: string; blocks: string[]; score: number }[] };
+    expect(scope).toEqual({ kind: "no-person" });
+    expect(asks.map((r) => r.identifier)).toEqual(["ENG-7", "ENG-8"]);
+    expect(asks[0]).toMatchObject({ blocks: ["ENG-1", "ENG-2"], score: 3 + 4 });
+    expect(asks[1]).toMatchObject({ blocks: ["ENG-3"], score: 1 });
     const c2 = makeCtx(home);
     expect(await main(["ask", "list"], c2)).toBe(0);
     expect(c2.out[0]).toMatch(/^ENG-7  holds 2 tickets \(weight 7\): ENG-1, ENG-2/);
+    expect(c2.err.join("\n")).toMatch(/account key, which names no person/);
     server.issues = [];
     const c3 = makeCtx(home);
     expect(await main(["ask", "list"], c3)).toBe(0);
     expect(c3.out.join("\n")).toBe("no open asks");
+  });
+  test("⭐ list with a personal key means MINE by default; --anyone widens; an unmatched identity says so (CTC-2077)", async () => {
+    await seedJoined(home, server, { config: { key: "fixture-user-key", user: { id: "d1-user-tony", label: "Tony", email: null, role: "admin", linearUserId: "linear-user-tony" } } });
+    const c1 = makeCtx(home);
+    expect(await main(["ask", "list", "--json"], c1)).toBe(0);
+    const mine = JSON.parse(c1.out.join("\n")) as { scope: { kind: string; label?: string }; asks: { identifier: string }[] };
+    expect(mine.scope).toEqual({ kind: "mine", linearUserId: "linear-user-tony", label: "Tony" });
+    expect(mine.asks.map((a) => a.identifier)).toEqual(["ENG-7"]);
+    expect(c1.err).toEqual([]);
+    const c2 = makeCtx(home);
+    expect(await main(["ask", "list", "--anyone", "--json"], c2)).toBe(0);
+    const all = JSON.parse(c2.out.join("\n")) as { scope: { kind: string }; asks: { identifier: string }[] };
+    expect(all.scope).toEqual({ kind: "anyone" });
+    expect(all.asks.map((a) => a.identifier)).toEqual(["ENG-7", "ENG-8"]);
+    // Nothing of mine: the line names the wider count so an empty inbox never reads as "nothing needs anyone".
+    server.issues = fixtureIssues().map((i) => (i.identifier === "ENG-7" ? { ...i, assignee_id: "someone-else" } : i));
+    const c3 = makeCtx(home);
+    expect(await main(["ask", "list"], c3)).toBe(0);
+    expect(c3.out.join("\n")).toBe("no open asks assigned to Tony (2 open in the tenant — add --anyone to see them)");
+    // Unmatched Linear identity: the whole list plus one named stderr line, never a silently empty one.
+    await seedJoined(home, server, { config: { key: "fixture-user-key", user: { id: "d1-user-tony", label: "Tony", email: null, role: "admin", linearUserId: null } } });
+    const c4 = makeCtx(home);
+    expect(await main(["ask", "list", "--json"], c4)).toBe(0);
+    expect((JSON.parse(c4.out.join("\n")) as { scope: { kind: string } }).scope).toEqual({ kind: "unmatched", label: "Tony" });
+    const c5 = makeCtx(home);
+    expect(await main(["ask", "list"], c5)).toBe(0);
+    expect(c5.err.join("\n")).toMatch(/Linear identity is not matched yet/);
+    expect(c5.out.length).toBe(2); // the whole list, never a silently empty one
   });
   test("rankAsks skips blocked tickets that are closed and recognises ask/ prefixed labels", () => {
     const issues = [
@@ -162,7 +192,7 @@ describe("ask", () => {
       { identifier: "ENG-5", state: "Todo", title: "q", labels: [{ id: "x", name: "ask/decision" }], relations: [{ type: "blocks", issue_identifier: "ENG-5", related_identifier: "ENG-1" }] },
     ];
     const ranked = rankAsks(issues, server.contract, (i) => i.state !== "Done");
-    expect(ranked).toEqual([{ identifier: "ENG-5", title: "q", state: "Todo", blocks: [], score: 0 }]);
+    expect(ranked).toEqual([{ identifier: "ENG-5", title: "q", state: "Todo", blocks: [], score: 0, assigneeId: null }]);
   });
   test("firstStateOfType names the types seen when none matches", () => {
     expect(() => firstStateOfType([{ id: "a", name: "A", type: "started", teamId: "t" }], "t", "backlog")).toThrow(/types seen: started/);
@@ -222,6 +252,6 @@ describe("more ask branches", () => {
       { identifier: "ENG-7", state: "Todo", title: "no labels" },
     ];
     const ranked = rankAsks(issues, server.contract, () => true);
-    expect(ranked).toEqual([{ identifier: "ENG-5", title: "q", state: "Todo", blocks: ["ENG-1", "ENG-2"], score: 2 }]);
+    expect(ranked).toEqual([{ identifier: "ENG-5", title: "q", state: "Todo", blocks: ["ENG-1", "ENG-2"], score: 2, assigneeId: null }]);
   });
 });

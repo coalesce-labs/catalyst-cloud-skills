@@ -34,9 +34,9 @@ The comment shapes in `references/what-a-ticket-accumulates.md` tell you which c
 
 A phase's transcript (the full session log) exists in the cloud per ticket, but this bundle has no verb for it yet. Read the artifact document first; it is the phase's own account of what it did. Reach for the transcript only when the document leaves the question open, and say that the bundle cannot fetch it so the human opens it from the ticket's attachments.
 
-## What an account key cannot read
+## What the ledger adds to the comments
 
-Per-ticket execution history beyond the comments (the attempt ledger, the remediation round count against the cap, park state and what releases it) is not readable with an account key yet; `catalyst-skills explain --history <ticket>` prints that by name and where to read it. Do not reconstruct a round count from comments and present it as the cap's count.
+Per-ticket execution history beyond the comments (the attempt ledger, the remediation round count against the cap, park state and what releases it) is `catalyst-skills explain --history <ticket>`, read from the cloud's own relay ledger. Do not reconstruct a round count from comments and present it as the cap's count; read it.
 
 ## How to cite
 

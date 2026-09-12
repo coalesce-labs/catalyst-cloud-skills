@@ -90,7 +90,7 @@ export function usageText(): string {
     `${PACKAGE_NAME} — the Catalyst Cloud customer CLI: connect to your tenant, read through the SDK, write through the agent proxy`,
     "",
     "Usage:",
-    "  catalyst-skills login [--key <account-key>] [--base-url <url>] [--start-replica]",
+    "  catalyst-skills login [--key <personal-key>] [--base-url <url>] [--start-replica]",
     "  catalyst-skills join ...   (deprecated alias of login; removed in the next minor version)",
     "  catalyst-skills install [--skills-dir <dir>] [--force]   (repair path; your agent's own command installs the skills)",
     "  catalyst-skills status | notice | me | ready | accounts",
@@ -255,9 +255,9 @@ async function cmdLogin(args: ParsedArgs, ctx: Ctx, deps: MainDeps): Promise<num
   const manifest = readManifest();
   let key = (args.key ?? ctx.env.CATALYST_CLOUD_TOKEN ?? "").trim();
   if (!key && (deps.isTty ?? stdinIsTty)()) {
-    key = (await (deps.promptSecret ?? promptSecret)("Account key (not echoed): ")).trim();
+    key = (await (deps.promptSecret ?? promptSecret)("Personal key (not echoed): ")).trim();
   }
-  if (!key) throw new UsageError("login needs an account key: pass --key <account-key> or set CATALYST_CLOUD_TOKEN");
+  if (!key) throw new UsageError("login needs your personal key: pass --key <personal-key> or set CATALYST_CLOUD_TOKEN");
   const baseUrl = normalizeBaseUrl(args.baseUrl ?? ctx.env.CATALYST_CLOUD_BASE_URL ?? DEFAULT_BASE_URL);
   const me = await fetchMe(baseUrl, key, ctx.fetch);
   let existing: CustomerConfig | null;
@@ -276,6 +276,7 @@ async function cmdLogin(args: ParsedArgs, ctx: Ctx, deps: MainDeps): Promise<num
     name: me.name,
     permissions: me.permissions,
     principal: me.principal,
+    ...(me.user ? { user: me.user } : {}),
     joinedAt: ctx.now().toISOString(),
     lastSkillBundleVersion: manifest.version,
     skillsDir,
@@ -284,6 +285,17 @@ async function cmdLogin(args: ParsedArgs, ctx: Ctx, deps: MainDeps): Promise<num
   };
   const written = writeConfig(ctx.home, config);
   ctx.stdout(`Connected to ${me.name} (${me.slug}) — account ${me.account}`);
+  if (me.user) {
+    ctx.stdout(
+      `Connected as ${me.user.label} (${me.user.role})${
+        me.user.linearUserId ? "" : " — your Linear identity is not matched yet, so \"what needs me\" will show everyone's asks until an admin matches it in Settings"
+      }`,
+    );
+  } else {
+    ctx.stderr(
+      `[catalyst-skills] this is the tenant's account key (a host credential), not your own — the skills work, but nothing your agent writes will carry your name and "what needs me" cannot mean you. Mint a personal key at Settings → API keys and log in with that.`,
+    );
+  }
   ctx.stdout(
     `Config written to ${written.path} (mode ${formatMode(written.mode)}, holds your key and the CLI path)${
       written.mode === CONFIG_MODE ? "" : ` — expected ${formatMode(CONFIG_MODE)}; chmod it by hand`
@@ -338,11 +350,12 @@ function cmdStatus(ctx: Ctx): number {
   const manifest = readManifest();
   const cfg = loadConfig(ctx.home);
   if (!cfg) {
-    ctx.stdout(`Not connected yet — run: CATALYST_CLOUD_TOKEN=<your account key> npx ${PACKAGE_NAME} login`);
+    ctx.stdout(`Not connected yet — run: CATALYST_CLOUD_TOKEN=<your personal key> npx ${PACKAGE_NAME} login`);
     return 0;
   }
   ctx.stdout(`Tenant: ${cfg.name} (${cfg.slug}) — account ${cfg.account}`);
   ctx.stdout(`API: ${cfg.baseUrl} (principal: ${cfg.principal})`);
+  ctx.stdout(cfg.user ? `As: ${cfg.user.label} (${cfg.user.role})` : "As: the tenant's account key (a host credential — no person)");
   ctx.stdout(`Bundle: ${PACKAGE_NAME} ${manifest.version} (tenant contract range: ${manifest.tenantContractRange})`);
   if (cfg.cliPath) ctx.stdout(`CLI: ${cfg.cliPath}${existsSync(cfg.cliPath) ? "" : " (missing — re-run login)"}`);
   ctx.stdout(`Contract: ${existsSync(contractPathFor(ctx.home)) ? contractPathFor(ctx.home) : "not cached (run: catalyst-skills contract --refresh)"}`);
@@ -356,6 +369,7 @@ async function cmdMe(args: ParsedArgs, ctx: Ctx): Promise<number> {
   else {
     ctx.stdout(`${me.name} (${me.slug}) — account ${me.account}`);
     ctx.stdout(`principal: ${me.principal}; permissions: ${me.permissions ? me.permissions.join(", ") : "unrestricted"}`);
+    if (me.user) ctx.stdout(`user: ${me.user.label} (${me.user.role}); linear: ${me.user.linearUserId ?? "unmatched"}`);
   }
   return 0;
 }

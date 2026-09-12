@@ -53,7 +53,7 @@ export async function readyReport(ctx: Ctx, deps: ReadyDeps): Promise<ReadyRepor
     checks.push(
       cfg
         ? { id: "config", ok: true, line: `config: joined ${cfg.name} (${cfg.slug}) as ${cfg.principal}` }
-        : { id: "config", ok: false, line: "config: not connected", fix: "CATALYST_CLOUD_TOKEN=<account key> npx @catalyst-cloud/catalyst-skills login", who: "you (the key comes from your tenant admin)" },
+        : { id: "config", ok: false, line: "config: not connected", fix: "CATALYST_CLOUD_TOKEN=<your personal key> npx @catalyst-cloud/catalyst-skills login", who: "you (mint the key at Settings → API keys)" },
     );
   } catch (err) {
     checks.push({ id: "config", ok: false, line: `config: ${err instanceof CliError ? err.message : String(err)}`, fix: "re-run login to rewrite it", who: "you" });
@@ -62,7 +62,7 @@ export async function readyReport(ctx: Ctx, deps: ReadyDeps): Promise<ReadyRepor
   const cache = readContractCache(ctx.home);
   const range = readManifest().tenantContractRange;
   if (!cache) {
-    checks.push({ id: "contract", ok: false, line: "contract: not cached", fix: "catalyst-skills contract --refresh (needs an account key, not a workstation key)", who: "you" });
+    checks.push({ id: "contract", ok: false, line: "contract: not cached", fix: "catalyst-skills contract --refresh", who: "you" });
   } else if (contractVersionInRange(cache.contractVersion, range) !== true) {
     checks.push({ id: "contract", ok: false, line: `contract: version ${cache.contractVersion} is outside this bundle's range ${range}`, fix: "npm update -g @catalyst-cloud/catalyst-skills", who: "you" });
   } else {

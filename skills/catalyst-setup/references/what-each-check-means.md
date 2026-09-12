@@ -4,9 +4,9 @@ This page restates invariants: the ten per-team readiness checks the cloud runs,
 
 ## How a team's readiness is scored
 
-A team's status is one of `ready`, `degraded`, `blocked` or `unchecked`. The engine always reports all ten checks; a check it could not run is `unknown`, never `pass`. Any failing check the contract marks as blocking makes the team blocked; any unknown, and any failing check marked degrading, makes it degraded. Unchecked means no readiness pass has run for that team yet, which is a note, not a failure. Readiness is stamped with the account-wide mapping revision it was computed against, so a stale verdict is visible as such.
+A team's status is one of `ready`, `degraded`, `blocked` or `unchecked`. The engine always reports all eleven checks; a check it could not run is `unknown`, never `pass`. Any failing check the contract marks as blocking makes the team blocked; any unknown, and any failing check marked degrading, makes it degraded. Unchecked means no readiness pass has run for that team yet, which is a note, not a failure. Readiness is stamped with the account-wide mapping revision it was computed against, so a stale verdict is visible as such.
 
-## The ten checks
+## The eleven checks
 
 | check id | proves | when it fails, the fix | who clicks |
 | -- | -- | -- | -- |
@@ -20,6 +20,7 @@ A team's status is one of `ready`, `degraded`, `blocked` or `unchecked`. The eng
 | `writes_land` | Catalyst has written to this team successfully | "no write observed" is waiting, not failing: it clears the first time Catalyst moves a ticket. "Write refused" means Linear rejected the last write: check the connection and the team's permissions | owner or admin when refused; otherwise nobody |
 | `webhook_covers_team` | events for this team are arriving | confirmed once a repository is registered and events flow; "no delivery observed" is waiting | owner or admin, by registering the repository |
 | `hosts_current` | no connected host runs an older mapping revision | a host that is behind re-loads the mapping on its next connect; a host that did not report its revision is flagged rather than assumed current; "no host connected" is waiting | whoever runs that host |
+| `environment_declared` | a committed environment declaration for the team's default repository is in effect (`.catalyst/environment.json` was ingested, is valid, and its latest proposal is approved) | `no_team_repo_default`: register a repository and make it the team's default; `no_environment_declaration`: commit the declaration file to that repository; `declaration_invalid` / `declaration_read_failed`: fix the file (the ingest names the error); `declaration_awaiting_approval`: an owner or admin approves the proposal in Settings → Environment |
 
 Three checks are informational by design (labels, event delivery, host currency): they degrade a team but never block it. Which are which is served on `readinessChecks[].severity`; do not memorise the split.
 
@@ -36,8 +37,8 @@ Three checks are informational by design (labels, event delivery, host currency)
 | id | proves | fix |
 | -- | -- | -- |
 | `node` | Node 22 or newer, which the SDK's built-in SQLite engine needs | install Node 22+ |
-| `config` | this machine is connected: `customer.json` exists and loads | `CATALYST_CLOUD_TOKEN=<account key> npx @catalyst-cloud/catalyst-skills login`; the key comes from the tenant admin |
-| `contract` | the tenant contract is cached and its major version is one this bundle accepts | `catalyst-skills contract --refresh`; a version outside the range means update the bundle. A refresh needs an account key, not a workstation key |
+| `config` | this machine is connected: `customer.json` exists and loads | `CATALYST_CLOUD_TOKEN=<your personal key> npx @catalyst-cloud/catalyst-skills login`; the person mints the key at Settings → API keys |
+| `contract` | the tenant contract is cached and its major version is one this bundle accepts | `catalyst-skills contract --refresh`; a version outside the range means update the bundle. A 403 naming an older cloud means the cloud has not yet deployed personal-key access |
 | `cliPath` | the CLI path recorded at login still exists, so skill scripts can spawn it | re-run login |
 | `skills` | every skill of this bundle is present where the CLI installed them | `catalyst-skills install` |
 | `sdk` | the SDK loads, so the replica and the watch are available | run under Node 22.15 or newer; every read still works through the API meanwhile |
@@ -58,4 +59,4 @@ Three checks are informational by design (labels, event delivery, host currency)
 
 ## Who can click what
 
-The last block `check.mjs` prints groups every failure by the person it needs. Machine fixes name "you", the person at the keyboard. Tenant fixes name the owner or admin roles the contract lists (as Linear user ids, since that is how the cloud knows them), because the settings page that repairs a mapping, a connection or a label is theirs. A check the contract marks as not needing an answer names nobody: it is informational or self-clearing. This skill reports; it never repairs, because no tenant-reachable repair verb exists for an account key yet.
+The last block `check.mjs` prints groups every failure by the person it needs. Machine fixes name "you", the person at the keyboard. Tenant fixes name the owner or admin roles the contract lists (as Linear user ids, since that is how the cloud knows them), because the settings page that repairs a mapping, a connection or a label is theirs. A check the contract marks as not needing an answer names nobody: it is informational or self-clearing. This skill reports; it never repairs, because no key-reachable repair verb exists yet.

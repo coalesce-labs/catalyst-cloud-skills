@@ -38,7 +38,7 @@ Which parks release themselves:
 | missing branch | its own budgeted release loop |
 | rebase conflict | its own budgeted release loop |
 
-An account key cannot release a park today; the repair verbs are operator-only. When a ticket is parked, say so, name the failure class the explainer shows, and hand the release to whoever administers the tenant.
+Your key cannot release a park; the repair verbs are operator-only. When a ticket is parked, say so, name the failure class the explainer shows, and hand the release to whoever administers the tenant.
 
 ## Two holds that are not failures
 
@@ -47,7 +47,7 @@ An account key cannot release a park today; the repair verbs are operator-only. 
 
 ## What a human sees on the ticket
 
-Each attempt posts a phase-outcome comment (complete or FAILED, with phase, attempt, artifact, a summary and any park or hold block) and each remediation round posts a remediate-attempt comment naming the failure class it is repairing. `catalyst-linear` describes the shapes. The round count of the cap and the park history are not readable with an account key yet; `catalyst-skills explain --history <ticket>` says so and names where to read them.
+Each attempt posts a phase-outcome comment (complete or FAILED, with phase, attempt, artifact, a summary and any park or hold block) and each remediation round posts a remediate-attempt comment naming the failure class it is repairing. `catalyst-linear` describes the shapes. The attempt ledger, the round count against the cap and the park history are readable: `catalyst-skills explain --history <ticket>` prints them from the cloud's own relay ledger.
 
 ## Rule of thumb for answering "why is it stuck?"
 
