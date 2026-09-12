@@ -80,5 +80,7 @@ export function readChangelog(): string {
 
 export function updateNoticeLine(previous: string, current: string, entry: string | null): string {
   const summary = entry ?? "see CHANGELOG.md";
-  return `[catalyst-skills] updated ${previous} → ${current}: ${summary} · update with: npm update -g ${PACKAGE_NAME} (or: npx ${PACKAGE_NAME}@latest login)`;
+  // `npm update -g` treats a global install as a caret range, and a caret below 1.0.0 never moves a
+  // minor — so it never crosses 0.2.x → 0.3.0. The upgrade command must pin @latest via `npm install`.
+  return `[catalyst-skills] updated ${previous} → ${current}: ${summary} · update with: npm install -g ${PACKAGE_NAME}@latest (or: npx ${PACKAGE_NAME}@latest login)`;
 }

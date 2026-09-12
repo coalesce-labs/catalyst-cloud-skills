@@ -263,7 +263,10 @@ describe("changelog + Tier 2 notice", () => {
     expect(line).toContain("0.1.0");
     expect(line).toContain("0.2.0");
     expect(line).toContain("added cycles");
-    expect(line).toContain(`npm update -g ${PACKAGE_NAME}`);
+    // A caret range below 1.0.0 never moves a minor, so `npm update -g` never crosses 0.2.x → 0.3.0;
+    // the upgrade command must pin @latest via `npm install -g`.
+    expect(line).toContain(`npm install -g ${PACKAGE_NAME}@latest`);
+    expect(line).not.toContain("npm update");
     expect(updateNoticeLine("0.1.0", "0.2.0", null)).toContain("see CHANGELOG.md");
   });
 });
@@ -438,7 +441,8 @@ describe("main — Tier 2 notice (a new version's next session)", () => {
     expect(code).toBe(0);
     const noticeLines = out.filter((l) => l.startsWith("[catalyst-skills] updated"));
     expect(noticeLines).toHaveLength(1);
-    expect(noticeLines[0]).toContain(`npm update -g ${PACKAGE_NAME}`);
+    expect(noticeLines[0]).toContain(`npm install -g ${PACKAGE_NAME}@latest`);
+    expect(noticeLines[0]).not.toContain("npm update");
     expect(readConfig().lastSkillBundleVersion).not.toBe("0.0.9");
     out = [];
     code = await main(["notice"], ctx());

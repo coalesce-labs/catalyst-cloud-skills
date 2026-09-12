@@ -88,7 +88,7 @@ export async function readyReport(ctx: Ctx, deps: ReadyDeps): Promise<ReadyRepor
   if (!cache) {
     checks.push({ id: "contract", ok: false, line: "contract: not cached", fix: "catalyst-skills contract --refresh", who: "you" });
   } else if (contractVersionInRange(cache.contractVersion, range) !== true) {
-    checks.push({ id: "contract", ok: false, line: `contract: version ${cache.contractVersion} is outside this bundle's range ${range}`, fix: "npm update -g @catalyst-cloud/catalyst-skills", who: "you" });
+    checks.push({ id: "contract", ok: false, line: `contract: version ${cache.contractVersion} is outside this bundle's range ${range}`, fix: "npm install -g @catalyst-cloud/catalyst-skills@latest", who: "you" });
   } else {
     checks.push({ id: "contract", ok: true, line: `contract: ${cache.contractVersion} cached ${cache.fetchedAt} (range ${range})` });
   }
@@ -104,7 +104,7 @@ export async function readyReport(ctx: Ctx, deps: ReadyDeps): Promise<ReadyRepor
         id: "bundle",
         ok: false,
         note: true,
-        line: `bundle: ${installed} installed is older than the tenant's minimum ${minVersion} — upgrade: npx @catalyst-cloud/catalyst-skills@latest login`,
+        line: `bundle: ${installed} installed is older than the tenant's minimum ${minVersion} — upgrade: npm install -g @catalyst-cloud/catalyst-skills@latest`,
       });
     }
   }

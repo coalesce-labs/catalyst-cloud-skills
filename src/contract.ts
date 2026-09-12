@@ -59,7 +59,7 @@ export function assertContractRange(version: string, range: string): void {
   if (ok === null) throw new CliError(`tenantContractRange "${range}" in package.json is not a range this CLI understands`, "contract-range");
   if (!ok) {
     throw new CliError(
-      `the tenant serves contract version ${version} but this bundle accepts ${range} — update the bundle (npm update -g @catalyst-cloud/catalyst-skills) or ask your tenant admin which version is live`,
+      `the tenant serves contract version ${version} but this bundle accepts ${range} — update the bundle (npm install -g @catalyst-cloud/catalyst-skills@latest) or ask your tenant admin which version is live`,
       "contract-version",
     );
   }

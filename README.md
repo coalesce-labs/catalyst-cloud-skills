@@ -145,10 +145,10 @@ The skill files themselves are written by whichever install command you ran, in 
 
 ## Updating
 
-A plugin install updates when we ship. Skills copied by `npx skills add` do not; run `npx skills update -y` to refresh them. Update the CLI with `npm update -g @catalyst-cloud/catalyst-skills`, or run any command against the latest publish with `npx @catalyst-cloud/catalyst-skills@latest login`. The next `catalyst-skills` run prints a one-line notice:
+A plugin install updates when we ship. Skills copied by `npx skills add` do not; run `npx skills update -y` to refresh them. Update the CLI with `npm install -g @catalyst-cloud/catalyst-skills@latest`, or run any command against the latest publish with `npx @catalyst-cloud/catalyst-skills@latest login`. The next `catalyst-skills` run prints a one-line notice:
 
 ```
-[catalyst-skills] updated 0.1.1 → 0.2.0: <that version's CHANGELOG.md summary> · update with: npm update -g @catalyst-cloud/catalyst-skills (or: npx @catalyst-cloud/catalyst-skills@latest login)
+[catalyst-skills] updated 0.1.1 → 0.2.0: <that version's CHANGELOG.md summary> · update with: npm install -g @catalyst-cloud/catalyst-skills@latest (or: npx @catalyst-cloud/catalyst-skills@latest login)
 ```
 
 A `customer.json` written by an older bundle is still read unchanged; it gains the CLI path and the cached contract the next time you run `catalyst-skills login`.
