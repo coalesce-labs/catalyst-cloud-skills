@@ -124,7 +124,7 @@ export const FLAG_TABLES: Record<string, FlagTable> = {
 };
 
 export const VERB_USAGE: Record<string, string> = {
-  login: "login [--key <account-key>] [--base-url <url>] [--start-replica]",
+  login: "login [--base-url <url>] [--start-replica]   (keyless; or --key <personal-key> / CATALYST_CLOUD_TOKEN)",
   install: "install [--skills-dir <dir>] [--force]",
   status: "status",
   notice: "notice",

@@ -8,7 +8,8 @@ import { flagList, flagString, type ParsedArgs } from "./args.js";
 import { apiBase, requireConfig, watchCursorPathFor, type Ctx, type CustomerConfig } from "./config.js";
 import { loadContract } from "./contract.js";
 import { CliError, UsageError } from "./errors.js";
-import { apiClient } from "./http.js";
+import { apiClient } from "./transport.js";
+import { authStrategyFor, bearerFor } from "./oauth.js";
 import { loadSdk, type Sdk } from "./sdk.js";
 import { createLiveEventsClient, type LiveEventsHandle } from "./watch/consumer.js";
 import { CursorFileError } from "./watch/cursor-file.js";
@@ -166,7 +167,8 @@ export async function runWatch(ctx: Ctx, cfg: CustomerConfig, opts: WatchOptions
     return createLiveEventsClient(sdk, {
     baseUrl: apiBase(cfg),
     accountId: cfg.account,
-    token: cfg.key,
+    auth: authStrategyFor(ctx, cfg),
+    getToken: () => bearerFor(ctx, cfg),
     cursorFile: opts.cursorFile ?? watchCursorPathFor(ctx.home),
     fromHead: opts.fromHead,
     fetchImpl: ctx.fetch,

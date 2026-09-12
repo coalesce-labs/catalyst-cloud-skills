@@ -5,7 +5,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { main } from "../src/cli";
 import { configPathFor, cliPath, DEFAULT_BASE_URL } from "../src/config";
-import { fetchMe } from "../src/http";
+import { fetchMe } from "../src/transport";
 import { makeCtx, tempHome } from "./helpers";
 
 const live = process.env.CATALYST_SKILLS_LIVE_TEST === "1" && Boolean(process.env.CATALYST_CLOUD_TOKEN);

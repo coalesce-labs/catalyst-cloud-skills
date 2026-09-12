@@ -55,27 +55,37 @@ Without `--all` the installer asks which skills to take and which agents to inst
 
 ### Then connect to your tenant
 
-The skills call one CLI, and the CLI holds your credential. Install it once and connect this machine with your own **personal key** — mint it at Settings → API keys in the Catalyst Cloud app (every member can; no admin needed):
+The skills call one CLI, and the CLI holds your credential. Install it once and connect this machine — the keyless way logs you in as yourself, with nothing to mint or paste:
 
 ```sh
 npm install -g @catalyst-cloud/catalyst-skills
-CATALYST_CLOUD_TOKEN=<your-personal-key> catalyst-skills login
+catalyst-skills login
 catalyst-skills ready
 ```
 
-Passing the key as an environment variable is the recommended form, because a key typed into a command line lands in your shell history. With no key in the environment and a terminal attached, `catalyst-skills login` prompts for it without echoing it; `--key <your-personal-key>` is the third form, for a script. `npx @catalyst-cloud/catalyst-skills login` works without the global install, and `bunx` works in place of `npx`. A non-default cloud is set with `CATALYST_CLOUD_BASE_URL` or `--base-url <url>`.
+`catalyst-skills login` with no key opens a device-code login: it prints a short code and a URL, you approve it in your browser, and this machine is connected as you. On a machine with no browser (a remote box, a container) the code and URL still work — approve them from your phone. The short-lived session refreshes silently afterwards, so you log in about once a year. `npx @catalyst-cloud/catalyst-skills login` works without the global install, and `bunx` works in place of `npx`. A non-default cloud is set with `CATALYST_CLOUD_BASE_URL` or `--base-url <url>`.
+
+Prefer a key? Pass one instead — mint a **personal key** at Settings → API keys in the Catalyst Cloud app (every member can; no admin needed). The environment form keeps it out of your shell history:
+
+```sh
+CATALYST_CLOUD_TOKEN=<your-personal-key> catalyst-skills login
+```
+
+`--key <your-personal-key>` is the third form, for a script.
 
 That is the whole setup. Everything below explains what you just installed.
 
 ## What this is
 
-Eight skills that let your coding agent run your own Catalyst Cloud tenant (https://staging.catalystcloud.dev) from your seat: what is happening, what needs you, and what to do about it. They read your tenant through the Catalyst Cloud SDK, write to it through the tenant's agent proxy, and never compose a URL or run a tool of their own; every read, write and subscription is a `catalyst-skills` verb with `--help`. Every skill is plain Markdown under `skills/<name>/SKILL.md` in this repository, and your own personal key is the only credential. Your agent acts as you: the asks it raises and the comments it posts carry your name, and "what needs me" means you.
+Eight skills that let your coding agent run your own Catalyst Cloud tenant (https://staging.catalystcloud.dev) from your seat: what is happening, what needs you, and what to do about it. They read your tenant through the Catalyst Cloud SDK, write to it through the tenant's agent proxy, and never compose a URL or run a tool of their own; every read, write and subscription is a `catalyst-skills` verb with `--help`. Every skill is plain Markdown under `skills/<name>/SKILL.md` in this repository, and your own login — a keyless device-code session, or a personal key — is the only credential. Your agent acts as you: the asks it raises and the comments it posts carry your name, and "what needs me" means you.
 
 ## What connecting does
 
-`login` does three things: it calls `GET /api/v1/me` with your key, which discovers your tenant and who you are from the key alone; it writes `~/.config/catalyst-cloud/customer.json` with file mode `0600`, holding your key, who you are (id, label, role, your Linear user id) and the absolute path of the CLI so every skill script can spawn the same binary; and it fetches the tenant contract (`GET /api/v1/agent/contract`) and caches it at `~/.config/catalyst-cloud/contract.json` with its ETag, so stage names and ids, label ids, the ask template, thresholds and the route table come from your tenant, live, and no skill restates them.
+`login` does three things: it calls `GET /api/v1/me` with your credential, which discovers your tenant and who you are from the credential alone; it writes `~/.config/catalyst-cloud/customer.json` with file mode `0600`, holding your credential (a keyless login session, or a personal key), who you are (id, label, role, your Linear user id) and the absolute path of the CLI so every skill script can spawn the same binary; and it fetches the tenant contract (`GET /api/v1/agent/contract`) and caches it at `~/.config/catalyst-cloud/contract.json` with its ETag, so stage names and ids, label ids, the ask template, thresholds and the route table come from your tenant, live, and no skill restates them.
 
-`login` does not install skills; the install command above did that. Re-running `login` after a key rotation rewrites the config. `catalyst-skills status` prints which tenant this machine is connected to and as whom, `catalyst-skills ready` prints one READY or NOT READY verdict with the fix for each failure and who can apply it, and `catalyst-skills --version` prints the package version and its pinned tenant contract range.
+A keyless session's access token is short-lived and rotates on its own: every request refreshes it within a minute of expiry and rewrites the config atomically, so you stay connected for months without logging in again. You only log in again if the session is revoked or you have been away long enough to lapse — then one clear line tells you to run `login`.
+
+`login` does not install skills; the install command above did that. Re-running `login` after a key rotation, or to switch rails, rewrites the config. `catalyst-skills status` prints which tenant this machine is connected to and as whom, `catalyst-skills ready` prints one READY or NOT READY verdict with the fix for each failure and who can apply it, and `catalyst-skills --version` prints the package version and its pinned tenant contract range.
 
 The setup skill Catalyst seeds into your repository ends by pointing at this same command. That served skill lives in the Catalyst Cloud application, not here; this is the only connect step a customer runs. The tenant's **account key** (Settings → Account keys, admin-minted) is a different credential — for a host or daemon that runs unattended — and is not what a person connects their own agent with: it would strip your name from everything your agent writes, and `login` says so if you use one.
 

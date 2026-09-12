@@ -338,19 +338,50 @@ describe("main — login (and the deprecated join alias)", () => {
     expect(out.join("\n")).toContain(`Connected to ${FIXTURE_ME_BODY.name}`);
     expect(readConfig().account).toBe("tenant-3");
   });
-  test("with no key and a terminal attached, login prompts for it without echo", async () => {
-    const asked: string[] = [];
+  test("⭐ no key: login runs the device flow, prints the code + URL, writes an oauth config (no key, 0600), and names the person", async () => {
+    server.oauth.pendingPolls = 1;
+    const opened: string[] = [];
     const code = await main(["login", "--base-url", server.url], ctx(), {
-      isTty: () => true,
-      promptSecret: async (q) => {
-        asked.push(q);
-        return " fixture-key \n";
-      },
+      isTty: () => false,
+      openBrowser: (u) => opened.push(u),
+      sleep: async () => {},
     });
     expect(code).toBe(0);
-    expect(asked).toHaveLength(1);
-    expect(asked[0]).toMatch(/not echoed/i);
-    expect(readConfig().key, "the prompted key is trimmed before it is stored").toBe("fixture-key");
+    expect(out.join("\n")).toContain("WXYZ-1234");
+    expect(out.join("\n")).toContain(`${server.url}/activate`);
+    expect(out.join("\n")).toContain(`Connected as ${FIXTURE_ME_USER.label} (${FIXTURE_ME_USER.role})`);
+    expect(opened, "no browser opened without a TTY").toEqual([]);
+    const cfg = readConfig();
+    expect(cfg.key, "an oauth config carries no key").toBeUndefined();
+    expect(cfg.auth?.kind).toBe("oauth");
+    expect(cfg.auth?.refreshToken).toBe("refresh-1");
+    expect(cfg.auth?.sessionId).toBe("session_fixture");
+    expect(statSync(configPathFor(home)).mode & 0o777).toBe(0o600);
+  });
+  test("keyless login names the role from /me.user.role, NOT the token's role claim (probe: token said member for a D1 admin)", async () => {
+    const before = server.oauth.jwtRole;
+    server.oauth.jwtRole = "member"; // the unreliable JWT claim
+    try {
+      const code = await main(["login", "--base-url", server.url], ctx(), { isTty: () => false, sleep: async () => {} });
+      expect(code).toBe(0);
+      // FIXTURE_ME_USER.role is "admin" from /me — the printed role must be that, not the token's "member"
+      expect(out.join("\n")).toContain(`Connected as ${FIXTURE_ME_USER.label} (admin)`);
+      expect(out.join("\n")).not.toContain("(member)");
+      expect(readConfig().user?.role).toBe("admin");
+    } finally {
+      server.oauth.jwtRole = before;
+    }
+  });
+  test("no key with a terminal attached opens the browser at the completion URL, once", async () => {
+    server.oauth.pendingPolls = 0;
+    const opened: string[] = [];
+    const code = await main(["login", "--base-url", server.url], ctx(), {
+      isTty: () => true,
+      openBrowser: (u) => opened.push(u),
+      sleep: async () => {},
+    });
+    expect(code).toBe(0);
+    expect(opened).toEqual([`${server.url}/activate?user_code=WXYZ-1234`]);
   });
   test("key and base URL fall back to CATALYST_CLOUD_TOKEN / CATALYST_CLOUD_BASE_URL", async () => {
     const code = await main(
@@ -360,11 +391,13 @@ describe("main — login (and the deprecated join alias)", () => {
     expect(code).toBe(0);
     expect(readConfig().baseUrl).toBe(server.url);
   });
-  test("no key anywhere and no terminal is a usage error (exit 1), not a network call", async () => {
-    const code = await main(["login", "--base-url", server.url], ctx(), { isTty: () => false });
-    expect(code).toBe(1);
-    expect(err.join("\n")).toContain("CATALYST_CLOUD_TOKEN");
-    expect(existsSync(configPathFor(home))).toBe(false);
+  test("login --key still takes the key path unchanged (regression pin: no device flow, no oauth block)", async () => {
+    const before = server.oauth.deviceAuthorizeCount;
+    const code = await main(["login", "--key", FIXTURE_USER_KEY, "--base-url", server.url], ctx(), { isTty: () => true, sleep: async () => {} });
+    expect(code).toBe(0);
+    expect(readConfig().key).toBe(FIXTURE_USER_KEY);
+    expect(readConfig().auth).toBeUndefined();
+    expect(server.oauth.deviceAuthorizeCount, "the key path starts no device flow").toBe(before);
   });
   test("a rejected key is exit 2 with a human-readable cause and no config", async () => {
     const code = await main(["login", "--key", "wrong-key", "--base-url", server.url], ctx());

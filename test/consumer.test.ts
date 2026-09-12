@@ -56,7 +56,8 @@ function build(onEvent?: (f: ChangeFrame) => void | Promise<void>, logs: string[
   return createLiveEventsClient(sdk, {
     baseUrl: "http://127.0.0.1:1",
     accountId: ACCOUNT,
-    token: "t",
+    auth: { kind: "token", token: "t" },
+    getToken: async () => "t",
     cursorFile: `${home}/cursor.json`,
     fetchImpl,
     wsFactory: () => {
@@ -172,7 +173,7 @@ describe("createLiveEventsClient", () => {
     console.log = (...a: unknown[]) => lines.push(a.map(String).join(" "));
     try {
       printFrame(frame(3));
-      const h = createLiveEventsClient(sdk, { baseUrl: "http://127.0.0.1:1", accountId: ACCOUNT, token: "t", cursorFile: `${home}/c.json`, fetchImpl, wsFactory: () => new FakeWs() });
+      const h = createLiveEventsClient(sdk, { baseUrl: "http://127.0.0.1:1", accountId: ACCOUNT, auth: { kind: "token", token: "t" }, getToken: async () => "t", cursorFile: `${home}/c.json`, fetchImpl, wsFactory: () => new FakeWs() });
       expect(h.cursor()).toBeNull();
     } finally {
       console.log = orig;

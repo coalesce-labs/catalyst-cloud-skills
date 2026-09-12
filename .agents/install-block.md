@@ -51,17 +51,27 @@ your home directory instead of the project. Skills installed this way do not aut
 ### Then connect to your tenant
 
 The skills call one CLI, and the CLI holds your credential. Install it once and connect this machine
-with your own **personal key** — mint it at Settings → API keys in the Catalyst Cloud app (every member can; no admin needed):
+— the keyless way logs you in as yourself, with nothing to mint or paste:
 
 ```sh
 npm install -g @catalyst-cloud/catalyst-skills
-CATALYST_CLOUD_TOKEN=<your-personal-key> catalyst-skills login
+catalyst-skills login
 catalyst-skills ready
 ```
 
-`npx @catalyst-cloud/catalyst-skills login` works without the global install. Passing the key as an
-environment variable keeps it out of your shell history; `catalyst-skills login` with no key and a
-terminal attached prompts for it without echoing it.
+`catalyst-skills login` with no key opens a device-code login: it prints a short code and a URL, you
+approve in your browser (or from your phone on a machine with no browser), and this machine connects
+as you. The short-lived session refreshes silently afterwards. `npx @catalyst-cloud/catalyst-skills login`
+works without the global install.
+
+Prefer a key? Mint a **personal key** at Settings → API keys (every member can; no admin needed) and
+pass it — the environment form keeps it out of your shell history:
+
+```sh
+CATALYST_CLOUD_TOKEN=<your-personal-key> catalyst-skills login
+```
+
+`--key <your-personal-key>` is the third form, for a script.
 
 The connect step is a `###` under `## Install`, never its own top-level section. It has to sit
 beside the install commands, in the same block a reader copies, or half of them stop at the install

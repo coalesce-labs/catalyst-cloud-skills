@@ -7,7 +7,8 @@ import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import type { ChangeFrame, WebSocketLike } from "@catalyst-cloud/sdk/node";
 import { main } from "../src/cli";
-import { watchCursorPathFor } from "../src/config";
+import { configPathFor, watchCursorPathFor, type CustomerConfig } from "../src/config";
+import { resetDiscoveryCache } from "../src/oauth";
 import { CursorFileError, readCursorFile, writeCursorFile } from "../src/watch/cursor-file";
 import { execReaction, inScope, runWatch, type IssueResolver } from "../src/watch";
 import { FIXTURE_ACCOUNT } from "./fixture-contract";
@@ -82,6 +83,44 @@ function start(opts: Parameters<typeof runWatch>[2], extra: Partial<Parameters<t
 function cursorOf(): number | null {
   return readCursorFile(watchCursorPathFor(home))?.cursor ?? null;
 }
+
+describe("watch — the OAuth rail (CTC-2112)", () => {
+  test("an oauth config drives a {kind:'bearer'} socket: the connect URL carries a freshly-refreshed access token, not the stored one", async () => {
+    resetDiscoveryCache();
+    const now = new Date("2026-09-12T12:00:00Z");
+    const oauthCtx = makeCtx(home, { now: () => now });
+    const cfg: CustomerConfig = {
+      baseUrl: server.url,
+      account: FIXTURE_ACCOUNT,
+      slug: "hagale-technologies",
+      name: "Hagale Technologies",
+      permissions: ["mirror:read", "mirror:feed"],
+      principal: "service",
+      joinedAt: now.toISOString(),
+      lastSkillBundleVersion: "0.4.0",
+      auth: { kind: "oauth", accessToken: "stale-not-issued", refreshToken: "rt-old", expiresAt: new Date(now.getTime() + 30_000).toISOString(), sessionId: "session_fixture" },
+    };
+    mkdirSync(dirname(configPathFor(home)), { recursive: true });
+    writeFileSync(configPathFor(home), JSON.stringify(cfg));
+    const urls: string[] = [];
+    const localWsFactory = (url: string): WebSocketLike => {
+      urls.push(url);
+      const ws = new FakeWs();
+      sockets.push(ws);
+      return ws;
+    };
+    let stop!: () => void;
+    const stopped = new Promise<void>((r) => (stop = r));
+    const done = runWatch(oauthCtx, cfg, { scope: {} }, { wsFactory: localWsFactory, waitForStop: () => stopped, backoffMs: 5, maxBackoffMs: 10 });
+    await waitFor(() => urls.length === 1, 5000);
+    expect(server.oauth.refreshCount).toBe(1); // the head reseed / connect refreshed the near-expiry token
+    const token = new URL(urls[0]!).searchParams.get("token");
+    expect(token, "the bearer strategy resolves fresh onto ?token=").not.toBe("stale-not-issued");
+    expect(server.oauth.issuedAccessTokens.has(token ?? "")).toBe(true);
+    stop();
+    expect(await done).toBe(0);
+  });
+});
 
 describe("watch", () => {
   test("a frame in scope prints one JSON line and the cursor file advances after the reaction", async () => {
