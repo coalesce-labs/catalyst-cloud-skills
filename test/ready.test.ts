@@ -7,7 +7,7 @@ import { CUSTOMER_SKILLS, main } from "../src/cli";
 import { contractPathFor, defaultSkillsDirFor } from "../src/config";
 import { installSkills } from "../src/skills";
 import { readyReport } from "../src/ready";
-import { startMeFixture, type FixtureServer } from "./fixture";
+import { FIXTURE_ME_USER, startMeFixture, type FixtureServer } from "./fixture";
 import { makeCtx, seedJoined, seedReplica, tempHome, type TestCtx } from "./helpers";
 
 let server: FixtureServer;
@@ -121,6 +121,50 @@ describe("more ready branches", () => {
     expect(text).toMatch(/^note {2}team ENG: degraded/m);
     expect(text).toMatch(/^FAIL {2}team OPS: mystery_check is fail$/m);
     expect(text).toMatch(/who: a tenant owner or admin \(none resolved on the contract\)/);
+  });
+  test("config names the connected person when the /me user block is present", async () => {
+    await seedJoined(home, server, { config: { user: FIXTURE_ME_USER } });
+    installSkills(defaultSkillsDirFor(home), {});
+    expect(await main(["ready"], ctx)).toBe(0);
+    expect(ctx.out.join("\n")).toMatch(/^ok {3}config: joined Hagale Technologies as Tony \(admin\)$/m);
+  });
+  test("config falls back to the account line when there is no user block", async () => {
+    await seedJoined(home, server);
+    installSkills(defaultSkillsDirFor(home), {});
+    expect(await main(["ready"], ctx)).toBe(0);
+    expect(ctx.out.join("\n")).toMatch(/^ok {3}config: joined Hagale Technologies \(hagale-technologies\) as service$/m);
+  });
+  test("warns (never refuses) when the installed bundle is older than the contract's minimum", async () => {
+    await seedJoined(home, server);
+    installSkills(defaultSkillsDirFor(home), {});
+    const cache = JSON.parse(readFileSync(contractPathFor(home), "utf8")) as { doc: { skillsBundle?: unknown } };
+    cache.doc.skillsBundle = { package: "@catalyst-cloud/catalyst-skills", minVersion: "9.9.9" };
+    writeFileSync(contractPathFor(home), JSON.stringify(cache));
+    expect(await main(["ready", "--json"], ctx)).toBe(0);
+    const j = JSON.parse(ctx.out.join("\n")) as { ready: boolean; checks: { id: string; note?: boolean; line: string }[] };
+    expect(j.ready).toBe(true);
+    const note = j.checks.find((c) => c.id === "bundle");
+    expect(note).toMatchObject({ note: true });
+    expect(note!.line).toContain("9.9.9");
+    expect(note!.line).toContain("npx @catalyst-cloud/catalyst-skills@latest login");
+  });
+  test("no bundle note when the installed bundle meets the contract's minimum", async () => {
+    await seedJoined(home, server);
+    installSkills(defaultSkillsDirFor(home), {});
+    const cache = JSON.parse(readFileSync(contractPathFor(home), "utf8")) as { doc: { skillsBundle?: unknown } };
+    cache.doc.skillsBundle = { package: "@catalyst-cloud/catalyst-skills", minVersion: "0.0.1" };
+    writeFileSync(contractPathFor(home), JSON.stringify(cache));
+    expect(await main(["ready", "--json"], ctx)).toBe(0);
+    const j = JSON.parse(ctx.out.join("\n")) as { checks: { id: string }[] };
+    expect(j.checks.find((c) => c.id === "bundle")).toBeUndefined();
+  });
+  test("no bundle note and no crash when the contract omits skillsBundle (older cloud)", async () => {
+    await seedJoined(home, server);
+    installSkills(defaultSkillsDirFor(home), {});
+    expect(await main(["ready", "--json"], ctx)).toBe(0);
+    const j = JSON.parse(ctx.out.join("\n")) as { ready: boolean; checks: { id: string }[] };
+    expect(j.ready).toBe(true);
+    expect(j.checks.find((c) => c.id === "bundle")).toBeUndefined();
   });
   test("a failed check the contract marks needsAnswer: false stays informational (a note with the count), and the verdict stays READY", async () => {
     await seedJoined(home, server);

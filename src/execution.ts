@@ -81,8 +81,14 @@ export function describeReason(reason: string | undefined): string {
   return EXCLUSION_REASONS[reason] ?? UNKNOWN_REASONS[reason] ?? `reason "${reason}" (not in this bundle's table; read it as the cloud spelled it)`;
 }
 
-export function renderExplain(ticket: string, row: EligibilityRow | null, team: string): string {
-  if (!row) return `${ticket}: not in the ${team} eligibility explainer — the ticket is unknown to the mirror, terminal, or on another team.`;
+export function renderExplain(ticket: string, row: EligibilityRow | null, team: string, knownState?: string | null): string {
+  if (!row) {
+    // A null dispatch row is not proof the ticket does not exist — the explainer is a dispatch scan. When
+    // `knownState` is set (the mirror answered GET /issues/:id) the ticket is real; it just sits outside a
+    // dispatch column. Only a 404 (knownState null/absent) is truly unknown to the mirror.
+    if (knownState) return `${ticket}: known to the mirror; state ${knownState} is not a dispatch state.`;
+    return `${ticket}: not in the ${team} eligibility explainer — the ticket is unknown to the mirror, terminal, or on another team.`;
+  }
   const parts: string[] = [];
   const pos = typeof row.position === "number" ? `position ${row.position}` : "no queue position";
   const status = row.status ?? "unknown";
@@ -126,10 +132,16 @@ export async function cmdExplain(args: ParsedArgs, ctx: Ctx): Promise<number> {
   });
   const rows = res.body.eligibility?.rows ?? res.body.rows ?? [];
   const row = rows.find((r) => String(r.ticket ?? "").toUpperCase() === ticket.toUpperCase()) ?? null;
+  // No dispatch row is not proof of non-existence: probe the mirror so a Backlog ticket reads as known.
+  let knownState: string | null = null;
+  if (!row) {
+    const probe = await api.getJson<{ state?: unknown }>(`/api/v1/issues/${encodeURIComponent(ticket)}`, { accept: [404] });
+    if (probe.status !== 404) knownState = typeof probe.body?.state === "string" ? probe.body.state : "unknown";
+  }
   if (args.json) {
-    ctx.stdout(JSON.stringify({ ticket, row, explanation: renderExplain(ticket, row, team) }));
+    ctx.stdout(JSON.stringify({ ticket, row, explanation: renderExplain(ticket, row, team, knownState) }));
   } else {
-    ctx.stdout(renderExplain(ticket, row, team));
+    ctx.stdout(renderExplain(ticket, row, team, knownState));
   }
   return 0;
 }

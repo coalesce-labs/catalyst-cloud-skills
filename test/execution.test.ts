@@ -4,7 +4,7 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from "vitest";
 import { main } from "../src/cli";
 import { EXCLUSION_REASONS, UNKNOWN_REASONS, describeReason, renderExplain } from "../src/execution";
-import { startMeFixture, type FixtureServer } from "./fixture";
+import { fixtureIssues, startMeFixture, type FixtureServer } from "./fixture";
 import { makeCtx, seedJoined, tempHome, type TestCtx } from "./helpers";
 
 let server: FixtureServer;
@@ -51,6 +51,17 @@ describe("explain", () => {
   test("a ticket absent from the explainer says so", async () => {
     expect(await main(["explain", "ENG-99"], ctx)).toBe(0);
     expect(ctx.out.join("\n")).toMatch(/ENG-99: not in the ENG eligibility explainer/);
+  });
+  test("a Backlog ticket with no dispatch row is named as known, not unknown", async () => {
+    // ENG-7 is in the mirror but not in the eligibility rows (ENG-1/2/3): a null dispatch row is not
+    // proof of non-existence, so `explain` probes /api/v1/issues/:id and names the non-dispatch state.
+    server.issues = fixtureIssues().map((i) => (i.identifier === "ENG-7" ? { ...i, state: "Backlog" } : i));
+    expect(await main(["explain", "ENG-7"], ctx)).toBe(0);
+    expect(ctx.out.join("\n")).toBe("ENG-7: known to the mirror; state Backlog is not a dispatch state.");
+  });
+  test("a ticket the mirror 404s on keeps the unknown wording", async () => {
+    expect(await main(["explain", "ENG-404"], ctx)).toBe(0);
+    expect(ctx.out.join("\n")).toBe("ENG-404: not in the ENG eligibility explainer — the ticket is unknown to the mirror, terminal, or on another team.");
   });
   // ⛔ 0.2.0 printed a "not visible to an account key yet" placeholder here and called nothing.
   // CTC-1954's route is the real answer; --history is an alias of the `history` verb.

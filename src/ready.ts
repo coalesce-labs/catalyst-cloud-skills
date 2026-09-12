@@ -33,6 +33,21 @@ export interface ReadyDeps {
   loadSdk?: () => Promise<unknown>;
 }
 
+/** True when `a` is a semver-older release than `b`. Prerelease/build metadata is ignored; a segment
+ *  that does not parse counts as 0. A tiny compare on purpose — no dependency for three fields. */
+export function semverOlder(a: string, b: string): boolean {
+  const parse = (v: string): [number, number, number] => {
+    const core = v.split("-")[0]!.split("+")[0]!;
+    const p = core.split(".");
+    return [Number(p[0]) || 0, Number(p[1]) || 0, Number(p[2]) || 0];
+  };
+  const [a0, a1, a2] = parse(a);
+  const [b0, b1, b2] = parse(b);
+  if (a0 !== b0) return a0 < b0;
+  if (a1 !== b1) return a1 < b1;
+  return a2 < b2;
+}
+
 function whoCanAnswer(doc: TenantContract): string {
   const roles = doc.humans.map((h) => `${h.role} ${h.linearUserId}`);
   return roles.length ? roles.join(", ") : "a tenant owner or admin (none resolved on the contract)";
@@ -52,7 +67,16 @@ export async function readyReport(ctx: Ctx, deps: ReadyDeps): Promise<ReadyRepor
     cfg = loadConfig(ctx.home);
     checks.push(
       cfg
-        ? { id: "config", ok: true, line: `config: joined ${cfg.name} (${cfg.slug}) as ${cfg.principal}` }
+        ? {
+            id: "config",
+            ok: true,
+            // `principal` is "service" for every api key (it means "a key, not a browser session"); it
+            // never names a person. Since CTC-2076 a personal key's /me carries a `user` block, so name
+            // the connected person when there is one, and fall back to the account for a host key.
+            line: cfg.user
+              ? `config: joined ${cfg.name} as ${cfg.user.label} (${cfg.user.role})`
+              : `config: joined ${cfg.name} (${cfg.slug}) as ${cfg.principal}`,
+          }
         : { id: "config", ok: false, line: "config: not connected", fix: "CATALYST_CLOUD_TOKEN=<your personal key> npx @catalyst-cloud/catalyst-skills login", who: "you (mint the key at Settings → API keys)" },
     );
   } catch (err) {
@@ -67,6 +91,22 @@ export async function readyReport(ctx: Ctx, deps: ReadyDeps): Promise<ReadyRepor
     checks.push({ id: "contract", ok: false, line: `contract: version ${cache.contractVersion} is outside this bundle's range ${range}`, fix: "npm update -g @catalyst-cloud/catalyst-skills", who: "you" });
   } else {
     checks.push({ id: "contract", ok: true, line: `contract: ${cache.contractVersion} cached ${cache.fetchedAt} (range ${range})` });
+  }
+
+  // The cloud MAY publish the bundle it expects (catalyst-cloud#3746). Read it defensively: warn (never
+  // refuse) when this installed bundle is older than the minimum, and emit nothing when the field is
+  // absent (an older cloud) — a stale bundle is a degrading note, so `ready` still returns READY.
+  const minVersion = cache?.doc.skillsBundle?.minVersion;
+  if (minVersion) {
+    const installed = readManifest().version;
+    if (semverOlder(installed, minVersion)) {
+      checks.push({
+        id: "bundle",
+        ok: false,
+        note: true,
+        line: `bundle: ${installed} installed is older than the tenant's minimum ${minVersion} — upgrade: npx @catalyst-cloud/catalyst-skills@latest login`,
+      });
+    }
   }
 
   if (cfg) {

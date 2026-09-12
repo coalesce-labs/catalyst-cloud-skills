@@ -134,6 +134,9 @@ export interface TenantContract {
     cloudRemediateRequiredChecks: readonly string[];
     prLabels: { queueReady: string; handStepsHold: string; hold: string; preview: string };
   };
+  /** The customer skill bundle the cloud expects, when it publishes one (catalyst-cloud#3746). OPTIONAL:
+   *  an older cloud omits it, and `ready` reads it defensively — an absent field emits nothing. */
+  skillsBundle?: { package: string; minVersion: string };
   readinessChecks: readonly { id: string; severity: string; needsAnswer: boolean }[];
   humans: readonly { linearUserId: string; role: "owner" | "admin" }[];
   asks: { approvalsTeamId: string | null };
