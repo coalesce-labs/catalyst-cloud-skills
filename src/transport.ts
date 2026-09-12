@@ -1,9 +1,17 @@
-// http.ts — the thin authenticated fetch every read outside the replica and every write goes through.
-// One bearer, one 15s timeout, three error kinds (http | network | shape), and the four status lines a
-// customer will actually see: 401, 403, 429 (the write budget), and everything else with its reason.
+// transport.ts — the thin, credential-aware authenticated fetch for every tenant route the SDK's typed
+// client (createTenantClient, SDK 0.9) does NOT wrap: the execution/telemetry reads, the NDJSON change
+// feed, /search, /cycles, /workflow-stages and the snapshot head probe (~12 routes). The bearer comes
+// from `bearerFor` — a personal key verbatim, or a freshly-refreshed OAuth access token — so this one
+// place is where both rails authenticate. One 15s timeout, three error kinds (http | network | shape),
+// and the four status lines a customer sees: 401, 403, 429 (the write budget), everything else by reason.
+//
+// CTC-2112 renamed this from `http.ts` and made it credential-aware. Moving the SDK-covered reads/writes
+// (contract, me, issues/pulls/projects, agent.*) onto createTenantClient — and finally dropping this
+// module — waits on the SDK covering the remaining routes (the CTC-2004 Tier 2 follow-up).
 import type { Ctx, CustomerConfig, MeIdentity, MeUser } from "./config.js";
 import { normalizeBaseUrl } from "./config.js";
 import { CliError, MeError } from "./errors.js";
+import { bearerFor } from "./oauth.js";
 
 export const REQUEST_TIMEOUT_MS = 15_000;
 
@@ -22,20 +30,23 @@ export interface GetOptions {
 
 export class ApiClient {
   constructor(
-    private readonly cfg: Pick<CustomerConfig, "baseUrl" | "key">,
+    private readonly baseUrl: string,
+    /** Resolves the current bearer FRESH per request — a personal key verbatim, or the OAuth access
+     *  token refreshed within 60s of expiry (CTC-2112). Never captured once. */
+    private readonly credential: () => Promise<string>,
     private readonly fetchImpl: typeof fetch,
   ) {}
 
   /** `path` is absolute under the origin (e.g. `/api/v1/issues`). */
   url(path: string, query?: GetOptions["query"]): string {
-    const u = new URL(`${normalizeBaseUrl(this.cfg.baseUrl)}${path}`);
+    const u = new URL(`${normalizeBaseUrl(this.baseUrl)}${path}`);
     for (const [k, v] of Object.entries(query ?? {})) if (v !== undefined) u.searchParams.set(k, String(v));
     return u.toString();
   }
 
   async getJson<T = unknown>(path: string, opts: GetOptions = {}): Promise<JsonResponse<T>> {
     const headers: Record<string, string> = {
-      authorization: `Bearer ${this.cfg.key}`,
+      authorization: `Bearer ${await this.credential()}`,
       accept: "application/json",
     };
     if (opts.etag) headers["if-none-match"] = opts.etag;
@@ -61,7 +72,7 @@ export class ApiClient {
     const url = this.url(path, opts.query);
     const res = await this.send(url, {
       method: "GET",
-      headers: { authorization: `Bearer ${this.cfg.key}`, accept: "application/x-ndjson, application/json" },
+      headers: { authorization: `Bearer ${await this.credential()}`, accept: "application/x-ndjson, application/json" },
     });
     if (opts.accept?.includes(res.status)) return { status: res.status, body: [], headers: res.headers };
     await this.refuseIfNotOk(res, `GET ${path}`);
@@ -84,7 +95,7 @@ export class ApiClient {
     const res = await this.send(url, {
       method: "POST",
       headers: {
-        authorization: `Bearer ${this.cfg.key}`,
+        authorization: `Bearer ${await this.credential()}`,
         accept: "application/json",
         "content-type": "application/json",
       },
@@ -151,8 +162,10 @@ export class ApiClient {
   }
 }
 
-export function apiClient(cfg: Pick<CustomerConfig, "baseUrl" | "key">, ctx: Pick<Ctx, "fetch">): ApiClient {
-  return new ApiClient(cfg, ctx.fetch);
+/** Build the authenticated client for a config: the bearer resolves through {@link bearerFor}, so a
+ *  key config sends the key and an OAuth config sends a freshly-refreshed access token per request. */
+export function apiClient(cfg: CustomerConfig, ctx: Ctx): ApiClient {
+  return new ApiClient(cfg.baseUrl, () => bearerFor(ctx, cfg), ctx.fetch);
 }
 
 /** GET /api/v1/me — how a key learns its own tenant. Unchanged contract from 0.1. */

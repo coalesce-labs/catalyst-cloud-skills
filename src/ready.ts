@@ -77,7 +77,7 @@ export async function readyReport(ctx: Ctx, deps: ReadyDeps): Promise<ReadyRepor
               ? `config: joined ${cfg.name} as ${cfg.user.label} (${cfg.user.role})`
               : `config: joined ${cfg.name} (${cfg.slug}) as ${cfg.principal}`,
           }
-        : { id: "config", ok: false, line: "config: not connected", fix: "CATALYST_CLOUD_TOKEN=<your personal key> npx @catalyst-cloud/catalyst-skills login", who: "you (mint the key at Settings → API keys)" },
+        : { id: "config", ok: false, line: "config: not connected", fix: "npx @catalyst-cloud/catalyst-skills login (keyless; or pass --key / set CATALYST_CLOUD_TOKEN)", who: "you (approve the login in your browser)" },
     );
   } catch (err) {
     checks.push({ id: "config", ok: false, line: `config: ${err instanceof CliError ? err.message : String(err)}`, fix: "re-run login to rewrite it", who: "you" });

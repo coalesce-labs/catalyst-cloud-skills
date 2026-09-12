@@ -25,12 +25,14 @@ import {
 } from "./config.js";
 import { loadContract, pickPath } from "./contract.js";
 import { CliError, MeError, UsageError } from "./errors.js";
-import { fetchMe } from "./http.js";
+import { fetchMe } from "./transport.js";
+import { bearerFor, deviceFlowLogin, type OauthAuth } from "./oauth.js";
+import { openBrowser as defaultOpenBrowser } from "./browser.js";
 import { cmdAccounts, cmdExplain, cmdHistory, cmdQueue, cmdRunning } from "./execution.js";
 import { cmdQuery } from "./query.js";
 import { cmdReady } from "./ready.js";
 import { cmdReplica, type ReplicaDeps } from "./replica.js";
-import { promptSecret, stdinIsTty } from "./prompt.js";
+import { stdinIsTty } from "./prompt.js";
 import { PROVENANCE_MARKER } from "./skill-shape.js";
 import { installSkills, parseChangelogEntry, readChangelog, resolveSkillsDir, skillsSourceDir, updateNoticeLine, type SkillsInstallResult } from "./skills.js";
 import { cmdWatch, type WatchDeps } from "./watch.js";
@@ -90,7 +92,8 @@ export function usageText(): string {
     `${PACKAGE_NAME} — the Catalyst Cloud customer CLI: connect to your tenant, read through the SDK, write through the agent proxy`,
     "",
     "Usage:",
-    "  catalyst-skills login [--key <personal-key>] [--base-url <url>] [--start-replica]",
+    "  catalyst-skills login [--base-url <url>] [--start-replica]   (keyless: logs you in as yourself)",
+    "  catalyst-skills login --key <personal-key> [--base-url <url>]   (or CATALYST_CLOUD_TOKEN, for a key)",
     "  catalyst-skills join ...   (deprecated alias of login; removed in the next minor version)",
     "  catalyst-skills install [--skills-dir <dir>] [--force]   (repair path; your agent's own command installs the skills)",
     "  catalyst-skills status | notice | me | ready | accounts",
@@ -104,14 +107,16 @@ export function usageText(): string {
     "",
     "Every verb takes --help. --json makes the output machine-readable.",
     "",
-    "The key may also come from CATALYST_CLOUD_TOKEN; the base URL defaults to",
-    `CATALYST_CLOUD_BASE_URL or ${DEFAULT_BASE_URL}.`,
+    "With no key, login is keyless: it opens a WorkOS device-code flow, prints a short code and a URL,",
+    "and connects you as yourself once you approve in the browser — nothing to mint or paste. Pass",
+    "--key (or set CATALYST_CLOUD_TOKEN) to use a personal or account key instead. The base URL defaults",
+    `to CATALYST_CLOUD_BASE_URL or ${DEFAULT_BASE_URL}.`,
     "",
-    "login calls GET /api/v1/me to discover your tenant from the key alone, writes",
-    "~/.config/catalyst-cloud/customer.json (0600) with the key and this CLI's path, and caches the",
-    "tenant contract beside it. With no key in the environment and a terminal attached it prompts",
-    "for the key without echoing it. It does not install skills: your agent's own install command",
-    "does that, and `install` is only here to repair a copy this package made.",
+    "login discovers your tenant from GET /api/v1/me, writes ~/.config/catalyst-cloud/customer.json",
+    "(0600) holding your login session (or key) and this CLI's path, and caches the tenant contract",
+    "beside it. A keyless session's short-lived token refreshes silently on every request. login does",
+    "not install skills: your agent's own install command does that, and `install` is only here to",
+    "repair a copy this package made.",
   ].join("\n");
 }
 
@@ -122,7 +127,10 @@ export interface MainDeps {
   loadSdk?: () => Promise<unknown>;
   /** Injected by the tests so no suite ever touches a real terminal. */
   isTty?: () => boolean;
-  promptSecret?: (question: string) => Promise<string>;
+  /** Injected by the tests: open the browser at the device-flow verification URL. */
+  openBrowser?: (url: string) => void;
+  /** Injected by the tests: the device-flow poll delay (no real waiting under test). */
+  sleep?: (ms: number) => Promise<void>;
 }
 
 /**
@@ -253,13 +261,19 @@ const VERB_HELP_KNOWN: Record<string, true> = Object.fromEntries(
 
 async function cmdLogin(args: ParsedArgs, ctx: Ctx, deps: MainDeps): Promise<number> {
   const manifest = readManifest();
-  let key = (args.key ?? ctx.env.CATALYST_CLOUD_TOKEN ?? "").trim();
-  if (!key && (deps.isTty ?? stdinIsTty)()) {
-    key = (await (deps.promptSecret ?? promptSecret)("Personal key (not echoed): ")).trim();
-  }
-  if (!key) throw new UsageError("login needs your personal key: pass --key <personal-key> or set CATALYST_CLOUD_TOKEN");
+  const key = (args.key ?? ctx.env.CATALYST_CLOUD_TOKEN ?? "").trim();
   const baseUrl = normalizeBaseUrl(args.baseUrl ?? ctx.env.CATALYST_CLOUD_BASE_URL ?? DEFAULT_BASE_URL);
-  const me = await fetchMe(baseUrl, key, ctx.fetch);
+  // Keyless is the preferred rail: with no key in flag or env, run the WorkOS device flow and log in
+  // as the person. A key (flag or CATALYST_CLOUD_TOKEN) still takes the token rail unchanged.
+  let auth: OauthAuth | undefined;
+  const bearer = key
+    ? key
+    : (auth = await deviceFlowLogin(ctx, baseUrl, {
+        isTty: deps.isTty ?? stdinIsTty,
+        openBrowser: deps.openBrowser ?? defaultOpenBrowser,
+        sleep: deps.sleep,
+      })).accessToken;
+  const me = await fetchMe(baseUrl, bearer, ctx.fetch);
   let existing: CustomerConfig | null;
   try {
     existing = loadConfig(ctx.home);
@@ -270,7 +284,8 @@ async function cmdLogin(args: ParsedArgs, ctx: Ctx, deps: MainDeps): Promise<num
   const skillsDir = resolveSkillsDir(args, ctx, existing);
   const config: CustomerConfig = {
     baseUrl,
-    key,
+    ...(key ? { key } : {}),
+    ...(auth ? { auth } : {}),
     account: me.account,
     slug: me.slug,
     name: me.name,
@@ -297,7 +312,7 @@ async function cmdLogin(args: ParsedArgs, ctx: Ctx, deps: MainDeps): Promise<num
     );
   }
   ctx.stdout(
-    `Config written to ${written.path} (mode ${formatMode(written.mode)}, holds your key and the CLI path)${
+    `Config written to ${written.path} (mode ${formatMode(written.mode)}, holds your ${auth ? "login session" : "key"} and the CLI path)${
       written.mode === CONFIG_MODE ? "" : ` — expected ${formatMode(CONFIG_MODE)}; chmod it by hand`
     }`,
   );
@@ -350,21 +365,33 @@ function cmdStatus(ctx: Ctx): number {
   const manifest = readManifest();
   const cfg = loadConfig(ctx.home);
   if (!cfg) {
-    ctx.stdout(`Not connected yet — run: CATALYST_CLOUD_TOKEN=<your personal key> npx ${PACKAGE_NAME} login`);
+    ctx.stdout(`Not connected yet — run: npx ${PACKAGE_NAME} login (keyless; or pass --key / set CATALYST_CLOUD_TOKEN)`);
     return 0;
   }
   ctx.stdout(`Tenant: ${cfg.name} (${cfg.slug}) — account ${cfg.account}`);
   ctx.stdout(`API: ${cfg.baseUrl} (principal: ${cfg.principal})`);
   ctx.stdout(cfg.user ? `As: ${cfg.user.label} (${cfg.user.role})` : "As: the tenant's account key (a host credential — no person)");
+  ctx.stdout(cfg.auth ? `Credential: your login (expires ${relativeExpiry(cfg.auth.expiresAt, ctx.now())})` : "Credential: personal key");
   ctx.stdout(`Bundle: ${PACKAGE_NAME} ${manifest.version} (tenant contract range: ${manifest.tenantContractRange})`);
   if (cfg.cliPath) ctx.stdout(`CLI: ${cfg.cliPath}${existsSync(cfg.cliPath) ? "" : " (missing — re-run login)"}`);
   ctx.stdout(`Contract: ${existsSync(contractPathFor(ctx.home)) ? contractPathFor(ctx.home) : "not cached (run: catalyst-skills contract --refresh)"}`);
   return 0;
 }
 
+/** A short human relative time for an ISO expiry, e.g. "in 14m", "in 2h", "in 6d", or "now" once past. */
+function relativeExpiry(iso: string, now: Date): string {
+  const ms = Date.parse(iso) - now.getTime();
+  if (!Number.isFinite(ms) || ms <= 0) return "now";
+  const mins = Math.round(ms / 60_000);
+  if (mins < 60) return `in ${mins}m`;
+  const hours = Math.round(mins / 60);
+  if (hours < 48) return `in ${hours}h`;
+  return `in ${Math.round(hours / 24)}d`;
+}
+
 async function cmdMe(args: ParsedArgs, ctx: Ctx): Promise<number> {
   const cfg = requireConfig(ctx);
-  const me = await fetchMe(cfg.baseUrl, cfg.key, ctx.fetch);
+  const me = await fetchMe(cfg.baseUrl, await bearerFor(ctx, cfg), ctx.fetch);
   if (args.json) ctx.stdout(JSON.stringify(me));
   else {
     ctx.stdout(`${me.name} (${me.slug}) — account ${me.account}`);

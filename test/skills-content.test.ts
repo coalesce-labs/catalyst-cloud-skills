@@ -284,8 +284,10 @@ describe("the install page (README) states what a customer needs, in the order t
     expect(readme).toContain("skills.sh/b/coalesce-labs/catalyst-cloud-skills");
   });
 
-  test("the credential step sits inside the install block, named login, with the env form first", () => {
+  test("the credential step sits inside the install block, named login, keyless first and the key forms second", () => {
     const install = readme.indexOf("\n## Install\n");
+    // Keyless is the preferred rail: the bare `catalyst-skills login` triple leads.
+    const keyless = "npm install -g @catalyst-cloud/catalyst-skills\ncatalyst-skills login\ncatalyst-skills ready";
     const envForm = "CATALYST_CLOUD_TOKEN=<your-personal-key> catalyst-skills login";
     // "Beside the install commands" is the property: the connect step is a sub-heading of Install,
     // and the login command lands before the next top-level section starts.
@@ -293,14 +295,17 @@ describe("the install page (README) states what a customer needs, in the order t
     expect(connect, "the connect step must be a ### inside ## Install").toBeGreaterThan(install);
     const nextSection = readme.indexOf("\n## ", install + 1);
     expect(nextSection).toBeGreaterThan(0);
-    expect(readme.indexOf(envForm), "the login command must be inside the install section").toBeLessThan(nextSection);
+    expect(readme.indexOf(keyless), "the keyless login command must be inside the install section").toBeGreaterThan(install);
+    expect(readme.indexOf(keyless)).toBeLessThan(nextSection);
     expect(connect).toBeLessThan(nextSection);
     // The README claims to quote the canonical block; that claim has to be checkable.
     expect(installBlock).toContain("### Then connect to your tenant");
+    expect(readme).toContain(keyless);
+    expect(installBlock).toContain(keyless);
     expect(readme).toContain(envForm);
-    expect(readme).toContain("npm install -g @catalyst-cloud/catalyst-skills");
-    expect(readme).toContain("catalyst-skills ready");
     expect(installBlock).toContain(envForm);
+    // Keyless leads; the key forms (env, then --key) come after it.
+    expect(readme.indexOf(keyless), "keyless login must come before the key fallback").toBeLessThan(readme.indexOf(envForm));
     expect(readme.indexOf("--key <your-personal-key>"), "the env form must come before the --key form").toBeGreaterThan(
       readme.indexOf(envForm),
     );
@@ -389,7 +394,7 @@ describe("the package manifest", () => {
   test("is the documented name, public, and carries exactly the SDK as its runtime dependency", () => {
     expect(manifest.name).toBe("@catalyst-cloud/catalyst-skills");
     expect(manifest.publishConfig.access).toBe("public");
-    expect(manifest.dependencies).toEqual({ "@catalyst-cloud/sdk": expect.stringMatching(/^\^0\.8\./) });
+    expect(manifest.dependencies).toEqual({ "@catalyst-cloud/sdk": expect.stringMatching(/^\^0\.9\./) });
   });
 
   test("bin, shipped files, engines, and the pinned contract range are wired", () => {
@@ -433,10 +438,10 @@ describe("the package manifest", () => {
     }
   });
 
-  test("the version matches the CHANGELOG's top entry, which is 0.3.1", () => {
+  test("the version matches the CHANGELOG's top entry, which is 0.4.0", () => {
     const changelog = readFileSync(join(pkgRoot, "CHANGELOG.md"), "utf8");
     expect(changelog).toContain(`## ${manifest.version}\n`);
-    expect(changelog.indexOf("## 0.3.1")).toBe(changelog.indexOf("## "));
-    expect(manifest.version).toBe("0.3.1");
+    expect(changelog.indexOf("## 0.4.0")).toBe(changelog.indexOf("## "));
+    expect(manifest.version).toBe("0.4.0");
   });
 });

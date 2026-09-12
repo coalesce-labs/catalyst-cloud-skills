@@ -6,7 +6,7 @@ import { dirname } from "node:path";
 import { contractPathFor, readManifest, type Ctx, type CustomerConfig } from "./config.js";
 import type { ContractTeam, TenantContract, WorkflowSlot } from "./contract-types.js";
 import { CliError, MeError } from "./errors.js";
-import { apiClient } from "./http.js";
+import { apiClient } from "./transport.js";
 
 export const CONTRACT_ROUTE = "/api/v1/agent/contract";
 

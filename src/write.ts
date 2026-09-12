@@ -7,7 +7,7 @@ import { requireConfig, type Ctx, type CustomerConfig } from "./config.js";
 import { bookkeepingPrefix, labelId, loadContract, routePath, stageIdForSlot, teamByKey, teamForTicket } from "./contract.js";
 import type { TenantContract } from "./contract-types.js";
 import { CliError, UsageError } from "./errors.js";
-import { apiClient, type ApiClient } from "./http.js";
+import { apiClient, type ApiClient } from "./transport.js";
 
 export interface WriteDeps {
   readStdin?: () => Promise<string>;

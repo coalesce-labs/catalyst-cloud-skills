@@ -9,7 +9,7 @@
 //
 // Everything else (the socket, the replay in seq order, the watchdog, gap detection, the resync frame)
 // is the SDK's LiveSyncClient. This module is deliberately thin.
-import type { ChangeFrame, LiveSyncClient, LiveSyncStatus, WebSocketFactory, WebSocketLike } from "@catalyst-cloud/sdk/node";
+import type { AuthStrategy, ChangeFrame, LiveSyncClient, LiveSyncStatus, WebSocketFactory, WebSocketLike } from "@catalyst-cloud/sdk/node";
 import type { Sdk } from "../sdk.js";
 import { readCursorFile, writeCursorFile, type CursorFileState } from "./cursor-file.js";
 
@@ -19,7 +19,11 @@ export interface LiveEventsOptions {
   /** Worker origin INCLUDING the `/api/v1` prefix. */
   baseUrl: string;
   accountId: string;
-  token: string;
+  /** How the socket authorizes: a static token (key rail) or a fresh-per-connect bearer (OAuth). */
+  auth: AuthStrategy;
+  /** The current bearer for the head-only `/snapshot` fetch — resolved FRESH each call so an OAuth
+   *  session refreshes underneath a long-lived watch (CTC-2112). */
+  getToken: () => Promise<string>;
   cursorFile: string;
   /** Start from the tenant head instead of the cursor file (`--from head`). */
   fromHead?: boolean;
@@ -52,7 +56,7 @@ export function printFrame(frame: ChangeFrame): void {
 
 async function fetchHeadCursor(opts: LiveEventsOptions, signal?: AbortSignal): Promise<number> {
   const url = `${opts.baseUrl.replace(/\/+$/, "")}/snapshot?head=1`;
-  const res = await (opts.fetchImpl ?? fetch)(url, { headers: { authorization: `Bearer ${opts.token}` }, signal });
+  const res = await (opts.fetchImpl ?? fetch)(url, { headers: { authorization: `Bearer ${await opts.getToken()}` }, signal });
   if (!res.ok) {
     const body = (await res.text()).slice(0, 200);
     throw new Error(`head-only snapshot fetch failed: ${res.status} ${res.statusText} at ${url} — ${body}`);
@@ -166,7 +170,7 @@ export function createLiveEventsClient(sdk: Sdk, opts: LiveEventsOptions): LiveE
   const client = new sdk.LiveSyncClient({
     baseUrl: opts.baseUrl,
     accountId: opts.accountId,
-    auth: { kind: "token", token: opts.token },
+    auth: opts.auth,
     reseed: reseedHead,
     getCursor: () => state?.cursor ?? null,
     onChange: (frame) => {

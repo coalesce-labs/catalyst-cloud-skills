@@ -6,7 +6,7 @@ import { requireConfig, type Ctx, type CustomerConfig } from "./config.js";
 import { loadContract, teamByKey } from "./contract.js";
 import type { TenantContract } from "./contract-types.js";
 import { UsageError } from "./errors.js";
-import { apiClient, type ApiClient } from "./http.js";
+import { apiClient, type ApiClient } from "./transport.js";
 import { rowsOf } from "./query.js";
 import { fetchWorkflowStates, postAgent, resolveIssue } from "./write.js";
 

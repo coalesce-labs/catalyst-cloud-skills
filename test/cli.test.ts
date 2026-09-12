@@ -48,6 +48,35 @@ describe("dispatcher", () => {
     expect(await main(["notice"], c2)).toBe(0);
     expect(c2.out.some((l) => l.startsWith("[catalyst-skills] updated 0.0.1"))).toBe(true);
   });
+  test("status names the credential: 'personal key' for a key config, 'your login (expires …)' for an oauth one", async () => {
+    await seedJoined(home, server, { config: { user: undefined } });
+    expect(await main(["status"], ctx)).toBe(0);
+    expect(ctx.out.join("\n")).toContain("Credential: personal key");
+
+    const home2 = tempHome();
+    const now = new Date("2026-09-12T12:00:00Z");
+    const c2 = makeCtx(home2, { now: () => now });
+    mkdirSync(join(home2, ".config", "catalyst-cloud"), { recursive: true });
+    writeFileSync(
+      configPathFor(home2),
+      JSON.stringify({
+        baseUrl: server.url,
+        account: "tenant-3",
+        slug: "hagale-technologies",
+        name: "Hagale Technologies",
+        permissions: ["mirror:read", "mirror:feed"],
+        principal: "service",
+        user: { id: "d1-user-tony", label: "Tony", email: null, role: "admin", linearUserId: "lin-tony" },
+        joinedAt: now.toISOString(),
+        lastSkillBundleVersion: "0.4.0",
+        auth: { kind: "oauth", accessToken: "at", refreshToken: "rt", expiresAt: new Date(now.getTime() + 14 * 60_000).toISOString(), sessionId: "sess" },
+      }),
+    );
+    expect(await main(["status"], c2)).toBe(0);
+    const t2 = c2.out.join("\n");
+    expect(t2).toContain("As: Tony (admin)");
+    expect(t2).toMatch(/Credential: your login \(expires in 14m\)/);
+  });
   test("status after login names the CLI path and the contract cache", async () => {
     await seedJoined(home, server);
     expect(await main(["status"], ctx)).toBe(0);

@@ -5,7 +5,7 @@ import { flagBool, flagString, positionals, type ParsedArgs } from "./args.js";
 import { normalizeBaseUrl, requireConfig, type Ctx } from "./config.js";
 import { loadContract } from "./contract.js";
 import { CliError, UsageError } from "./errors.js";
-import { apiClient } from "./http.js";
+import { apiClient } from "./transport.js";
 
 /** Every exclusion reason the eligibility evaluator names, in plain English. */
 export const EXCLUSION_REASONS: Record<string, string> = {

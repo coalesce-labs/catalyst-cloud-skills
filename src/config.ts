@@ -1,6 +1,7 @@
 // config.ts — ~/.config/catalyst-cloud/customer.json and its siblings. The ONLY place the base URL
 // and the `/api/v1` prefix are joined: the SDK wants the base with the prefix, GET /me without.
-import { chmodSync, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { randomBytes } from "node:crypto";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { CliError } from "./errors.js";
@@ -29,9 +30,24 @@ export interface MeIdentity {
   user?: MeUser;
 }
 
+/** CTC-2112 — a person's WorkOS device-flow session, stored in place of a personal key. The access
+ *  token is short-lived and rotated silently; `sessionId` is the JWT's `sid`, `expiresAt` its `exp`. */
+export interface OauthAuth {
+  kind: "oauth";
+  accessToken: string;
+  refreshToken: string;
+  /** ISO 8601; the access token's `exp`. Refreshed within 60s of it. */
+  expiresAt: string;
+  sessionId: string;
+}
+
 export interface CustomerConfig {
   baseUrl: string;
-  key: string;
+  /** A personal (or account) key. Present for the key rail; absent when `auth` (OAuth) is present —
+   *  a config carries EXACTLY ONE of {key, auth}. */
+  key?: string;
+  /** CTC-2112 — the keyless (device-flow OAuth) session. Mutually exclusive with `key`. */
+  auth?: OauthAuth;
   account: string;
   slug: string;
   name: string;
@@ -84,6 +100,10 @@ export function contractPathFor(home: string): string {
 export function watchCursorPathFor(home: string): string {
   return join(configDirFor(home), "watch-cursor.json");
 }
+/** CTC-2112 — where the cached CLI-auth discovery document lives (the `/api/v1/auth/cli` answer). */
+export function discoveryCachePathFor(home: string): string {
+  return join(configDirFor(home), "auth-discovery.json");
+}
 export function defaultReplicaDbFor(home: string): string {
   return join(configDirFor(home), "replica.db");
 }
@@ -119,8 +139,16 @@ export function loadConfig(home: string): CustomerConfig | null {
     throw new CliError(`config at ${path} is not valid JSON — re-run login to rewrite it`, "config-corrupt");
   }
   const cfg = parsed as Partial<CustomerConfig>;
-  if (typeof cfg.account !== "string" || typeof cfg.key !== "string" || typeof cfg.baseUrl !== "string") {
+  if (typeof cfg.account !== "string" || typeof cfg.baseUrl !== "string") {
     throw new CliError(`config at ${path} is missing required fields — re-run login to rewrite it`, "config-corrupt");
+  }
+  const hasKey = typeof cfg.key === "string" && cfg.key !== "";
+  const hasOauth = isOauthAuth(cfg.auth);
+  if (hasKey === hasOauth) {
+    throw new CliError(
+      `config at ${path} must hold exactly one of a personal key or an OAuth session — re-run login to rewrite it`,
+      "config-corrupt",
+    );
   }
   return cfg as CustomerConfig;
 }
@@ -130,7 +158,7 @@ export function requireConfig(ctx: Ctx): CustomerConfig {
   const cfg = loadConfig(ctx.home);
   if (!cfg) {
     throw new CliError(
-      `not connected yet — run: CATALYST_CLOUD_TOKEN=<your personal key> npx ${PACKAGE_NAME} login`,
+      `not connected yet — run: npx ${PACKAGE_NAME} login (keyless; or pass --key / set CATALYST_CLOUD_TOKEN for a key)`,
       "not-configured",
     );
   }
@@ -141,12 +169,44 @@ export function saveConfig(home: string, cfg: CustomerConfig): string {
   return writeConfig(home, cfg).path;
 }
 
-/** Write the config and return the mode the file ACTUALLY carries afterwards (chmod runs on every
- *  write: Node honours `mode` only when it creates the file). */
+/** True when `v` is a well-formed OAuth session block. */
+export function isOauthAuth(v: unknown): v is OauthAuth {
+  if (typeof v !== "object" || v === null) return false;
+  const a = v as Record<string, unknown>;
+  return (
+    a.kind === "oauth" &&
+    typeof a.accessToken === "string" &&
+    typeof a.refreshToken === "string" &&
+    typeof a.expiresAt === "string" &&
+    typeof a.sessionId === "string"
+  );
+}
+
+/**
+ * Write the config atomically (a rotated token must never be half-written under a crash) and return
+ * the mode the file ACTUALLY carries afterwards. Write to a sibling `.tmp` at 0600, then rename over
+ * the target — rename is atomic within a directory — and chmod once more (a pre-existing target keeps
+ * its own mode through the rename on some platforms).
+ */
 export function writeConfig(home: string, cfg: CustomerConfig): { path: string; mode: number } {
   const path = configPathFor(home);
   mkdirSync(dirname(path), { recursive: true });
-  writeFileSync(path, JSON.stringify(cfg, null, 2) + "\n", { mode: CONFIG_MODE });
+  // A UNIQUE sibling temp per write (pid + randomness): two concurrent CLI processes reaching the
+  // OAuth refresh window must not share `customer.json.tmp`, or one renames/removes it out from under
+  // the other and the second write fails with ENOENT or lands the wrong contents (Codex P2).
+  const tmp = `${path}.${process.pid}.${randomBytes(6).toString("hex")}.tmp`;
+  try {
+    writeFileSync(tmp, JSON.stringify(cfg, null, 2) + "\n", { mode: CONFIG_MODE });
+    chmodSync(tmp, CONFIG_MODE);
+    renameSync(tmp, path);
+  } catch (err) {
+    try {
+      rmSync(tmp, { force: true });
+    } catch {
+      // best-effort cleanup of the temp file
+    }
+    throw err;
+  }
   chmodSync(path, CONFIG_MODE);
   return { path, mode: statSync(path).mode & 0o777 };
 }

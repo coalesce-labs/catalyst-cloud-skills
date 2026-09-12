@@ -10,7 +10,8 @@ import { flagBool, flagInt, flagString, positionals, type ParsedArgs } from "./a
 import { apiBase, loadConfig, replicaDbPath, type Ctx, type CustomerConfig } from "./config.js";
 import { detachSelf } from "./detach.js";
 import { CliError, UsageError } from "./errors.js";
-import { apiClient } from "./http.js";
+import { apiClient } from "./transport.js";
+import { authStrategyFor } from "./oauth.js";
 import { loadSdk, type Sdk } from "./sdk.js";
 import type { WebSocketFactory } from "@catalyst-cloud/sdk/node";
 
@@ -238,7 +239,7 @@ async function cmdStart(args: ParsedArgs, ctx: Ctx, cfg: CustomerConfig, dbPath:
     baseUrl: apiBase(cfg),
     account: cfg.account,
     accountSource: "declared",
-    auth: { kind: "token", token: cfg.key },
+    auth: authStrategyFor(ctx, cfg),
     dbPath,
     engine,
     fetchImpl: ctx.fetch,

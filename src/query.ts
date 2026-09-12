@@ -5,7 +5,7 @@
 import { flagInt, flagString, positionals, type ParsedArgs } from "./args.js";
 import { requireConfig, replicaDbPath, type Ctx, type CustomerConfig } from "./config.js";
 import { CliError, UsageError } from "./errors.js";
-import { apiClient } from "./http.js";
+import { apiClient } from "./transport.js";
 import { engineFor, replicaStatus, type EngineDeps } from "./replica.js";
 import { loadSdk } from "./sdk.js";
 

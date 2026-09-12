@@ -55,6 +55,48 @@ export interface FixtureServer {
   requests: RecordedRequest[];
   /** Override the issue list the read routes serve. */
   issues: Record<string, unknown>[];
+  /** CTC-2112 — the WorkOS device-flow fixture: the discovery doc, the fake `authorize/device` and
+   *  `authenticate`/refresh token endpoints, and the knobs a test turns to force each branch. */
+  oauth: OauthFixture;
+}
+
+export interface OauthFixture {
+  clientId: string;
+  /** How many `authorization_pending` polls to answer before the token pair. */
+  pendingPolls: number;
+  /** Answer the FIRST poll with `slow_down` (before the pending countdown). */
+  slowDownOnce: boolean;
+  /** Answer the device grant with `access_denied` / `expired_token` instead of a token. */
+  denied: boolean;
+  expired: boolean;
+  /** `expires_in` the device-authorize response advertises (the poll's own deadline). Default 300. */
+  deviceExpiresIn: number;
+  /** Answer the first N device-code polls with this transient status (408/429/5xx) — retried, not fatal. */
+  pollTransientStatus: number | null;
+  pollTransientTimes: number;
+  /** Answer a refresh with `invalid_grant` (revoked / inactive session). */
+  refreshInvalidGrant: boolean;
+  /** Answer the first N refreshes with this status (429/5xx) before rotating. */
+  refreshFailStatus: number | null;
+  refreshFailTimes: number;
+  /** Access-token lifetime baked into the minted JWT's `exp`, in seconds. The probe showed 300s
+   *  today, 900s once the 15-min duration is set — the bundle must read `exp`, never hard-code it. */
+  accessTokenTtlSec: number;
+  /** The `sid` claim the minted JWT carries, and the config's `sessionId`. */
+  sessionId: string;
+  /** The `role` claim baked into the JWT. The probe showed this is UNRELIABLE (a D1 admin's token
+   *  said "member"), so the bundle must read the role from /me.user.role, never from the token. */
+  jwtRole: string;
+  /** Grace-window replay: a refresh answers 200 echoing the SAME refresh token it was given (a
+   *  consumed token replayed inside the grace window). The bundle must accept this, not error. */
+  refreshEchoesToken: boolean;
+  // ── counters the tests read ──
+  deviceAuthorizeCount: number;
+  tokenPollCount: number;
+  refreshCount: number;
+  /** Every access token the fixture has minted; any of them authenticates as the person. */
+  issuedAccessTokens: Set<string>;
+  lastRefreshToken: string | null;
 }
 
 // ── the tenant's data ─────────────────────────────────────────────────────────────────────────────
@@ -331,8 +373,56 @@ export async function startMeFixture(
     writes: [],
     requests: [],
     issues: fixtureIssues(),
+    oauth: {
+      clientId: "client_fixture",
+      pendingPolls: 0,
+      slowDownOnce: false,
+      denied: false,
+      expired: false,
+      deviceExpiresIn: 300,
+      pollTransientStatus: null,
+      pollTransientTimes: 0,
+      refreshInvalidGrant: false,
+      refreshFailStatus: null,
+      refreshFailTimes: 0,
+      accessTokenTtlSec: 900,
+      sessionId: "session_fixture",
+      jwtRole: "member",
+      refreshEchoesToken: false,
+      deviceAuthorizeCount: 0,
+      tokenPollCount: 0,
+      refreshCount: 0,
+      issuedAccessTokens: new Set<string>(),
+      lastRefreshToken: null,
+    },
   };
   const postRoutes = () => new Set(state.contract.routes.filter((r) => r.method === "POST").map((r) => r.path));
+
+  const b64url = (obj: unknown) => Buffer.from(JSON.stringify(obj)).toString("base64url");
+  /** A JWT the bundle only ever DECODES (never verifies): `exp` drives the refresh clock, `sid` the
+   *  session id. Each mint is unique so rotation produces a genuinely new bearer. */
+  const mintJwt = (): string => {
+    const iat = Math.floor(Date.now() / 1000);
+    // The staging probe's exact claim set (ctc-2080-device-probe-facts.json): a client-scoped issuer,
+    // NO `aud`, and a `role` the bundle must ignore in favour of /me.user.role.
+    const payload = {
+      iss: `https://api.workos.com/user_management/${state.oauth.clientId}`,
+      sub: FIXTURE_ME_USER.id,
+      sid: state.oauth.sessionId,
+      jti: `jwt-${state.oauth.issuedAccessTokens.size}`,
+      auth_time: iat,
+      client_id: state.oauth.clientId,
+      org_id: FIXTURE_ACCOUNT,
+      role: state.oauth.jwtRole,
+      roles: [state.oauth.jwtRole],
+      permissions: ["mirror:read", "mirror:feed"],
+      exp: iat + state.oauth.accessTokenTtlSec,
+      iat,
+    };
+    const token = `${b64url({ alg: "RS256", typ: "JWT" })}.${b64url(payload)}.sig`;
+    state.oauth.issuedAccessTokens.add(token);
+    return token;
+  };
 
   const server: Server = createServer(async (req, res) => {
     const url = new URL(req.url ?? "/", "http://127.0.0.1");
@@ -341,10 +431,15 @@ export async function startMeFixture(
     const rawBody = req.method === "POST" ? await readBody(req) : "";
     let body: unknown = undefined;
     if (rawBody) {
-      try {
-        body = JSON.parse(rawBody);
-      } catch {
-        body = rawBody;
+      const ctype = String(req.headers["content-type"] ?? "");
+      if (ctype.includes("application/x-www-form-urlencoded")) {
+        body = Object.fromEntries(new URLSearchParams(rawBody));
+      } else {
+        try {
+          body = JSON.parse(rawBody);
+        } catch {
+          body = rawBody;
+        }
       }
     }
     state.requests.push({ method: req.method ?? "GET", path: req.url ?? "/", headers: req.headers, body });
@@ -353,17 +448,77 @@ export async function startMeFixture(
       res.end(payload === undefined ? "" : JSON.stringify(payload));
     };
 
+    // ── CTC-2112: the WorkOS device-flow fixture (unauthenticated, before the bearer guard) ──
+    const o = state.oauth;
+    if (path === "/api/v1/auth/cli") {
+      return send(200, {
+        clientId: o.clientId,
+        issuer: `${state.url}/oauth`,
+        deviceAuthorizationUrl: `${state.url}/oauth/device`,
+        tokenUrl: `${state.url}/oauth/token`,
+        jwksUrl: `${state.url}/oauth/jwks`,
+      });
+    }
+    if (path === "/oauth/device") {
+      o.deviceAuthorizeCount += 1;
+      return send(200, {
+        device_code: "device-code-fixture",
+        user_code: "WXYZ-1234",
+        verification_uri: `${state.url}/activate`,
+        verification_uri_complete: `${state.url}/activate?user_code=WXYZ-1234`,
+        expires_in: o.deviceExpiresIn,
+        interval: 5,
+      });
+    }
+    if (path === "/oauth/token") {
+      const grant = (body as { grant_type?: string } | undefined)?.grant_type;
+      if (grant === "refresh_token") {
+        o.refreshCount += 1;
+        o.lastRefreshToken = (body as { refresh_token?: string }).refresh_token ?? null;
+        if (o.refreshInvalidGrant) return send(400, { error: "invalid_grant", error_description: "refresh token revoked" });
+        if (o.refreshFailStatus !== null && o.refreshFailTimes > 0) {
+          o.refreshFailTimes -= 1;
+          return send(o.refreshFailStatus, { error: "server_error" });
+        }
+        // Grace-window replay: WorkOS answers 200 with the SAME pair when a consumed refresh token is
+        // replayed inside the grace window. Echo the incoming refresh token; still mint a valid access.
+        const rotated = o.refreshEchoesToken ? (o.lastRefreshToken ?? `refresh-${o.refreshCount + 1}`) : `refresh-${o.refreshCount + 1}`;
+        return send(200, { access_token: mintJwt(), refresh_token: rotated, token_type: "Bearer" });
+      }
+      // device_code grant. Transient failures are answered FIRST and do NOT advance the pending
+      // countdown — the bundle must retry them, not exit.
+      if (o.pollTransientStatus !== null && o.pollTransientTimes > 0) {
+        o.pollTransientTimes -= 1;
+        return send(o.pollTransientStatus, { error: "server_error" });
+      }
+      o.tokenPollCount += 1;
+      if (o.denied) return send(400, { error: "access_denied", error_description: "the request was denied" });
+      if (o.expired) return send(400, { error: "expired_token", error_description: "the device code expired" });
+      if (o.slowDownOnce && o.tokenPollCount === 1) return send(400, { error: "slow_down" });
+      const pendingAnswered = o.slowDownOnce ? o.tokenPollCount - 1 : o.tokenPollCount;
+      if (pendingAnswered <= o.pendingPolls) return send(400, { error: "authorization_pending" });
+      return send(200, {
+        access_token: mintJwt(),
+        refresh_token: "refresh-1",
+        token_type: "Bearer",
+        authentication_method: "device_code",
+        user: { id: FIXTURE_ME_USER.id, email: FIXTURE_ME_USER.email },
+        organization_id: FIXTURE_ACCOUNT,
+      });
+    }
+
+    const isOauthPerson = auth !== null && auth.startsWith("Bearer ") && o.issuedAccessTokens.has(auth.slice("Bearer ".length));
     if (path.startsWith("/api/v1/me")) {
       const out =
         handler?.(req.url ?? path) ??
         (auth === `Bearer ${FIXTURE_KEY}`
           ? { status: 200, body: FIXTURE_ME_BODY }
-          : auth === `Bearer ${FIXTURE_USER_KEY}`
+          : auth === `Bearer ${FIXTURE_USER_KEY}` || isOauthPerson
             ? { status: 200, body: { ...FIXTURE_ME_BODY, permissions: ["mirror:read", "mirror:feed"], ...(state.meUser === null ? {} : { user: state.meUser ?? FIXTURE_ME_USER }) } }
             : { status: 401, body: { error: "unauthorized", reason: "credential-not-accepted" } });
       return send(out.status, out.body);
     }
-    if (auth !== `Bearer ${FIXTURE_KEY}` && auth !== `Bearer ${FIXTURE_USER_KEY}`) {
+    if (auth !== `Bearer ${FIXTURE_KEY}` && auth !== `Bearer ${FIXTURE_USER_KEY}` && !isOauthPerson) {
       return send(401, { error: "unauthorized", reason: "credential-not-accepted" });
     }
     const machine = auth === `Bearer ${FIXTURE_KEY}`;

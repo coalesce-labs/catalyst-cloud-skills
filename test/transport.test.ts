@@ -1,9 +1,14 @@
-// http.test.ts — the thin client's status lines: 401, 403, 429 with and without the budget, a
-// non-JSON error body, a generic status, a network failure on POST, and fetchMe's shape errors.
+// transport.test.ts — the credential-aware transport's status lines: 401, 403, 429 with and without the
+// budget, a non-JSON error body, a generic status, a network failure on POST, fetchMe's shape errors,
+// and (CTC-2112) an OAuth config refreshing its bearer before a request.
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { createServer, type Server } from "node:http";
 import { CliError, MeError } from "../src/errors";
-import { ApiClient, fetchMe } from "../src/http";
+import { ApiClient, apiClient, fetchMe } from "../src/transport";
+import type { CustomerConfig } from "../src/config";
+import { resetDiscoveryCache } from "../src/oauth";
+import { startMeFixture, type FixtureServer } from "./fixture";
+import { makeCtx, tempHome } from "./helpers";
 
 let server: Server;
 let url: string;
@@ -23,7 +28,7 @@ afterAll(async () => {
 });
 
 function client(): ApiClient {
-  return new ApiClient({ baseUrl: `${url}/`, key: "k" }, fetch);
+  return new ApiClient(`${url}/`, async () => "k", fetch);
 }
 
 describe("ApiClient", () => {
@@ -68,9 +73,45 @@ describe("ApiClient", () => {
     expect(res.body).toBeUndefined();
   });
   test("a dead server is a network MeError on GET and POST", async () => {
-    const dead = new ApiClient({ baseUrl: "http://127.0.0.1:1", key: "k" }, fetch);
+    const dead = new ApiClient("http://127.0.0.1:1", async () => "k", fetch);
     await expect(dead.getJson("/x")).rejects.toMatchObject({ kind: "network" });
     await expect(dead.postJson("/x", {})).rejects.toMatchObject({ kind: "network" });
+  });
+});
+
+describe("apiClient — the OAuth rail refreshes before a request (CTC-2112)", () => {
+  let oauthServer: FixtureServer;
+  beforeAll(async () => {
+    oauthServer = await startMeFixture();
+  });
+  afterAll(async () => {
+    await oauthServer.close();
+  });
+
+  test("a request with an oauth config within 60s of expiry refreshes first, then sends the rotated bearer", async () => {
+    resetDiscoveryCache();
+    const home = tempHome();
+    const now = new Date("2026-09-12T12:00:00Z");
+    const ctx = makeCtx(home, { now: () => now });
+    const cfg: CustomerConfig = {
+      baseUrl: oauthServer.url,
+      account: "acct",
+      slug: "s",
+      name: "n",
+      permissions: null,
+      principal: "service",
+      joinedAt: now.toISOString(),
+      lastSkillBundleVersion: "0.4.0",
+      auth: { kind: "oauth", accessToken: "stale", refreshToken: "rt-old", expiresAt: new Date(now.getTime() + 30_000).toISOString(), sessionId: "session_fixture" },
+    };
+    const res = await apiClient(cfg, ctx).getJson("/api/v1/issues");
+    expect(res.status).toBe(200);
+    expect(oauthServer.oauth.refreshCount).toBe(1);
+    // the issues request carried the rotated bearer, not the stale one
+    const issuesReq = oauthServer.requests.find((r) => r.path === "/api/v1/issues");
+    const sentBearer = String(issuesReq?.headers.authorization ?? "").replace("Bearer ", "");
+    expect(oauthServer.oauth.issuedAccessTokens.has(sentBearer)).toBe(true);
+    expect(sentBearer).not.toBe("stale");
   });
 });
 
