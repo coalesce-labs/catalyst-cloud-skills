@@ -37,7 +37,7 @@ Three checks are informational by design (labels, event delivery, host currency)
 | id | proves | fix |
 | -- | -- | -- |
 | `node` | Node 22 or newer, which the SDK's built-in SQLite engine needs | install Node 22+ |
-| `config` | this machine is connected: `customer.json` exists and loads | `CATALYST_CLOUD_TOKEN=<your personal key> npx @catalyst-cloud/catalyst-skills login`; the person mints the key at Settings → API keys |
+| `config` | this machine is connected: `customer.json` exists and loads | `npx @catalyst-cloud/catalyst-skills login` (keyless: the person approves in their browser); or, with a personal key minted at Settings → API keys, the same command prefixed with `CATALYST_CLOUD_TOKEN=<your personal key>` |
 | `contract` | the tenant contract is cached and its major version is one this bundle accepts | `catalyst-skills contract --refresh`; a version outside the range means update the bundle. A 403 naming an older cloud means the cloud has not yet deployed personal-key access |
 | `cliPath` | the CLI path recorded at login still exists, so skill scripts can spawn it | re-run login |
 | `skills` | every skill of this bundle is present where the CLI installed them | `catalyst-skills install` |
