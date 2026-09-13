@@ -156,8 +156,8 @@ describe("explain", () => {
     expect(await main(["explain", "nodash"], makeCtx(home))).toBe(1);
     expect(await main(["explain", "ENG-1"], makeCtx(tempHome()))).toBe(2);
   });
-  test("the reason table covers the thirty exclusions and eleven unknowns", () => {
-    expect(Object.keys(EXCLUSION_REASONS)).toHaveLength(30);
+  test("the reason table covers the thirty-seven exclusions and eleven unknowns", () => {
+    expect(Object.keys(EXCLUSION_REASONS)).toHaveLength(37);
     expect(Object.keys(UNKNOWN_REASONS)).toHaveLength(11);
     expect(describeReason("blocked")).toMatch(/blocking relation/);
     expect(describeReason("ticket_unknown")).toMatch(/not in the mirror/);
@@ -244,6 +244,44 @@ describe("running / queue / accounts", () => {
     expect(text).toContain("Remediate rounds dispatched: 1 (cap 3)");
     expect(text).toContain("Live lease: implement held by runner-7");
     expect(await main(["history"], makeCtx(home))).toBe(1);
+  });
+  test("history names every governor holding the ticket with what releases it, and the release audit", async () => {
+    expect(await main(["history", "ENG-2"], ctx)).toBe(0);
+    const text = ctx.out.join("\n");
+    expect(text).toContain("Held by:");
+    expect(text).toContain("  phase_park at implement (parked:repeated_failure) — catalyst-skills release ENG-2 once its cause is fixed");
+    expect(text).toContain("  human_owned_pr at remediate — PR #41 by ana is a person's; close or merge it");
+    expect(text).toContain("Releases (newest first):");
+    expect(text).toContain("  2025-08-25T05:46:40.000Z refused by user:user-ana — \"retry after the outage\" — refused: human_owned_pr");
+    expect(text).toContain("  2025-08-25T05:30:00.000Z released by key:ak_host — \"secret rotated\" — released: unpark implement");
+  });
+  test("history says when the governors or the audit could not be read, never that nothing holds it", async () => {
+    server.execution = { governors: null, releases: null };
+    try {
+      expect(await main(["history", "ENG-2"], ctx)).toBe(0);
+      const text = ctx.out.join("\n");
+      expect(text).toContain("Held by: could not be read (unreadable, not empty)");
+      expect(text).toContain("Releases: could not be read (unreadable, not empty)");
+    } finally {
+      server.execution = undefined;
+    }
+  });
+  test("a park line no longer says only an operator releases it", async () => {
+    server.execution = { park: { sentinel: "parked:repeated_failure", selfReleases: false, releasedBy: "catalyst-skills release <ticket> once its cause is fixed, or operator unpark", phase: "implement" } };
+    try {
+      expect(await main(["history", "ENG-2"], ctx)).toBe(0);
+      const text = ctx.out.join("\n");
+      expect(text).not.toContain("needs an operator");
+      expect(text).toContain("Parked at implement (parked:repeated_failure): does not release itself — catalyst-skills release <ticket> once its cause is fixed, or operator unpark");
+    } finally {
+      server.execution = undefined;
+    }
+  });
+  test("the reasons a release verb now clears are in the bundle's table, never printed raw", () => {
+    for (const reason of ["phase_parked", "human_owned_pr", "review_not_converging", "round_threshold", "claim_storm", "repo_at_capacity", "later_phase_lease_held"]) {
+      expect(describeReason(reason), reason).not.toMatch(/not in this bundle's table/);
+    }
+    expect(describeReason("phase_parked")).toMatch(/catalyst-skills release/);
   });
   // ⛔ A route this tenant's cloud does not serve is SAID, never rendered as an empty success.
   test("a 404 from either new route says the cloud is older than the bundle, and exits non-zero", async () => {

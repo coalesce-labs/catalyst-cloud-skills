@@ -49,6 +49,8 @@ export function buildFixtureContract(): TenantContract {
       route("POST", "reaction", true),
       route("POST", "issue-create", true),
       route("GET", "linear/read", false),
+      route("POST", "ticket-release", true),
+      route("POST", "ticket-release-class", true),
       { method: "GET", path: "/api/v1/agent/contract", takesWriteBudgetUnit: false, since: "1.0.0" },
     ],
     teams: [

@@ -38,7 +38,14 @@ export const EXCLUSION_REASONS: Record<string, string> = {
   retry_backoff: "the failed phase is retrying in place and waiting out its backoff",
   routing_unavailable: "the unit was claimed and refused at kickoff (no route, no eligible coding-account slot, or the provider is unavailable)",
   repo_paused: "an operator paused the repository",
-  remediate_parked: "the remediate phase is parked, so the failing phase has nowhere to be repaired",
+  remediate_parked: "the remediate phase is parked, so the failing phase has nowhere to be repaired; `catalyst-skills release <ticket>` releases the park once its cause is fixed",
+  phase_parked: "the offered phase is parked after repeated failures or the repair-round cap; `catalyst-skills release <ticket>` releases it once its cause is fixed",
+  later_phase_lease_held: "an earlier phase is offered while a live container still holds a later phase of this ticket",
+  human_owned_pr: "a person's own pull request holds this ticket; it releases itself when that PR closes or merges",
+  review_not_converging: "review and repair kept finding new problems without converging; a person reads the findings and comments on the ticket to resume",
+  round_threshold: "the ticket spent its lifetime repair budget; answering its ask or pushing a fix buys one more cycle",
+  claim_storm: "this unit was claimed too many times in the last hour, so it waits out the hour; nothing to release",
+  repo_at_capacity: "the repository's runner seats are all in use; it starts when one frees",
 };
 
 /** Every fail-closed unknown the evaluator names. */
@@ -306,7 +313,7 @@ export function renderAccount(a: CodingAccount): string {
  * ahead of some tenants' deployed mirror; a 404 there means "your cloud is older than this bundle",
  * which is a different fact from "you have no coding accounts" and must never print as the latter.
  */
-function needsNewerCloud(what: string, cfg: { baseUrl: string }): CliError {
+export function needsNewerCloud(what: string, cfg: { baseUrl: string }): CliError {
   return new CliError(
     `${what} needs a newer Catalyst Cloud than ${normalizeBaseUrl(cfg.baseUrl)} is running — the route answered 404. Nothing is wrong with your tenant; ask your operator when the mirror last deployed.`,
     "route-not-deployed",
@@ -366,6 +373,17 @@ export interface TicketExecution {
   failure?: { phase: string; failureMode: string; failureDetail?: string | null; summary?: string | null; attempt?: number } | null;
   remediate?: { roundsDispatched?: number; cap?: number } | null;
   park?: { sentinel: string; selfReleases: boolean; releasedBy: string; phase?: string } | null;
+  /** Every governor holding the ticket, each with what releases it; `null` is unreadable, never "none". */
+  governors?: { kind: string; phase?: string | null; sentinel?: string; release?: string }[] | null;
+  /** The release audit, newest first; `null` is unreadable. */
+  releases?: {
+    atMs: number;
+    outcome: string;
+    because: string;
+    actor: { kind: string; id: string };
+    released?: { op: string; phase: string | null }[];
+    refused?: { code: string }[];
+  }[] | null;
   lease?: { phase: string; holder: string | null; deadlineMs: number }[] | null;
   lastAdvance?: { phase: string; toSlot?: string | null; landed?: boolean } | null;
   unreadable?: { table: string; error: string }[];
@@ -396,7 +414,28 @@ export function renderHistory(ticket: string, doc: TicketExecution): string[] {
     lines.push(`Remediate rounds dispatched: ${doc.remediate.roundsDispatched}${typeof doc.remediate.cap === "number" ? ` (cap ${doc.remediate.cap})` : ""}`);
   }
   if (doc.park) {
-    lines.push(`Parked at ${doc.park.phase ?? "?"} (${doc.park.sentinel}): ${doc.park.selfReleases ? "releases itself" : "needs an operator"} — ${doc.park.releasedBy}`);
+    lines.push(`Parked at ${doc.park.phase ?? "?"} (${doc.park.sentinel}): ${doc.park.selfReleases ? "releases itself" : "does not release itself"} — ${doc.park.releasedBy}`);
+  }
+  // Absent (an older cloud) prints nothing; `null` is a table that could not be read.
+  if (doc.governors === null) {
+    lines.push("Held by: could not be read (unreadable, not empty)");
+  } else if (doc.governors !== undefined && doc.governors.length > 0) {
+    lines.push("Held by:");
+    for (const g of doc.governors) {
+      lines.push(`  ${g.kind}${g.phase ? ` at ${g.phase}` : ""}${g.sentinel ? ` (${g.sentinel})` : ""} — ${g.release ?? "no release named"}`);
+    }
+  }
+  if (doc.releases === null) {
+    lines.push("Releases: could not be read (unreadable, not empty)");
+  } else if (doc.releases !== undefined && doc.releases.length > 0) {
+    lines.push("Releases (newest first):");
+    for (const r of doc.releases) {
+      const what =
+        r.outcome === "released"
+          ? `released: ${(r.released ?? []).map((a) => `${a.op}${a.phase ? ` ${a.phase}` : ""}`).join(", ")}`
+          : `refused: ${(r.refused ?? []).map((x) => x.code).join(", ")}`;
+      lines.push(`  ${new Date(r.atMs).toISOString()} ${r.outcome} by ${r.actor.kind}:${r.actor.id} — "${r.because}" — ${what}`);
+    }
   }
   for (const l of doc.lease ?? []) lines.push(`Live lease: ${l.phase} held by ${l.holder ?? "?"} until ${new Date(l.deadlineMs).toISOString()}`);
   if (doc.lastAdvance) {

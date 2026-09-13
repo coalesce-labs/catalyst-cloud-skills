@@ -33,12 +33,12 @@ Which parks release themselves:
 
 | Park | Releases by |
 | -- | -- |
-| repeated failure | an operator, not a clock |
-| remediate round cap reached | an operator, not a clock |
+| repeated failure | a release from the person's own login once its cause is fixed (`catalyst-skills release`), not a clock |
+| remediate round cap reached | the same release, which buys one more round, not a clock |
 | missing branch | its own budgeted release loop |
 | rebase conflict | its own budgeted release loop |
 
-Your key cannot release a park; the repair verbs are operator-only. When a ticket is parked, say so, name the failure class the explainer shows, and hand the release to whoever administers the tenant.
+A person's own key releases a park, and every other hold that a retry can fix, in one step: `catalyst-skills release <ticket> --because <what changed>`. The cloud releases every governor holding the ticket or releases nothing and names what a person must do instead (a person's own pull request, a review that will not converge, the lifetime repair budget). It refuses a cause it cannot see change unless the caller says what changed. The `unstick` skill runs that loop. When a ticket is parked, name the failure class the explainer shows and whether its cause is fixed.
 
 ## Two holds that are not failures
 
@@ -53,5 +53,5 @@ Each attempt posts a phase-outcome comment (complete or FAILED, with phase, atte
 
 1. Run `node scripts/explain-ticket.mjs <ticket>`; the reason names the layer.
 2. `retry_backoff` or `routing_unavailable`: wait; it retries itself. Say when.
-3. `cooling_down`, `remediate_parked`, `no_change_hold`, `validate_class_spent`: name what releases it (an operator, a comment, a push) and who can do that.
+3. `cooling_down`, `remediate_parked`, `no_change_hold`, `validate_class_spent`: name what releases it (a release once the cause is fixed, a comment, a push) and who can do that.
 4. A system-level cause (provider down, runner image breaker, repo paused) is ONE alert, never a per-ticket escalation.

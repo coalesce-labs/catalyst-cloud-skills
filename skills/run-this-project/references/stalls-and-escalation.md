@@ -26,7 +26,7 @@ Run `catalyst-skills explain <ticket>` first, and let its reason pick the row:
 | blocked | a live blocks relation | chase the blocker: is it dispatchable, is it an ask nobody answered, is it done but still open |
 | ask ticket, ask shape suspected | the ticket is a question | route it to `what-needs-me`; if it is really work, a human applies the release label |
 | not at dispatch stage | somebody moved the card, or it never entered | read the card's history; re-dispatch with `make-ready.mjs` if it should run |
-| cooling down, remediate parked | the cloud parked it after repeated failure or the round cap | read the last outcome card for the class; if the fix is a decision, file an ask; releasing the park is an operator action |
+| phase parked, cooling down, remediate parked | the cloud parked it after repeated failure or the round cap | read the last outcome card for the class; once its cause is fixed, the `unstick` skill releases it (`catalyst-skills release <ticket> --because <what changed>`); if the fix is a decision, file an ask |
 | no change hold | a remediate round changed nothing | a human comment on the ticket, or a new push to the branch, releases it; say what should change |
 | validate class spent, stale failure episode | the repair budget for this failure is used, or the ladder moved on | read the outcome cards; usually a decision about the approach, so an ask |
 | waiting on | a merge-gate failure with no automatic repair | read the merge-wait comment and the PR's three legs through `catalyst-github` |
@@ -52,7 +52,7 @@ Before anything reaches the human, answer three questions:
 2. **Does this need to block at all?** If a sane default exists, take it, record it, and file the ask anyway so the human can overrule; the work does not wait.
 3. **Who else can move this?** Another steward, the desk, a repository owner. Pulling in a peer is preferred over pulling in the human.
 
-Only a genuine product, priority or approval decision, or an action only a human can physically take (release a cloud park, resolve a repository setting, apply the release label, answer a merge policy question), survives to become an ask.
+Only a genuine product, priority or approval decision, or an action only a human can physically take (close a person's own pull request, read a review that will not converge, resolve a repository setting, apply the release label, answer a merge policy question), survives to become an ask.
 
 ## When a stall becomes an ask
 
