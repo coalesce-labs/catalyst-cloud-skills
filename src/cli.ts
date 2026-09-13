@@ -38,6 +38,7 @@ import { installSkills, parseChangelogEntry, readChangelog, resolveSkillsDir, sk
 import { cmdWatch, type WatchDeps } from "./watch.js";
 import { cmdWrite, type WriteDeps } from "./write.js";
 import { cmdAsk } from "./ask.js";
+import { cmdRelease } from "./release.js";
 
 export {
   CONFIG_MODE,
@@ -76,6 +77,7 @@ export const CUSTOMER_SKILLS = [
   "connect-me",
   "how-catalyst-works",
   "run-this-project",
+  "unstick",
   "what-needs-me",
   "whats-happening",
 ] as const;
@@ -104,6 +106,7 @@ export function usageText(): string {
     "  catalyst-skills watch [--team K] [--ticket T]... [--project P] [--exec CMD]",
     "  catalyst-skills write <comment|state|label|create|reaction|attachment|session> ...",
     "  catalyst-skills ask <raise|accept|list> ...",
+    "  catalyst-skills release <ticket> --because <what changed> [--retry-unchanged] [--dry-run] | release --class <c> --team <K> ...",
     "",
     "Every verb takes --help. --json makes the output machine-readable.",
     "",
@@ -232,6 +235,8 @@ export async function main(argv: string[], ctx: Ctx = defaultCtx(), deps: MainDe
         return await cmdReady(args, ctx, { skillNames: CUSTOMER_SKILLS, loadSdk: deps.loadSdk });
       case "accounts":
         return await cmdAccounts(args, ctx);
+      case "release":
+        return await cmdRelease(args, ctx);
       default:
         ctx.stderr(`unknown command: ${args.command}`);
         ctx.stderr(usageText());
@@ -256,7 +261,7 @@ export async function main(argv: string[], ctx: Ctx = defaultCtx(), deps: MainDe
 }
 
 const VERB_HELP_KNOWN: Record<string, true> = Object.fromEntries(
-  ["login", "join", "install", "status", "notice", "me", "contract", "query", "replica", "explain", "running", "queue", "watch", "write", "ask", "ready", "accounts"].map((v) => [v, true]),
+  ["login", "join", "install", "status", "notice", "me", "contract", "query", "replica", "explain", "running", "queue", "watch", "write", "ask", "ready", "accounts", "release"].map((v) => [v, true]),
 );
 
 async function cmdLogin(args: ParsedArgs, ctx: Ctx, deps: MainDeps): Promise<number> {

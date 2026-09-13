@@ -1,0 +1,5 @@
+identity: { pack: catalyst-cloud-skills, skill: unstick }
+effects: [external-write]
+mutating: true
+invocation: explicit
+exposure: [catalog]

@@ -18,7 +18,7 @@ Or by hand. One command, for every coding agent on the machine:
 npx skills@latest add coalesce-labs/catalyst-cloud-skills --all
 ```
 
-It installs all eight skills for each agent it detects (Claude Code, Codex, Cursor, OpenCode and the rest). Add `-g` to install into your home directory instead of the project. Skills installed this way do not auto-update; run `npx skills update -y` to refresh them.
+It installs all nine skills for each agent it detects (Claude Code, Codex, Cursor, OpenCode and the rest). Add `-g` to install into your home directory instead of the project. Skills installed this way do not auto-update; run `npx skills update -y` to refresh them.
 
 <details><summary><strong>Alternative for Claude Code: the plugin marketplace</strong></summary>
 
@@ -77,7 +77,7 @@ That is the whole setup. Everything below explains what you just installed.
 
 ## What this is
 
-Eight skills that let your coding agent run your own Catalyst Cloud tenant (https://staging.catalystcloud.dev) from your seat: what is happening, what needs you, and what to do about it. They read your tenant through the Catalyst Cloud SDK, write to it through the tenant's agent proxy, and never compose a URL or run a tool of their own; every read, write and subscription is a `catalyst-skills` verb with `--help`. Every skill is plain Markdown under `skills/<name>/SKILL.md` in this repository, and your own login — a keyless device-code session, or a personal key — is the only credential. Your agent acts as you: the asks it raises and the comments it posts carry your name, and "what needs me" means you.
+Nine skills that let your coding agent run your own Catalyst Cloud tenant (https://staging.catalystcloud.dev) from your seat: what is happening, what needs you, and what to do about it. They read your tenant through the Catalyst Cloud SDK, write to it through the tenant's agent proxy, and never compose a URL or run a tool of their own; every read, write and subscription is a `catalyst-skills` verb with `--help`. Every skill is plain Markdown under `skills/<name>/SKILL.md` in this repository, and your own login — a keyless device-code session, or a personal key — is the only credential. Your agent acts as you: the asks it raises and the comments it posts carry your name, and "what needs me" means you.
 
 ## What connecting does
 
@@ -130,20 +130,20 @@ Nothing rotates. The replica is upserts and deletes into one file, the cursor is
 | `catalyst-linear` | "Show me the ticket, the history, what Catalyst wrote on it." | Reads a ticket with its comments, relations, labels, linked pull requests and agent sessions inline, from the replica when fresh and the API otherwise, always naming the source; writes comments, card moves, labels and new tickets as the app actor; knows what a ticket accumulates as Catalyst works it. | [`SKILL.md`](skills/catalyst-linear/SKILL.md) |
 | `catalyst-github` | "Show me the PR, the checks, the review, the queue." | A ticket's pull request with its checks, reviews and review threads; whether it is mergeable under the repository's policy; what a PR accumulates as the ticket moves (the branch, the draft, the rewrite, the force-pushes, the labels, the queue). | [`SKILL.md`](skills/catalyst-github/SKILL.md) |
 | `how-catalyst-works` | "How does this work? Why did it do that? How does it prioritise?" | The execution model as references loaded on demand: the eight-phase ladder, the eleven board slots and this team's live stage map, what happens when a phase fails, how the queue is ordered and routed, every exclusion reason, and the coding-account model. Scripts explain one ticket's eligibility in plain English. | [`SKILL.md`](skills/how-catalyst-works/SKILL.md) |
+| `unstick` | "Why is this parked? Unpark it. Get things flowing again." | Reads why a ticket is not running and every park or hold on it, decides whether the recorded cause is fixed, previews the release and releases it the right way from your own login — or one failure class across a team — and raises an ask only for what a person has to do. | [`SKILL.md`](skills/unstick/SKILL.md) |
 | `connect-me` | "Connect this machine to my tenant." | Connects the machine to the tenant with your own personal key, caches the tenant contract, verifies, and offers to start the replica. | [`SKILL.md`](skills/connect-me/SKILL.md) |
 
-Four skills only read (`whats-happening`, `catalyst-setup`, `catalyst-github`, `how-catalyst-works`). The four that write anything (`catalyst-linear`, `what-needs-me`, `run-this-project`, `connect-me`) are marked so an agent cannot invoke them on its own; the person asks for them. Every skill declares `allowed-tools` scoped to this package's own binary, so none of them needs a blanket shell grant.
+Four skills only read (`whats-happening`, `catalyst-setup`, `catalyst-github`, `how-catalyst-works`). The five that write anything (`catalyst-linear`, `what-needs-me`, `run-this-project`, `connect-me`, `unstick`) are marked so an agent cannot invoke them on its own; the person asks for them. Every skill declares `allowed-tools` scoped to this package's own binary, so none of them needs a blanket shell grant.
 
 ## What a key cannot see yet
 
-Your personal key reads everything the skills need — tickets, pull requests, the eligibility explainer, the dispatch queue, fleet activity, per-ticket execution history (`catalyst-skills explain --history <ticket>`: phase attempts, remediation rounds, park state) and coding-account status (`catalyst-skills accounts`: provider, declared and observed state, window usage, walls, quarantine — never a credential; enrolling or pausing one is `<your cloud>/settings/coding-accounts`). Two things it cannot do, and the skills say so by name rather than guess:
+Your personal key reads everything the skills need — tickets, pull requests, the eligibility explainer, the dispatch queue, fleet activity, per-ticket execution history (`catalyst-skills explain --history <ticket>`: phase attempts, remediation rounds, park state) and coding-account status (`catalyst-skills accounts`: provider, declared and observed state, window usage, walls, quarantine — never a credential; enrolling or pausing one is `<your cloud>/settings/coding-accounts`). It also releases a parked or held ticket once its cause is fixed: `catalyst-skills release <ticket> --because <what changed>` (the `unstick` skill runs it), recorded against your name and shown in the ticket's history. One thing it cannot do, and the skills say so by name rather than guess:
 
-- Release a park. When a ticket is parked after repeated failures, an operator releases it; the skill names the park and points at `<your cloud>/settings`.
 - Read pull-request labels or the reviewer's reaction. The mirror does not carry them; GitHub's own page does.
 
 ## Versions and origins
 
-The package pins the tenant contract range `1.x`, recorded in `package.json` under `catalystCloud.tenantContractRange`, and reports it in `--version`, `status` and `login`. A tenant whose contract version falls outside that range is refused with one line naming both versions; update the bundle. Every skill carries a `vendored-from:` line naming this package as its origin; all eight are written in this repository for customer tenants.
+The package pins the tenant contract range `1.x`, recorded in `package.json` under `catalystCloud.tenantContractRange`, and reports it in `--version`, `status` and `login`. A tenant whose contract version falls outside that range is refused with one line naming both versions; update the bundle. Every skill carries a `vendored-from:` line naming this package as its origin; all nine are written in this repository for customer tenants.
 
 ## What it writes on your machine
 
@@ -165,7 +165,7 @@ A `customer.json` written by an older bundle is still read unchanged; it gains t
 
 ## Uninstalling
 
-Remove the skills the way you installed them: `/plugin uninstall catalyst@catalyst-cloud` in Claude Code, or delete the eight directories (`catalyst-github`, `catalyst-linear`, `catalyst-setup`, `connect-me`, `how-catalyst-works`, `run-this-project`, `what-needs-me`, `whats-happening`) from wherever `npx skills add` wrote them. Then remove what the CLI wrote:
+Remove the skills the way you installed them: `/plugin uninstall catalyst@catalyst-cloud` in Claude Code, or delete the nine directories (`catalyst-github`, `catalyst-linear`, `catalyst-setup`, `connect-me`, `how-catalyst-works`, `run-this-project`, `unstick`, `what-needs-me`, `whats-happening`) from wherever `npx skills add` wrote them. Then remove what the CLI wrote:
 
 ```sh
 catalyst-skills replica stop

@@ -1,0 +1,6 @@
+interface:
+  display_name: "Unstick"
+  short_description: "Find out why a Catalyst ticket is parked or held and release it once its cause is fixed; asks only for what needs a person"
+  default_prompt: "Use $unstick to find out why <ticket> is stuck and get it moving again."
+policy:
+  allow_implicit_invocation: false

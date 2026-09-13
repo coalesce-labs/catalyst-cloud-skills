@@ -57,6 +57,12 @@ export interface FixtureServer {
   issues: Record<string, unknown>[];
   /** A whole `/api/v1/work-eligibility` body served for one team key instead of the ENG fixture. */
   eligibilityByTeam: Record<string, Record<string, unknown>>;
+  /** The contract's `ticket-release` route answers this (status + body) when set; `{outcome: "released"}` otherwise. */
+  release?: { status: number; body: unknown };
+  /** The contract's `ticket-release-class` route answers this when set. */
+  releaseClass?: { status: number; body: unknown };
+  /** Fields merged over the fixture execution report, for the renderer's null and park branches. */
+  execution?: Record<string, unknown>;
   /** CTC-2112 — the WorkOS device-flow fixture: the discovery doc, the fake `authorize/device` and
    *  `authenticate`/refresh token endpoints, and the knobs a test turns to force each branch. */
   oauth: OauthFixture;
@@ -342,6 +348,57 @@ const TICKET_EXECUTION = {
   park: null,
   lease: [{ phase: "implement", holder: "runner-7", generation: 4, deadlineMs: 1_756_100_600_000 }],
   lastAdvance: { phase: "research", nonce: 1, toSlot: "plan", toStateId: "state-plan", landed: true },
+  governors: [
+    {
+      kind: "phase_park",
+      phase: "implement",
+      sentinel: "parked:repeated_failure",
+      heldAtMs: 1_756_099_000_000,
+      failureClass: "vendor_5xx",
+      escalationSpent: false,
+      release: "catalyst-skills release ENG-2 once its cause is fixed (it refuses a cause the mirror cannot see change unless you say what changed)",
+    },
+    {
+      kind: "human_owned_pr",
+      phase: "remediate",
+      heldAtMs: 1_756_099_500_000,
+      prNumber: 41,
+      authorLogin: "ana",
+      release: "PR #41 by ana is a person's; close or merge it (or hand it to Catalyst), which releases this automatically",
+    },
+  ],
+  releases: [
+    {
+      id: 2,
+      ticket: "ENG-2",
+      atMs: 1_756_100_800_000,
+      actor: { kind: "user", id: "user-ana", keyId: "key-ana", tier: "user" },
+      via: "ticket",
+      because: "retry after the outage",
+      retryUnchanged: true,
+      outcome: "refused",
+      governors: [],
+      released: [],
+      refused: [{ governor: "human_owned_pr", phase: "remediate", code: "human_owned_pr", humanAction: "close or merge PR #41" }],
+      evidence: { branchPushAtMs: null, humanCommentAtMs: null, mainPushAtMs: null },
+      warnings: [],
+    },
+    {
+      id: 1,
+      ticket: "ENG-2",
+      atMs: 1_756_099_800_000,
+      actor: { kind: "key", id: "ak_host", keyId: "ak_host", tier: "organization" },
+      via: "ticket",
+      because: "secret rotated",
+      retryUnchanged: false,
+      outcome: "released",
+      governors: [],
+      released: [{ governor: "phase_park", phase: "implement", op: "unpark" }],
+      refused: [],
+      evidence: { branchPushAtMs: 1_756_099_700_000, humanCommentAtMs: null, mainPushAtMs: null },
+      warnings: [],
+    },
+  ],
   unreadable: [],
 };
 
@@ -625,7 +682,7 @@ export async function startMeFixture(
     if (executionMatch) {
       if (!state.routesDeployed) return send(404, { error: "not found" });
       const ticket = decodeURIComponent(executionMatch[1]!);
-      return send(200, { ...TICKET_EXECUTION, ticket });
+      return send(200, { ...TICKET_EXECUTION, ...(state.execution ?? {}), ticket });
     }
     if (path === "/api/v1/work-eligibility") {
       if (!url.searchParams.get("team")) return send(400, { error: "team is required" });
@@ -663,6 +720,14 @@ export async function startMeFixture(
       }
       state.writes.push({ method: "POST", path, headers: req.headers, body });
       const name = path.split("/").at(-1);
+      if (name === "ticket-release") {
+        const r = state.release ?? { status: 200, body: { ticket: (body as { ticket?: string })?.ticket, outcome: "released", dryRun: false, released: [], refused: [], warnings: [], auditId: 1 } };
+        return send(r.status, r.body);
+      }
+      if (name === "ticket-release-class") {
+        const r = state.releaseClass ?? { status: 200, body: { released: [], refused: [], nothingHeld: [], truncated: false } };
+        return send(r.status, r.body);
+      }
       const id = `lin-${name}-${state.writes.length}`;
       if (name === "ask") return send(200, { id, identifier: `ENG-${100 + state.writes.length}` });
       if (name === "issue-create") return send(200, { id, identifier: `ENG-${200 + state.writes.length}` });

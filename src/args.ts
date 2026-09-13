@@ -121,6 +121,14 @@ export const FLAG_TABLES: Record<string, FlagTable> = {
   },
   ready: {},
   accounts: {},
+  release: {
+    because: { value: true, help: "what changed since the ticket was held (required unless --dry-run)" },
+    "retry-unchanged": { value: false, help: "release even though nothing the mirror can see changed (say what did in --because)" },
+    "dry-run": { value: false, help: "show what a release would clear and refuse, and change nothing" },
+    class: { value: true, help: "release every ticket on --team parked under this failure class" },
+    team: { value: true, help: "with --class: the team key" },
+    limit: { value: true, help: "with --class: at most this many tickets (the cloud caps it at 25)" },
+  },
 };
 
 export const VERB_USAGE: Record<string, string> = {
@@ -144,6 +152,8 @@ export const VERB_USAGE: Record<string, string> = {
   ask: "ask <raise --team --title [--context] [--option]... [--default] --blocks <ticket>...|--nothing-to-block [--ask-key] | accept <askTicket> --answer <commentId> --role <role> | list [--anyone] [--json]>",
   ready: "ready [--json]",
   accounts: "accounts [--json]",
+  release:
+    "release <ticket> --because <what changed> [--retry-unchanged] [--dry-run] [--json] | release --class <failure-class> --team <K> --because <what changed> [--retry-unchanged] [--dry-run] [--limit N] [--json]",
 };
 
 export function parseArgs(argv: string[]): ParsedArgs {

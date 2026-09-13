@@ -1,4 +1,4 @@
-// skills-content.test.ts — the content gate for the eight customer skills: the directory set equals
+// skills-content.test.ts — the content gate for the nine customer skills: the directory set equals
 // the CLI's constant, every skill passes the shape validator (frontmatter, provenance, budgets,
 // linked references, node-only scripts, the mutating triple), every file under skills/ plus the
 // README and the current CHANGELOG entry are free of internal names, each skill's scripts reach the
@@ -28,19 +28,20 @@ const manifest = JSON.parse(readFileSync(join(pkgRoot, "package.json"), "utf8"))
   dependencies?: Record<string, string>;
 };
 
-const EIGHT = [
+const NINE = [
   "catalyst-github",
   "catalyst-linear",
   "catalyst-setup",
   "connect-me",
   "how-catalyst-works",
   "run-this-project",
+  "unstick",
   "what-needs-me",
   "whats-happening",
 ] as const;
 
-/** The four skills whose scripts write something; they carry the mutating triple. */
-const MUTATING = new Set(["catalyst-linear", "what-needs-me", "run-this-project", "connect-me"]);
+/** The five skills whose scripts write something; they carry the mutating triple. */
+const MUTATING = new Set(["catalyst-linear", "what-needs-me", "run-this-project", "connect-me", "unstick"]);
 
 function walk(dir: string): string[] {
   const out: string[] = [];
@@ -68,17 +69,17 @@ const lineCount = (text: string) => {
   return lines.length;
 };
 
-describe("the eight customer skills ship, with provenance", () => {
-  test("exactly the eight skills the design names are present, sorted, and equal the CLI's constant", () => {
+describe("the nine customer skills ship, with provenance", () => {
+  test("exactly the nine skills the design names are present, sorted, and equal the CLI's constant", () => {
     const dirs = readdirSync(skillsRoot, { withFileTypes: true })
       .filter((e) => e.isDirectory())
       .map((e) => e.name)
       .sort();
-    expect(dirs).toEqual([...EIGHT]);
-    expect([...CUSTOMER_SKILLS]).toEqual([...EIGHT]);
+    expect(dirs).toEqual([...NINE]);
+    expect([...CUSTOMER_SKILLS]).toEqual([...NINE]);
   });
 
-  for (const name of EIGHT) {
+  for (const name of NINE) {
     test(`${name}: passes the shape validator with no findings`, () => {
       expect(validateSkillDir(join(skillsRoot, name))).toEqual([]);
     });
@@ -211,7 +212,7 @@ describe("no internal name reaches a customer", () => {
 });
 
 describe("each skill's scripts spawn the catalyst-skills verbs it teaches", () => {
-  const verbs: Record<(typeof EIGHT)[number], RegExp[]> = {
+  const verbs: Record<(typeof NINE)[number], RegExp[]> = {
     "catalyst-setup": [/"ready"/, /"replica",\s*"status"/],
     "catalyst-github": [/"query",\s*"pull"/, /"contract"/, /"replica",\s*"status"/],
     "catalyst-linear": [/"query",\s*"issue"/, /"query",\s*"search"/, /"write",\s*"comment"/, /"write",\s*"state"/, /"write",\s*"label"/, /"write",\s*"create"/],
@@ -220,8 +221,9 @@ describe("each skill's scripts spawn the catalyst-skills verbs it teaches", () =
     "run-this-project": [/"watch"/, /"write",\s*"state"/, /"write",\s*"comment"/],
     "what-needs-me": [/"ask",\s*"list"/, /"ask",\s*"raise"/, /"ask",\s*"accept"/],
     "whats-happening": [/"contract"/, /"running"/, /"queue"/, /"ask",\s*"list"/, /"replica",\s*"status"/, /"explain"/],
+    unstick: [/"explain"/, /"--history"/, /"release"/, /"--dry-run"/],
   };
-  for (const name of EIGHT) {
+  for (const name of NINE) {
     test(`${name}`, () => {
       const src = scriptsOf(name);
       for (const re of verbs[name]) expect(src, `${name} scripts must spawn ${re}`).toMatch(re);
@@ -361,7 +363,9 @@ describe("the install page (README) states what a customer needs, in the order t
     expect(readme).toMatch(/^## What a key cannot see yet$/m);
     expect(readme).toContain("settings/coding-accounts");
     expect(readme).toContain("explain --history");
-    expect(readme).toContain("Release a park");
+    // A person releases a park themselves now; the README names the verb and the skill, never an operator.
+    expect(readme).toContain("catalyst-skills release");
+    expect(readme).not.toMatch(/Release a park\. When a ticket is parked after repeated failures, an operator releases it/);
     expect(readme).toContain("setup skill");
     expect(readme).toContain("the only connect step a customer runs");
     // CTC-2077 — a person connects with their OWN key; the account key is named once, as the host
@@ -438,11 +442,11 @@ describe("the package manifest", () => {
     }
   });
 
-  test("the version matches the CHANGELOG's top entry, which is 0.4.1", () => {
+  test("the version matches the CHANGELOG's top entry, which is 0.5.0", () => {
     const changelog = readFileSync(join(pkgRoot, "CHANGELOG.md"), "utf8");
     expect(changelog).toContain(`## ${manifest.version}\n`);
-    expect(changelog.indexOf("## 0.4.1")).toBe(changelog.indexOf("## "));
-    expect(manifest.version).toBe("0.4.1");
+    expect(changelog.indexOf("## 0.5.0")).toBe(changelog.indexOf("## "));
+    expect(manifest.version).toBe("0.5.0");
   });
 });
 
@@ -471,3 +475,40 @@ describe("the dispatch gate is the stage mapping, not git automation", () => {
   });
 });
 
+
+// A person releases a parked or held ticket from their own seat now (`catalyst-skills release`, the
+// `unstick` skill); the references that sent every park to an operator are rewritten, not left beside it.
+describe("releasing a park is a verb the person's agent runs, not an operator action", () => {
+  const read = (rel: string) => readFileSync(join(skillsRoot, rel), "utf8");
+  const OPERATOR_ONLY = [
+    ["whats-happening/references/why-is-it-stuck.md", /your key has no unpark verb/],
+    ["run-this-project/references/stalls-and-escalation.md", /releasing the park is an operator action/],
+    ["run-this-project/references/making-work-ready.md", /releasing a cloud park is an operator action/],
+    ["whats-happening/SKILL.md", /a park is released only by an operator/],
+  ] as const;
+
+  test("positive control: the matchers find the old sentences in the text they were written against", () => {
+    expect("an operator unparks it; your key has no unpark verb, so").toMatch(OPERATOR_ONLY[0][1]);
+    expect("file an ask; releasing the park is an operator action").toMatch(OPERATOR_ONLY[1][1]);
+    expect("releasing a cloud park is an operator action, not a card move").toMatch(OPERATOR_ONLY[2][1]);
+    expect("PR labels and reactions are not mirrored, and a park is released only by an operator;").toMatch(OPERATOR_ONLY[3][1]);
+  });
+
+  for (const [rel, re] of OPERATOR_ONLY) {
+    test(`${rel} no longer says release is an operator's, and names the release`, () => {
+      const text = read(rel);
+      expect(text).not.toMatch(re);
+      expect(text).toMatch(/`unstick`|catalyst-skills release/);
+    });
+  }
+
+  test("the unstick playbook runs explain, then history, then a dry run, then the release, and files an ask only for a refusal a person must fix", () => {
+    const playbook = read("unstick/references/playbook.md");
+    const order = ["catalyst-skills explain", "--history", "--dry-run", "--because"].map((s) => playbook.indexOf(s));
+    for (const i of order) expect(i).toBeGreaterThanOrEqual(0);
+    expect([...order].sort((a, b) => a - b)).toEqual(order);
+    expect(playbook).toMatch(/--retry-unchanged/);
+    expect(playbook).toContain("what-needs-me");
+    expect(playbook).toMatch(/never close a person's pull request/i);
+  });
+});

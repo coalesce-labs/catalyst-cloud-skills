@@ -90,7 +90,9 @@ export class ApiClient {
     return { status: res.status, body: rows, headers: res.headers };
   }
 
-  async postJson<T = unknown>(path: string, body: unknown): Promise<JsonResponse<T>> {
+  /** `opts.accept` lists non-2xx statuses returned to the caller with their JSON body instead of thrown
+   *  — the release route answers a refusal as 409 with the refusals the caller has to print. */
+  async postJson<T = unknown>(path: string, body: unknown, opts: { accept?: number[] } = {}): Promise<JsonResponse<T>> {
     const url = this.url(path);
     const res = await this.send(url, {
       method: "POST",
@@ -101,7 +103,7 @@ export class ApiClient {
       },
       body: JSON.stringify(body),
     });
-    await this.refuseIfNotOk(res, `POST ${path}`);
+    if (!opts.accept?.includes(res.status)) await this.refuseIfNotOk(res, `POST ${path}`);
     return { status: res.status, body: await this.parseBody<T>(res, `POST ${path}`), headers: res.headers };
   }
 

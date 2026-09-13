@@ -34,13 +34,18 @@ This reference restates an invariant: the vocabulary the cloud's eligibility exp
 | `repo_paused` | an operator paused the repository | the operator resumes it |
 | `scope_overlap` | its declared file scope intersects a ticket already in flight | wait for the other ticket, or the human decides which goes first |
 
-## Reasons that need an operator, and what a key cannot do
+## Reasons a release clears once the cause is fixed
+
+These do not release themselves, and nobody but the person needs to act: once the recorded cause is fixed, the person's own login releases them with `catalyst-skills release <ticket>`. The desk does not release; route the ticket to the `unstick` skill, which reads the history, previews the release and runs it, or names what a person must do first.
 
 | reason | what it means | note |
 | -- | -- | -- |
-| `cooling_down` (parked after repeated failures, or the round cap was spent) | the phase is parked and does not release itself | an operator unparks it; your key has no unpark verb, so the reply names the park (from `explain --history`) and the settings page |
+| `phase_parked` / `cooling_down` (parked after repeated failures, or the round cap was spent) | the phase is parked and does not release itself | `unstick`; `explain --history` names the park and the failure class it recorded |
 | `remediate_parked` | the repair phase itself is parked, so the failing phase has nowhere to be repaired | as above |
-| `validate_class_spent` | this validate failure already spent its one repair round in this episode | as above; a human comment may release the hold |
+| `validate_class_spent` | this validate failure already spent its one repair round in this episode | a push or a comment saying what to change releases it on its own; otherwise `unstick` |
+| `human_owned_pr` | a person's own pull request holds the ticket | that person closes or merges it; no release clears it |
+| `review_not_converging` | review and repair kept finding new problems without converging | a person reads the findings and comments on the ticket to resume; raise an ask for that read |
+| `round_threshold` | the ticket spent its lifetime repair budget | a person answers the ask the cloud raised, or pushes a fix |
 | `no_branch_to_remediate` / `branch_missing` / `branch_gone` | a branch-dependent phase has no branch to clone | the cloud releases missing-branch parks on its own budget; a deleted branch needs a human to decide |
 | `stale_failure_episode` | the ladder advanced after the recorded failure | informational; the round is dropped |
 
