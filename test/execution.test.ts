@@ -106,6 +106,25 @@ describe("explain", () => {
       server.issues = fixtureIssues();
     }
   });
+  // Codex P2: the gate is team-wide, so it cannot prove THIS ticket exists — a mistyped id on an
+  // unmapped team must keep the mirror's 404 wording rather than inherit the team's mapping verdict.
+  test("an id the mirror 404s on keeps the unknown wording even when its team's gate is shut", async () => {
+    server.eligibilityByTeam.HAG = {
+      team: "HAG",
+      eligibility: {
+        rows: [],
+        dispatchGate: { cause: "mapping_missing", missingSlots: ["dispatch"], remedy: "Map it." },
+      },
+    };
+    try {
+      expect(await main(["explain", "HAG-404"], ctx)).toBe(0);
+      const text = ctx.out.join("\n");
+      expect(text).toBe("HAG-404: not in the HAG eligibility explainer — the ticket is unknown to the mirror, terminal, or on another team.");
+      expect(server.requests.some((r) => r.path.startsWith("/api/v1/issues/HAG-404"))).toBe(true);
+    } finally {
+      delete server.eligibilityByTeam.HAG;
+    }
+  });
   test("a mapped stage that was deleted reads as such", async () => {
     server.eligibilityByTeam.HAG = {
       team: "HAG",
@@ -114,11 +133,13 @@ describe("explain", () => {
         dispatchGate: { cause: "mapping_state_unresolved", missingSlots: ["dispatch"], remedy: "Re-map it." },
       },
     };
+    server.issues = [...fixtureIssues(), { ...fixtureIssues()[0], identifier: "HAG-31", state: "Todo" }];
     try {
       expect(await main(["explain", "HAG-31"], ctx)).toBe(0);
       expect(ctx.out.join("\n")).toContain("HAG-31 cannot start: the stage team HAG mapped for dispatch no longer exists in Linear. Re-map it.");
     } finally {
       delete server.eligibilityByTeam.HAG;
+      server.issues = fixtureIssues();
     }
   });
   // ⛔ 0.2.0 printed a "not visible to an account key yet" placeholder here and called nothing.

@@ -169,12 +169,14 @@ export async function cmdExplain(args: ParsedArgs, ctx: Ctx): Promise<number> {
   // No dispatch row is not proof of non-existence: probe the mirror so a Backlog ticket reads as known.
   // The mirror compares identifiers exactly, so normalize (uppercase) as the row lookup above does —
   // otherwise `explain eng-7` probes a lowercase id, 404s, and reports an existing ENG-7 as unknown.
-  const gate = res.body.eligibility?.dispatchGate ?? null;
   let knownState: string | null = null;
-  if (!row && !gate) {
+  if (!row) {
     const probe = await api.getJson<{ state?: unknown }>(`/api/v1/issues/${encodeURIComponent(ticket.toUpperCase())}`, { accept: [404] });
     if (probe.status !== 404) knownState = typeof probe.body?.state === "string" ? probe.body.state : "unknown";
   }
+  // The gate is TEAM-wide: it can say why a real ticket in that team cannot start, never that this id
+  // exists. Applied only when the mirror probe above found the ticket; a 404 keeps the unknown wording.
+  const gate = !row && knownState ? (res.body.eligibility?.dispatchGate ?? null) : null;
   const explanation = renderExplain(ticket, row, team, knownState, gate);
   if (args.json) {
     ctx.stdout(JSON.stringify({ ticket, row, ...(gate ? { dispatchGate: gate } : {}), explanation }));
