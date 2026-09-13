@@ -55,6 +55,8 @@ export interface FixtureServer {
   requests: RecordedRequest[];
   /** Override the issue list the read routes serve. */
   issues: Record<string, unknown>[];
+  /** A whole `/api/v1/work-eligibility` body served for one team key instead of the ENG fixture. */
+  eligibilityByTeam: Record<string, Record<string, unknown>>;
   /** CTC-2112 — the WorkOS device-flow fixture: the discovery doc, the fake `authorize/device` and
    *  `authenticate`/refresh token endpoints, and the knobs a test turns to force each branch. */
   oauth: OauthFixture;
@@ -373,6 +375,7 @@ export async function startMeFixture(
     writes: [],
     requests: [],
     issues: fixtureIssues(),
+    eligibilityByTeam: {},
     oauth: {
       clientId: "client_fixture",
       pendingPolls: 0,
@@ -626,6 +629,8 @@ export async function startMeFixture(
     }
     if (path === "/api/v1/work-eligibility") {
       if (!url.searchParams.get("team")) return send(400, { error: "team is required" });
+      const override = state.eligibilityByTeam[url.searchParams.get("team") ?? ""];
+      if (override) return send(200, override);
       return send(200, { ...ELIGIBILITY, team: url.searchParams.get("team"), capabilities: url.searchParams.get("capabilities") });
     }
     // ⛔ The team is REQUIRED, and the refusal is the mirror's own: a plain-text "bad team" 400 from

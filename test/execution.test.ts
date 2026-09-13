@@ -72,6 +72,76 @@ describe("explain", () => {
     expect(text).toContain("known to the mirror; state Backlog is not a dispatch state");
     expect(text).not.toContain("unknown");
   });
+  // A team with no saved stage mapping gets no dispatch queue at all, so no ticket has a row — and the
+  // Todo probe used to answer "state Todo is not a dispatch state", which sent a customer's agent off
+  // to blame git automation. The cloud now sends the team's dispatch gate; explain leads with it.
+  test("an unmapped team's explain names the missing stage mapping and the screen, never 'not a dispatch state'", async () => {
+    server.eligibilityByTeam.HAG = {
+      team: "HAG",
+      eligibility: {
+        queue: null,
+        verdict: "unavailable",
+        unavailable: { reason: "ordering_never_published" },
+        rows: [],
+        dispatchGate: {
+          cause: "mapping_missing",
+          missingSlots: ["dispatch", "pr", "done", "canceled"],
+          remedy: "A tenant admin opens Settings → Linear teams → HAG and presses Map my stages (or Adopt the Catalyst workflow) to give dispatch, pr, done, canceled a stage. Until then Catalyst starts nothing in HAG; git automation is not involved.",
+        },
+      },
+    };
+    server.issues = [...fixtureIssues(), { ...fixtureIssues()[0], identifier: "HAG-30", state: "Todo" }];
+    try {
+      expect(await main(["explain", "HAG-30"], ctx)).toBe(0);
+      const text = ctx.out.join("\n");
+      expect(text).toContain("HAG-30 cannot start: team HAG has no saved stage mapping for dispatch, pr, done, canceled.");
+      expect(text).toContain("Map my stages");
+      expect(text).not.toContain("not a dispatch state");
+
+      expect(await main(["explain", "HAG-30", "--json"], ctx)).toBe(0);
+      const j = JSON.parse(ctx.out[ctx.out.length - 1]!) as { dispatchGate?: { cause: string } };
+      expect(j.dispatchGate?.cause).toBe("mapping_missing");
+    } finally {
+      delete server.eligibilityByTeam.HAG;
+      server.issues = fixtureIssues();
+    }
+  });
+  // Codex P2: the gate is team-wide, so it cannot prove THIS ticket exists — a mistyped id on an
+  // unmapped team must keep the mirror's 404 wording rather than inherit the team's mapping verdict.
+  test("an id the mirror 404s on keeps the unknown wording even when its team's gate is shut", async () => {
+    server.eligibilityByTeam.HAG = {
+      team: "HAG",
+      eligibility: {
+        rows: [],
+        dispatchGate: { cause: "mapping_missing", missingSlots: ["dispatch"], remedy: "Map it." },
+      },
+    };
+    try {
+      expect(await main(["explain", "HAG-404"], ctx)).toBe(0);
+      const text = ctx.out.join("\n");
+      expect(text).toBe("HAG-404: not in the HAG eligibility explainer — the ticket is unknown to the mirror, terminal, or on another team.");
+      expect(server.requests.some((r) => r.path.startsWith("/api/v1/issues/HAG-404"))).toBe(true);
+    } finally {
+      delete server.eligibilityByTeam.HAG;
+    }
+  });
+  test("a mapped stage that was deleted reads as such", async () => {
+    server.eligibilityByTeam.HAG = {
+      team: "HAG",
+      eligibility: {
+        rows: [],
+        dispatchGate: { cause: "mapping_state_unresolved", missingSlots: ["dispatch"], remedy: "Re-map it." },
+      },
+    };
+    server.issues = [...fixtureIssues(), { ...fixtureIssues()[0], identifier: "HAG-31", state: "Todo" }];
+    try {
+      expect(await main(["explain", "HAG-31"], ctx)).toBe(0);
+      expect(ctx.out.join("\n")).toContain("HAG-31 cannot start: the stage team HAG mapped for dispatch no longer exists in Linear. Re-map it.");
+    } finally {
+      delete server.eligibilityByTeam.HAG;
+      server.issues = fixtureIssues();
+    }
+  });
   // ⛔ 0.2.0 printed a "not visible to an account key yet" placeholder here and called nothing.
   // CTC-1954's route is the real answer; --history is an alias of the `history` verb.
   test("--history reads the execution route, not a placeholder, and skips the eligibility call", async () => {
@@ -91,6 +161,10 @@ describe("explain", () => {
     expect(Object.keys(UNKNOWN_REASONS)).toHaveLength(11);
     expect(describeReason("blocked")).toMatch(/blocking relation/);
     expect(describeReason("ticket_unknown")).toMatch(/not in the mirror/);
+    // An unmapped team never clears on its own; the gloss must not read as transient.
+    expect(describeReason("workflow_mapping_unknown")).toMatch(/no saved stage mapping/);
+    expect(describeReason("workflow_mapping_unknown")).toMatch(/does not clear by itself/);
+    expect(describeReason("ordering_never_published")).toMatch(/stage mapping/);
     expect(describeReason(undefined)).toBe("no reason was given");
     expect(renderExplain("X-1", { status: "unknown", unknown: "ordering_stale" }, "X")).toContain("cannot be judged (no queue position): the dispatch order is stale.");
     expect(renderExplain("X-1", { status: "excluded", reason: "runner_image_breaker", detail: "sha abc", failure: { weird: true } }, "X")).toContain('Last failure: {"weird":true}.');

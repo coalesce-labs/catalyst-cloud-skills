@@ -43,9 +43,9 @@ export const EXCLUSION_REASONS: Record<string, string> = {
 
 /** Every fail-closed unknown the evaluator names. */
 export const UNKNOWN_REASONS: Record<string, string> = {
-  ordering_never_published: "the dispatch order has never been published for this team",
+  ordering_never_published: "the dispatch order has never been published for this team — usually because the team has no saved stage mapping, which does not clear by itself",
   ordering_stale: "the dispatch order is stale",
-  workflow_mapping_unknown: "the team's workflow mapping could not be read",
+  workflow_mapping_unknown: "the team has no saved stage mapping for dispatch, pr, done and canceled (or a mapped stage was deleted); it does not clear by itself — a tenant owner or admin maps the team in Settings → Linear teams",
   ticket_unknown: "the ticket is not in the mirror",
   dependency_snapshot_unknown: "the dependency snapshot has never completed",
   blocker_unknown: "a blocking relation could not be resolved",
@@ -81,7 +81,38 @@ export function describeReason(reason: string | undefined): string {
   return EXCLUSION_REASONS[reason] ?? UNKNOWN_REASONS[reason] ?? `reason "${reason}" (not in this bundle's table; read it as the cloud spelled it)`;
 }
 
-export function renderExplain(ticket: string, row: EligibilityRow | null, team: string, knownState?: string | null): string {
+/**
+ * The team-level reason nothing in a team can start, sent by the cloud beside the eligibility rows when
+ * the team's dispatch/pr/done/canceled stages are not mapped to live Linear stages. Absent when the
+ * team's gate is open, and on an older cloud.
+ */
+export interface DispatchGate {
+  cause: string;
+  missingSlots?: string[];
+  remedy?: string;
+}
+
+export function renderDispatchGate(ticket: string, team: string, gate: DispatchGate): string {
+  const slots = (gate.missingSlots ?? []).join(", ");
+  const why =
+    gate.cause === "mapping_state_unresolved"
+      ? `the stage team ${team} mapped for ${slots} no longer exists in Linear.`
+      : gate.cause === "mapping_missing"
+        ? `team ${team} has no saved stage mapping for ${slots}.`
+        : `team ${team} cannot be dispatched (${gate.cause}).`;
+  return [`${ticket} cannot start: ${why}`, gate.remedy].filter(Boolean).join(" ");
+}
+
+export function renderExplain(
+  ticket: string,
+  row: EligibilityRow | null,
+  team: string,
+  knownState?: string | null,
+  gate?: DispatchGate | null,
+): string {
+  // An unmapped team has no queue and so no rows; its gate is the whole answer, and it outranks the
+  // Backlog probe below, which would otherwise call the team's own Todo "not a dispatch state".
+  if (gate) return renderDispatchGate(ticket, team, gate);
   if (!row) {
     // A null dispatch row is not proof the ticket does not exist — the explainer is a dispatch scan. When
     // `knownState` is set (the mirror answered GET /issues/:id) the ticket is real; it just sits outside a
@@ -127,7 +158,10 @@ export async function cmdExplain(args: ParsedArgs, ctx: Ctx): Promise<number> {
   if (dash <= 0) throw new UsageError(`"${ticket}" is not a ticket identifier (expected KEY-123)`);
   const team = ticket.slice(0, dash).toUpperCase();
   const api = apiClient(cfg, ctx);
-  const res = await api.getJson<{ eligibility?: { rows?: EligibilityRow[] }; rows?: EligibilityRow[] }>("/api/v1/work-eligibility", {
+  const res = await api.getJson<{
+    eligibility?: { rows?: EligibilityRow[]; dispatchGate?: DispatchGate };
+    rows?: EligibilityRow[];
+  }>("/api/v1/work-eligibility", {
     query: { team, capabilities: doc.ladder.phases.join(",") },
   });
   const rows = res.body.eligibility?.rows ?? res.body.rows ?? [];
@@ -140,10 +174,14 @@ export async function cmdExplain(args: ParsedArgs, ctx: Ctx): Promise<number> {
     const probe = await api.getJson<{ state?: unknown }>(`/api/v1/issues/${encodeURIComponent(ticket.toUpperCase())}`, { accept: [404] });
     if (probe.status !== 404) knownState = typeof probe.body?.state === "string" ? probe.body.state : "unknown";
   }
+  // The gate is TEAM-wide: it can say why a real ticket in that team cannot start, never that this id
+  // exists. Applied only when the mirror probe above found the ticket; a 404 keeps the unknown wording.
+  const gate = !row && knownState ? (res.body.eligibility?.dispatchGate ?? null) : null;
+  const explanation = renderExplain(ticket, row, team, knownState, gate);
   if (args.json) {
-    ctx.stdout(JSON.stringify({ ticket, row, explanation: renderExplain(ticket, row, team, knownState) }));
+    ctx.stdout(JSON.stringify({ ticket, row, ...(gate ? { dispatchGate: gate } : {}), explanation }));
   } else {
-    ctx.stdout(renderExplain(ticket, row, team, knownState));
+    ctx.stdout(explanation);
   }
   return 0;
 }

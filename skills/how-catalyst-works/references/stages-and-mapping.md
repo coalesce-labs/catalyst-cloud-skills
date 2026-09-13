@@ -28,7 +28,7 @@ The contract's `teams[].workflowMode` reports which one a team is in:
 - **mapped**: the team kept its existing stages and a human chose which stage fills each slot.
 - **mixed**: some slots adopted, some hand-chosen.
 
-`teams[].gitAutomation` is a separate switch, off by default, because enabling it can delete a team's own review automation in Linear; it is never bundled into "adopt recommended".
+`teams[].gitAutomation` is a stored consent for a feature that is not built yet (Catalyst managing a team's Linear git automations); nothing reads it, so `off` never stops work and turning it on would start none. What decides whether a team's tickets start is the mapping above: until dispatch, pr, done and canceled each point at a live stage, Catalyst starts nothing in that team, and `explain` says so by name.
 
 ## The state id is the authority; names are display
 
