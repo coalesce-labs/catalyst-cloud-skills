@@ -117,20 +117,47 @@ describe("every skill's scripts run for either credential", () => {
   }
 
   // Every connect instruction a person reads leads with the keyless login; the key form is the
-  // alternative. A line that starts the command with CATALYST_CLOUD_TOKEN steers them off the
-  // recommended rail.
-  const KEY_FIRST = /(run: |`)CATALYST_CLOUD_TOKEN=<your personal key> npx @catalyst-cloud\/catalyst-skills login/;
+  // alternative. Codex P2 (#11): read every supported spelling, not three literal strings — the npx
+  // or the bare `catalyst-skills` command, any key placeholder, and `--key` — and compare ORDER
+  // within the file: the first key-form login must come after the first keyless one.
+  const LOGIN = String.raw`(?:npx\s+@catalyst-cloud\/catalyst-skills|\bcatalyst-skills)\s+login`;
+  // A key placeholder may carry spaces (`<your personal key>`), so it is a bracketed run or a token.
+  const KEY_VALUE = String.raw`(?:<[^>\n]*>|\S+)`;
+  const KEY_FORM = new RegExp(String.raw`CATALYST_CLOUD_TOKEN=${KEY_VALUE}\s+${LOGIN}|${LOGIN}\s+--key\b`);
+  const KEYLESS_FORM = new RegExp(String.raw`(?<!CATALYST_CLOUD_TOKEN=${KEY_VALUE}\s+(?:npx\s+@catalyst-cloud\/)?)${LOGIN}(?!\s+--key\b)`);
 
-  test("positive control: the key-first matcher finds the shapes the skills used to carry", () => {
-    expect("2  not connected to a tenant — run: CATALYST_CLOUD_TOKEN=<your personal key> npx @catalyst-cloud/catalyst-skills login").toMatch(KEY_FIRST);
-    expect("the connect step, not a retry: `CATALYST_CLOUD_TOKEN=<your personal key> npx @catalyst-cloud/catalyst-skills login`").toMatch(KEY_FIRST);
-    expect("run: npx @catalyst-cloud/catalyst-skills login (or, with a personal key: CATALYST_CLOUD_TOKEN=<your personal key> npx @catalyst-cloud/catalyst-skills login)").not.toMatch(KEY_FIRST);
+  function keyFirst(text: string): boolean {
+    const key = text.search(KEY_FORM);
+    if (key === -1) return false;
+    const keyless = text.search(KEYLESS_FORM);
+    return keyless === -1 || key < keyless;
+  }
+
+  test("positive control: the order check catches every key-first spelling and passes the keyless-first ones", () => {
+    for (const bad of [
+      "2  not connected to a tenant — run: CATALYST_CLOUD_TOKEN=<your personal key> npx @catalyst-cloud/catalyst-skills login",
+      "the connect step, not a retry: `CATALYST_CLOUD_TOKEN=<your personal key> npx @catalyst-cloud/catalyst-skills login`",
+      "```sh\nCATALYST_CLOUD_TOKEN=<your-personal-key> catalyst-skills login\n```\nor keyless: `catalyst-skills login`",
+      "connect with `catalyst-skills login --key <your-personal-key>`, or `npx @catalyst-cloud/catalyst-skills login`",
+    ]) {
+      expect(keyFirst(bad), bad).toBe(true);
+    }
+    for (const good of [
+      "run: npx @catalyst-cloud/catalyst-skills login (or, with a personal key: CATALYST_CLOUD_TOKEN=<your personal key> npx @catalyst-cloud/catalyst-skills login)",
+      "`catalyst-skills login`, or with a key `CATALYST_CLOUD_TOKEN=<your-personal-key> catalyst-skills login`",
+      "re-run login",
+    ]) {
+      expect(keyFirst(good), good).toBe(false);
+    }
   });
 
   test("no skill file tells a person to connect with the key form first", () => {
     const walk = (dir: string): string[] =>
       readdirSync(dir, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walk(join(dir, e.name)) : [join(dir, e.name)]));
-    const offenders = walk(skillsRoot).filter((f) => KEY_FIRST.test(readFileSync(f, "utf8")));
+    const files = walk(skillsRoot);
+    // The check can see: several skill files do name a key-form login (keyless first).
+    expect(files.filter((f) => KEY_FORM.test(readFileSync(f, "utf8"))).length).toBeGreaterThan(3);
+    const offenders = files.filter((f) => keyFirst(readFileSync(f, "utf8")));
     expect(offenders.map((f) => f.slice(skillsRoot.length + 1))).toEqual([]);
   });
 });
