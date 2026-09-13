@@ -8,9 +8,10 @@ import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { CONNECT_COMMAND, hasCredential } from "./credential.mjs";
 
 export const PACKAGE = "@catalyst-cloud/catalyst-skills";
-export const CONNECT_HINT = `this machine is not connected to a tenant yet — run: CATALYST_CLOUD_TOKEN=<your personal key> npx ${PACKAGE} login`;
+export const CONNECT_HINT = `this machine is not connected to a tenant yet — run: ${CONNECT_COMMAND}`;
 
 /** ~/.config/catalyst-cloud/customer.json, honouring CATALYST_SKILLS_HOME before HOME. */
 export function configPath() {
@@ -32,7 +33,7 @@ export function requireCustomerConfig() {
     console.error(`${path} could not be read (${err instanceof Error ? err.message : String(err)}) — ${CONNECT_HINT}`);
     process.exit(2);
   }
-  if (!cfg || typeof cfg !== "object" || typeof cfg.key !== "string" || typeof cfg.baseUrl !== "string") {
+  if (!hasCredential(cfg) || typeof cfg.baseUrl !== "string") {
     console.error(`${path} is missing required fields — ${CONNECT_HINT}`);
     process.exit(2);
   }
