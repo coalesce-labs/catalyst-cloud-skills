@@ -6,6 +6,7 @@
 import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { CONNECT_COMMAND, hasCredential } from "./credential.mjs";
 
 export const PACKAGE = "@catalyst-cloud/catalyst-skills";
 export const NOT_CONFIGURED_EXIT = 2;
@@ -21,7 +22,7 @@ export function loadConfig() {
   if (!existsSync(path)) notConfigured(`no config at ${path}`);
   try {
     const cfg = JSON.parse(readFileSync(path, "utf8"));
-    if (typeof cfg !== "object" || cfg === null || typeof cfg.key !== "string") notConfigured(`config at ${path} has no key`);
+    if (!hasCredential(cfg)) notConfigured(`config at ${path} has no key or login`);
     return cfg;
   } catch (err) {
     if (err && err.exitCode === NOT_CONFIGURED_EXIT) throw err;
@@ -30,7 +31,7 @@ export function loadConfig() {
 }
 
 function notConfigured(why) {
-  process.stderr.write(`not connected (${why}) — run: CATALYST_CLOUD_TOKEN=<your personal key> npx ${PACKAGE} login\n`);
+  process.stderr.write(`not connected (${why}) — run: ${CONNECT_COMMAND}\n`);
   process.exit(NOT_CONFIGURED_EXIT);
 }
 

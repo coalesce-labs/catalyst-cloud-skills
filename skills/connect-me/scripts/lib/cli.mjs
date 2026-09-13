@@ -10,6 +10,7 @@ import { spawn } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { CONNECT_COMMAND, hasCredential } from "./credential.mjs";
 
 export const PACKAGE_NAME = "@catalyst-cloud/catalyst-skills";
 export const NOT_CONFIGURED_EXIT = 2;
@@ -33,7 +34,7 @@ export function loadCustomerConfig() {
   if (!existsSync(path)) return null;
   try {
     const parsed = JSON.parse(readFileSync(path, "utf8"));
-    if (!parsed || typeof parsed !== "object" || typeof parsed.key !== "string" || typeof parsed.account !== "string") return null;
+    if (!hasCredential(parsed) || typeof parsed.account !== "string") return null;
     return parsed;
   } catch {
     return null;
@@ -44,7 +45,7 @@ export function loadCustomerConfig() {
 export function requireConfigured() {
   const cfg = loadCustomerConfig();
   if (cfg) return cfg;
-  console.error(`not connected: ${configPath()} is missing or unreadable — run: CATALYST_CLOUD_TOKEN=<your personal key> npx ${PACKAGE_NAME} login`);
+  console.error(`not connected: ${configPath()} is missing or unreadable — run: ${CONNECT_COMMAND}`);
   process.exit(NOT_CONFIGURED_EXIT);
 }
 

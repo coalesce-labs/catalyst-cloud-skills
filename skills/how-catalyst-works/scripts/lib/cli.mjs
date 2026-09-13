@@ -6,9 +6,10 @@ import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
+import { CONNECT_COMMAND, hasCredential } from "./credential.mjs";
 
 export const PACKAGE = "@catalyst-cloud/catalyst-skills";
-export const CONNECT_HINT = `CATALYST_CLOUD_TOKEN=<your personal key> npx ${PACKAGE} login`;
+export const CONNECT_HINT = CONNECT_COMMAND;
 
 /** ~/.config/catalyst-cloud/customer.json, honouring CATALYST_SKILLS_HOME (used by tests) over HOME. */
 export function configPath() {
@@ -22,8 +23,8 @@ export function loadConfig() {
   if (!existsSync(path)) return { ok: false, reason: `no config at ${path}` };
   try {
     const cfg = JSON.parse(readFileSync(path, "utf8"));
-    if (!cfg || typeof cfg.key !== "string" || typeof cfg.account !== "string") {
-      return { ok: false, reason: `${path} is missing the key or account` };
+    if (!hasCredential(cfg) || typeof cfg.account !== "string") {
+      return { ok: false, reason: `${path} is missing a key or login, or the account` };
     }
     return { ok: true, cfg, path };
   } catch (err) {
