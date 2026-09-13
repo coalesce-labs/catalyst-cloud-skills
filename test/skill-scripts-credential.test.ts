@@ -108,8 +108,31 @@ describe("every skill's scripts run for either credential", () => {
       const r = runScript(skill, home);
       expect(r.status).toBe(2);
       expect(calls()).toEqual([]);
+      // The not-connected line names the keyless login first, the personal-key form only as the alternative.
+      expect(r.stderr).toContain(
+        "run: npx @catalyst-cloud/catalyst-skills login (or, with a personal key: CATALYST_CLOUD_TOKEN=<your personal key> npx @catalyst-cloud/catalyst-skills login)",
+      );
+      expect(r.stderr).not.toMatch(/run: CATALYST_CLOUD_TOKEN=/);
     });
   }
+
+  // Every connect instruction a person reads leads with the keyless login; the key form is the
+  // alternative. A line that starts the command with CATALYST_CLOUD_TOKEN steers them off the
+  // recommended rail.
+  const KEY_FIRST = /(run: |`)CATALYST_CLOUD_TOKEN=<your personal key> npx @catalyst-cloud\/catalyst-skills login/;
+
+  test("positive control: the key-first matcher finds the shapes the skills used to carry", () => {
+    expect("2  not connected to a tenant — run: CATALYST_CLOUD_TOKEN=<your personal key> npx @catalyst-cloud/catalyst-skills login").toMatch(KEY_FIRST);
+    expect("the connect step, not a retry: `CATALYST_CLOUD_TOKEN=<your personal key> npx @catalyst-cloud/catalyst-skills login`").toMatch(KEY_FIRST);
+    expect("run: npx @catalyst-cloud/catalyst-skills login (or, with a personal key: CATALYST_CLOUD_TOKEN=<your personal key> npx @catalyst-cloud/catalyst-skills login)").not.toMatch(KEY_FIRST);
+  });
+
+  test("no skill file tells a person to connect with the key form first", () => {
+    const walk = (dir: string): string[] =>
+      readdirSync(dir, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walk(join(dir, e.name)) : [join(dir, e.name)]));
+    const offenders = walk(skillsRoot).filter((f) => KEY_FIRST.test(readFileSync(f, "utf8")));
+    expect(offenders.map((f) => f.slice(skillsRoot.length + 1))).toEqual([]);
+  });
 });
 
 describe("the credential check lives in one vendored file", () => {
