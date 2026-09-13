@@ -163,12 +163,20 @@ describe("release --class <class> --team <key>", () => {
         nothingHeld: ["ENG-4"],
       },
     };
-    expect(await main(["release", "--class", "phase-timeout", "--team", "ENG", "--because", "outage over", "--retry-unchanged", "--limit", "10"], ctx)).toBe(0);
+    // Codex P2 (#9) — a real class release that refused any ticket exits 1, like a single refusal.
+    expect(await main(["release", "--class", "phase-timeout", "--team", "ENG", "--because", "outage over", "--retry-unchanged", "--limit", "10"], ctx)).toBe(1);
     expect(releaseWrites("ticket-release-class")[0]?.body).toEqual({ team: "ENG", class: "phase-timeout", because: "outage over", retryUnchanged: true, dryRun: false, limit: 10 });
     const text = ctx.out.join("\n");
     expect(text).toContain("ENG phase-timeout: released 1, refused 1, nothing held 1 (more remain — run it again)");
     expect(text).toContain("released ENG-2: unparked implement");
     expect(text).toContain("refused ENG-3 — held_beyond_class: release it on its own");
+  });
+
+  test("Codex P2 (#9) — a class release with no refusals exits 0, and a dry run with refusals still exits 0", async () => {
+    server.releaseClass = { status: 200, body: { team: "ENG", class: "phase-timeout", dryRun: false, released: [{ ticket: "ENG-2", released: [] }], refused: [], nothingHeld: [] } };
+    expect(await main(["release", "--class", "phase-timeout", "--team", "ENG", "--because", "x"], ctx)).toBe(0);
+    server.releaseClass = { status: 200, body: { team: "ENG", class: "phase-timeout", dryRun: true, released: [], refused: [{ ticket: "ENG-3", refused: [{ governor: "live_lease", phase: "validate", code: "lease_held", humanAction: "wait" }] }], nothingHeld: [] } };
+    expect(await main(["release", "--class", "phase-timeout", "--team", "ENG", "--dry-run"], makeCtx(home))).toBe(0);
   });
 
   test("--class needs --team, and a ticket beside --class is a usage error", async () => {

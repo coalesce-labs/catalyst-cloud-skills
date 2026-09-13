@@ -21,7 +21,10 @@ export function loadConfig() {
   if (!existsSync(path)) notConfigured(`no config at ${path}`);
   try {
     const cfg = JSON.parse(readFileSync(path, "utf8"));
-    if (typeof cfg !== "object" || cfg === null || typeof cfg.key !== "string") notConfigured(`config at ${path} has no key`);
+    // A config carries exactly one credential: a personal key, or a keyless login's `auth` block.
+    const hasKey = typeof cfg?.key === "string" && cfg.key !== "";
+    const hasLogin = typeof cfg?.auth === "object" && cfg.auth !== null && typeof cfg.auth.refreshToken === "string";
+    if (typeof cfg !== "object" || cfg === null || !(hasKey || hasLogin)) notConfigured(`config at ${path} has no key or login`);
     return cfg;
   } catch (err) {
     if (err && err.exitCode === NOT_CONFIGURED_EXIT) throw err;

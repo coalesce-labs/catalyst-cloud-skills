@@ -155,7 +155,8 @@ export async function cmdRelease(args: ParsedArgs, ctx: Ctx): Promise<number> {
     });
     if (args.json) ctx.stdout(JSON.stringify(res.body));
     else for (const line of renderClassRelease(res.body)) ctx.stdout(line);
-    return 0;
+    // A real class release that refused any ticket exits 1, the same contract as a single refusal.
+    return res.body.dryRun !== true && (res.body.refused ?? []).length > 0 ? 1 : 0;
   }
 
   const id = ticket as string;
