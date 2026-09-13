@@ -438,10 +438,36 @@ describe("the package manifest", () => {
     }
   });
 
-  test("the version matches the CHANGELOG's top entry, which is 0.4.0", () => {
+  test("the version matches the CHANGELOG's top entry, which is 0.4.1", () => {
     const changelog = readFileSync(join(pkgRoot, "CHANGELOG.md"), "utf8");
     expect(changelog).toContain(`## ${manifest.version}\n`);
-    expect(changelog.indexOf("## 0.4.0")).toBe(changelog.indexOf("## "));
-    expect(manifest.version).toBe("0.4.0");
+    expect(changelog.indexOf("## 0.4.1")).toBe(changelog.indexOf("## "));
+    expect(manifest.version).toBe("0.4.1");
   });
 });
+
+// A customer's agent read `gitAutomation: "off"` as the reason nothing started. No Catalyst code reads
+// that field; an unmapped team is the cause, and it never clears on the next pass.
+describe("the dispatch gate is the stage mapping, not git automation", () => {
+  const read = (rel: string) => readFileSync(join(skillsRoot, rel), "utf8");
+
+  test("stages-and-mapping no longer claims git automation deletes anything, and says nothing reads it", () => {
+    const text = read("how-catalyst-works/references/stages-and-mapping.md");
+    expect(text).not.toMatch(/can delete a team's own review automation/);
+    expect(text).toMatch(/`teams\[\]\.gitAutomation`[^\n]*nothing reads it/);
+  });
+
+  test("the stuck and runs-next references carve an unmapped team out of 'clears on the next pass'", () => {
+    for (const rel of ["whats-happening/references/why-is-it-stuck.md", "how-catalyst-works/references/what-runs-next.md"]) {
+      expect(read(rel)).toMatch(/`workflow_mapping_unknown`[^\n]*(does not|never) clear/);
+    }
+  });
+
+  test("catalyst-setup describes setting up one team as the pilot", () => {
+    const text = read("catalyst-setup/references/what-each-check-means.md");
+    expect(text).toMatch(/one team/i);
+    expect(text).toMatch(/no other team/i);
+    expect(text).toContain("Map my stages");
+  });
+});
+

@@ -66,7 +66,7 @@ No survivor is `no_eligible_account_slot` when any candidate was skipped on capa
 
 ## The unknowns (the evaluator fails closed)
 
-When the cloud cannot answer, it says so rather than guessing: `ordering_never_published`, `ordering_stale`, `workflow_mapping_unknown`, `ticket_unknown`, `dependency_snapshot_unknown`, `blocker_unknown`, `label_snapshot_unknown`, `prior_artifact_unknown`, `scope_unknown`, `scope_occupancy_unknown`, `branch_snapshot_unknown`. An unknown is "I could not look", never "it is not there"; report it as inconclusive.
+When the cloud cannot answer, it says so rather than guessing: `ordering_never_published`, `ordering_stale`, `workflow_mapping_unknown`, `ticket_unknown`, `dependency_snapshot_unknown`, `blocker_unknown`, `label_snapshot_unknown`, `prior_artifact_unknown`, `scope_unknown`, `scope_occupancy_unknown`, `branch_snapshot_unknown`. An unknown is "I could not look", never "it is not there"; report it as inconclusive. The exception is a team with no saved stage mapping: `workflow_mapping_unknown` never clears on its own there, `explain` names the missing stages, and the fix is a tenant owner or admin mapping the team.
 
 One advisory gates nothing: `human_addressed_unlabeled_ask_suspect` (assigned to a human with no delegate; possibly an unlabelled ask).
 

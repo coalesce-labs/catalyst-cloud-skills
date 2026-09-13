@@ -60,3 +60,7 @@ Three checks are informational by design (labels, event delivery, host currency)
 ## Who can click what
 
 The last block `check.mjs` prints groups every failure by the person it needs. Machine fixes name "you", the person at the keyboard. Tenant fixes name the owner or admin roles the contract lists (as Linear user ids, since that is how the cloud knows them), because the settings page that repairs a mapping, a connection or a label is theirs. A check the contract marks as not needing an answer names nobody: it is informational or self-clearing. This skill reports; it never repairs, because no key-reachable repair verb exists yet.
+
+## Setting up one team at a time
+
+A team starts receiving work only once its stages are saved, and that is done one team at a time: a tenant owner or admin opens Settings → Linear teams, picks the team and presses Map my stages (or Adopt the Catalyst workflow). No other team's stages or tickets change; only the labels Adopt creates are shared across the workspace. Before saving, the screen lists which of that team's tickets would start and which stay where they are. Once saved, the tickets in the team's dispatch stage start; tickets in other stages that Catalyst never worked on stay where they are. To pilot safely, pick a low-stakes team, move anything in its dispatch stage that should not start back to Backlog, and leave the other teams unmapped. `gitAutomation` in the contract plays no part: nothing reads it.
