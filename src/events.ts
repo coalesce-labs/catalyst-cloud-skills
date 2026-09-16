@@ -99,7 +99,8 @@ export async function cmdEvents(
 
   const controller = new AbortController();
   const abort = () => controller.abort(deps.signal?.reason);
-  deps.signal?.addEventListener("abort", abort, { once: true });
+  if (deps.signal?.aborted) abort();
+  else deps.signal?.addEventListener("abort", abort, { once: true });
   const timer =
     sub === "wait-for"
       ? setTimeout(
