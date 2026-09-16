@@ -112,12 +112,14 @@ Nothing, by default. After `login`, every read, write, ask and explanation goes 
 | process | needed for | what it holds on disk | lifetime |
 | --- | --- | --- | --- |
 | none | every read, write, ask and explain | `customer.json` and `contract.json` | the default after login |
-| `catalyst-skills replica start` | local SQL, cheap repeated reads, `replica sql` and `replica schema` | one SQLite file (`~/.config/catalyst-cloud/replica.db`), a writer lock with a heartbeat beside it, and a cursor row inside the database | long-running; foreground by default, `--detach` writes a pidfile beside the database and returns; `login --start-replica` does the same at the end of login |
+| `catalyst-skills replica start` | local SQL, cheap repeated reads, and local event `tail`, `wait-for`, and `query` | one SQLite file plus a bounded event cache under `$XDG_STATE_HOME/catalyst/events/` (fallback `~/.local/state/catalyst/events/`) | one long-running process; foreground by default, `--detach` writes a pidfile beside the database and returns; `login --start-replica` does the same at the end of login |
 | `catalyst-skills watch` | a project owner reacting to its scope | one cursor file (`~/.config/catalyst-cloud/watch-cursor.json`) stamped with the tenant | lives inside the session that armed it; exits with it |
 
 The check every skill runs first is `catalyst-skills replica status`, which needs no network: is the pidfile's process alive, is the writer-lock heartbeat younger than the staleness threshold, and is the cursor non-empty. It exits `0` for fresh, `1` for present but stale, `2` for not connected, `3` for absent, and prints one line either way (`--json` for scripts). A fresh replica is used; anything else falls back to the API and the skill says so in its answer. A skill never refuses to work because the replica is down and never silently reads a stale one. `replica status --probe` compares the local cursor against the cloud's head for the honest "how far behind" number; that is the only form that touches the network. `catalyst-skills replica stop` stops a detached writer.
 
-Nothing rotates. The replica is upserts and deletes into one file, the cursor is a row, and the watch cursor is a few bytes; there is no directory of old files to clean. It is a Node process, not a service: the supported path is the plain command, and `skills/connect-me/references/keeping-the-replica-running.md` gives launchd and systemd examples for people who want the writer to survive a reboot.
+`catalyst-skills events tail` follows new cached events, `events wait-for --type ... --ticket ... --timeout ...` performs a bounded wait, and `events query` reads retained history. These commands never write the cache or contact the cloud. The replica process is the single writer and reports an event-sync failure without terminating a healthy entity replica. The event cache keeps closed daily segments for at most seven days or 256 MiB per tenant and reports an explicit gap when a requested sequence has retired.
+
+The replica is a Node process, not a service: the supported path is the plain command, and `skills/connect-me/references/keeping-the-replica-running.md` gives launchd and systemd examples for people who want the writer to survive a reboot.
 
 ## The skills
 
@@ -149,7 +151,7 @@ The package pins the tenant contract range `1.x`, recorded in `package.json` und
 
 - `~/.config/catalyst-cloud/customer.json`, written with mode `0600`, holding your personal key, who you are, and the CLI path.
 - `~/.config/catalyst-cloud/contract.json`, the cached tenant contract.
-- Only if you start them: `~/.config/catalyst-cloud/replica.db` with its `.pid` and `.writer.lock` sidecars, and `~/.config/catalyst-cloud/watch-cursor.json`.
+- Only if you start them: `~/.config/catalyst-cloud/replica.db` with its `.pid` and `.writer.lock` sidecars, `$XDG_STATE_HOME/catalyst/events/<tenant>/backbone/` (or the home-directory fallback) with bounded daily event segments, and `~/.config/catalyst-cloud/watch-cursor.json`.
 
 The skill files themselves are written by whichever install command you ran, in that tool's own location. Your personal key goes into that one config file and nowhere else.
 
@@ -171,6 +173,7 @@ Remove the skills the way you installed them: `/plugin uninstall catalyst@cataly
 catalyst-skills replica stop
 rm -f ~/.config/catalyst-cloud/customer.json ~/.config/catalyst-cloud/contract.json ~/.config/catalyst-cloud/watch-cursor.json
 rm -f ~/.config/catalyst-cloud/replica.db ~/.config/catalyst-cloud/replica.db.pid ~/.config/catalyst-cloud/replica.db.writer.lock
+rm -rf "${XDG_STATE_HOME:-$HOME/.local/state}/catalyst/events"
 npm uninstall -g @catalyst-cloud/catalyst-skills
 ```
 

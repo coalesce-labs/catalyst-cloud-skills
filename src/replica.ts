@@ -13,6 +13,7 @@ import { CliError, UsageError } from "./errors.js";
 import { apiClient } from "./transport.js";
 import { authStrategyFor } from "./oauth.js";
 import { loadSdk, type Sdk } from "./sdk.js";
+import { createEventSync, type EventsSdk } from "./events.js";
 import type { WebSocketFactory } from "@catalyst-cloud/sdk/node";
 
 export const DEFAULT_STALE_MS = 15_000;
@@ -180,6 +181,7 @@ export interface ReplicaDeps {
   waitForStop?: () => Promise<void>;
   argv?: string[];
   engineDeps?: EngineDeps;
+  loadEventsSdk?: () => Promise<EventsSdk>;
 }
 
 export async function cmdReplica(args: ParsedArgs, ctx: Ctx, deps: ReplicaDeps = {}): Promise<number> {
@@ -248,7 +250,11 @@ async function cmdStart(args: ParsedArgs, ctx: Ctx, cfg: CustomerConfig, dbPath:
     onStatus: (s) => ctx.stderr(`[replica] status=${s}`),
   });
   await replica.start();
-  ctx.stdout(`replica live at ${dbPath} (cursor ${replica.cursor ?? "none"}) — Ctrl-C to stop`);
+  const eventSync = await createEventSync(ctx, { loadSdk: deps.loadEventsSdk });
+  void eventSync.start().catch((error) => {
+    ctx.stderr(`[events] sync failed: ${error instanceof Error ? error.message : String(error)}; replica remains live`);
+  });
+  ctx.stdout(`replica live at ${dbPath} (cursor ${replica.cursor ?? "none"}); event cache active — Ctrl-C to stop`);
   const wait =
     deps.waitForStop ??
     (() =>
@@ -258,6 +264,7 @@ async function cmdStart(args: ParsedArgs, ctx: Ctx, cfg: CustomerConfig, dbPath:
         process.once("SIGTERM", done);
       }));
   await wait();
+  await eventSync.stop();
   await replica.close();
   try {
     if (readPidfile(dbPath) === process.pid) unlinkSync(pidfilePath(dbPath));

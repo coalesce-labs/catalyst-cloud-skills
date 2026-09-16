@@ -42,7 +42,7 @@
     "skill-lib:sync": "node scripts/sync-skill-lib.mjs"
   },
   "dependencies": {
-    "@catalyst-cloud/sdk": "^0.9.1"
+    "@catalyst-cloud/sdk": "^0.10.0"
   },
   "devDependencies": {
     "@types/node": "^26.3.0",
