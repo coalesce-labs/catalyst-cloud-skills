@@ -194,6 +194,17 @@ describe("replica start (foreground, in-process against the fixture)", () => {
     const stopped = new Promise<void>((r) => (stop = r));
     const run = main(["replica", "start"], ctx, {
       replica: {
+        loadEventsSdk: async () => ({
+          CatalystEventSync: class {
+            async start() {
+              throw new Error("history gap");
+            }
+            async stop() {}
+          },
+          defaultEventCacheDirectory: () => `${home}/events`,
+          readCachedEvents: async () => [],
+          async *tailCachedEvents() {},
+        }),
         waitForStop: () => stopped,
         wsFactory: () => {
           const ws = {
@@ -218,6 +229,7 @@ describe("replica start (foreground, in-process against the fixture)", () => {
     await waitFor(() => sockets.length === 1, 10_000);
     sockets[0]!.onopen?.({});
     await waitFor(() => ctx.out.some((l) => l.startsWith("replica live at")), 10_000);
+    await waitFor(() => ctx.err.some((l) => l.includes("sync failed: history gap; replica remains live")), 10_000);
     expect(ctx.out.find((l) => l.startsWith("replica live at"))).toContain("(cursor 21)");
     const status = makeCtx(home);
     expect(await main(["replica", "status"], status)).toBe(0);

@@ -66,6 +66,14 @@ export const FLAG_TABLES: Record<string, FlagTable> = {
     probe: { value: false, help: "status: also fetch the cloud head and print the lag" },
     "stale-ms": { value: true, help: "status: heartbeat age that counts as stale (default 15000)" },
   },
+  events: {
+    type: { value: true, help: "exact event type" },
+    ticket: { value: true, help: "ticket identifier found in the event payload" },
+    after: { value: true, help: "event sequence to read after (tail/wait default to local head)" },
+    limit: { value: true, help: "query: maximum matching events (default 50)" },
+    timeout: { value: true, help: "wait-for: bounded wait in seconds (default 300)" },
+    directory: { value: true, help: "event cache directory (default: SDK XDG path)" },
+  },
   explain: {
     history: { value: false, help: "per-ticket execution history instead of the eligibility reason" },
   },
@@ -142,6 +150,8 @@ export const VERB_USAGE: Record<string, string> = {
     "query <issues|issue <id>|pulls|pull <id>|projects|cycles|search <terms>|changes --since <cursor|head>> [--team K] [--project P] [--state S] [--limit N] [--source replica|api] [--json]",
   replica:
     "replica <start [--detach]|stop|status [--probe] [--json]|sql \"<select>\"|schema [table]> [--db <path>]",
+  events:
+    "events <tail|wait-for|query> [--type NAME] [--ticket CTC-N] [--after SEQUENCE] [--limit N] [--timeout SECONDS] [--directory PATH]",
   explain: "explain <ticket> [--history] [--json]",
   history: "history <ticket> [--json]",
   running: "running [--ticket T --phase P] [--json]",

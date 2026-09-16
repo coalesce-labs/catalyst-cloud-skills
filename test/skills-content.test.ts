@@ -356,7 +356,7 @@ describe("the install page (README) states what a customer needs, in the order t
     expect(readme).toContain("catalyst-skills replica status");
     expect(readme).toMatch(/`0` for fresh, `1` for present but stale, `2` for not connected, `3` for absent/);
     expect(readme).toContain("catalyst-skills watch");
-    expect(readme).toContain("Nothing rotates");
+    expect(readme).toContain("seven days or 256 MiB");
   });
 
   test("names what a key cannot see yet and where those facts live, and the one connect step", () => {
@@ -398,7 +398,7 @@ describe("the package manifest", () => {
   test("is the documented name, public, and carries exactly the SDK as its runtime dependency", () => {
     expect(manifest.name).toBe("@catalyst-cloud/catalyst-skills");
     expect(manifest.publishConfig.access).toBe("public");
-    expect(manifest.dependencies).toEqual({ "@catalyst-cloud/sdk": expect.stringMatching(/^\^0\.9\./) });
+    expect(manifest.dependencies).toEqual({ "@catalyst-cloud/sdk": expect.stringMatching(/^\^0\.10\./) });
   });
 
   test("bin, shipped files, engines, and the pinned contract range are wired", () => {
