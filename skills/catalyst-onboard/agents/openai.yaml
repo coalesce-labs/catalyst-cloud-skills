@@ -1,0 +1,6 @@
+interface:
+  display_name: "Onboard me"
+  short_description: "Walk a person from nothing to their first Catalyst Cloud ticket running, one step at a time, saying who owns each step"
+  default_prompt: "Use $catalyst-onboard to set me up on Catalyst Cloud, one step at a time."
+policy:
+  allow_implicit_invocation: false

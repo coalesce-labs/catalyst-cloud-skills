@@ -1,7 +1,7 @@
 {
   "name": "@catalyst-cloud/catalyst-skills",
-  "version": "0.5.0",
-  "description": "Customer skill bundle for Catalyst Cloud: nine skills named from the executive's seat (whats-happening, what-needs-me, run-this-project, unstick, catalyst-setup, catalyst-linear, catalyst-github, how-catalyst-works, connect-me) plus the catalyst-skills CLI that reads through the Catalyst Cloud SDK, writes through the agent proxy, and connects your machine to your tenant with one command.",
+  "version": "0.6.0",
+  "description": "Customer skill bundle for Catalyst Cloud, named from the executive's seat — get set up, see what is happening, see what needs you, run a project, unstick what is stuck — plus the catalyst-skills CLI that reads through the Catalyst Cloud SDK, writes through the agent proxy, and connects your machine to your tenant with one command. The skills directory is the roster; this line never counts it.",
   "license": "MIT",
   "type": "module",
   "publishConfig": {
