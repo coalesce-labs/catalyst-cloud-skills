@@ -35,3 +35,48 @@ jobs:
 
       - name: Test
         run: bun run test
+
+  # CTC-2534 — tell catalyst-cloud that the bundle moved, so its vendored `.well-known` index stops
+  # lagging. It lagged 27 commits and a whole skill (`unstick`) before this existed, and served a
+  # `connect-me` description naming the WRONG KEY TIER — copy that is actively wrong rather than
+  # merely absent, and cannot self-heal.
+  #
+  # ⛔ WHY HERE AND NOT IN publish.yml. catalyst-cloud's sync reads this repo's DEFAULT BRANCH HEAD
+  # (`sync-skills-bundle-manifest.ts` resolves `default_branch` then takes `head.sha`), so drift is
+  # created by pushes to main. `publish.yml` runs on TAGS only, so a sender there would miss every
+  # main push between releases — which is exactly the window the index has been lagging in. The
+  # deferred-trigger comment in catalyst-cloud names "the bundle repo's own publish workflow"; that
+  # is the right repo and the wrong workflow, and this is the difference.
+  notify-catalyst-cloud:
+    name: Tell catalyst-cloud the bundle moved
+    needs: check
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      # ⛔ WARNS LOUDLY, NEVER FAILS OPEN SILENTLY. The dispatch token is a cross-repo credential
+      # that does not exist yet — `github.token` is scoped to THIS repo and cannot fire a
+      # repository_dispatch at catalyst-cloud. Until a human mints it, this step says so on every
+      # main push rather than reporting success and re-hiding the drift. A missing secret is a
+      # visible gap; a swallowed one is the same silence this job exists to end.
+      - name: Dispatch skills-bundle-published
+        env:
+          DISPATCH_TOKEN: ${{ secrets.CATALYST_CLOUD_DISPATCH_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -z "${DISPATCH_TOKEN:-}" ]; then
+            echo "::warning title=skills-bundle sync not wired::CATALYST_CLOUD_DISPATCH_TOKEN is not set, so catalyst-cloud was NOT told the bundle moved. Its .well-known index will lag until someone runs 'bun run skills-bundle:sync' by hand. Mint a token with repository_dispatch rights on coalesce-labs/catalyst-cloud and add it as this repo's CATALYST_CLOUD_DISPATCH_TOKEN."
+            exit 0
+          fi
+          code=$(curl -sS -o /tmp/dispatch.out -w '%{http_code}' \
+            -X POST \
+            -H "Accept: application/vnd.github+json" \
+            -H "Authorization: Bearer ${DISPATCH_TOKEN}" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            https://api.github.com/repos/coalesce-labs/catalyst-cloud/dispatches \
+            -d '{"event_type":"skills-bundle-published"}')
+          if [ "$code" != "204" ]; then
+            echo "::error title=skills-bundle dispatch failed::GitHub answered ${code}; catalyst-cloud was not told the bundle moved."
+            cat /tmp/dispatch.out
+            exit 1
+          fi
+          echo "::notice::dispatched skills-bundle-published to coalesce-labs/catalyst-cloud"
