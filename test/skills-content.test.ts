@@ -512,3 +512,140 @@ describe("releasing a park is a verb the person's agent runs, not an operator ac
     expect(playbook).toMatch(/never close a person's pull request/i);
   });
 });
+
+// ⭐ THE CHECK COUNT IS THE CLOUD'S, NOT OURS — so customer-facing prose here may not state it.
+// `catalyst-setup`'s description said "ten per-team checks", this reference said "eleven" twice and
+// tabled eleven rows, and the live engine has fourteen (catalyst-cloud
+// `packages/types/src/workflow-readiness.ts`, READINESS_CHECK_IDS). `src/ready.ts` never hardcodes a
+// count — it iterates whatever the contract sends — so the drift only ever lived in the prose, which
+// is exactly where a type checker cannot reach. The skill's own SKILL.md already states the rule
+// ("The live check ids, severities, states and the people who can answer come from the contract");
+// its description contradicted it.
+//
+// ⛔ WHY THIS GATE DOES NOT ASSERT THE TABLE IS COMPLETE. There is no roster in this repository to
+// compare against: `src/ready.ts` and `src/contract-types.ts` contain zero check ids (positive
+// control: both files export freely, so the search reached them), and the only enumeration we hold
+// is `test/fixture-contract.ts`, itself hand-vendored and SHORTER than the live list. Gating the
+// page against that fixture would pin customer prose to something staler than the page it guards.
+// So the page names the contract as the list of record, and this gate keeps a count from coming
+// back. A fifteenth check leaves the page incomplete — which the page now says it may be — rather
+// than wrong, and `check.mjs` still prints it.
+//
+// Modelled on catalyst-cloud's `apps/mirror/test/agent-guide.test.ts` ("never hard-codes the number
+// of team checks"), written after CTC-2028's eleventh check reddened a hard-coded "ten".
+describe("no customer-facing prose states a readiness check count", () => {
+  const COUNTED_CHECKS =
+    // `{0,3}` because the stale wording put two qualifiers between the count and the noun ("ten
+    // per-team readiness checks"). The positive control below is what caught a tighter first draft.
+    /\b(one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|\d+)\s+(?:[a-z-]+\s+){0,3}checks\b/i;
+  const PAGES = ["catalyst-setup/SKILL.md", "catalyst-setup/references/what-each-check-means.md"] as const;
+  const read = (rel: string) => readFileSync(join(skillsRoot, rel), "utf8");
+
+  test("⭐ positive control: the matcher finds every count this gate was written against", () => {
+    for (const stale of [
+      "tenant readiness from the contract's ten per-team checks",
+      "the ten per-team readiness checks the cloud runs",
+      "The engine always reports all eleven checks",
+      "Three checks are informational by design",
+      "## The eleven checks",
+    ]) {
+      expect(stale).toMatch(COUNTED_CHECKS);
+    }
+    // Not `.every()` — an empty list satisfies that vacuously, and a mistyped path would read as a pass.
+    expect(PAGES).toHaveLength(2);
+    for (const rel of PAGES) expect(read(rel).length).toBeGreaterThan(500);
+  });
+
+  for (const rel of PAGES) {
+    test(`${rel} states no check count`, () => {
+      expect(read(rel)).not.toMatch(COUNTED_CHECKS);
+    });
+  }
+
+  test("the reference names the contract as the list of record, so a newer check reads as missing here rather than as a wrong total", () => {
+    const page = read("catalyst-setup/references/what-each-check-means.md");
+    expect(page).toContain("`readinessChecks[]` is the list of record");
+    expect(page).toMatch(/newer than this page/);
+    expect(page).toMatch(/severity/);
+  });
+
+  // CTC-2542 asks for a gate that IMPORTS `READINESS_CHECK_IDS` and asserts one documented row per
+  // id, so that the next check added to the engine reddens this bundle instead of shipping an
+  // incomplete page. That import does not exist from here yet, measured both ways:
+  //   • `@catalyst-cloud/types` is not published — `npm view @catalyst-cloud/types version` → E404.
+  //   • `@catalyst-cloud/sdk`, our only `@catalyst-cloud` dependency, carries no check id at all:
+  //     a search of node_modules/@catalyst-cloud/sdk for `oauth_scope|READINESS_CHECK_IDS|
+  //     reviewer_configured` returns nothing, while the same search for `TenantContract` hits four
+  //     files including dist/tenant-contract.d.ts — so the instrument reaches the tree.
+  // Until one of those carries the ids, the roster below is VENDORED, the way catalyst-cloud's own
+  // `apps/mirror/test/fixtures/skills-bundle-verbs.ts` vendors this bundle's surface in the other
+  // direction. It catches a row being dropped, renamed or duplicated — the regression this page
+  // already suffered twice (the 0.3.0 changelog records the previous manual correction). It CANNOT
+  // notice a fifteenth check appearing upstream, which is exactly why the page above also tells the
+  // reader the contract is the list of record and that `check.mjs` prints whatever it sends.
+  // Upstream: catalyst-cloud `packages/types/src/workflow-readiness.ts`, READINESS_CHECK_IDS, read
+  // at origin/main e0b790eb (2026-09-17). Declaration order there IS wire order.
+  const DOCUMENTED_CHECKS = [
+    "oauth_scope",
+    "token_live",
+    "team_visible",
+    "mapped_states_exist",
+    "mapping_total",
+    "types_compatible",
+    "labels_present",
+    "writes_land",
+    "webhook_covers_team",
+    "hosts_current",
+    "environment_declared",
+    "tools_resolvable",
+    "reviewer_required",
+    "reviewer_configured",
+  ] as const;
+
+  /**
+   * The first cell of every backtick-quoted row in the READINESS table, in page order — scoped to
+   * the `## The checks` section, because `## The machine checks the CLI adds` further down carries
+   * rows of the same shape for a different set (`node`, `config`, `sdk`…). A first draft of this
+   * parser read both tables and the equality below is what caught it.
+   */
+  const readinessSection = () => {
+    const page = read("catalyst-setup/references/what-each-check-means.md");
+    const start = page.indexOf("\n## The checks\n");
+    if (start === -1) throw new Error("skills-content test: no `## The checks` section");
+    const end = page.indexOf("\n## ", start + 1);
+    if (end === -1) throw new Error("skills-content test: `## The checks` runs to end of file");
+    return page.slice(start, end);
+  };
+  const tabledCheckIds = () =>
+    readinessSection()
+      .split("\n")
+      .map((l) => /^\| `([a-z_]+)` \|/.exec(l)?.[1])
+      .filter((id): id is string => id !== undefined);
+
+  // ⭐ This control asserts ONLY against literals, so it still fires when the page is broken. An
+  // earlier draft also asserted against the live page and therefore went red along with the fix it
+  // was meant to vouch for — a control that dies with its subject proves nothing about the subject.
+  test("⭐ positive control: the row matcher reads a row and rejects a header, on fixed strings", () => {
+    expect(/^\| `([a-z_]+)` \|/.exec("| `oauth_scope` | proves | fix | who |")?.[1]).toBe("oauth_scope");
+    expect(/^\| `([a-z_]+)` \|/.exec("| id | proves | fix | who |")).toBeNull();
+    expect(/^\| `([a-z_]+)` \|/.exec("| -- | -- | -- | -- |")).toBeNull();
+    expect(DOCUMENTED_CHECKS.length).toBe(14);
+    expect(new Set(DOCUMENTED_CHECKS).size).toBe(DOCUMENTED_CHECKS.length); // the roster has no duplicate
+  });
+
+  test("every readiness check the engine reports has exactly one row on the page a customer is sent to", () => {
+    const tabled = tabledCheckIds();
+    expect(tabled.length).toBeGreaterThan(0); // the section was found and parsed
+    for (const id of DOCUMENTED_CHECKS) {
+      expect({ id, rows: tabled.filter((t) => t === id).length }).toEqual({ id, rows: 1 });
+    }
+    // And nothing extra: a row for an id the engine does not report is its own kind of wrong. This
+    // equality is what caught a first parser that also swallowed the machine-check table below.
+    expect([...tabled].sort()).toEqual([...DOCUMENTED_CHECKS].sort());
+  });
+
+  test("the readiness section stops before the machine checks, which carry rows of the same shape", () => {
+    expect(readinessSection()).not.toContain("The machine checks the CLI adds");
+    for (const machine of ["`cliPath`", "`sdk`", "`node`"]) expect(readinessSection()).not.toContain(machine);
+  });
+});

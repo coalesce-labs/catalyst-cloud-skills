@@ -1,12 +1,14 @@
 # What each check means
 
-This page restates invariants: the ten per-team readiness checks the cloud runs, what each proves, its fix and who can click it; the machine checks the CLI adds; and the four replica verdicts. The live values are never restated: each check's severity and whether it needs a human's answer come from the contract's `readinessChecks[]`, each team's current states from `teams[].readiness`, and the people who can answer from `humans[]`. `node scripts/check.mjs` prints all of it; this page is how to read what it printed.
+This page restates invariants: the per-team readiness checks the cloud runs, what each proves, its fix and who can click it; the machine checks the CLI adds; and the four replica verdicts. The live values are never restated: each check's severity and whether it needs a human's answer come from the contract's `readinessChecks[]`, each team's current states from `teams[].readiness`, and the people who can answer from `humans[]`. `node scripts/check.mjs` prints all of it; this page is how to read what it printed.
 
 ## How a team's readiness is scored
 
-A team's status is one of `ready`, `degraded`, `blocked` or `unchecked`. The engine always reports all eleven checks; a check it could not run is `unknown`, never `pass`. Any failing check the contract marks as blocking makes the team blocked; any unknown, and any failing check marked degrading, makes it degraded. Unchecked means no readiness pass has run for that team yet, which is a note, not a failure. Readiness is stamped with the account-wide mapping revision it was computed against, so a stale verdict is visible as such.
+A team's status is one of `ready`, `degraded`, `blocked` or `unchecked`. The engine always reports every check the contract lists; a check it could not run is `unknown`, never `pass`. Any failing check the contract marks as blocking makes the team blocked; any unknown, and any failing check marked degrading, makes it degraded. Unchecked means no readiness pass has run for that team yet, which is a note, not a failure. Readiness is stamped with the account-wide mapping revision it was computed against, so a stale verdict is visible as such.
 
-## The eleven checks
+## The checks
+
+The contract's `readinessChecks[]` is the list of record. A check that appears there and not here is newer than this page; `node scripts/check.mjs` still prints it with its own severity, fix and owner, so read the printed line and say you did.
 
 | check id | proves | when it fails, the fix | who clicks |
 | -- | -- | -- | -- |
@@ -20,9 +22,12 @@ A team's status is one of `ready`, `degraded`, `blocked` or `unchecked`. The eng
 | `writes_land` | Catalyst has written to this team successfully | "no write observed" is waiting, not failing: it clears the first time Catalyst moves a ticket. "Write refused" means Linear rejected the last write: check the connection and the team's permissions | owner or admin when refused; otherwise nobody |
 | `webhook_covers_team` | events for this team are arriving | confirmed once a repository is registered and events flow; "no delivery observed" is waiting | owner or admin, by registering the repository |
 | `hosts_current` | no connected host runs an older mapping revision | a host that is behind re-loads the mapping on its next connect; a host that did not report its revision is flagged rather than assumed current; "no host connected" is waiting | whoever runs that host |
-| `environment_declared` | a committed environment declaration for the team's default repository is in effect (`catalyst.env.json` at the repository root was ingested, is valid, and its latest proposal is approved) | `no_team_repo_default`: register a repository and make it the team's default; `no_environment_declaration`: commit the declaration file to that repository; `declaration_invalid` / `declaration_read_failed`: fix the file (the ingest names the error); `declaration_awaiting_approval`: an owner or admin approves the proposal in Settings → Environment |
+| `environment_declared` | a committed environment declaration for the team's default repository is in effect (`catalyst.env.json` at the repository root was ingested, is valid, and its latest proposal is approved) | `no_team_repo_default`: register a repository and make it the team's default; `no_environment_declaration`: commit the declaration file to that repository; `declaration_invalid` / `declaration_read_failed`: fix the file (the ingest names the error); `declaration_awaiting_approval`: an owner or admin approves the proposal in Settings → Environment | owner or admin, except committing the file, which is whoever can push to the repository |
+| `tools_resolvable` | every MCP server and CLI the approved declarations name can be resolved for this team's checkout: each `$NAME` a server references is a live secret or env var at tenant or repo scope, and each CLI is baked into the runner image | enter the missing secret or env var in Settings → Environment, or drop the server or CLI from the declaration. Named here rather than discovered as a setup refusal on the first phase | owner or admin, in settings |
+| `reviewer_required` | the team's repository can merge under its effective merge policy with the reviewers it has configured | configure a reviewer for the repository. Only the strict-attestation policy refuses a repository that has none, so under the default policy this check does not fail | owner or admin, in settings |
+| `reviewer_configured` | any code reviewer is configured for the team's repository, whatever the policy | nothing is required: under the default policy a repository with none merges on checks and threads alone. Configure one if you want review enforced. This check renders and never moves the verdict | owner or admin, in settings |
 
-Three checks are informational by design (labels, event delivery, host currency): they degrade a team but never block it. Which are which is served on `readinessChecks[].severity`; do not memorise the split.
+Some checks are informational by design: they degrade a team but never block it, and one renders without moving the verdict at all. Which are which is served on `readinessChecks[].severity`; read it there rather than memorising a split.
 
 ## Reasons that look like failures and are not
 
