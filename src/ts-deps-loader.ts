@@ -45,6 +45,54 @@ function inDeps(url: unknown): url is string {
   return typeof url === "string" && url.startsWith("file:") && url.includes("/node_modules/");
 }
 
+/** Both modes this runtime offers refused the source. Naming the file and both refusals beats
+ *  surfacing Node's raw `options.mode` message, which names the mode Node rejected rather than the
+ *  syntax in the SOURCE that made both modes fail. */
+export class StripModeError extends Error {
+  readonly sourceUrl: string;
+  readonly refusals: { strip: string; transform: string };
+  constructor(sourceUrl: string, refusals: { strip: string; transform: string }) {
+    super(
+      `${sourceUrl}: could not be type-stripped by any mode this runtime offers. This usually means ` +
+        `the source uses TypeScript syntax with runtime semantics (an enum, a runtime namespace, a ` +
+        `parameter property, or \`export =\`) that Node's type-stripping can never erase, on a ` +
+        `runtime that also refuses \`transform\`. ` +
+        `strip refused: ${refusals.strip} | transform refused: ${refusals.transform}`,
+    );
+    this.name = "StripModeError";
+    this.sourceUrl = sourceUrl;
+    this.refusals = refusals;
+  }
+}
+
+function messageOf(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+/** CTC-2483 — strip types preferring the one mode EVERY supported Node accepts.
+ *
+ *  ⭐ `strip` is always tried first, and that ordering is the whole fix. Node 26's
+ *  `stripTypeScriptTypes` accepts only `{ mode: "strip" }` and throws ERR_INVALID_ARG_VALUE for
+ *  `"transform"`, so a loader that reaches for `transform` first dies there before it ever learns
+ *  whether `strip` would have worked. But `strip` is not a weaker `transform`: it REFUSES
+ *  TypeScript syntax with runtime semantics (enums, runtime namespaces, parameter properties,
+ *  `export =`) that `transform` erases, so `transform` stays reachable as a fallback on Node 22-25
+ *  for sources that need it. */
+export function stripPreferringStrip(strip: StripFn, source: string, sourceUrl: string): string {
+  try {
+    return strip(source, { mode: "strip", sourceUrl });
+  } catch (stripError) {
+    try {
+      return strip(source, { mode: "transform", sourceUrl });
+    } catch (transformError) {
+      throw new StripModeError(sourceUrl, {
+        strip: messageOf(stripError),
+        transform: messageOf(transformError),
+      });
+    }
+  }
+}
+
 /** Build the hook pair over a strip function. Pure, so a test can drive it with fake `next`s. */
 export function makeHooks(strip: StripFn, fileExists: (p: string) => boolean = existsSync, readFile: (p: string) => string = (p) => readFileSync(p, "utf8")): Hooks {
   return {
@@ -63,7 +111,7 @@ export function makeHooks(strip: StripFn, fileExists: (p: string) => boolean = e
     },
     load(url, context, next) {
       if (inDeps(url) && url.endsWith(".ts")) {
-        return { format: "module", shortCircuit: true, source: strip(readFile(fileURLToPath(url)), { mode: "transform", sourceUrl: url }) };
+        return { format: "module", shortCircuit: true, source: stripPreferringStrip(strip, readFile(fileURLToPath(url)), url) };
       }
       return next(url, context);
     },
