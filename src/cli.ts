@@ -40,6 +40,7 @@ import { cmdWatch, type WatchDeps } from "./watch.js";
 import { cmdWrite, type WriteDeps } from "./write.js";
 import { cmdAsk } from "./ask.js";
 import { cmdRelease } from "./release.js";
+import { cmdEnvironment, type EnvironmentDeps } from "./environment.js";
 
 export {
   CONFIG_MODE,
@@ -110,6 +111,7 @@ export function usageText(): string {
     "  catalyst-skills write <comment|state|label|create|reaction|attachment|session> ...",
     "  catalyst-skills ask <raise|accept|list> ...",
     "  catalyst-skills release <ticket> --because <what changed> [--retry-unchanged] [--dry-run] | release --class <c> --team <K> ...",
+    "  catalyst-skills environment [read] | environment propose --file <path>|--stdin [--approve] | environment approve",
     "",
     "Every verb takes --help. --json makes the output machine-readable.",
     "",
@@ -131,6 +133,7 @@ export interface MainDeps {
   events?: EventDeps;
   watch?: WatchDeps;
   write?: WriteDeps;
+  environment?: EnvironmentDeps;
   loadSdk?: () => Promise<unknown>;
   /** Injected by the tests so no suite ever touches a real terminal. */
   isTty?: () => boolean;
@@ -243,6 +246,8 @@ export async function main(argv: string[], ctx: Ctx = defaultCtx(), deps: MainDe
         return await cmdAccounts(args, ctx);
       case "release":
         return await cmdRelease(args, ctx);
+      case "environment":
+        return await cmdEnvironment(args, ctx, deps.environment ?? {});
       default:
         ctx.stderr(`unknown command: ${args.command}`);
         ctx.stderr(usageText());

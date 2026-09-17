@@ -129,6 +129,14 @@ export const FLAG_TABLES: Record<string, FlagTable> = {
   },
   ready: {},
   accounts: {},
+  environment: {
+    file: { value: true, help: "propose: a JSON file holding the declaration" },
+    stdin: { value: false, help: "propose: read the declaration from stdin" },
+    "expect-revision": { value: true, help: "propose: refuse unless the stored declaration is still at this revision" },
+    approve: { value: false, help: "propose: approve exactly the revision the propose returned" },
+    revision: { value: true, help: "approve: the revision to approve (with --hash; default is whatever read returns)" },
+    hash: { value: true, help: "approve: the canonical hash to approve (with --revision)" },
+  },
   release: {
     because: { value: true, help: "what changed since the ticket was held (required unless --dry-run)" },
     "retry-unchanged": { value: false, help: "release even though nothing the mirror can see changed (say what did in --because)" },
@@ -162,6 +170,8 @@ export const VERB_USAGE: Record<string, string> = {
   ask: "ask <raise --team --title [--context] [--option]... [--default] --blocks <ticket>...|--nothing-to-block [--ask-key] | accept <askTicket> --answer <commentId> --role <role> | list [--anyone] [--json]>",
   ready: "ready [--json]",
   accounts: "accounts [--json]",
+  environment:
+    "environment [read] [--json] | environment propose --file <path>|--stdin [--expect-revision N] [--approve] [--json] | environment approve [--revision N --hash H] [--json]",
   release:
     "release <ticket> --because <what changed> [--retry-unchanged] [--dry-run] [--json] | release --class <failure-class> --team <K> --because <what changed> [--retry-unchanged] [--dry-run] [--limit N] [--json]",
 };

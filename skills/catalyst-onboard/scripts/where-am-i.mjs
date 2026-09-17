@@ -131,14 +131,30 @@ if (!connected) {
     add("account", "catalyst-skills contract --path account", "unreadable", ["the account block could not be read — try: catalyst-skills contract --refresh"], null, null);
   } else {
     const workspace = typeof doc.linearWorkspaceSlug === "string" && doc.linearWorkspaceSlug !== "" ? doc.linearWorkspaceSlug : typeof doc.linearWorkspaceId === "string" && doc.linearWorkspaceId !== "" ? doc.linearWorkspaceId : null;
+    // The declaration is the one part of the account a key can also READ — and it is the one part a
+    // key can WRITE, so it is reported here rather than left to the settings page like the rest.
+    const envLines = [];
+    const env = runCli(["environment", "read", "--json"]);
+    const envDoc = tryJson(env.stdout);
+    if (envDoc === null) {
+      envLines.push(`environment: not readable (${(env.stderr || env.stdout).trim().split("\n")[0] ?? "no output"})`);
+    } else if (envDoc.current === null || envDoc.current === undefined) {
+      envLines.push("environment: nothing declared yet — declare it with `catalyst-skills environment propose --file <path> --approve`");
+    } else {
+      envLines.push(`environment: revision ${envDoc.current.revision} (${envDoc.current.canonicalHash}), ${envDoc.isApproved ? "approved" : "NOT approved — a proposal nobody approved changes nothing"}`);
+      envLines.push(envDoc.delivered ? `environment delivered to phases: revision ${envDoc.delivered.revision}` : "environment delivered to phases: nothing yet");
+      const unresolved = Array.isArray(envDoc.unresolvedReferences) ? envDoc.unresolvedReferences : [];
+      if (unresolved.length > 0) envLines.push(`environment names values this tenant does not carry yet: ${unresolved.join(", ")}`);
+    }
     add(
       "account",
-      "catalyst-skills contract --path account",
+      "catalyst-skills contract --path account, and catalyst-skills environment read",
       workspace === null ? "unfinished" : "ok",
       [
         `${doc.name ?? "(unnamed tenant)"} (${doc.slug ?? "?"})`,
         workspace === null ? "no Linear workspace resolved on this contract" : `Linear workspace resolved: ${workspace}`,
         "the GitHub App install is NOT carried here — the connections page is the only place that shows it",
+        ...envLines,
       ],
       "a tenant owner or admin",
       link("/settings/connections"),
