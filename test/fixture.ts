@@ -61,6 +61,17 @@ export interface FixtureServer {
   release?: { status: number; body: unknown };
   /** The contract's `ticket-release-class` route answers this when set. */
   releaseClass?: { status: number; body: unknown };
+  /** CTC-2545 — the account-scope environment declaration, as a REAL little state machine rather than
+   *  a canned body: propose bumps a revision and a hash, approve is a compare-and-set against them.
+   *  A canned pair would let a verb that approved the wrong revision pass, which is the one thing
+   *  the CAS exists to catch. `environmentForced` overrides it for the refusal shapes it cannot reach. */
+  accountEnvironment: {
+    current: { revision: number; canonicalHash: string; declaration: unknown; proposedBy: string } | null;
+    approved: { revision: number; canonicalHash: string } | null;
+    unresolvedReferences: string[];
+  };
+  /** Force one raw answer for the next environment call, by verb (e.g. a 400 invalid_declaration). */
+  environmentForced?: Partial<Record<"read" | "propose" | "approve", { status: number; body: unknown }>>;
   /** Fields merged over the fixture execution report, for the renderer's null and park branches. */
   execution?: Record<string, unknown>;
   /** CTC-2112 — the WorkOS device-flow fixture: the discovery doc, the fake `authorize/device` and
@@ -433,6 +444,7 @@ export async function startMeFixture(
     requests: [],
     issues: fixtureIssues(),
     eligibilityByTeam: {},
+    accountEnvironment: { current: null, approved: null, unresolvedReferences: [] },
     oauth: {
       clientId: "client_fixture",
       pendingPolls: 0,
@@ -457,6 +469,10 @@ export async function startMeFixture(
     },
   };
   const postRoutes = () => new Set(state.contract.routes.filter((r) => r.method === "POST").map((r) => r.path));
+  // CTC-2545 — the environment paths the fixture SERVES are read off the contract it serves, so the
+  // fixture and the CLI agree by construction and a test that passes proves the CLI discovered them.
+  const envBase = () =>
+    state.contract.routes.find((r) => r.method === "GET" && r.path.split("/").filter(Boolean).at(-1) === "account-environment")?.path ?? null;
 
   const b64url = (obj: unknown) => Buffer.from(JSON.stringify(obj)).toString("base64url");
   /** A JWT the bundle only ever DECODES (never verifies): `exp` drives the refresh clock, `sid` the
@@ -714,6 +730,24 @@ export async function startMeFixture(
       return send(200, { ticket, phase, ...LEASES });
     }
 
+    if (req.method === "GET" && envBase() !== null && path === envBase()) {
+      const forced = state.environmentForced?.read;
+      if (forced) return send(forced.status, forced.body);
+      const env = state.accountEnvironment;
+      return send(200, {
+        current: env.current,
+        isApproved:
+          env.approved !== null &&
+          env.current !== null &&
+          env.approved.revision === env.current.revision &&
+          env.approved.canonicalHash === env.current.canonicalHash,
+        approvedBy: env.approved === null ? null : FIXTURE_ME_USER.id,
+        delivered: env.approved,
+        unresolvedReferences: env.unresolvedReferences,
+        audit: [],
+      });
+    }
+
     if (req.method === "POST" && postRoutes().has(path)) {
       if (state.budgetExhausted) {
         return send(429, { error: "write-budget-exhausted", reason: "the per-host daily write budget is exhausted" }, { "retry-after": "3600" });
@@ -727,6 +761,42 @@ export async function startMeFixture(
       if (name === "ticket-release-class") {
         const r = state.releaseClass ?? { status: 200, body: { released: [], refused: [], nothingHeld: [], truncated: false } };
         return send(r.status, r.body);
+      }
+      const base = envBase();
+      if (base !== null && path === `${base}/propose`) {
+        const forced = state.environmentForced?.propose;
+        if (forced) return send(forced.status, forced.body);
+        const env = state.accountEnvironment;
+        const b = (body ?? {}) as { declaration?: unknown; expectedRevision?: number };
+        if (b.declaration === undefined) return send(400, { error: "invalid", message: "declaration is required" });
+        const at = env.current?.revision ?? 0;
+        if (b.expectedRevision !== undefined && b.expectedRevision !== at) {
+          return send(409, { error: "conflict", message: "the declaration changed since you last read it — refresh and retry", currentRevision: at });
+        }
+        if (env.current !== null && JSON.stringify(env.current.declaration) === JSON.stringify(b.declaration)) {
+          return send(200, { status: "unchanged", state: env.current });
+        }
+        const created = env.current === null;
+        const revision = at + 1;
+        env.current = { revision, canonicalHash: `sha-${revision}`, declaration: b.declaration, proposedBy: FIXTURE_ME_USER.id };
+        return send(created ? 201 : 200, { status: created ? "created" : "updated", state: env.current });
+      }
+      if (base !== null && path === `${base}/approve`) {
+        const forced = state.environmentForced?.approve;
+        if (forced) return send(forced.status, forced.body);
+        const env = state.accountEnvironment;
+        const b = (body ?? {}) as { revision?: number; canonicalHash?: string };
+        if (env.current === null) return send(404, { error: "not_found" });
+        if (b.revision !== env.current.revision || b.canonicalHash !== env.current.canonicalHash) {
+          return send(409, {
+            error: "stale",
+            message: "the declaration changed since you reviewed it — refresh and re-approve",
+            currentRevision: env.current.revision,
+            currentHash: env.current.canonicalHash,
+          });
+        }
+        env.approved = { revision: env.current.revision, canonicalHash: env.current.canonicalHash };
+        return send(200, { approved: true, state: env.current });
       }
       const id = `lin-${name}-${state.writes.length}`;
       if (name === "ask") return send(200, { id, identifier: `ENG-${100 + state.writes.length}` });

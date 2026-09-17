@@ -100,11 +100,25 @@ If it refuses, stop here and use the `connect-me` skill; it owns every failure m
 
 **For:** the environment a phase runs in — the names of the variables and secrets the person's code needs. Names leave the machine; values are entered once, by them, in the app.
 
-**You hand over:** `<their cloud>/settings/environment` for everything the whole account needs, and that repository's own environment section under `<their cloud>/settings/repositories` for anything only it needs.
+⭐ **This is the one setup step you can actually do.** Every other step above is a page. This one is a command, and it is worth saying so to the person.
 
-**Read back:** nothing here is readable from this machine. Say so rather than implying you checked. What you can say is that a phase that fails on a missing variable names it, and that is the moment to come back to this step.
+**You run:** `catalyst-skills environment` first, to read what the tenant already declares — the current revision, whether it is approved, and which revision a phase's checkout actually carries. Those last two are different things more often than people expect: a proposal that nobody approved changes nothing.
 
-**Owner:** a tenant owner or admin, in the app. ⛔ The account-scope declaration **is** key-callable in the cloud — it is listed in `catalyst-skills contract --path routes` — but this bundle's CLI has no verb that calls it, so from here it is a settings page like the rest. Do not try to reach it another way: a skill script never makes a request of its own, only the CLI does.
+To change it, write the declaration to a JSON file and propose it:
+
+```sh
+catalyst-skills environment propose --file declaration.json
+```
+
+Add `--approve` to approve exactly the revision that propose just returned, which is the one-command form and the one to prefer — it is a compare-and-set, and nothing gets copied between two commands by hand. `catalyst-skills environment approve` on its own reads the current revision and approves that.
+
+**Read back:** the revision and hash the command printed, and whether it says the declaration is now what a phase's checkout carries. If it prints `referenced but not set on this tenant yet`, read those names out: the declaration names them and the tenant has no value for them, so a phase that needs one will fail on it until someone adds it in the app.
+
+**Owner:** you can read it from any active seat; proposing and approving need an admin or owner seat, and the cloud refuses with that sentence if the person does not have one — read the refusal to them rather than retrying.
+
+⛔ **Values never pass through you.** The declaration carries the *names* a build needs. The values are entered by the person, once, in the app, and nothing you run ever sees them. Say that plainly; a person asked for a secret by an agent is right to be suspicious.
+
+⛔ **Repository scope is still a page.** Anything only one repository needs lives in that repository's environment section under `<their cloud>/settings/repositories`, and the route behind it takes a browser session, not a key. Account scope is the half that is a command.
 
 If they do not know what their build needs yet, skip this step. It blocks nothing until a phase needs a secret.
 

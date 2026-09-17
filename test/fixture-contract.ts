@@ -51,6 +51,12 @@ export function buildFixtureContract(): TenantContract {
       route("GET", "linear/read", false),
       route("POST", "ticket-release", true),
       route("POST", "ticket-release-class", true),
+      // CTC-2545 — the account-scope environment declaration. The GET is the prefix the CLI derives
+      // propose/approve from; both POSTs are listed because the verb CHECKS the derived paths against
+      // this table rather than trusting the derivation.
+      route("GET", "account-environment", false),
+      route("POST", "account-environment/propose", false),
+      route("POST", "account-environment/approve", false),
       { method: "GET", path: "/api/v1/agent/contract", takesWriteBudgetUnit: false, since: "1.0.0" },
     ],
     teams: [

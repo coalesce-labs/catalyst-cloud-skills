@@ -222,7 +222,7 @@ describe("each skill's scripts spawn the catalyst-skills verbs it teaches", () =
     // Each grain by its own instrument: the machine by `status` and `ready`, the person by `me`, and
     // the account, the projects and the repositories by three DIFFERENT `contract --path` reads. A
     // regression that folded any of these into one call would take this assertion with it.
-    "catalyst-onboard": [/"status"/, /"ready",\s*"--json"/, /"me",\s*"--json"/, /"contract",\s*"--path",\s*"account"/, /"contract",\s*"--path",\s*"teams"/, /"contract",\s*"--path",\s*"merge\.repositories"/],
+    "catalyst-onboard": [/"status"/, /"ready",\s*"--json"/, /"me",\s*"--json"/, /"contract",\s*"--path",\s*"account"/, /"contract",\s*"--path",\s*"teams"/, /"contract",\s*"--path",\s*"merge\.repositories"/, /"environment",\s*"read"/],
     "catalyst-github": [/"query",\s*"pull"/, /"contract"/, /"replica",\s*"status"/],
     "catalyst-linear": [/"query",\s*"issue"/, /"query",\s*"search"/, /"write",\s*"comment"/, /"write",\s*"state"/, /"write",\s*"label"/, /"write",\s*"create"/],
     "how-catalyst-works": [/"explain"/, /"running"/, /"queue"/, /"accounts"/, /"contract",\s*"--path"/],
