@@ -35,7 +35,7 @@ jobs:
 
       - uses: actions/setup-node@v6
         with:
-          node-version: 22
+          node-version-file: package.json
 
       - uses: oven-sh/setup-bun@v2
         with:
@@ -59,7 +59,7 @@ jobs:
 
       - uses: actions/setup-node@v6
         with:
-          node-version: 22
+          node-version-file: package.json
           registry-url: https://registry.npmjs.org
 
       - name: npm publish (prepack builds dist; files gate ships bin/dist/skills/README/CHANGELOG/LICENSE)

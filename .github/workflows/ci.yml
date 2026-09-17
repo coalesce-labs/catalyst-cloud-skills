@@ -14,14 +14,35 @@ permissions:
   contents: read
 
 jobs:
+  matrix:
+    runs-on: ubuntu-latest
+    outputs:
+      node: ${{ steps.derive.outputs.node }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: package.json
+
+      # CTC-2158 / Ryan 2026-09-17: "current plus active LTS, matrix derived from engines". The list
+      # is DERIVED here, never hand-written — raising engines.node is the only edit that changes it.
+      - id: derive
+        run: echo "node=$(node scripts/node-support-matrix.mjs --json)" >> "$GITHUB_OUTPUT"
+
   check:
+    needs: matrix
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ${{ fromJSON(needs.matrix.outputs.node) }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
 
       - uses: actions/setup-node@v6
         with:
-          node-version: 22
+          node-version: ${{ matrix.node }}
 
       - uses: oven-sh/setup-bun@v2
         with:
@@ -35,6 +56,62 @@ jobs:
 
       - name: Test
         run: bun run test
+
+      - name: Build
+        run: bun run build
+
+      # ⛔ The suite itself CANNOT see this. Measured 2026-09-17: inside `bun run test`,
+      # process.execPath is the real node setup-node installed and process.versions.bun is ABSENT,
+      # because vitest's bin carries `#!/usr/bin/env node` and `bun run` delegates to it. Every test
+      # that spawns the built CLI uses process.execPath, so the Node the CLI runs under is the Node
+      # vitest runs under — never a second major. This step is the only thing that runs the built CLI
+      # on THIS matrix major, which is the exact regression Tony hit on Node 26.
+      - name: The built CLI loads the SDK on Node ${{ matrix.node }}
+        run: |
+          set -euo pipefail
+          out="$(node bin/catalyst-skills.js ready || true)"
+          printf '%s\n' "$out"
+          printf '%s\n' "$out" | grep -q '^ok .*sdk: loads' \
+            || { echo "::error title=SDK did not load on Node ${{ matrix.node }}::$out"; exit 1; }
+
+  bun-runtime:
+    needs: check
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # 1.3.14 has no node:sqlite (measured: `bun -e 'import "node:sqlite"'` -> could not resolve);
+        # latest has it. Both directions are asserted, because the FAILING one is what a customer hits.
+        include:
+          - bun: 1.3.14
+            expect: friendly-refusal
+          - bun: latest
+            expect: sdk-loads
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: package.json
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ matrix.bun }}
+      - run: bun install --frozen-lockfile
+      - run: bun run build
+      - name: The built CLI under bun ${{ matrix.bun }} (${{ matrix.expect }})
+        run: |
+          set -euo pipefail
+          out="$(bun bin/catalyst-skills.js ready 2>&1 || true)"
+          printf '%s\n' "$out"
+          case "${{ matrix.expect }}" in
+            sdk-loads)
+              printf '%s\n' "$out" | grep -q '^ok .*sdk: loads' ;;
+            friendly-refusal)
+              # It must name bun, name the floor, print the one command — and NEVER leak the raw
+              # ResolveMessage the launcher used to print before CTC-2158.
+              printf '%s\n' "$out" | grep -q 'bun 1\.3\.14' \
+                && printf '%s\n' "$out" | grep -q 'runtime install' \
+                && ! printf '%s\n' "$out" | grep -q 'ResolveMessage' ;;
+          esac
 
   # CTC-2534 — tell catalyst-cloud that the bundle moved, so its vendored `.well-known` index stops
   # lagging. It lagged 27 commits and a whole skill (`unstick`) before this existed, and served a

@@ -32,7 +32,7 @@ describe("ready", () => {
     expect(await main(["ready"], ctx)).toBe(0);
     const text = ctx.out.join("\n");
     expect(text.split("\n").at(-1)).toBe("READY");
-    expect(text).toMatch(/^ok {3}node: /m);
+    expect(text).toMatch(/^ok {3}runtime: /m);
     expect(text).toMatch(/^ok {3}config: joined Hagale Technologies/m);
     expect(text).toMatch(/^ok {3}contract: 1\.0\.0 cached/m);
     expect(text).toMatch(/^ok {3}cliPath: /m);
@@ -53,7 +53,7 @@ describe("ready", () => {
   });
   test("NOT READY names Node, config, contract, skills dir and sdk failures separately, each with its fix", async () => {
     const report = await readyReport(ctx, {
-      nodeMajor: 20,
+      runtime: { kind: "node", version: "20.0.0", nodeCompat: "20.0.0" },
       skillNames: CUSTOMER_SKILLS,
       loadSdk: async () => {
         throw new Error("no registerHooks");
@@ -63,7 +63,7 @@ describe("ready", () => {
     const failed = report.checks.filter((c) => !c.ok && !c.note).map((c) => c.id);
     // "skills" is a note, not a failure: the customer's own agent installs them, so a copy
     // directory with none of ours in it is the normal plugin case.
-    expect(failed).toEqual(["node", "config", "contract", "sdk"]);
+    expect(failed).toEqual(["runtime", "config", "contract", "sdk"]);
     expect(report.checks.find((c) => c.id === "skills")).toMatchObject({ ok: true, note: true });
     for (const c of report.checks.filter((c) => !c.ok && !c.note)) {
       expect(c.fix, `${c.id} must name a fix`).toBeTruthy();
@@ -107,6 +107,46 @@ describe("ready", () => {
     expect(text).toMatch(/^FAIL {2}team ENG: oauth_scope is fail \(missing_scope\), blocking/m);
     expect(text).toMatch(/who: owner u-fixture-owner, admin u-fixture-admin/);
     expect(text).toMatch(/^FAIL {2}team OPS: blocked/m);
+  });
+});
+
+describe("the runtime check — CTC-2158", () => {
+  test("an unsupported runtime FAILS the runtime check and carries the one fix command", async () => {
+    const report = await readyReport(ctx, {
+      runtime: { kind: "node", version: "22.14.0", nodeCompat: "22.14.0" },
+      skillNames: [],
+      loadSdk: async () => {
+        throw new Error("no registerHooks");
+      },
+    });
+    const runtime = report.checks.find((c) => c.id === "runtime")!;
+    expect(runtime.ok).toBe(false);
+    expect(runtime.line).toContain("22.14.0");
+    expect(runtime.line).toContain("22.15");
+    expect(runtime.fix).toContain("runtime install");
+    expect(report.ready).toBe(false);
+  });
+
+  test("bun 1.3.14 FAILS the runtime check as bun, never as its node compat major", async () => {
+    const report = await readyReport(ctx, {
+      runtime: { kind: "bun", version: "1.3.14", nodeCompat: "24.3.0" },
+      skillNames: [],
+      loadSdk: async () => {},
+    });
+    const runtime = report.checks.find((c) => c.id === "runtime")!;
+    expect(runtime.line).toContain("bun 1.3.14");
+    expect(runtime.line).not.toMatch(/\bnode: 24\b/);
+    expect(runtime.ok).toBe(false);
+  });
+
+  test("a supported runtime passes and there is no check called `node` any more", async () => {
+    const report = await readyReport(ctx, {
+      runtime: { kind: "node", version: "26.8.1", nodeCompat: "26.8.1" },
+      skillNames: [],
+      loadSdk: async () => {},
+    });
+    expect(report.checks.find((c) => c.id === "runtime")!.ok).toBe(true);
+    expect(report.checks.find((c) => c.id === "node")).toBeUndefined();
   });
 });
 

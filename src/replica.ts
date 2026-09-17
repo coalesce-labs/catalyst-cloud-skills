@@ -4,7 +4,6 @@
 // writer-lock heartbeat, and the `sync_meta.cursor` row (read through node:sqlite read-only). Exit
 // 0 fresh, 1 present but stale, 2 not configured, 3 absent. `--probe` adds the one network call.
 import { existsSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
-import { DatabaseSync } from "node:sqlite";
 import { createRequire } from "node:module";
 import { flagBool, flagInt, flagString, positionals, type ParsedArgs } from "./args.js";
 import { apiBase, loadConfig, replicaDbPath, type Ctx, type CustomerConfig } from "./config.js";
@@ -14,9 +13,47 @@ import { apiClient } from "./transport.js";
 import { authStrategyFor } from "./oauth.js";
 import { loadSdk, type Sdk } from "./sdk.js";
 import { createEventSync, type EventsSdk } from "./events.js";
+import { BUN_MIN, FIX_COMMAND } from "./runtime.js";
 import type { WebSocketFactory } from "@catalyst-cloud/sdk/node";
 
 export const DEFAULT_STALE_MS = 15_000;
+
+// CTC-2158: node:sqlite used to be a top-level static `import { DatabaseSync } from "node:sqlite"`.
+// Because this module is in EVERY verb's module graph (cli.ts imports it for `ready`'s replica
+// check), a runtime without node:sqlite aborted the WHOLE CLI during module loading — before
+// main(), so before any of ready.ts's per-check try/catch could turn it into a fix line. Measured
+// under bun 1.3.14: `bun bin/catalyst-skills.js ready` -> "catalyst-skills: failed to load:
+// ResolveMessage: No such built-in module: node:sqlite", raw, with no fix and no who.
+// `createRequire(...)("node:sqlite")` inside a try/catch is catchable on every runtime measured
+// (Node 22/26, bun 1.3.14/1.4.2) and is synchronous, which replicaStatus and the sql/schema verbs
+// need. It is loaded on first use, memoised per process.
+type SqliteModule = typeof import("node:sqlite");
+export type DatabaseSync = InstanceType<SqliteModule["DatabaseSync"]>;
+
+let sqliteCache: SqliteModule | null = null;
+
+/** Load `node:sqlite` on first use. Any failure (module absent on this runtime) becomes a named
+ *  CliError pointing at the bun floor and the one fix command — never a raw ResolveMessage. */
+export function loadSqlite(req: (id: string) => unknown = createRequire(import.meta.url)): SqliteModule {
+  if (sqliteCache) return sqliteCache;
+  try {
+    sqliteCache = req("node:sqlite") as SqliteModule;
+    return sqliteCache;
+  } catch (err) {
+    const detail = err instanceof Error ? err.message : String(err);
+    throw new CliError(
+      `node:sqlite is not available on this runtime (${detail}) — the replica needs it. ` +
+        `Supported: Node 22.5+ has node:sqlite built in; bun needs ${BUN_MIN} or newer. ` +
+        `One command fixes it without changing your default Node: ${FIX_COMMAND}`,
+      "sqlite-unavailable",
+    );
+  }
+}
+
+/** Test seam: forget the cached module. */
+export function resetSqliteCache(): void {
+  sqliteCache = null;
+}
 
 export type ReplicaVerdict = "fresh" | "stale" | "not-configured" | "absent";
 
@@ -72,7 +109,7 @@ function readLock(dbPath: string): { pid: number; heartbeat: number } | null {
 export function readCursor(dbPath: string): number | null {
   let db: DatabaseSync | null = null;
   try {
-    db = new DatabaseSync(dbPath, { readOnly: true });
+    db = new (loadSqlite().DatabaseSync)(dbPath, { readOnly: true });
     const table = db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'sync_meta'").get();
     if (!table) return null;
     const row = db.prepare("SELECT value FROM sync_meta WHERE key = 'cursor'").get() as { value?: unknown } | undefined;
@@ -324,7 +361,7 @@ async function cmdSql(args: ParsedArgs, ctx: Ctx, dbPath: string, sql: string, d
 
 async function cmdSchema(args: ParsedArgs, ctx: Ctx, dbPath: string, table: string | undefined): Promise<number> {
   if (!existsSync(dbPath)) throw new CliError(`no replica at ${dbPath} — the schema is what the file holds; start it with: catalyst-skills replica start --detach`, "replica-absent", 3);
-  const db = new DatabaseSync(dbPath, { readOnly: true });
+  const db = new (loadSqlite().DatabaseSync)(dbPath, { readOnly: true });
   try {
     const tables = (db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name").all() as { name: string }[]).map((r) => r.name);
     const wanted = table ? tables.filter((t) => t === table) : tables;

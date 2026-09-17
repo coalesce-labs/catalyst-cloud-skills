@@ -41,12 +41,12 @@ Some checks are informational by design: they degrade a team but never block it,
 
 | id | proves | fix |
 | -- | -- | -- |
-| `node` | Node 22 or newer, which the SDK's built-in SQLite engine needs | install Node 22+ |
+| `runtime` | this runtime can run the CLI: Node 22.15+ (22.15 is where `node:module.registerHooks` arrives, which the SDK's TypeScript dependencies need) or bun 1.4+ (1.4 is where `node:sqlite` arrives, which the replica needs) | `npx -y @catalyst-cloud/catalyst-skills runtime install` — installs a pinned Node under the CLI's own cache and uses it from then on; it does not change your default Node |
 | `config` | this machine is connected: `customer.json` exists and loads | `npx @catalyst-cloud/catalyst-skills login` (keyless: the person approves in their browser); or, with a personal key minted at Settings → API keys, the same command prefixed with `CATALYST_CLOUD_TOKEN=<your personal key>` |
 | `contract` | the tenant contract is cached and its major version is one this bundle accepts | `catalyst-skills contract --refresh`; a version outside the range means update the bundle. A 403 naming an older cloud means the cloud has not yet deployed personal-key access |
 | `cliPath` | the CLI path recorded at login still exists, so skill scripts can spawn it | re-run login |
 | `skills` | every skill of this bundle is present where the CLI installed them | `catalyst-skills install` |
-| `sdk` | the SDK loads, so the replica and the watch are available | run under Node 22.15 or newer; every read still works through the API meanwhile |
+| `sdk` | the SDK loads, so the replica and the watch are available | the same one command (`npx -y @catalyst-cloud/catalyst-skills runtime install`); every read still works through the API meanwhile |
 | `replica` | the optional replica is fresh | a note, never a failure; see below |
 
 ## The replica's four verdicts

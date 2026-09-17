@@ -12,7 +12,7 @@ catalyst-skills replica stop              # signal the pidfile's process
 catalyst-skills replica start             # foreground, Ctrl-C to stop
 ```
 
-It is a Node process, not a service. Node 22 or newer with its built-in SQLite module runs it the same on macOS, Linux and Windows, and the bundle never requires a daemon, because a required service is the first thing that breaks on a laptop. The writer is not a prerequisite for any skill; a fresh one is a preference. A skill must never refuse to work because the replica is down, and must never silently read a stale one; `replica status` is the one exit code that settles both.
+It is a Node process, not a service. Node 22.15 or newer (or bun 1.4 or newer) with its built-in SQLite module runs it the same on macOS, Linux and Windows, and the bundle never requires a daemon, because a required service is the first thing that breaks on a laptop. The writer is not a prerequisite for any skill; a fresh one is a preference. A skill must never refuse to work because the replica is down, and must never silently read a stale one; `replica status` is the one exit code that settles both.
 
 ## What it holds on disk, and why nothing rotates
 
