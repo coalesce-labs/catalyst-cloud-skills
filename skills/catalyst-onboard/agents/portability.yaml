@@ -1,0 +1,5 @@
+identity: { pack: catalyst-cloud-skills, skill: catalyst-onboard }
+effects: [local-write, external-write]
+mutating: true
+invocation: explicit
+exposure: [catalog]

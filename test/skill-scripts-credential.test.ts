@@ -24,6 +24,7 @@ const skillsRoot = join(pkgRoot, "skills");
 const CASES: Record<(typeof CUSTOMER_SKILLS)[number], { script: string; args: string[] }> = {
   "catalyst-github": { script: "read-pr.mjs", args: ["ENG-2"] },
   "catalyst-linear": { script: "read-ticket.mjs", args: ["ENG-2"] },
+  "catalyst-onboard": { script: "where-am-i.mjs", args: [] },
   "catalyst-setup": { script: "check.mjs", args: [] },
   "connect-me": { script: "verify-connection.mjs", args: [] },
   "how-catalyst-works": { script: "explain-ticket.mjs", args: ["ENG-2"] },
@@ -100,9 +101,12 @@ describe("every skill's scripts run for either credential", () => {
     });
   }
 
-  // connect-me's verifier deliberately runs `status` even with no usable config (asking the CLI
-  // whether it is connected IS its job), so it is not a launcher gate and has no negative case here.
-  for (const skill of CUSTOMER_SKILLS.filter((s) => s !== "connect-me")) {
+  // Two skills deliberately run `status` even with no usable config, because asking the CLI whether
+  // this machine is connected IS their job: connect-me's verifier, and catalyst-onboard's report,
+  // whose first reading is the machine grain and whose FIRST STATE is "no credential here yet".
+  // Neither is a launcher gate, so neither has a negative case; every other skill must still refuse.
+  const REPORTS_NOT_CONNECTED = new Set(["connect-me", "catalyst-onboard"]);
+  for (const skill of CUSTOMER_SKILLS.filter((s) => !REPORTS_NOT_CONNECTED.has(s))) {
     test(`${skill}: a config holding neither credential is not connected — exit 2, the CLI never spawned`, () => {
       const { home, calls } = connectedHome({});
       const r = runScript(skill, home);

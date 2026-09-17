@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.6.0
+
+A new `catalyst-onboard` skill walks you from nothing to your first ticket running, one step at a time. You install the bundle yourself and type `/catalyst-onboard`; from there your agent does each step, shows you what actually came back, and stops — no page is fetched and no instruction arrives from anywhere but the skill you installed. It reads setup as five separate parts, each with the instrument that owns it: this machine (`status` and the machine half of `ready`), you (`me`), your account's Linear workspace, the projects that have been mapped, and the repositories that have been registered. Nothing answers for a part it does not own, so a project that is not ready is reported as a project finding with the tenant owner who can fix it and the page it is on — never as something to retry here. `node scripts/where-am-i.mjs` prints the whole reading, `--next` reduces it to the one next step, and every page link it prints is built from the cloud this machine is connected to rather than typed from memory.
+
+It also says plainly what it cannot do. Approving the login, connecting Linear and installing the GitHub App are browser steps by construction and always will be. Seeing every project you could set up, mapping stages, adopting the workflow, registering a repository and declaring an environment are settings-page steps today because the routes behind them take a browser session rather than a key; the skill hands you the page for each, says it is a gap rather than the design, and never guesses at a route. Two silences are called out because both read as absence and are not: an empty project list means nothing is mapped yet, not that you have no projects, and a registered repository is registered and nothing more — that list carries no status and no project attachment, so it never proves work can be dispatched into it.
+
+The package description and the README no longer count the skills or list them in prose. A count written in a sentence cannot be kept true by anything, and the last one was wrong in the direction that made a correct install report itself as failed.
+
 ## 0.5.0
 
 The local replica can now keep the durable tenant event backbone beside its entity database. `catalyst-skills replica start` owns both synchronizers in one process, while `catalyst-skills events tail`, `events wait-for`, and `events query` read the bounded local cache with exact event-type and ticket filters. A failed event synchronizer is reported without stopping a healthy entity replica. This requires `@catalyst-cloud/sdk` 0.10.0 or newer.

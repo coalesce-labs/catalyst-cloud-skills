@@ -1,4 +1,4 @@
-// skills-content.test.ts — the content gate for the nine customer skills: the directory set equals
+// skills-content.test.ts — the content gate for the customer skills: the directory set equals
 // the CLI's constant, every skill passes the shape validator (frontmatter, provenance, budgets,
 // linked references, node-only scripts, the mutating triple), every file under skills/ plus the
 // README and the current CHANGELOG entry are free of internal names, each skill's scripts reach the
@@ -28,9 +28,12 @@ const manifest = JSON.parse(readFileSync(join(pkgRoot, "package.json"), "utf8"))
   dependencies?: Record<string, string>;
 };
 
-const NINE = [
+// The roster, in one place. Named for what it is, not for how many rows it has — the count that used
+// to live in this identifier's name is the same class of defect as a count written into prose.
+const ROSTER = [
   "catalyst-github",
   "catalyst-linear",
+  "catalyst-onboard",
   "catalyst-setup",
   "connect-me",
   "how-catalyst-works",
@@ -40,8 +43,10 @@ const NINE = [
   "whats-happening",
 ] as const;
 
-/** The five skills whose scripts write something; they carry the mutating triple. */
-const MUTATING = new Set(["catalyst-linear", "what-needs-me", "run-this-project", "connect-me", "unstick"]);
+/** The skills whose scripts write something, or that drive a person through writes; they carry the
+ *  mutating triple. `catalyst-onboard` is here because it connects the machine and walks a person
+ *  through tenant setup: the person asks for it by name, an agent never starts it on its own. */
+const MUTATING = new Set(["catalyst-linear", "catalyst-onboard", "what-needs-me", "run-this-project", "connect-me", "unstick"]);
 
 function walk(dir: string): string[] {
   const out: string[] = [];
@@ -69,17 +74,17 @@ const lineCount = (text: string) => {
   return lines.length;
 };
 
-describe("the nine customer skills ship, with provenance", () => {
-  test("exactly the nine skills the design names are present, sorted, and equal the CLI's constant", () => {
+describe("the customer skills ship, with provenance", () => {
+  test("exactly the skills the design names are present, sorted, and equal the CLI's constant", () => {
     const dirs = readdirSync(skillsRoot, { withFileTypes: true })
       .filter((e) => e.isDirectory())
       .map((e) => e.name)
       .sort();
-    expect(dirs).toEqual([...NINE]);
-    expect([...CUSTOMER_SKILLS]).toEqual([...NINE]);
+    expect(dirs).toEqual([...ROSTER]);
+    expect([...CUSTOMER_SKILLS]).toEqual([...ROSTER]);
   });
 
-  for (const name of NINE) {
+  for (const name of ROSTER) {
     test(`${name}: passes the shape validator with no findings`, () => {
       expect(validateSkillDir(join(skillsRoot, name))).toEqual([]);
     });
@@ -212,8 +217,12 @@ describe("no internal name reaches a customer", () => {
 });
 
 describe("each skill's scripts spawn the catalyst-skills verbs it teaches", () => {
-  const verbs: Record<(typeof NINE)[number], RegExp[]> = {
+  const verbs: Record<(typeof ROSTER)[number], RegExp[]> = {
     "catalyst-setup": [/"ready"/, /"replica",\s*"status"/],
+    // Each grain by its own instrument: the machine by `status` and `ready`, the person by `me`, and
+    // the account, the projects and the repositories by three DIFFERENT `contract --path` reads. A
+    // regression that folded any of these into one call would take this assertion with it.
+    "catalyst-onboard": [/"status"/, /"ready",\s*"--json"/, /"me",\s*"--json"/, /"contract",\s*"--path",\s*"account"/, /"contract",\s*"--path",\s*"teams"/, /"contract",\s*"--path",\s*"merge\.repositories"/],
     "catalyst-github": [/"query",\s*"pull"/, /"contract"/, /"replica",\s*"status"/],
     "catalyst-linear": [/"query",\s*"issue"/, /"query",\s*"search"/, /"write",\s*"comment"/, /"write",\s*"state"/, /"write",\s*"label"/, /"write",\s*"create"/],
     "how-catalyst-works": [/"explain"/, /"running"/, /"queue"/, /"accounts"/, /"contract",\s*"--path"/],
@@ -223,7 +232,7 @@ describe("each skill's scripts spawn the catalyst-skills verbs it teaches", () =
     "whats-happening": [/"contract"/, /"running"/, /"queue"/, /"ask",\s*"list"/, /"replica",\s*"status"/, /"explain"/],
     unstick: [/"explain"/, /"--history"/, /"release"/, /"--dry-run"/],
   };
-  for (const name of NINE) {
+  for (const name of ROSTER) {
     test(`${name}`, () => {
       const src = scriptsOf(name);
       for (const re of verbs[name]) expect(src, `${name} scripts must spawn ${re}`).toMatch(re);
@@ -442,11 +451,11 @@ describe("the package manifest", () => {
     }
   });
 
-  test("the version matches the CHANGELOG's top entry, which is 0.5.0", () => {
+  test("the version matches the CHANGELOG's top entry, which is 0.6.0", () => {
     const changelog = readFileSync(join(pkgRoot, "CHANGELOG.md"), "utf8");
     expect(changelog).toContain(`## ${manifest.version}\n`);
-    expect(changelog.indexOf("## 0.5.0")).toBe(changelog.indexOf("## "));
-    expect(manifest.version).toBe("0.5.0");
+    expect(changelog.indexOf("## 0.6.0")).toBe(changelog.indexOf("## "));
+    expect(manifest.version).toBe("0.6.0");
   });
 });
 
