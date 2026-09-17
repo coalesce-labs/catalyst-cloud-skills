@@ -4,6 +4,19 @@ export default defineConfig({
   test: {
     include: ["test/**/*.test.ts"],
     environment: "node",
+    // ⛔ NOT THE DEFAULT 5s, AND THIS IS A STARVATION FIX, NOT A SLOW TEST. Two files in this suite
+    // do real package work — `smoke-publish` packs and installs the tarball, `git-install-rail`
+    // clones and installs over git — and both already carry their own minutes-long timeouts because
+    // they know they are slow. What they do NOT do is stop saturating a 2-core runner while vitest
+    // schedules other files beside them. Measured on CI: the same `query.test.ts` and
+    // `replica.test.ts` that take 2519ms and 2789ms when they run outside that window take 16087ms
+    // and 21236ms when they run inside it, and their SQLite-backed tests blow a 5s per-test budget.
+    // Whether they land in that window is decided by file scheduling, so the suite was one ordering
+    // away from a red run on any branch — it went green 18 times in a row and then failed on a
+    // change that added one small file. No test here relies on the default being tight (none asserts
+    // a timeout), and the genuinely slow ones name their own, so raising the floor costs nothing and
+    // removes the coin flip. The real fix is to stop doing package installs inside the unit suite.
+    testTimeout: 20_000,
     coverage: {
       provider: "v8",
       // Only measure first-party source — keep stray root/config files out of the denominator.
