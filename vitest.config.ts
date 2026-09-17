@@ -16,7 +16,15 @@ export default defineConfig({
     // change that added one small file. No test here relies on the default being tight (none asserts
     // a timeout), and the genuinely slow ones name their own, so raising the floor costs nothing and
     // removes the coin flip. The real fix is to stop doing package installs inside the unit suite.
-    testTimeout: 20_000,
+    //
+    // ⛔ THE NUMBER IS SIZED TO THE STARVATION WINDOW, NOT TO ANY TEST'S REAL COST. The starved tests
+    // are sub-second when they run alone; what they have to survive is the heavy files' window, and
+    // those take up to ~21s EACH and can overlap. A floor just above the longest observed window
+    // would leave the coin flip half in place, and the killed test's true duration is unknowable
+    // (vitest reports a timeout as the budget, so 5000ms is all the red run recorded). 60s clears the
+    // whole window with room, still reports a genuine hang inside a minute, and sits well under the
+    // 240s and 300s the two heavy files already choose for themselves.
+    testTimeout: 60_000,
     coverage: {
       provider: "v8",
       // Only measure first-party source — keep stray root/config files out of the denominator.
