@@ -43,6 +43,10 @@ export interface FixtureServer {
   /** The oldest seq still in the change log. A `since` below `minRetainedCursor - 1` was evicted and
    *  is answered with the 409 resync envelope, exactly as the mirror's `buildChanges` does. */
   minRetainedCursor: number;
+  /** CTC-2499 — when set, the full-seed branch of `/api/v1/snapshot` (not the `head=1` probe) answers
+   *  this HTTP status instead of the NDJSON body, so a test can drive a replica writer's snapshot pull
+   *  into a real, repeated failure. */
+  snapshotStatus?: number;
   budgetExhausted: boolean;
   /** CTC-1953/CTC-1954 ship ahead of some tenants' mirror; `false` makes those two routes 404 the
    *  way an older cloud does, so the bundle's "needs a newer cloud" path meets a real 404. */
@@ -618,6 +622,7 @@ export async function startMeFixture(
     }
     if (path === "/api/v1/snapshot") {
       if (url.searchParams.get("head") === "1") return send(200, { accountId: FIXTURE_ACCOUNT, cursor: state.headCursor });
+      if (state.snapshotStatus !== undefined) return send(state.snapshotStatus, { error: "snapshot unavailable" });
       if (url.searchParams.get("account") !== FIXTURE_ACCOUNT) return send(403, { error: "account-mismatch" });
       // The full seed: NDJSON rows, then the cursor line; the head headers ride the response.
       const lines = state.issues
