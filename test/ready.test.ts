@@ -239,6 +239,18 @@ describe("ready never recommends starting the replica (CTC-2499)", () => {
     expect(j.replica.writer.lastError).toBe("/snapshot 503");
     expect(j.checks.find((c) => c.id === "replica")).toMatchObject({ note: true });
   });
+  test("a writer whose process is gone is described in the past tense, not as backing off (CTC-2499)", async () => {
+    await seedJoined(home, server);
+    installSkills(defaultSkillsDirFor(home), {});
+    await seedReplica(home, { cursor: 41, heartbeatAgeMs: 0 });
+    // The sidecar outlives the process that wrote it: a SIGKILL mid-backoff leaves exactly this.
+    seedWriterState(home, { pid: 2_147_483_632, consecutiveFailures: 2, lastError: "/snapshot 503" });
+    expect(await main(["ready"], ctx)).toBe(0); // still a note, never a failure
+    const text = ctx.out.join("\n");
+    expect(text).toContain("is no longer running");
+    expect(text).not.toContain("is backing off");
+  });
+
   test("the stopped case — and only the stopped case — names the restart command", async () => {
     await seedJoined(home, server);
     installSkills(defaultSkillsDirFor(home), {});

@@ -18,6 +18,9 @@ import type { WebSocketFactory } from "@catalyst-cloud/sdk/node";
 
 export const DEFAULT_STALE_MS = 15_000;
 
+/** The one spelling of "start the writer again", shared by the stopped record and both renderers. */
+export const REPLICA_RESTART_COMMAND = "catalyst-skills replica start --detach";
+
 export type ReplicaVerdict = "fresh" | "stale" | "not-configured" | "absent";
 
 /** The writer's own bookkeeping, beside the pidfile and the lock. A sidecar rather than a row in the
@@ -222,7 +225,12 @@ export function statusLine(s: ReplicaStatus): string {
     );
   }
   if (w && w.consecutiveFailures > 0) {
-    return `${base} — the writer has failed ${w.consecutiveFailures} snapshot pulls in a row and is backing off (last error: ${w.lastError})`;
+    // Present tense only while the process that wrote the record is still there: the sidecar outlives a
+    // SIGKILL or a reboot, and "is backing off" about a dead writer sends the reader off to wait for a
+    // retry that will never come (CTC-2499).
+    return pidAlive(w.pid)
+      ? `${base} — the writer has failed ${w.consecutiveFailures} snapshot pulls in a row and is backing off (last error: ${w.lastError})`
+      : `${base} — the writer failed ${w.consecutiveFailures} snapshot pulls in a row and is no longer running (last error: ${w.lastError}); restart it with: ${REPLICA_RESTART_COMMAND}`;
   }
   return base;
 }
@@ -267,12 +275,17 @@ export interface ReplicaDeps {
   /** Injected so a test can pin the jitter exactly. Defaults to Math.random. */
   random?: () => number;
   /** Test-only tuning of the supervisor; production uses the module constants below. */
-  snapshotRetry?: { baseBackoffMs?: number; maxBackoffMs?: number; maxFailures?: number };
+  snapshotRetry?: { baseBackoffMs?: number; maxBackoffMs?: number; maxFailures?: number; healthyLiveMs?: number };
 }
 
 export const SNAPSHOT_BASE_BACKOFF_MS = 30_000;
 export const SNAPSHOT_MAX_BACKOFF_MS = 900_000; // 15 minutes
 export const SNAPSHOT_MAX_FAILURES = 5;
+/** How long a writer must stay live — with no seed and no failure in it — before the run counts as
+ *  recovered. "Consecutive" means consecutive: failures either side of a healthy stretch this long are
+ *  not a chain, and a writer that recovers by ordinary deltas must stop being described as backing off.
+ *  Longer than the incident's 20–30 s hammer cycle, so a hot resync loop can never launder itself. */
+export const SNAPSHOT_HEALTHY_LIVE_MS = 60_000;
 
 const defaultSleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
 
@@ -297,6 +310,17 @@ function releaseOwnPidfile(dbPath: string): void {
   } catch {
     // pidfile already gone
   }
+}
+
+/** A `start()` rejection the SDK raises so the caller STOPS: the single-writer lock is held by another
+ *  live writer, the CTC-582 account fence refused the file, or start() was called out of order. None of
+ *  these is a snapshot failure — retrying them backs off against a tenant that was never asked, and
+ *  counting them writes a "stopped after N snapshot failures" verdict that is false in every part
+ *  (CTC-2499). */
+export function isNonRetryableStartError(err: unknown): boolean {
+  if (err instanceof Error && err.name === "ReplicaAccountMismatchError") return true;
+  const m = messageOf(err);
+  return m.includes("another writer owns this replica") || m.includes("start() already called") || m.includes("start() after close()");
 }
 
 function messageOf(err: unknown): string {
@@ -355,13 +379,13 @@ async function cmdStart(args: ParsedArgs, ctx: Ctx, cfg: CustomerConfig, dbPath:
     return 0;
   }
   const sdk = await loadSdk();
-  clearWriterState(dbPath); // a new run never inherits an old run's verdict
 
   const sleep = deps.sleep ?? defaultSleep;
   const random = deps.random ?? Math.random;
   const baseMs = deps.snapshotRetry?.baseBackoffMs ?? SNAPSHOT_BASE_BACKOFF_MS;
   const maxMs = deps.snapshotRetry?.maxBackoffMs ?? SNAPSHOT_MAX_BACKOFF_MS;
   const maxFailures = deps.snapshotRetry?.maxFailures ?? SNAPSHOT_MAX_FAILURES;
+  const healthyLiveMs = deps.snapshotRetry?.healthyLiveMs ?? SNAPSHOT_HEALTHY_LIVE_MS;
 
   // Registered ONCE, not per attempt, so a supervised run does not pile up signal handlers.
   let stopRequested = false;
@@ -371,13 +395,36 @@ async function cmdStart(args: ParsedArgs, ctx: Ctx, cfg: CustomerConfig, dbPath:
 
   let eventSync: EventSyncHandle | null = null;
   let failures = 0;
+  let attempt = 0;
+  const resetFailures = (): void => {
+    if (failures === 0) return;
+    failures = 0;
+    writeWriterState(dbPath, { pid: process.pid, consecutiveFailures: 0, lastError: null, lastFailureAt: null, stopped: null }, ctx.now().getTime());
+  };
 
   for (;;) {
+    attempt += 1;
     const engine = await engineFor(sdk, dbPath, ctx, deps.engineDeps);
     let seedInFlight = false;
     let attemptError: string | null = null;
+    /** A refusal rather than a snapshot failure — never counted, never retried (CTC-2499). */
+    let attemptRefusal: string | null = null;
+    let attemptOver = false;
+    let healthyHoldArmed = false;
     let signalFailure!: () => void;
     const failed = new Promise<void>((res) => (signalFailure = res));
+
+    /** Reset the count once the writer has been live for `healthyLiveMs` with no seed and no failure in
+     *  it. Armed at most once per attempt, and it stands down if the attempt ends first — so the only
+     *  thing that can clear the chain is a stretch of health longer than a hammering cycle. */
+    const armHealthyReset = (): void => {
+      if (healthyHoldArmed || failures === 0) return;
+      healthyHoldArmed = true;
+      void sleep(healthyLiveMs).then(() => {
+        if (attemptOver || attemptError !== null || attemptRefusal !== null || stopRequested) return;
+        resetFailures();
+      });
+    };
 
     const replica = new sdk.CatalystReplica({
       baseUrl: apiBase(cfg),
@@ -391,18 +438,26 @@ async function cmdStart(args: ParsedArgs, ctx: Ctx, cfg: CustomerConfig, dbPath:
       log: (level, msg, extra) => ctx.stderr(`[replica ${level}] ${msg}${extra ? ` ${safeJson(extra)}` : ""}`),
       onStatus: (s) => {
         ctx.stderr(`[replica] status=${s}`);
-        // A "live" that does NOT follow a re-seed is just the socket coming up — the failing loop
-        // passes through it every cycle, so it must not reset the count (CTC-2499).
         if (s === "resyncing") {
           seedInFlight = true;
           return;
         }
-        if (s === "live" && seedInFlight) {
+        // The SDK opens the socket only once the seed it just ran COMPLETED (boot: openSocket() after
+        // boundedReseed; runResync: openSocket() on the `reseeded` arm), so "connecting" is where the
+        // snapshot pull ends. Clearing the flag here — rather than at "live" — keeps a blocked WebSocket
+        // upgrade AFTER a good seed from being charged to the snapshot, and it is the success that
+        // zeroes the count.
+        if (s === "connecting" && seedInFlight) {
           seedInFlight = false;
-          if (failures !== 0) {
-            failures = 0;
-            writeWriterState(dbPath, { pid: process.pid, consecutiveFailures: 0, lastError: null, lastFailureAt: null, stopped: null }, ctx.now().getTime());
-          }
+          resetFailures();
+          return;
+        }
+        // A "live" with no seed behind it is a warm writer streaming ordinary deltas. It is real recovery
+        // — but only once it HOLDS, because a hot loop passes through "live" on its way to demanding the
+        // next re-seed. `armHealthyReset` is what tells those two apart.
+        if (s === "live") {
+          seedInFlight = false;
+          armHealthyReset();
           return;
         }
         if ((s === "reconnecting" || s === "error") && seedInFlight && attemptError === null) {
@@ -415,9 +470,11 @@ async function cmdStart(args: ParsedArgs, ctx: Ctx, cfg: CustomerConfig, dbPath:
           signalFailure();
           return;
         }
-        if (s === "auth-required" && attemptError === null) {
-          // A refused credential is not something to retry against the tenant at all.
-          attemptError = "the tenant refused this machine's credential on /snapshot";
+        if (s === "auth-required" && attemptError === null && attemptRefusal === null) {
+          // A refused credential is not something to retry against the tenant at all — so it ends the run
+          // here instead of being counted as one of N snapshot failures.
+          seedInFlight = false;
+          attemptRefusal = "the tenant refused this machine's credential on /snapshot";
           void replica.close().catch(() => {});
           signalFailure();
         }
@@ -428,7 +485,8 @@ async function cmdStart(args: ParsedArgs, ctx: Ctx, cfg: CustomerConfig, dbPath:
     const started = replica.start().then(
       () => "started" as const,
       (err) => {
-        attemptError ??= messageOf(err);
+        if (isNonRetryableStartError(err)) attemptRefusal ??= messageOf(err);
+        else attemptError ??= messageOf(err);
         return "failed" as const;
       },
     );
@@ -436,6 +494,10 @@ async function cmdStart(args: ParsedArgs, ctx: Ctx, cfg: CustomerConfig, dbPath:
     const outcome = await Promise.race([started, failed.then(() => "failed" as const), stopSignal.then(() => "stop" as const)]);
 
     if (outcome === "started") {
+      // A new run never inherits an old run's verdict — but it earns the right to erase it only by
+      // holding the single-writer lock, which start() has now proved. Clearing it up front deleted a
+      // HEALTHY writer's record whenever a second `replica start` lost the lock race.
+      if (attempt === 1) clearWriterState(dbPath);
       // The event cache is started once for the whole supervised run, not per attempt.
       if (eventSync === null) {
         eventSync = await createEventSync(ctx, { loadSdk: deps.loadEventsSdk });
@@ -447,14 +509,23 @@ async function cmdStart(args: ParsedArgs, ctx: Ctx, cfg: CustomerConfig, dbPath:
     }
 
     await replica.close().catch(() => {});
+    attemptOver = true;
     if (stopRequested) break;
+
+    if (attemptRefusal !== null) {
+      // Not a snapshot failure: no count, no backoff, and NOT a line written over a sidecar that belongs
+      // to whichever writer actually holds the lock. Surface it and exit, as the pre-supervisor code did.
+      await eventSync?.stop();
+      releaseOwnPidfile(dbPath);
+      throw new CliError(`replica writer cannot start: ${attemptRefusal}`, "replica-writer-refused");
+    }
 
     failures += 1;
     const lastError = attemptError ?? "the snapshot pull failed";
     const nowMs = ctx.now().getTime();
     const stopped =
       failures >= maxFailures
-        ? { at: nowMs, reason: `${failures} consecutive snapshot failures`, restartWith: "catalyst-skills replica start --detach" }
+        ? { at: nowMs, reason: `${failures} consecutive snapshot failures`, restartWith: REPLICA_RESTART_COMMAND }
         : null;
     writeWriterState(dbPath, { pid: process.pid, consecutiveFailures: failures, lastError, lastFailureAt: nowMs, stopped }, nowMs);
 

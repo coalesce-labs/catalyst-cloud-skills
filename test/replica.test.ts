@@ -136,6 +136,17 @@ describe("the replica writer state file", () => {
     expect(text).toContain("/snapshot 503");
     expect(text).toContain("catalyst-skills replica start --detach");
   });
+  test("a record whose writer process is gone is described in the past tense, not as backing off (CTC-2499)", async () => {
+    await seedJoined(home, server);
+    await seedReplica(home, { cursor: 41, heartbeatAgeMs: 0 });
+    // The sidecar outlives the process that wrote it: a SIGKILL mid-backoff leaves exactly this.
+    seedWriterState(home, { pid: 2_147_483_632, consecutiveFailures: 2, lastError: "/snapshot 503" });
+    expect(await main(["replica", "status"], ctx)).toBe(0);
+    const text = ctx.out.join("\n");
+    expect(text).toContain("is no longer running");
+    expect(text).not.toContain("is backing off");
+    expect(text).toContain("catalyst-skills replica start --detach");
+  });
 });
 
 describe("backoffDelayMs", () => {
@@ -297,6 +308,109 @@ describe("replica start backs off and stops after repeated snapshot failures", (
     stop();
     expect(await run).toBe(0);
     expect(readWriterState(dbPath)).toBeNull();
+  });
+
+  test("a start that loses the single-writer lock refuses at once, and leaves the live writer's record alone (CTC-2499)", async () => {
+    await seedJoined(home, server);
+    // A writer is already running: a fresh lock heartbeat from a live pid, and its own healthy sidecar.
+    const dbPath = await seedReplica(home, { cursor: 41, heartbeatAgeMs: 0 });
+    seedWriterState(home, { consecutiveFailures: 0, lastError: null });
+    const record = readFileSync(writerStatePath(dbPath), "utf8");
+    const before = server.requests.length;
+    const { sleep, delays } = fakeSleep();
+    const code = await main(["replica", "start"], ctx, {
+      replica: {
+        waitForStop: () => new Promise<void>(() => {}),
+        sleep,
+        random: () => 0.5,
+        snapshotRetry: { baseBackoffMs: 30_000, maxBackoffMs: 900_000, maxFailures: 5 },
+      },
+    });
+    expect(code).toBe(2); // a refusal, surfaced — not a snapshot failure
+    expect(delays).toEqual([]); // and never retried
+    expect(server.requests.slice(before).filter((r) => r.path.startsWith("/api/v1/snapshot"))).toHaveLength(0);
+    expect(readFileSync(writerStatePath(dbPath), "utf8")).toBe(record); // the running writer's record stands
+    expect(ctx.err.join("\n")).toContain("another writer owns this replica");
+  });
+
+  test("a socket that fails after a completed seed is not charged to the snapshot (CTC-2499)", async () => {
+    await seedJoined(home, server);
+    const dbPath = defaultReplicaDbFor(home);
+    const { sleep, delays } = fakeSleep();
+    let sockets = 0;
+    let stop!: () => void;
+    const stopped = new Promise<void>((r) => (stop = r));
+    const run = main(["replica", "start"], ctx, {
+      replica: {
+        loadEventsSdk: async () => stubEventsSdk(),
+        waitForStop: () => stopped,
+        sleep,
+        random: () => 0.5,
+        snapshotRetry: { baseBackoffMs: 30_000, maxBackoffMs: 900_000, maxFailures: 5 },
+        // The /snapshot GET succeeds; the WebSocket upgrade is what the customer's proxy blocks.
+        wsFactory: () => {
+          sockets += 1;
+          throw new Error("ECONNREFUSED: the proxy blocks the WebSocket upgrade");
+        },
+      },
+    });
+    const { waitFor } = await import("./helpers");
+    await waitFor(() => ctx.err.some((l) => l.includes("status=error")), 10_000);
+    await new Promise((r) => setTimeout(r, 250)); // long enough for a supervisor failure to be recorded
+    expect(sockets).toBeGreaterThanOrEqual(1);
+    expect(readWriterState(dbPath)).toBeNull(); // the snapshot pull worked — there is no failure to record
+    expect(delays).toEqual([]); // and no supervisor backoff was armed against the mirror
+    stop();
+    expect(await run).toBe(0);
+  });
+
+  test("a warm writer that recovers by ordinary deltas clears the failure count (CTC-2499)", async () => {
+    await seedJoined(home, server);
+    const dbPath = await seedReplica(home, { cursor: 41 }); // warm: a durable cursor, and no lock file
+    server.snapshotStatus = 503; // every re-seed the mirror demands fails
+    const delays: number[] = [];
+    const sockets: { onopen: ((ev: unknown) => void) | null; onmessage: ((ev: { data: unknown }) => void) | null }[] = [];
+    let stop!: () => void;
+    const stopped = new Promise<void>((r) => (stop = r));
+    const run = main(["replica", "start"], ctx, {
+      replica: {
+        loadEventsSdk: async () => stubEventsSdk(),
+        waitForStop: () => stopped,
+        sleep: async (ms: number) => void delays.push(ms),
+        random: () => 0.5,
+        snapshotRetry: { baseBackoffMs: 30_000, maxBackoffMs: 900_000, maxFailures: 5, healthyLiveMs: 60_000 },
+        wsFactory: () => {
+          const ws = {
+            onopen: null as ((ev: unknown) => void) | null,
+            onmessage: null as ((ev: { data: unknown }) => void) | null,
+            onclose: null as ((ev: unknown) => void) | null,
+            onerror: null as ((ev: unknown) => void) | null,
+            send() {},
+            close() {
+              queueMicrotask(() => ws.onclose?.({}));
+            },
+          };
+          sockets.push(ws);
+          queueMicrotask(() => ws.onopen?.({}));
+          return ws;
+        },
+      },
+    });
+    const { waitFor } = await import("./helpers");
+    try {
+      await waitFor(() => ctx.out.some((l) => l.startsWith("replica live at")), 10_000);
+      sockets[0]!.onmessage?.({ data: JSON.stringify({ type: "resync" }) }); // the mirror demands a re-seed
+      await waitFor(() => ctx.err.some((l) => l.includes("snapshot failure 1 of 5")), 10_000); // counted, backed off
+      // The failed /snapshot never reached the cursor delete, so the retry boots WARM: no "resyncing", no
+      // seed, just deltas over a live socket. A stretch of that health is what ends the chain.
+      await waitFor(() => readWriterState(dbPath)?.consecutiveFailures === 0, 10_000);
+      expect(readWriterState(dbPath)?.lastError).toBeNull();
+      expect(delays).toEqual([15_000, 60_000]); // one backoff, then the healthy-live hold
+    } finally {
+      server.snapshotStatus = undefined;
+    }
+    stop();
+    expect(await run).toBe(0);
   });
 });
 

@@ -8,7 +8,7 @@ import { defaultSkillsDirFor, loadConfig, readManifest, type Ctx, type CustomerC
 import { contractVersionInRange, readContractCache } from "./contract.js";
 import type { TenantContract } from "./contract-types.js";
 import { CliError } from "./errors.js";
-import { replicaStatus, type ReplicaStatus } from "./replica.js";
+import { pidAlive, REPLICA_RESTART_COMMAND, replicaStatus, type ReplicaStatus } from "./replica.js";
 import { loadSdk } from "./sdk.js";
 
 export interface ReadyCheck {
@@ -43,7 +43,12 @@ function readyReplicaLine(s: ReplicaStatus): string {
     );
   }
   if (w && w.consecutiveFailures > 0) {
-    return `replica: the writer has failed ${w.consecutiveFailures} snapshot pulls in a row and is backing off (last error: ${w.lastError}) — reads fall back to the API`;
+    // Only a writer that still exists can be "backing off": the sidecar survives a SIGKILL or a reboot,
+    // and describing a dead process in the present tense sends the reader off to wait for a retry that
+    // will never come (CTC-2499).
+    return pidAlive(w.pid)
+      ? `replica: the writer has failed ${w.consecutiveFailures} snapshot pulls in a row and is backing off (last error: ${w.lastError}) — reads fall back to the API`
+      : `replica: the writer failed ${w.consecutiveFailures} snapshot pulls in a row and is no longer running (last error: ${w.lastError}) — the replica is optional and every read still works through the API; restart it with: ${REPLICA_RESTART_COMMAND}`;
   }
   switch (s.verdict) {
     case "not-configured":
