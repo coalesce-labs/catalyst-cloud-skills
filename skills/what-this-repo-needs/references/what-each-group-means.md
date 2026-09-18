@@ -9,7 +9,10 @@ restates a value, because the scan itself never reads one.
 Needed to install, build and run the tests in a container. This is the default group: a name lands
 here unless something specific pulls it into `deploy-only` or `bindings`. Examples: a name read by
 the repository's own source (`process.env.X`), a name documented in a `.env.example`-shaped file, a
-name a `package.json` script or a non-deploy workflow job uses.
+name a non-deploy workflow job uses.
+
+The scan does not read `package.json` scripts. A name that only a script's own shell line mentions
+and nothing else refers to is therefore not listed — add it by hand if the container needs it.
 
 A name referenced from **both** a deploy job and a non-deploy job (or build step) still lands here,
 not in `deploy-only` — a container that builds and tests the repository needs it too, so the

@@ -9,6 +9,13 @@ import { dirname, join } from "node:path";
 
 export const SENTINELS = ["SENTINEL-DB-VALUE-9f3a", "SENTINEL-URL-7c21"];
 
+// C-1/S-1 (CTC-2496 validate attempt 7): a `.env.example`-family file may carry a MULTI-LINE quoted
+// value — a PEM key is the common real case. Its continuation lines are shaped exactly like an
+// assignment (an identifier run, then "="), so a line-oriented scanner emits the value as a NAME.
+// Alphanumeric on purpose: the sentinel has to survive the scanner's own [A-Za-z0-9_] capture to
+// prove the leak, and this is the fixture the no-value test's positive control reads back.
+export const MULTILINE_VALUE_SENTINEL = "SENTINELPEMBODY7b41";
+
 export const ENV_FIXTURE_FILES: Record<string, string> = {
   ".env.example": ["DATABASE_URL=", "export API_BASE_URL=https://example.test", "#OPTIONAL_FLAG=", "", "# just a comment about SOMETHING"].join("\n"),
   ".env": [`DATABASE_URL=postgres://user:${SENTINELS[0]}@localhost/app`, `API_BASE_URL=https://${SENTINELS[1]}.example`].join("\n"),
@@ -80,6 +87,14 @@ export const ENV_FIXTURE_FILES: Record<string, string> = {
     "[[env.production.kv_namespaces]]",
     'binding = "PROD_SESSIONS"',
     'id = "ghi789"',
+    "",
+  ].join("\n"),
+  ".env.defaults": [
+    'GOOGLE_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----',
+    "MIIEvQIBADANBgkqhkiGkO1De7zhZQCqGKukO1De7zhZ",
+    `j6bFlvQ6${MULTILINE_VALUE_SENTINEL}CqOH0RhKQ=`,
+    '-----END PRIVATE KEY-----"',
+    "PLAIN_AFTER_KEY=",
     "",
   ].join("\n"),
   "src/index.ts": ['const a = process.env.STRIPE_SECRET_KEY;', 'const b = process.env["DATABASE_URL"];', "console.log(a, b);"].join("\n"),

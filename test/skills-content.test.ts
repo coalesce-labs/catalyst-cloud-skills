@@ -478,19 +478,11 @@ describe("the package manifest", () => {
     }
   });
 
-<<<<<<< HEAD
   test("the version matches the CHANGELOG's top entry, which is 0.7.0", () => {
     const changelog = readFileSync(join(pkgRoot, "CHANGELOG.md"), "utf8");
     expect(changelog).toContain(`## ${manifest.version}\n`);
     expect(changelog.indexOf("## 0.7.0")).toBe(changelog.indexOf("## "));
     expect(manifest.version).toBe("0.7.0");
-=======
-  test("the version matches the CHANGELOG's top entry, which is 0.6.1", () => {
-    const changelog = readFileSync(join(pkgRoot, "CHANGELOG.md"), "utf8");
-    expect(changelog).toContain(`## ${manifest.version}\n`);
-    expect(changelog.indexOf("## 0.6.1")).toBe(changelog.indexOf("## "));
-    expect(manifest.version).toBe("0.6.1");
->>>>>>> bbdc56db0ce4840275fd26e56583a880cab84fd0
   });
 });
 
@@ -851,5 +843,61 @@ describe("no customer-facing prose states a readiness check count", () => {
   test("the readiness section stops before the machine checks, which carry rows of the same shape", () => {
     expect(readinessSection()).not.toContain("The machine checks the CLI adds");
     for (const machine of ["`cliPath`", "`sdk`", "`node`"]) expect(readinessSection()).not.toContain(machine);
+  });
+});
+
+// The ticket's fourth acceptance criterion: "The skill text explains why before the scan and asks for
+// review after it. A test pins both." Three of the assertions below are indexOf orderings, and an
+// ordering assertion over a string containing neither substring passes for the wrong reason — hence
+// the planted-string positive control, the idiom this file already uses elsewhere.
+describe("what-this-repo-needs explains before it scans and asks for review after", () => {
+  const md = skill("what-this-repo-needs");
+  const WHY = /builds and tests[\s\S]*in a\s+container that has only what (is |you )declared/i;
+  const REVIEW = /keep it, drop it, or move it|keep, drop or move/i;
+  const scanAt = (text: string) => text.search(/scripts\/inventory\.mjs|env inventory/);
+
+  test("the why comes BEFORE the scan step, in plain words", () => {
+    const why = md.search(WHY);
+    const scan = scanAt(md);
+    expect(why, "SKILL.md must explain why the container needs these names").toBeGreaterThan(-1);
+    expect(scan, "SKILL.md must name the scan").toBeGreaterThan(-1);
+    expect(why, "the explanation must precede the scan").toBeLessThan(scan);
+  });
+
+  test("the review ask comes AFTER the scan, and names keep / drop / move", () => {
+    expect(md.search(REVIEW)).toBeGreaterThan(scanAt(md));
+  });
+
+  test("it says the tool never reads a value", () => {
+    expect(md).toMatch(/never (reads|shows|prints) (a |any )?value/i);
+  });
+
+  test("it keeps visible reasoning short", () => {
+    expect(md).toMatch(/short|brief|few words/i);
+  });
+
+  test("positive control: the same probes find their strings in a planted file, in order", () => {
+    const planted =
+      "the fleet builds and tests your repository in a container that has only what you declared\n" +
+      "run scripts/inventory.mjs\nask them to keep, drop or move each name";
+    expect(planted.search(WHY)).toBeGreaterThan(-1);
+    expect(planted.search(WHY)).toBeLessThan(scanAt(planted));
+    expect(planted.search(REVIEW)).toBeGreaterThan(scanAt(planted));
+  });
+
+  test("negative control: a skill text in the wrong order fails the same probes", () => {
+    const wrongOrder =
+      "run scripts/inventory.mjs\n" +
+      "the fleet builds and tests your repository in a container that has only what you declared";
+    expect(wrongOrder.search(WHY)).toBeGreaterThan(scanAt(wrongOrder));
+    expect(wrongOrder.search(REVIEW)).toBe(-1);
+  });
+
+  // C-5: the reference page described a `package.json` script scanner that was deliberately cut, so
+  // it told a reviewer a name would be grouped that the scan never looks for.
+  test("the group reference does not promise a scanner the tool does not have", () => {
+    const ref = readFileSync(join(skillsRoot, "what-this-repo-needs", "references", "what-each-group-means.md"), "utf8");
+    expect(ref).not.toMatch(/a name a `package\.json` script .* uses/);
+    expect(ref).toMatch(/does not read `package\.json` scripts/);
   });
 });

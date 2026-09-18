@@ -6,13 +6,13 @@
       "name": "@catalyst-cloud/catalyst-skills",
       "dependencies": {
         "@catalyst-cloud/sdk": "^0.10.0",
+        "yaml": "^2.9.0",
       },
       "devDependencies": {
         "@types/node": "^26.3.0",
         "@vitest/coverage-v8": "^4.1.11",
         "typescript": "^7.0.2",
         "vitest": "^4.1.11",
-        "yaml": "^2.9.0",
       },
     },
   },

@@ -69,6 +69,15 @@ export function validateDeclaration(doc: unknown): string[] {
     }
   }
 
+  // C-2: services / provenance / agentAssets had no element check at all, so a non-object element
+  // reached the free-text sweep below and threw instead of being reported. The rule is the same one
+  // `environment` and `setup`/`verify` already apply: an element that is not an object is an error.
+  for (const field of ["services", "provenance", "agentAssets"] as const) {
+    for (const [i, e] of (rec[field] as unknown[]).entries()) {
+      if (typeof e !== "object" || e === null || Array.isArray(e)) errors.push(`${field}[${i}] must be an object`);
+    }
+  }
+
   // assertNoSecretMaterial, LAST — a value-SHAPE refusal over every free-text field (argv strings,
   // service image names, provenance explanations, agent-asset references), never a classifier over
   // environment[].name: there is nothing to classify there. The refusal names the FIELD, never the
@@ -96,23 +105,32 @@ function collectFreeText(rec: Record<string, unknown>): { path: string; text: st
   const out: { path: string; text: string }[] = [];
   for (const field of ["setup", "verify"] as const) {
     for (const [i, s] of (rec[field] as unknown[]).entries()) {
-      const rec2 = s as Record<string, unknown>;
+      const rec2 = asRecord(s);
+      if (rec2 === null) continue;
       if (Array.isArray(rec2.command)) {
         for (const c of rec2.command) if (typeof c === "string") out.push({ path: `${field}[${i}].command`, text: c });
       }
     }
   }
   for (const [i, s] of (rec.services as unknown[]).entries()) {
-    const rec2 = s as Record<string, unknown>;
+    const rec2 = asRecord(s);
+    if (rec2 === null) continue;
     if (typeof rec2.image === "string") out.push({ path: `services[${i}].image`, text: rec2.image });
   }
   for (const [i, p] of (rec.provenance as unknown[]).entries()) {
-    const rec2 = p as Record<string, unknown>;
+    const rec2 = asRecord(p);
+    if (rec2 === null) continue;
     if (typeof rec2.explanation === "string") out.push({ path: `provenance[${i}].explanation`, text: rec2.explanation });
   }
   for (const [i, a] of (rec.agentAssets as unknown[]).entries()) {
-    const rec2 = a as Record<string, unknown>;
+    const rec2 = asRecord(a);
+    if (rec2 === null) continue;
     if (typeof rec2.reference === "string") out.push({ path: `agentAssets[${i}].reference`, text: rec2.reference });
   }
   return out;
+}
+
+/** An element the caller may safely read properties off, or null — a non-object is reported above. */
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return typeof value === "object" && value !== null && !Array.isArray(value) ? (value as Record<string, unknown>) : null;
 }

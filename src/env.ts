@@ -2,7 +2,7 @@
 // validator. Unlike every other verb in this file's siblings, `cmdEnv` never calls `requireConfig` or
 // `apiClient` — it needs neither a login nor a network call, which is the whole point of the feature:
 // a person reviews what a repository declares without connecting anything first.
-import { readFileSync } from "node:fs";
+import { readFileSync, statSync, type Stats } from "node:fs";
 import { resolve } from "node:path";
 import { positionals, type ParsedArgs } from "./args.js";
 import type { Ctx } from "./config.js";
@@ -21,6 +21,19 @@ export async function cmdEnv(args: ParsedArgs, ctx: Ctx, deps: EnvDeps = {}): Pr
   if (sub === "inventory") {
     if (rest.length > 1) throw new UsageError(`env inventory takes at most one path (got an extra "${rest[1]}")`);
     const root = resolve(rest[0] ?? ".");
+    // C-3: walkRepo swallows a readdir failure and returns [], so without this an unreadable or
+    // mistyped path printed three empty groups and exited 0 — a typo that reads as "declares nothing".
+    let stat: Stats;
+    try {
+      stat = statSync(root);
+    } catch {
+      ctx.stderr(`${root} does not exist — env inventory takes a path to a repository`);
+      return 1;
+    }
+    if (!stat.isDirectory()) {
+      ctx.stderr(`${root} is not a directory — env inventory takes a path to a repository`);
+      return 1;
+    }
     const inv = inventoryRepo(root, deps);
     if (args.json) ctx.stdout(JSON.stringify(inventoryToJson(inv)));
     else for (const line of renderInventory(inv)) ctx.stdout(line);
@@ -41,8 +54,10 @@ export async function cmdEnv(args: ParsedArgs, ctx: Ctx, deps: EnvDeps = {}): Pr
     let doc: unknown;
     try {
       doc = JSON.parse(text);
-    } catch (err) {
-      ctx.stderr(`${file} is not JSON: ${err instanceof Error ? err.message : String(err)}`);
+    } catch {
+      // C-4/S-2: JSON.parse's own message embeds the first ten characters of the input, so
+      // forwarding it prints content from the file — on a verb documented as never printing a value.
+      ctx.stderr(`${file} is not valid JSON`);
       return 1;
     }
     const errors = validateDeclaration(doc);

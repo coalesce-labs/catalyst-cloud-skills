@@ -2,6 +2,7 @@
 // `.env.example`, a GitHub workflow that uses `secrets.X`, a `wrangler.toml` binding and a
 // `process.env.Y` read; each name lands in the right group with its file:line source and its
 // consumer. Plus the CLI wiring (`env inventory`, `--json`, offline, usage, VERB_HELP_KNOWN).
+import { join } from "node:path";
 import { describe, expect, test } from "vitest";
 import { main } from "../src/cli";
 import { VERB_USAGE, verbHelp } from "../src/args";
@@ -175,5 +176,30 @@ describe("the env inventory CLI verb", () => {
       await main([v, "read", "extra-positional"], ctx);
       expect(ctx.err.join("\n"), `${v} must fall back to its own help`).toContain(`catalyst-skills ${VERB_USAGE[v]}`);
     }
+  });
+});
+
+// C-3 (validate attempt 7): `resolve(rest[0] ?? ".")` was never checked for existence and `walkRepo`
+// swallows the readdir failure, so a typo'd path printed three empty groups and exited 0 — a mistyped
+// argument was indistinguishable from a clean repository, in the one tool a person reviews before
+// declaring anything.
+describe("C-3: a path that is not a readable directory is refused", () => {
+  test("a nonexistent path exits 1 and names the path, instead of reporting an empty repository", async () => {
+    const ctx = makeCtx(tempHome());
+    expect(await main(["env", "inventory", "/definitely/not/here"], ctx)).toBe(1);
+    const printed = [...ctx.out, ...ctx.err].join("\n");
+    expect(printed).toContain("/definitely/not/here");
+    expect(printed).not.toContain("(none found)");
+  });
+
+  test("a path that is a FILE rather than a directory is refused too", async () => {
+    const ctx = makeCtx(tempHome());
+    expect(await main(["env", "inventory", join(root, "wrangler.toml")], ctx)).toBe(1);
+  });
+
+  test("positive control: the fixture repository itself is still accepted and reports names", async () => {
+    const ctx = makeCtx(tempHome());
+    expect(await main(["env", "inventory", root], ctx)).toBe(0);
+    expect(ctx.out.join("\n")).toContain("DATABASE_URL");
   });
 });
