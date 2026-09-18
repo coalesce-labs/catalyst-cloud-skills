@@ -8,7 +8,7 @@ import { contractPathFor, defaultSkillsDirFor } from "../src/config";
 import { installSkills } from "../src/skills";
 import { readyReport } from "../src/ready";
 import { FIXTURE_ME_USER, startMeFixture, type FixtureServer } from "./fixture";
-import { makeCtx, seedJoined, seedReplica, tempHome, type TestCtx } from "./helpers";
+import { makeCtx, seedJoined, seedReplica, seedWriterState, tempHome, type TestCtx } from "./helpers";
 
 let server: FixtureServer;
 let home: string;
@@ -183,5 +183,87 @@ describe("more ready branches", () => {
     expect(c).toMatchObject({ ok: false, note: true, who: "nobody yet; it is informational" });
     expect(c.line).toBe("team ENG: labels_present is fail (labels_missing ×2), degrading");
     expect(j.ready).toBe(true);
+  });
+});
+
+describe("ready never recommends starting the replica (CTC-2499)", () => {
+  test("not-configured, absent, stale and fresh replica states never mention replica start", async () => {
+    const bare = makeCtx(tempHome());
+    await main(["ready"], bare);
+    expect(bare.out.join("\n")).not.toContain("replica start");
+
+    await seedJoined(home, server);
+    installSkills(defaultSkillsDirFor(home), {});
+    const c1 = makeCtx(home);
+    await main(["ready"], c1);
+    expect(c1.out.join("\n")).not.toContain("replica start");
+
+    await seedReplica(home, { cursor: 41, heartbeatAgeMs: 60_000 });
+    const c2 = makeCtx(home);
+    await main(["ready"], c2);
+    expect(c2.out.join("\n")).not.toContain("replica start");
+  });
+  test("a fresh replica also never mentions replica start", async () => {
+    await seedJoined(home, server);
+    installSkills(defaultSkillsDirFor(home), {});
+    await seedReplica(home, { cursor: 5, heartbeatAgeMs: 0 });
+    await main(["ready"], ctx);
+    expect(ctx.out.join("\n")).not.toContain("replica start");
+  });
+  test("the absent note says the replica is optional and off by default for large tenants, with no ticket key", async () => {
+    await seedJoined(home, server);
+    installSkills(defaultSkillsDirFor(home), {});
+    await main(["ready"], ctx);
+    const text = ctx.out.join("\n");
+    expect(text).toMatch(/^note {2}replica: absent/m); // the existing pin, unchanged
+    expect(text).toContain("optional");
+    expect(text).toContain("off by default for large tenants");
+    expect(text).not.toMatch(/\bC[TL]C-\d+\b/);
+  });
+  test("ready --json exposes the writer's stopped state and failure count", async () => {
+    await seedJoined(home, server);
+    installSkills(defaultSkillsDirFor(home), {});
+    await seedReplica(home, { cursor: 41, heartbeatAgeMs: 0 });
+    seedWriterState(home, {
+      consecutiveFailures: 5,
+      lastError: "/snapshot 503",
+      stopped: { at: 1_700_000_000_000, reason: "5 consecutive snapshot failures", restartWith: "catalyst-skills replica start --detach" },
+    });
+    expect(await main(["ready", "--json"], ctx)).toBe(0); // still a note, never a failure
+    const j = JSON.parse(ctx.out.join("\n")) as {
+      replica: { writer: { consecutiveFailures: number; lastError: string; stopped: { reason: string } } };
+      checks: { id: string; note?: boolean }[];
+    };
+    expect(j.replica.writer.stopped.reason).toContain("5 consecutive snapshot failures");
+    expect(j.replica.writer.consecutiveFailures).toBe(5);
+    expect(j.replica.writer.lastError).toBe("/snapshot 503");
+    expect(j.checks.find((c) => c.id === "replica")).toMatchObject({ note: true });
+  });
+  test("a writer that is no longer running is described in the past tense, and still recommends nothing", async () => {
+    await seedJoined(home, server);
+    installSkills(defaultSkillsDirFor(home), {});
+    await seedReplica(home, { cursor: 41 }); // no lock, no live process: killed mid-backoff (CTC-2499)
+    seedWriterState(home, { pid: 4_194_303, consecutiveFailures: 3, lastError: "/snapshot 503" });
+    await main(["ready"], ctx);
+    const text = ctx.out.join("\n");
+    expect(text).toContain("no longer running");
+    expect(text).not.toContain("backing off"); // it is not waiting to retry; nothing is running
+    expect(text).not.toContain("replica start");
+  });
+  test("the stopped case — and only the stopped case — names the restart command", async () => {
+    await seedJoined(home, server);
+    installSkills(defaultSkillsDirFor(home), {});
+    await seedReplica(home, { cursor: 41, heartbeatAgeMs: 0 });
+    seedWriterState(home, {
+      consecutiveFailures: 5,
+      lastError: "/snapshot 503",
+      stopped: { at: 1_700_000_000_000, reason: "5 consecutive snapshot failures", restartWith: "catalyst-skills replica start --detach" },
+    });
+    await main(["ready"], ctx);
+    const text = ctx.out.join("\n");
+    expect(text).toContain("5 consecutive snapshot failures");
+    expect(text).toContain("/snapshot 503");
+    expect(text).toContain("catalyst-skills replica start --detach");
+    expect(text.split("\n").filter((l) => l.startsWith("note  replica:"))).toHaveLength(1);
   });
 });

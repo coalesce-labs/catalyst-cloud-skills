@@ -1,5 +1,6 @@
 # Changelog
 
+<<<<<<< HEAD
 ## 0.7.0
 
 `catalyst-skills env inventory [path]` scans a repository offline — no login, no network — and lists
@@ -17,6 +18,11 @@ Reading a GitHub Actions workflow now goes through a real YAML parser (`yaml`, n
 dependency of this package — it carries no transitive dependencies of its own) rather than a
 hand-written line scanner, so a workflow that declares its `env:` in flow style (`{ A: 1, B: 2 }`) is
 read correctly instead of silently missed.
+=======
+## 0.6.1
+
+The local replica writer no longer retries a failing snapshot pull forever. After a failed or incomplete pull it backs off with jitter (30s doubling to a 15-minute cap) and gives up after five consecutive failures, recording why; a pull that completes resets the count. `catalyst-skills replica status` and `catalyst-skills ready` both name the stopped state, the count, the last error, and the command that restarts it. Until the read side of a large snapshot is safe, `ready` no longer suggests starting the replica at all — it says plainly that the replica is optional and off by default for large tenants, and every read still works through the API either way.
+>>>>>>> bbdc56db0ce4840275fd26e56583a880cab84fd0
 
 ## 0.6.0
 
