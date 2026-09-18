@@ -40,6 +40,7 @@ const ROSTER = [
   "run-this-project",
   "unstick",
   "what-needs-me",
+  "what-this-repo-needs",
   "whats-happening",
 ] as const;
 
@@ -240,6 +241,7 @@ describe("each skill's scripts spawn the catalyst-skills verbs it teaches", () =
     "connect-me": [/"status"/, /"contract",\s*"--path"/, /"replica",\s*"status"/],
     "run-this-project": [/"watch"/, /"write",\s*"state"/, /"write",\s*"comment"/],
     "what-needs-me": [/"ask",\s*"list"/, /"ask",\s*"raise"/, /"ask",\s*"accept"/],
+    "what-this-repo-needs": [/"env",\s*"inventory"/, /"env",\s*"check"/],
     "whats-happening": [/"contract"/, /"running"/, /"queue"/, /"ask",\s*"list"/, /"replica",\s*"status"/, /"explain"/],
     unstick: [/"explain"/, /"--history"/, /"release"/, /"--dry-run"/],
   };
@@ -415,10 +417,18 @@ describe("the install page (README) states what a customer needs, in the order t
 });
 
 describe("the package manifest", () => {
-  test("is the documented name, public, and carries exactly the SDK as its runtime dependency", () => {
+  test("is the documented name, public, and carries the SDK plus yaml (env inventory's workflow reader) as its runtime dependencies", () => {
     expect(manifest.name).toBe("@catalyst-cloud/catalyst-skills");
     expect(manifest.publishConfig.access).toBe("public");
-    expect(manifest.dependencies).toEqual({ "@catalyst-cloud/sdk": expect.stringMatching(/^\^0\.10\./) });
+    // yaml moved here from devDependencies: a hand-written line scanner over a GitHub workflow
+    // silently loses names written in flow style, which is exactly the failure `env inventory`
+    // exists to avoid — the real parser costs one dependency with zero transitive dependencies of
+    // its own. `test/smoke-publish.test.ts` packs and installs the real tarball, so this is exercised
+    // end to end, not just asserted here.
+    expect(manifest.dependencies).toEqual({
+      "@catalyst-cloud/sdk": expect.stringMatching(/^\^0\.10\./),
+      yaml: expect.stringMatching(/^\^2\./),
+    });
   });
 
   test("bin, shipped files, engines, and the pinned contract range are wired", () => {
@@ -462,11 +472,11 @@ describe("the package manifest", () => {
     }
   });
 
-  test("the version matches the CHANGELOG's top entry, which is 0.6.0", () => {
+  test("the version matches the CHANGELOG's top entry, which is 0.7.0", () => {
     const changelog = readFileSync(join(pkgRoot, "CHANGELOG.md"), "utf8");
     expect(changelog).toContain(`## ${manifest.version}\n`);
-    expect(changelog.indexOf("## 0.6.0")).toBe(changelog.indexOf("## "));
-    expect(manifest.version).toBe("0.6.0");
+    expect(changelog.indexOf("## 0.7.0")).toBe(changelog.indexOf("## "));
+    expect(manifest.version).toBe("0.7.0");
   });
 });
 

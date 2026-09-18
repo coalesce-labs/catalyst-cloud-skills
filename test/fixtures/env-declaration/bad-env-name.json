@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "toolchains": [],
+  "systemPackages": [],
+  "setup": [],
+  "verify": [],
+  "services": [],
+  "environment": [
+    { "name": "123-not-valid", "required": true, "provenanceIds": [] }
+  ],
+  "agentAssets": [],
+  "provenance": []
+}

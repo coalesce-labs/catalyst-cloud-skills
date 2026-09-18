@@ -1,0 +1,6 @@
+interface:
+  display_name: "What this repository needs"
+  short_description: "The environment variable names this repository needs, where each is used, and where its value comes from — never a value"
+  default_prompt: "Use $what-this-repo-needs to explain what environment variables this repository needs and where they come from."
+policy:
+  allow_implicit_invocation: true
