@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { cliPath, configPathFor, defaultReplicaDbFor, type Ctx, type CustomerConfig } from "../src/config";
 import { loadContract } from "../src/contract";
 import { loadSdk } from "../src/sdk";
+import { writerStatePath, type ReplicaWriterState } from "../src/replica";
 import { FIXTURE_KEY, FIXTURE_ME_BODY, type FixtureServer } from "./fixture";
 
 export interface TestCtx extends Ctx {
@@ -108,6 +109,23 @@ export async function seedReplica(home: string, opts: SeedReplicaOptions = {}): 
   if (opts.heartbeatAgeMs !== undefined) {
     writeFileSync(`${dbPath}.writer.lock`, JSON.stringify({ pid: opts.lockPid ?? process.pid, owner: "test", heartbeat: Date.now() - opts.heartbeatAgeMs }));
   }
+  return dbPath;
+}
+
+/** Write a writer-state sidecar directly (test-only; production writes it from `replica start`). */
+export function seedWriterState(home: string, over: Partial<Omit<ReplicaWriterState, "updatedAt">>, opts: { dbPath?: string } = {}): string {
+  const dbPath = opts.dbPath ?? defaultReplicaDbFor(home);
+  mkdirSync(join(home, ".config", "catalyst-cloud"), { recursive: true });
+  const state: ReplicaWriterState = {
+    updatedAt: Date.now(),
+    pid: process.pid,
+    consecutiveFailures: 0,
+    lastError: null,
+    lastFailureAt: null,
+    stopped: null,
+    ...over,
+  };
+  writeFileSync(writerStatePath(dbPath), JSON.stringify(state));
   return dbPath;
 }
 

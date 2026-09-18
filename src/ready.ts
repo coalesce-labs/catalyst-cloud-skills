@@ -8,7 +8,7 @@ import { defaultSkillsDirFor, loadConfig, readManifest, type Ctx, type CustomerC
 import { contractVersionInRange, readContractCache } from "./contract.js";
 import type { TenantContract } from "./contract-types.js";
 import { CliError } from "./errors.js";
-import { replicaStatus, statusLine } from "./replica.js";
+import { replicaStatus, type ReplicaStatus } from "./replica.js";
 import { loadSdk } from "./sdk.js";
 
 export interface ReadyCheck {
@@ -24,6 +24,37 @@ export interface ReadyCheck {
 export interface ReadyReport {
   ready: boolean;
   checks: ReadyCheck[];
+  /** The replica document `replica status --json` prints, so `ready --json` carries the writer's
+   *  stopped state, failure count and last error without a second shape to keep in step. */
+  replica: ReplicaStatus;
+}
+
+/** `ready`'s own wording for the replica. It never recommends adopting the replica — until the
+ *  mirror's snapshot path is safe for a large tenant, a customer following that advice is the
+ *  failure mode. It DOES name the restart command when the writer gave up, because that is an
+ *  instruction about a thing already running, not a nudge to adopt one (CTC-2499). */
+function readyReplicaLine(s: ReplicaStatus): string {
+  const w = s.writer;
+  if (w?.stopped) {
+    return (
+      `replica: the writer stopped ${new Date(w.stopped.at).toISOString()} after ${w.consecutiveFailures} ` +
+      `consecutive snapshot failures (last error: ${w.lastError}) — the replica is optional and every read ` +
+      `still works through the API; restart it with: ${w.stopped.restartWith}`
+    );
+  }
+  if (w && w.consecutiveFailures > 0) {
+    return `replica: the writer has failed ${w.consecutiveFailures} snapshot pulls in a row and is backing off (last error: ${w.lastError}) — reads fall back to the API`;
+  }
+  switch (s.verdict) {
+    case "not-configured":
+      return "replica: not configured — run login first";
+    case "absent":
+      return `replica: absent at ${s.dbPath} — optional, and off by default for large tenants while the snapshot path is being made safe; every read works through the API`;
+    case "fresh":
+      return `replica: fresh at ${s.dbPath} (cursor ${s.cursor}, heartbeat ${s.heartbeatAgeMs}ms ago${s.lag !== undefined ? `, ${s.lag} behind head ${s.head}` : ""})`;
+    case "stale":
+      return `replica: stale at ${s.dbPath} (${s.reasons.join("; ")}${s.cursor !== null ? `; cursor ${s.cursor}` : ""}) — reads fall back to the API`;
+  }
 }
 
 export interface ReadyDeps {
@@ -139,7 +170,7 @@ export async function readyReport(ctx: Ctx, deps: ReadyDeps): Promise<ReadyRepor
   }
 
   const replica = replicaStatus(ctx, cfg);
-  checks.push({ id: "replica", ok: replica.verdict === "fresh", note: true, line: statusLine(replica) });
+  checks.push({ id: "replica", ok: replica.verdict === "fresh", note: true, line: readyReplicaLine(replica) });
 
   if (cache) {
     const doc = cache.doc;
@@ -174,7 +205,7 @@ export async function readyReport(ctx: Ctx, deps: ReadyDeps): Promise<ReadyRepor
   }
 
   const ready = checks.every((c) => c.ok || c.note);
-  return { ready, checks };
+  return { ready, checks, replica };
 }
 
 export async function cmdReady(args: ParsedArgs, ctx: Ctx, deps: ReadyDeps): Promise<number> {

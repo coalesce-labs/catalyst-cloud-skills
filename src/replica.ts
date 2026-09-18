@@ -13,12 +13,28 @@ import { CliError, UsageError } from "./errors.js";
 import { apiClient } from "./transport.js";
 import { authStrategyFor } from "./oauth.js";
 import { loadSdk, type Sdk } from "./sdk.js";
-import { createEventSync, type EventsSdk } from "./events.js";
+import { createEventSync, type EventsSdk, type EventSyncHandle } from "./events.js";
 import type { WebSocketFactory } from "@catalyst-cloud/sdk/node";
 
 export const DEFAULT_STALE_MS = 15_000;
 
 export type ReplicaVerdict = "fresh" | "stale" | "not-configured" | "absent";
+
+/** The writer's own bookkeeping, beside the pidfile and the lock. A sidecar rather than a row in the
+ *  replica's sync_meta: `replicaStatus` answers "absent" before it ever opens the database, and a
+ *  seed that fails mid-stream has already truncated that database (CTC-2499). */
+export interface ReplicaWriterState {
+  /** epoch ms of the last write */
+  updatedAt: number;
+  /** the writer process that wrote it */
+  pid: number;
+  /** consecutive failed snapshot pulls; zeroed by a snapshot that completes */
+  consecutiveFailures: number;
+  lastError: string | null;
+  lastFailureAt: number | null;
+  /** set only once the writer gave up; null while it is still retrying */
+  stopped: { at: number; reason: string; restartWith: string } | null;
+}
 
 export interface ReplicaStatus {
   verdict: ReplicaVerdict;
@@ -32,6 +48,7 @@ export interface ReplicaStatus {
   reasons: string[];
   head?: number;
   lag?: number;
+  writer: ReplicaWriterState | null;
 }
 
 export function pidfilePath(dbPath: string): string {
@@ -39,6 +56,51 @@ export function pidfilePath(dbPath: string): string {
 }
 export function lockPath(dbPath: string): string {
   return `${dbPath}.writer.lock`;
+}
+export function writerStatePath(dbPath: string): string {
+  return `${dbPath}.writer.state`;
+}
+
+/** Read the writer's state sidecar. A missing file, unparseable JSON, or a record with the wrong
+ *  shape (a hand-edited or truncated file) all read as "no record", never a throw — readLock's
+ *  contract, followed here. */
+export function readWriterState(dbPath: string): ReplicaWriterState | null {
+  try {
+    const rec = JSON.parse(readFileSync(writerStatePath(dbPath), "utf8")) as Partial<ReplicaWriterState>;
+    const stoppedOk =
+      rec.stopped === null ||
+      (typeof rec.stopped === "object" &&
+        rec.stopped !== null &&
+        typeof rec.stopped.at === "number" &&
+        typeof rec.stopped.reason === "string" &&
+        typeof rec.stopped.restartWith === "string");
+    if (
+      typeof rec.updatedAt !== "number" ||
+      typeof rec.pid !== "number" ||
+      typeof rec.consecutiveFailures !== "number" ||
+      !(rec.lastError === null || typeof rec.lastError === "string") ||
+      !(rec.lastFailureAt === null || typeof rec.lastFailureAt === "number") ||
+      !stoppedOk
+    ) {
+      return null;
+    }
+    return rec as ReplicaWriterState;
+  } catch {
+    return null;
+  }
+}
+
+export function writeWriterState(dbPath: string, s: Omit<ReplicaWriterState, "updatedAt">, nowMs: number): void {
+  writeFileSync(writerStatePath(dbPath), JSON.stringify({ ...s, updatedAt: nowMs }));
+}
+
+/** Remove the writer state sidecar; a no-op (never throws) when it is already gone. */
+export function clearWriterState(dbPath: string): void {
+  try {
+    unlinkSync(writerStatePath(dbPath));
+  } catch {
+    // already gone
+  }
 }
 
 export function pidAlive(pid: number | null): boolean {
@@ -104,10 +166,12 @@ export function replicaStatus(ctx: Ctx, cfg: CustomerConfig | null, opts: Status
     pidfilePid: null,
     writerAlive: false,
     reasons: [],
+    writer: null,
   };
   if (!cfg) return { ...base, reasons: ["not connected"] };
   const dbPath = opts.dbPath ?? replicaDbPath(cfg, ctx.home);
-  if (!existsSync(dbPath)) return { ...base, verdict: "absent", exitCode: 3, dbPath, reasons: ["no replica file"] };
+  const writer = readWriterState(dbPath);
+  if (!existsSync(dbPath)) return { ...base, verdict: "absent", exitCode: 3, dbPath, reasons: ["no replica file"], writer };
   const staleMs = opts.staleMs ?? DEFAULT_STALE_MS;
   const nowMs = opts.nowMs ?? ctx.now().getTime();
   const lock = readLock(dbPath);
@@ -131,10 +195,11 @@ export function replicaStatus(ctx: Ctx, cfg: CustomerConfig | null, opts: Status
     pidfilePid,
     writerAlive,
     reasons,
+    writer,
   };
 }
 
-export function statusLine(s: ReplicaStatus): string {
+function baseStatusLine(s: ReplicaStatus): string {
   switch (s.verdict) {
     case "not-configured":
       return "replica: not configured — run login first";
@@ -145,6 +210,21 @@ export function statusLine(s: ReplicaStatus): string {
     case "stale":
       return `replica: stale at ${s.dbPath} (${s.reasons.join("; ")}${s.cursor !== null ? `; cursor ${s.cursor}` : ""}) — reads fall back to the API`;
   }
+}
+
+export function statusLine(s: ReplicaStatus): string {
+  const base = baseStatusLine(s);
+  const w = s.writer;
+  if (w?.stopped) {
+    return (
+      `${base} — the writer stopped ${new Date(w.stopped.at).toISOString()} after ${w.consecutiveFailures} ` +
+      `consecutive snapshot failures (last error: ${w.lastError}); restart it with: ${w.stopped.restartWith}`
+    );
+  }
+  if (w && w.consecutiveFailures > 0) {
+    return `${base} — the writer has failed ${w.consecutiveFailures} snapshot pulls in a row and is backing off (last error: ${w.lastError})`;
+  }
+  return base;
 }
 
 // ── engines ──────────────────────────────────────────────────────────────────────────────────────
@@ -182,6 +262,45 @@ export interface ReplicaDeps {
   argv?: string[];
   engineDeps?: EngineDeps;
   loadEventsSdk?: () => Promise<EventsSdk>;
+  /** Injected so tests never wait on the wall clock (the same seam as oauth.ts's RefreshDeps). */
+  sleep?: (ms: number) => Promise<void>;
+  /** Injected so a test can pin the jitter exactly. Defaults to Math.random. */
+  random?: () => number;
+  /** Test-only tuning of the supervisor; production uses the module constants below. */
+  snapshotRetry?: { baseBackoffMs?: number; maxBackoffMs?: number; maxFailures?: number };
+}
+
+export const SNAPSHOT_BASE_BACKOFF_MS = 30_000;
+export const SNAPSHOT_MAX_BACKOFF_MS = 900_000; // 15 minutes
+export const SNAPSHOT_MAX_FAILURES = 5;
+
+const defaultSleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
+
+function defaultWaitForStop(): Promise<void> {
+  return new Promise<void>((resolve) => {
+    const done = () => resolve();
+    process.once("SIGINT", done);
+    process.once("SIGTERM", done);
+  });
+}
+
+/** Full jitter (AWS "Exponential Backoff and Jitter"): a uniform draw from [0, bound), where the
+ *  bound doubles per consecutive failure and is clamped at the cap. */
+export function backoffDelayMs(consecutiveFailures: number, opts: { baseMs: number; maxMs: number; random: () => number }): number {
+  const bound = Math.min(opts.baseMs * 2 ** Math.max(0, consecutiveFailures - 1), opts.maxMs);
+  return Math.floor(opts.random() * bound);
+}
+
+function releaseOwnPidfile(dbPath: string): void {
+  try {
+    if (readPidfile(dbPath) === process.pid) unlinkSync(pidfilePath(dbPath));
+  } catch {
+    // pidfile already gone
+  }
+}
+
+function messageOf(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
 }
 
 export async function cmdReplica(args: ParsedArgs, ctx: Ctx, deps: ReplicaDeps = {}): Promise<number> {
@@ -236,41 +355,130 @@ async function cmdStart(args: ParsedArgs, ctx: Ctx, cfg: CustomerConfig, dbPath:
     return 0;
   }
   const sdk = await loadSdk();
-  const engine = await engineFor(sdk, dbPath, ctx, deps.engineDeps);
-  const replica = new sdk.CatalystReplica({
-    baseUrl: apiBase(cfg),
-    account: cfg.account,
-    accountSource: "declared",
-    auth: authStrategyFor(ctx, cfg),
-    dbPath,
-    engine,
-    fetchImpl: ctx.fetch,
-    wsFactory: deps.wsFactory,
-    log: (level, msg, extra) => ctx.stderr(`[replica ${level}] ${msg}${extra ? ` ${safeJson(extra)}` : ""}`),
-    onStatus: (s) => ctx.stderr(`[replica] status=${s}`),
+  clearWriterState(dbPath); // a new run never inherits an old run's verdict
+
+  const sleep = deps.sleep ?? defaultSleep;
+  const random = deps.random ?? Math.random;
+  const baseMs = deps.snapshotRetry?.baseBackoffMs ?? SNAPSHOT_BASE_BACKOFF_MS;
+  const maxMs = deps.snapshotRetry?.maxBackoffMs ?? SNAPSHOT_MAX_BACKOFF_MS;
+  const maxFailures = deps.snapshotRetry?.maxFailures ?? SNAPSHOT_MAX_FAILURES;
+
+  // Registered ONCE, not per attempt, so a supervised run does not pile up signal handlers.
+  let stopRequested = false;
+  const stopSignal = (deps.waitForStop ?? defaultWaitForStop)().then(() => {
+    stopRequested = true;
   });
-  await replica.start();
-  const eventSync = await createEventSync(ctx, { loadSdk: deps.loadEventsSdk });
-  void eventSync.start().catch((error) => {
-    ctx.stderr(`[events] sync failed: ${error instanceof Error ? error.message : String(error)}; replica remains live`);
-  });
-  ctx.stdout(`replica live at ${dbPath} (cursor ${replica.cursor ?? "none"}); event cache active — Ctrl-C to stop`);
-  const wait =
-    deps.waitForStop ??
-    (() =>
-      new Promise<void>((resolve) => {
-        const done = () => resolve();
-        process.once("SIGINT", done);
-        process.once("SIGTERM", done);
-      }));
-  await wait();
-  await eventSync.stop();
-  await replica.close();
-  try {
-    if (readPidfile(dbPath) === process.pid) unlinkSync(pidfilePath(dbPath));
-  } catch {
-    // pidfile already gone
+
+  let eventSync: EventSyncHandle | null = null;
+  let failures = 0;
+
+  for (;;) {
+    const engine = await engineFor(sdk, dbPath, ctx, deps.engineDeps);
+    let seedInFlight = false;
+    let attemptError: string | null = null;
+    let signalFailure!: () => void;
+    const failed = new Promise<void>((res) => (signalFailure = res));
+
+    const replica = new sdk.CatalystReplica({
+      baseUrl: apiBase(cfg),
+      account: cfg.account,
+      accountSource: "declared",
+      auth: authStrategyFor(ctx, cfg),
+      dbPath,
+      engine,
+      fetchImpl: ctx.fetch,
+      wsFactory: deps.wsFactory,
+      log: (level, msg, extra) => ctx.stderr(`[replica ${level}] ${msg}${extra ? ` ${safeJson(extra)}` : ""}`),
+      onStatus: (s) => {
+        ctx.stderr(`[replica] status=${s}`);
+        // A "live" that does NOT follow a re-seed is just the socket coming up — the failing loop
+        // passes through it every cycle, so it must not reset the count (CTC-2499).
+        if (s === "resyncing") {
+          seedInFlight = true;
+          return;
+        }
+        if (s === "live" && seedInFlight) {
+          seedInFlight = false;
+          if (failures !== 0) {
+            failures = 0;
+            writeWriterState(dbPath, { pid: process.pid, consecutiveFailures: 0, lastError: null, lastFailureAt: null, stopped: null }, ctx.now().getTime());
+          }
+          return;
+        }
+        if ((s === "reconnecting" || s === "error") && seedInFlight && attemptError === null) {
+          seedInFlight = false;
+          attemptError = "the snapshot pull failed or ended early";
+          // SYNCHRONOUS inside onStatus: LiveSyncClient.stop() sets `stopped = true` as its first
+          // statement, and scheduleReconnect() — the very next statement in runResync() — returns
+          // early on it. This is what keeps the SDK from re-entering its own loop.
+          void replica.close().catch(() => {});
+          signalFailure();
+          return;
+        }
+        if (s === "auth-required" && attemptError === null) {
+          // A refused credential is not something to retry against the tenant at all.
+          attemptError = "the tenant refused this machine's credential on /snapshot";
+          void replica.close().catch(() => {});
+          signalFailure();
+        }
+      },
+    });
+
+    // Always give start() a handler, so a rejection that loses the race is never unhandled.
+    const started = replica.start().then(
+      () => "started" as const,
+      (err) => {
+        attemptError ??= messageOf(err);
+        return "failed" as const;
+      },
+    );
+
+    const outcome = await Promise.race([started, failed.then(() => "failed" as const), stopSignal.then(() => "stop" as const)]);
+
+    if (outcome === "started") {
+      // The event cache is started once for the whole supervised run, not per attempt.
+      if (eventSync === null) {
+        eventSync = await createEventSync(ctx, { loadSdk: deps.loadEventsSdk });
+        void eventSync.start().catch((error) => ctx.stderr(`[events] sync failed: ${messageOf(error)}; replica remains live`));
+      }
+      ctx.stdout(`replica live at ${dbPath} (cursor ${replica.cursor ?? "none"}); event cache active — Ctrl-C to stop`);
+      // start() resolves at the FIRST "live", which is the socket, not the seed — keep watching.
+      await Promise.race([failed, stopSignal]);
+    }
+
+    await replica.close().catch(() => {});
+    if (stopRequested) break;
+
+    failures += 1;
+    const lastError = attemptError ?? "the snapshot pull failed";
+    const nowMs = ctx.now().getTime();
+    const stopped =
+      failures >= maxFailures
+        ? { at: nowMs, reason: `${failures} consecutive snapshot failures`, restartWith: "catalyst-skills replica start --detach" }
+        : null;
+    writeWriterState(dbPath, { pid: process.pid, consecutiveFailures: failures, lastError, lastFailureAt: nowMs, stopped }, nowMs);
+
+    if (stopped) {
+      await eventSync?.stop();
+      releaseOwnPidfile(dbPath);
+      ctx.stderr(`[replica] stopping: ${stopped.reason}; last error: ${lastError}`);
+      ctx.stdout(
+        `replica writer stopped after ${failures} consecutive snapshot failures (last error: ${lastError}). ` +
+          `The replica is optional — every read still works through the API. ` +
+          `Restart it with: ${stopped.restartWith}`,
+      );
+      return 1;
+    }
+
+    const delay = backoffDelayMs(failures, { baseMs, maxMs, random });
+    ctx.stderr(`[replica] snapshot failure ${failures} of ${maxFailures}: ${lastError}; retrying in ${delay}ms`);
+    await Promise.race([sleep(delay), stopSignal]);
+    if (stopRequested) break;
   }
+
+  await eventSync?.stop();
+  releaseOwnPidfile(dbPath);
+  clearWriterState(dbPath);
   ctx.stdout("replica stopped");
   return 0;
 }

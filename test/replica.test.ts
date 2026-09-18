@@ -5,10 +5,19 @@ import { afterAll, beforeAll, beforeEach, describe, expect, test } from "vitest"
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { main } from "../src/cli";
 import { defaultReplicaDbFor } from "../src/config";
-import { assertSingleSelect, engineFor, pidfilePath, replicaStatus } from "../src/replica";
+import {
+  assertSingleSelect,
+  backoffDelayMs,
+  clearWriterState,
+  engineFor,
+  pidfilePath,
+  readWriterState,
+  replicaStatus,
+  writerStatePath,
+} from "../src/replica";
 import { loadSdk } from "../src/sdk";
 import { startMeFixture, type FixtureServer } from "./fixture";
-import { makeCtx, seedJoined, seedReplica, tempHome, type TestCtx } from "./helpers";
+import { makeCtx, seedJoined, seedReplica, seedWriterState, tempHome, type TestCtx } from "./helpers";
 
 let server: FixtureServer;
 let home: string;
@@ -83,6 +92,211 @@ describe("replica status", () => {
     await seedReplica(home, { cursor: 3, heartbeatAgeMs: 0 });
     expect(replicaStatus(ctx, cfg).verdict).toBe("fresh");
     expect(replicaStatus(ctx, null).verdict).toBe("not-configured");
+  });
+});
+
+describe("the replica writer state file", () => {
+  test("names the sidecar beside the db, like the pidfile and the lock", () => {
+    expect(writerStatePath("/x/replica.db")).toBe("/x/replica.db.writer.state");
+  });
+  test("a missing, corrupt, or wrong-shaped file all read as no record, never a throw", () => {
+    const dbPath = `${home}/nope.db`;
+    expect(readWriterState(dbPath)).toBeNull();
+    writeFileSync(writerStatePath(dbPath), "{corrupt");
+    expect(readWriterState(dbPath)).toBeNull();
+    writeFileSync(writerStatePath(dbPath), JSON.stringify({ consecutiveFailures: "five" }));
+    expect(readWriterState(dbPath)).toBeNull();
+  });
+  test("a well-formed record round-trips, and clearWriterState removes it (idempotently)", () => {
+    const dbPath = seedWriterState(home, { consecutiveFailures: 3, lastError: "/snapshot 503", lastFailureAt: 1_700_000_000_000, stopped: null });
+    expect(readWriterState(dbPath)).toMatchObject({ consecutiveFailures: 3, lastError: "/snapshot 503", stopped: null });
+    clearWriterState(dbPath);
+    expect(readWriterState(dbPath)).toBeNull();
+    expect(() => clearWriterState(dbPath)).not.toThrow();
+  });
+  test("replica status --json exposes the writer's record; the human line names it retrying or stopped", async () => {
+    await seedJoined(home, server);
+    await seedReplica(home, { cursor: 41, heartbeatAgeMs: 100 });
+    seedWriterState(home, { consecutiveFailures: 2, lastError: "/snapshot 503" });
+    expect(await main(["replica", "status", "--json"], ctx)).toBe(0); // verdict logic untouched (Decision 3)
+    const j = JSON.parse(ctx.out.join("\n")) as { verdict: string; writer: { consecutiveFailures: number; lastError: string; stopped: unknown } };
+    expect(j.verdict).toBe("fresh");
+    expect(j.writer).toMatchObject({ consecutiveFailures: 2, lastError: "/snapshot 503", stopped: null });
+
+    const c2 = makeCtx(home);
+    seedWriterState(home, {
+      consecutiveFailures: 5,
+      lastError: "/snapshot 503",
+      stopped: { at: 1_700_000_000_000, reason: "5 consecutive snapshot failures", restartWith: "catalyst-skills replica start --detach" },
+    });
+    expect(await main(["replica", "status"], c2)).toBe(0);
+    const text = c2.out.join("\n");
+    expect(text).toContain("stopped");
+    expect(text).toContain("5 consecutive snapshot failures");
+    expect(text).toContain("/snapshot 503");
+    expect(text).toContain("catalyst-skills replica start --detach");
+  });
+});
+
+describe("backoffDelayMs", () => {
+  test("full jitter: exponential growth, capped, deterministic with a fixed random draw", () => {
+    const opts = { baseMs: 30_000, maxMs: 900_000, random: () => 0.5 };
+    expect([1, 2, 3, 4, 5, 6, 7, 8].map((n) => backoffDelayMs(n, opts))).toEqual([15_000, 30_000, 60_000, 120_000, 240_000, 450_000, 450_000, 450_000]);
+  });
+  test("for any RNG draw in [0,1) the delay never exceeds its own bound or the cap", () => {
+    for (const r of [0, 0.01, 0.37, 0.5, 0.99]) {
+      for (let n = 1; n <= 12; n++) {
+        const bound = Math.min(30_000 * 2 ** (n - 1), 900_000);
+        const d = backoffDelayMs(n, { baseMs: 30_000, maxMs: 900_000, random: () => r });
+        expect(d).toBeGreaterThanOrEqual(0);
+        expect(d).toBeLessThan(bound);
+        expect(d).toBeLessThanOrEqual(900_000);
+      }
+    }
+  });
+});
+
+describe("replica start backs off and stops after repeated snapshot failures", () => {
+  function fakeSleep(): { sleep: (ms: number) => Promise<void>; delays: number[] } {
+    const delays: number[] = [];
+    return { delays, sleep: async (ms) => void delays.push(ms) };
+  }
+  const stubEventsSdk = () => ({
+    CatalystEventSync: class {
+      async start() {}
+      async stop() {}
+    },
+    defaultEventCacheDirectory: () => `${home}/events`,
+    readCachedEvents: async () => [],
+    async *tailCachedEvents() {},
+  });
+
+  test("an always-failing snapshot backs off with full jitter, stops after maxFailures, and issues no further requests however far the clock advances", async () => {
+    await seedJoined(home, server);
+    server.snapshotStatus = 503;
+    const before = server.requests.length; // `server` is shared across this file's tests (beforeAll)
+    const { sleep, delays } = fakeSleep();
+    const code = await main(["replica", "start"], ctx, {
+      replica: {
+        waitForStop: () => new Promise<void>(() => {}), // the user never asks it to stop
+        sleep,
+        random: () => 0.5,
+        snapshotRetry: { baseBackoffMs: 30_000, maxBackoffMs: 900_000, maxFailures: 5 },
+      },
+    });
+    expect(code).toBe(1); // it gave up
+    const pulls = server.requests.slice(before).filter((r) => r.path.startsWith("/api/v1/snapshot"));
+    expect(pulls).toHaveLength(5); // exactly maxFailures, no more
+    expect(delays).toEqual([15_000, 30_000, 60_000, 120_000]); // exactly maxFailures - 1 sleeps, growing
+    expect(Math.max(...delays)).toBeLessThanOrEqual(900_000);
+
+    const after = server.requests.length;
+    await new Promise((r) => setTimeout(r, 300)); // real wall-clock time, unbounded by the fake clock
+    expect(server.requests.length).toBe(after); // nothing further fired
+
+    const dbPath = defaultReplicaDbFor(home);
+    const st = readWriterState(dbPath)!;
+    expect(st.stopped).not.toBeNull();
+    expect(st.consecutiveFailures).toBe(5);
+    expect(st.lastError).toContain("503");
+    expect(st.stopped!.restartWith).toBe("catalyst-skills replica start --detach");
+    expect(existsSync(pidfilePath(dbPath))).toBe(false);
+    const out = ctx.out.join("\n");
+    expect(out).toContain("catalyst-skills replica start --detach");
+    expect(out).toContain("optional");
+  });
+
+  test("a success resets the failure count; a clean stop afterwards clears the record entirely", async () => {
+    await seedJoined(home, server);
+    server.snapshotStatus = 503;
+    let n = 0;
+    const delays: number[] = [];
+    const sleep = async (ms: number) => {
+      delays.push(ms);
+      n += 1;
+      if (n === 2) server.snapshotStatus = undefined; // heal the endpoint before the run gives up
+    };
+    let stop!: () => void;
+    const stopped = new Promise<void>((r) => (stop = r));
+    const sockets: { onopen: ((ev: unknown) => void) | null }[] = [];
+    const run = main(["replica", "start"], ctx, {
+      replica: {
+        loadEventsSdk: async () => stubEventsSdk(),
+        waitForStop: () => stopped,
+        sleep,
+        random: () => 0.5,
+        snapshotRetry: { baseBackoffMs: 30_000, maxBackoffMs: 900_000, maxFailures: 10 },
+        // The seed succeeds partway through this test (see `sleep` above); once it does, the writer
+        // moves on to opening the live socket, which needs a fake — the fixture serves no real WS.
+        wsFactory: () => {
+          const ws = {
+            onopen: null as ((ev: unknown) => void) | null,
+            onmessage: null as ((ev: { data: unknown }) => void) | null,
+            onclose: null as ((ev: unknown) => void) | null,
+            onerror: null as ((ev: unknown) => void) | null,
+            send() {},
+            close() {
+              queueMicrotask(() => ws.onclose?.({}));
+            },
+          };
+          sockets.push(ws);
+          queueMicrotask(() => ws.onopen?.({}));
+          return ws;
+        },
+      },
+    });
+    const { waitFor } = await import("./helpers");
+    await waitFor(() => ctx.out.some((l) => l.startsWith("replica live at")), 10_000);
+    const dbPath = defaultReplicaDbFor(home);
+    const st = readWriterState(dbPath);
+    expect(st?.consecutiveFailures).toBe(0); // the completed snapshot zeroed it
+    expect(st?.stopped).toBeNull();
+    expect(delays.length).toBeGreaterThanOrEqual(1);
+    expect(delays.length).toBeLessThan(10);
+    stop();
+    expect(await run).toBe(0); // exits 0 on the user's stop, not 1
+    expect(readWriterState(dbPath)).toBeNull(); // a clean stop clears the record entirely
+  });
+
+  test("a stale stopped record from a previous run does not survive a new start", async () => {
+    await seedJoined(home, server);
+    const dbPath = seedWriterState(home, {
+      consecutiveFailures: 5,
+      lastError: "/snapshot 503",
+      stopped: { at: 1, reason: "5 consecutive snapshot failures", restartWith: "catalyst-skills replica start --detach" },
+    });
+    server.headCursor = 21;
+    const sockets: { onopen: ((ev: unknown) => void) | null }[] = [];
+    let stop!: () => void;
+    const stopped = new Promise<void>((r) => (stop = r));
+    const run = main(["replica", "start"], ctx, {
+      replica: {
+        loadEventsSdk: async () => stubEventsSdk(),
+        waitForStop: () => stopped,
+        wsFactory: () => {
+          const ws = {
+            onopen: null as ((ev: unknown) => void) | null,
+            onmessage: null as ((ev: { data: unknown }) => void) | null,
+            onclose: null as ((ev: unknown) => void) | null,
+            onerror: null as ((ev: unknown) => void) | null,
+            send() {},
+            close() {
+              queueMicrotask(() => ws.onclose?.({}));
+            },
+          };
+          sockets.push(ws);
+          return ws;
+        },
+      },
+    });
+    const { waitFor } = await import("./helpers");
+    await waitFor(() => sockets.length === 1, 10_000);
+    sockets[0]!.onopen?.({});
+    await waitFor(() => ctx.out.some((l) => l.startsWith("replica live at")), 10_000);
+    expect(readWriterState(dbPath)).toBeNull();
+    stop();
+    expect(await run).toBe(0);
+    expect(readWriterState(dbPath)).toBeNull();
   });
 });
 
