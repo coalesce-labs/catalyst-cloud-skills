@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.7.0
+
+`catalyst-skills env inventory [path]` scans a repository offline — no login, no network — and lists
+the environment variable NAMES it needs, never a value. Names are grouped build/test (needed to
+install, build and run the tests), deploy-only (a CI secret only a deploy job uses) and bindings (a
+Cloudflare or other platform binding, which is not an environment value). Each name shows where it
+was found (file:line), what uses it, and where a local value would come from — a `.env` file, your
+shell, a CI secret, or a Cloudflare binding. `--json` gives the same data in machine form. `env check
+<file>` validates a `catalyst.env.json` offline, against this bundle's own dated, cited copy of the
+cloud's validation rules (it does not compute the cloud's canonical hash — only a `valid` / `invalid`
+verdict and the refusal reasons). The new `what-this-repo-needs` skill explains why a cloud container
+needs these names before it scans, then asks you to review the list: keep, drop or move each one.
+
+Reading a GitHub Actions workflow now goes through a real YAML parser (`yaml`, now a runtime
+dependency of this package — it carries no transitive dependencies of its own) rather than a
+hand-written line scanner, so a workflow that declares its `env:` in flow style (`{ A: 1, B: 2 }`) is
+read correctly instead of silently missed.
 ## 0.6.1
 
 The local replica writer no longer retries a failing snapshot pull forever. After a failed or incomplete pull it backs off with jitter (30s doubling to a 15-minute cap) and gives up after five consecutive failures, recording why; a pull that completes resets the count. `catalyst-skills replica status` and `catalyst-skills ready` both name the stopped state, the count, the last error, and the command that restarts it. Until the read side of a large snapshot is safe, `ready` no longer suggests starting the replica at all — it says plainly that the replica is optional and off by default for large tenants, and every read still works through the API either way.

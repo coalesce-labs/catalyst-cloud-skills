@@ -40,6 +40,7 @@ const ROSTER = [
   "run-this-project",
   "unstick",
   "what-needs-me",
+  "what-this-repo-needs",
   "whats-happening",
 ] as const;
 
@@ -240,6 +241,7 @@ describe("each skill's scripts spawn the catalyst-skills verbs it teaches", () =
     "connect-me": [/"status"/, /"contract",\s*"--path"/, /"replica",\s*"status"/],
     "run-this-project": [/"watch"/, /"write",\s*"state"/, /"write",\s*"comment"/],
     "what-needs-me": [/"ask",\s*"list"/, /"ask",\s*"raise"/, /"ask",\s*"accept"/],
+    "what-this-repo-needs": [/"env",\s*"inventory"/, /"env",\s*"check"/],
     "whats-happening": [/"contract"/, /"running"/, /"queue"/, /"ask",\s*"list"/, /"replica",\s*"status"/, /"explain"/],
     unstick: [/"explain"/, /"--history"/, /"release"/, /"--dry-run"/],
   };
@@ -421,10 +423,18 @@ describe("the install page (README) states what a customer needs, in the order t
 });
 
 describe("the package manifest", () => {
-  test("is the documented name, public, and carries exactly the SDK as its runtime dependency", () => {
+  test("is the documented name, public, and carries the SDK plus yaml (env inventory's workflow reader) as its runtime dependencies", () => {
     expect(manifest.name).toBe("@catalyst-cloud/catalyst-skills");
     expect(manifest.publishConfig.access).toBe("public");
-    expect(manifest.dependencies).toEqual({ "@catalyst-cloud/sdk": expect.stringMatching(/^\^0\.10\./) });
+    // yaml moved here from devDependencies: a hand-written line scanner over a GitHub workflow
+    // silently loses names written in flow style, which is exactly the failure `env inventory`
+    // exists to avoid — the real parser costs one dependency with zero transitive dependencies of
+    // its own. `test/smoke-publish.test.ts` packs and installs the real tarball, so this is exercised
+    // end to end, not just asserted here.
+    expect(manifest.dependencies).toEqual({
+      "@catalyst-cloud/sdk": expect.stringMatching(/^\^0\.10\./),
+      yaml: expect.stringMatching(/^\^2\./),
+    });
   });
 
   test("bin, shipped files, engines, and the pinned contract range are wired", () => {
@@ -468,11 +478,11 @@ describe("the package manifest", () => {
     }
   });
 
-  test("the version matches the CHANGELOG's top entry, which is 0.6.1", () => {
+  test("the version matches the CHANGELOG's top entry, which is 0.7.0", () => {
     const changelog = readFileSync(join(pkgRoot, "CHANGELOG.md"), "utf8");
     expect(changelog).toContain(`## ${manifest.version}\n`);
-    expect(changelog.indexOf("## 0.6.1")).toBe(changelog.indexOf("## "));
-    expect(manifest.version).toBe("0.6.1");
+    expect(changelog.indexOf("## 0.7.0")).toBe(changelog.indexOf("## "));
+    expect(manifest.version).toBe("0.7.0");
   });
 });
 
@@ -833,5 +843,61 @@ describe("no customer-facing prose states a readiness check count", () => {
   test("the readiness section stops before the machine checks, which carry rows of the same shape", () => {
     expect(readinessSection()).not.toContain("The machine checks the CLI adds");
     for (const machine of ["`cliPath`", "`sdk`", "`node`"]) expect(readinessSection()).not.toContain(machine);
+  });
+});
+
+// The ticket's fourth acceptance criterion: "The skill text explains why before the scan and asks for
+// review after it. A test pins both." Three of the assertions below are indexOf orderings, and an
+// ordering assertion over a string containing neither substring passes for the wrong reason — hence
+// the planted-string positive control, the idiom this file already uses elsewhere.
+describe("what-this-repo-needs explains before it scans and asks for review after", () => {
+  const md = skill("what-this-repo-needs");
+  const WHY = /builds and tests[\s\S]*in a\s+container that has only what (is |you )declared/i;
+  const REVIEW = /keep it, drop it, or move it|keep, drop or move/i;
+  const scanAt = (text: string) => text.search(/scripts\/inventory\.mjs|env inventory/);
+
+  test("the why comes BEFORE the scan step, in plain words", () => {
+    const why = md.search(WHY);
+    const scan = scanAt(md);
+    expect(why, "SKILL.md must explain why the container needs these names").toBeGreaterThan(-1);
+    expect(scan, "SKILL.md must name the scan").toBeGreaterThan(-1);
+    expect(why, "the explanation must precede the scan").toBeLessThan(scan);
+  });
+
+  test("the review ask comes AFTER the scan, and names keep / drop / move", () => {
+    expect(md.search(REVIEW)).toBeGreaterThan(scanAt(md));
+  });
+
+  test("it says the tool never reads a value", () => {
+    expect(md).toMatch(/never (reads|shows|prints) (a |any )?value/i);
+  });
+
+  test("it keeps visible reasoning short", () => {
+    expect(md).toMatch(/short|brief|few words/i);
+  });
+
+  test("positive control: the same probes find their strings in a planted file, in order", () => {
+    const planted =
+      "the fleet builds and tests your repository in a container that has only what you declared\n" +
+      "run scripts/inventory.mjs\nask them to keep, drop or move each name";
+    expect(planted.search(WHY)).toBeGreaterThan(-1);
+    expect(planted.search(WHY)).toBeLessThan(scanAt(planted));
+    expect(planted.search(REVIEW)).toBeGreaterThan(scanAt(planted));
+  });
+
+  test("negative control: a skill text in the wrong order fails the same probes", () => {
+    const wrongOrder =
+      "run scripts/inventory.mjs\n" +
+      "the fleet builds and tests your repository in a container that has only what you declared";
+    expect(wrongOrder.search(WHY)).toBeGreaterThan(scanAt(wrongOrder));
+    expect(wrongOrder.search(REVIEW)).toBe(-1);
+  });
+
+  // C-5: the reference page described a `package.json` script scanner that was deliberately cut, so
+  // it told a reviewer a name would be grouped that the scan never looks for.
+  test("the group reference does not promise a scanner the tool does not have", () => {
+    const ref = readFileSync(join(skillsRoot, "what-this-repo-needs", "references", "what-each-group-means.md"), "utf8");
+    expect(ref).not.toMatch(/a name a `package\.json` script .* uses/);
+    expect(ref).toMatch(/does not read `package\.json` scripts/);
   });
 });
