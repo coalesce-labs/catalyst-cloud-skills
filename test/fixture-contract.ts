@@ -181,6 +181,10 @@ export function buildFixtureContract(): TenantContract {
       { id: "writes_land", severity: "blocking", needsAnswer: false },
       { id: "webhook_covers_team", severity: "degrading", needsAnswer: false },
       { id: "hosts_current", severity: "degrading", needsAnswer: false },
+      { id: "environment_declared", severity: "degrading", needsAnswer: true },
+      { id: "tools_resolvable", severity: "degrading", needsAnswer: true },
+      { id: "reviewer_required", severity: "blocking", needsAnswer: true },
+      { id: "reviewer_configured", severity: "informational", needsAnswer: false },
     ],
     humans: [
       { linearUserId: "u-fixture-owner", role: "owner" },
