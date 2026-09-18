@@ -62,6 +62,10 @@ Some checks degrade a team without ever blocking it, and one is informational on
 
 `--probe` adds the one network call: it compares the local cursor with the cloud's head and prints how far behind the replica is, the only honest "how stale" number. A skill must never refuse to work because the replica is down, and must never silently read a stale one; both halves are one exit code away.
 
+## The writer stops itself after repeated snapshot failures
+
+`replica start` backs off with jitter after a failed or incomplete snapshot pull, and gives up after five consecutive snapshot failures rather than retrying forever — a writer that keeps failing never hammers the tenant. A snapshot that completes resets the count to zero. Both `catalyst-skills replica status` and `catalyst-skills ready` name the stopped state, the count, the last error, and the command that restarts it. The four exit codes above are unchanged: a stopped writer with a database already on disk still reads stale, since there truly is no live writer.
+
 ## Who can click what
 
 The last block `check.mjs` prints groups every failure by the person it needs. Machine fixes name "you", the person at the keyboard. Tenant fixes name the owner or admin roles the contract lists (as Linear user ids, since that is how the cloud knows them), because the settings page that repairs a mapping, a connection or a label is theirs. A check the contract marks as not needing an answer names nobody: it is informational or self-clearing. This skill reports; it never repairs, because no key-reachable repair verb exists yet.

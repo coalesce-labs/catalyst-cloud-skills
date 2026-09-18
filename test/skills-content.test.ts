@@ -405,12 +405,18 @@ describe("the install page (README) states what a customer needs, in the order t
     expect(readme).toMatch(/npm install -g @catalyst-cloud\/catalyst-skills@latest && catalyst-skills login/);
     expect(readme).not.toMatch(/npm update -g/);
     for (const name of CUSTOMER_SKILLS) expect(readme, `uninstall must name ${name}`).toContain(`\`${name}\``);
-    for (const f of ["customer.json", "contract.json", "replica.db", "replica.db.pid", "replica.db.writer.lock", "watch-cursor.json"]) {
+    for (const f of ["customer.json", "contract.json", "replica.db", "replica.db.pid", "replica.db.writer.lock", "replica.db.writer.state", "watch-cursor.json"]) {
       expect(readme, `uninstall must name ${f}`).toContain(f);
     }
     expect(readme).not.toContain("NPM_PUBLISH_TOKEN");
     expect(contributing).toContain("NPM_PUBLISH_TOKEN");
     expect(contributing).toContain("skills-bundle-v<version>");
+  });
+
+  test("the setup reference explains that the writer stops after repeated snapshot failures", () => {
+    const ref = readFileSync(join(skillsRoot, "catalyst-setup", "references", "what-each-check-means.md"), "utf8");
+    expect(ref).toContain("consecutive snapshot failures");
+    expect(ref).toContain("replica status");
   });
 });
 
@@ -462,11 +468,11 @@ describe("the package manifest", () => {
     }
   });
 
-  test("the version matches the CHANGELOG's top entry, which is 0.6.0", () => {
+  test("the version matches the CHANGELOG's top entry, which is 0.6.1", () => {
     const changelog = readFileSync(join(pkgRoot, "CHANGELOG.md"), "utf8");
     expect(changelog).toContain(`## ${manifest.version}\n`);
-    expect(changelog.indexOf("## 0.6.0")).toBe(changelog.indexOf("## "));
-    expect(manifest.version).toBe("0.6.0");
+    expect(changelog.indexOf("## 0.6.1")).toBe(changelog.indexOf("## "));
+    expect(manifest.version).toBe("0.6.1");
   });
 });
 
