@@ -65,7 +65,7 @@ No survivor is `no_eligible_account_slot` when any candidate was skipped on capa
 | `remediate_parked` | the remediate phase is parked, so the failing phase has nowhere to be repaired; `catalyst-skills release <ticket>` releases the park once its cause is fixed |
 | `phase_parked` | the offered phase is parked after repeated failures or a spent repair-round cap; the person releases it once its cause is fixed |
 | `later_phase_lease_held` | an earlier phase is offered while a live container still holds a later phase of this ticket |
-| `human_owned_pr` | a person's own pull request holds this ticket; it releases itself when that PR closes or merges |
+| `human_owned_pr` | a person's own pull request holds this ticket; that person closes or merges the PR themselves, and no release command clears it |
 | `review_not_converging` | review and repair kept finding new problems without converging |
 | `round_threshold` | the ticket spent its lifetime repair budget |
 | `claim_storm` | claimed too many times in the last hour; it waits the hour out, and there is nothing to release |

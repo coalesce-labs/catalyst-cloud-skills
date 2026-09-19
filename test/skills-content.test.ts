@@ -764,6 +764,48 @@ describe("the stuck-state catalogue is complete and every exclusion reason names
       expect({ id, named }).toEqual({ id, named: true });
     }
   });
+
+  // CTC-2014 validate attempt 10, code-review finding 3: the two gates above prove a reason id
+  // APPEARS on both pages, and neither can see that the two rows say OPPOSITE things about it.
+  // `human_owned_pr` shipped as "it releases itself" on the mechanism page while the human-facing
+  // page filed it under a lede opening "These do not release themselves" — one reason id, two
+  // skills, contradictory next actions depending on which reference the session had loaded. Row
+  // presence cannot catch that class of drift; agreement on the release claim itself can.
+  test("a reason the mechanism page says releases itself is filed as self-releasing on the human page", () => {
+    const SELF_RELEASING = /releases itself|clears itself|releases on its own/;
+    const SELF_SECTION = "\n## Reasons that release themselves\n";
+    const idsIn = (text: string): Set<string> => new Set([...text.matchAll(REASON_TOKEN)].map((m) => m[1]));
+    const sectionOf = (text: string, heading: string): string => {
+      const start = text.indexOf(heading);
+      expect(start, `heading "${heading.trim()}" must be present`).toBeGreaterThanOrEqual(0);
+      const end = text.indexOf("\n## ", start + heading.length);
+      return text.slice(start, end === -1 ? undefined : end);
+    };
+    const offendersIn = (how: string, selfReleasing: Set<string>): string[] =>
+      how
+        .split("\n")
+        .filter((l) => l.startsWith("|") && SELF_RELEASING.test(l))
+        .flatMap((l) => [...idsIn(l)])
+        .filter((id) => !selfReleasing.has(id));
+
+    // positive control, on fixed strings: a self-release claim for an id the human page files
+    // under a human-action section is caught; the same claim for an id filed as self-releasing
+    // is not.
+    const stuckFixture = [
+      "## Reasons that release themselves",
+      "| `good_reason` | means | the phase finishes | no one acts |",
+      "## Reasons that need a human",
+      "| `bad_reason` | means | the person, with their own login, does it |",
+    ].join("\n");
+    const howFixture = [
+      "| `good_reason` | it releases itself when the phase ends |",
+      "| `bad_reason` | it releases itself when the pull request closes |",
+    ].join("\n");
+    expect(offendersIn(howFixture, idsIn(sectionOf(`\n${stuckFixture}`, SELF_SECTION)))).toEqual(["bad_reason"]);
+
+    const offenders = offendersIn(read(HOW), idsIn(sectionOf(read(STUCK), SELF_SECTION)));
+    expect(offenders, "these rows claim the reason releases itself while the human-facing page says someone must act").toEqual([]);
+  });
 });
 
 // CTC-2014 Tier 1 ①: the settings reference names the screen, the route and the rule, instead of the
@@ -806,7 +848,11 @@ describe("the settings reference names the screen, the route and the rule", () =
       /Re-registering the same team-plus-repo pair is refused/,
       /Merge policy/,
       /Post review requests as/,
-      /Mergify configuration/,
+      // CTC-2014 validate attempt 10, code-review finding 4: this rule used to be pinned as the
+      // literal "Mergify configuration", which is what made the page name one vendor and claim a
+      // repository without it "fails closed" — refuted by `catalyst-github/references/what-a-pr-accumulates.md`
+      // and by `is-it-mergeable.mjs`'s generic `queue:` prefix. Pin the vendor-neutral consequence.
+      /the merge itself is whatever the repository's own setup does with it/,
       /runner cap/i,
       /never both/,
       /nothing reaches a runner, and the failure is silent/,
