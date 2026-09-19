@@ -14,6 +14,7 @@ import { fileURLToPath } from "node:url";
 import { parse as parseYaml } from "yaml";
 
 import { CUSTOMER_SKILLS, PROVENANCE_MARKER } from "../src/cli";
+import { ADVISORIES, EXCLUSION_REASONS, UNKNOWN_REASONS } from "../src/execution";
 import { FORBIDDEN_CONTENT, MAX_REFERENCE_LINES, MAX_SKILL_LINES, parseProvenanceVersion, validateSkillDir } from "../src/skill-shape";
 import { buildFixtureContract } from "./fixture-contract";
 
@@ -60,6 +61,30 @@ const TEAM_CHECK_IDS = [
   "oauth_scope", "token_live", "team_visible", "mapped_states_exist", "mapping_total",
   "types_compatible", "labels_present", "writes_land", "webhook_covers_team", "hosts_current",
   "environment_declared", "tools_resolvable", "reviewer_required", "reviewer_configured",
+] as const;
+
+// CTC-2014 Tier 2 (route half): the tenant settings routes this bundle's customer-facing prose is
+// allowed to write. The bundle cannot import them — the web app that owns these routes is a separate
+// repository and is not a dependency here — so this is a VENDORED roster, held in both directions by
+// the gate below: an entry no page uses is as much a defect as a page route that is not on the
+// roster. `$repoId` is a literal placeholder, matched after normalising any `$`-prefixed URL segment.
+// Compiled by grepping this repository's own tree (`grep -rhno "/settings/[a-zA-Z0-9$/_-]*"
+// skills/*/SKILL.md skills/*/references/*.md README.md`), compiled 2026-09-19 (CTC-2014). Two
+// routes the ticket's own source research named — `/settings/members` and `/settings/api-keys` —
+// are deliberately NOT here: every page that names those two screens already does so as prose
+// ("Settings → Members", "Settings → API keys"), the bundle's existing convention for a page with
+// no ticket-mandated literal-route rule, and an unused entry would fail the reverse-direction gate
+// below on day one. Add either the day a rule needs its literal route written down.
+const SETTINGS_ROUTES = [
+  "/settings/connections",
+  "/settings/linear-teams",
+  "/settings/repositories",
+  "/settings/repositories/$repoId/merging",
+  "/settings/repositories/$repoId/code-reviews",
+  "/settings/coding-accounts",
+  "/settings/secrets",
+  "/settings/environment",
+  "/settings/profile",
 ] as const;
 
 function walk(dir: string): string[] {
@@ -486,11 +511,11 @@ describe("the package manifest", () => {
     expect(md).toContain("--all");
   });
 
-  test("the version matches the CHANGELOG's top entry, which is 0.7.0", () => {
+  test("the version matches the CHANGELOG's top entry, which is 0.8.0", () => {
     const changelog = readFileSync(join(pkgRoot, "CHANGELOG.md"), "utf8");
     expect(changelog).toContain(`## ${manifest.version}\n`);
-    expect(changelog.indexOf("## 0.7.0")).toBe(changelog.indexOf("## "));
-    expect(manifest.version).toBe("0.7.0");
+    expect(changelog.indexOf("## 0.8.0")).toBe(changelog.indexOf("## "));
+    expect(manifest.version).toBe("0.8.0");
   });
 
   test("every shipped skill stamps the package version on its provenance line", () => {
@@ -647,6 +672,321 @@ describe("what-each-check-means documents every readiness check, and no file cou
   test("the fixture contract's readinessChecks ids equal the documented list", () => {
     const contract = buildFixtureContract();
     expect(contract.readinessChecks.map((c) => c.id)).toEqual([...TEAM_CHECK_IDS]);
+  });
+});
+
+// CTC-2014 Tier 1 ② + Tier 2 (reason half): `src/execution.ts`'s EXCLUSION_REASONS, UNKNOWN_REASONS
+// and ADVISORIES are this bundle's vendored copy of the cloud's eligibility-evaluator vocabulary —
+// `test/execution.test.ts:161-162` already pins their lengths (37 / 11 / 1). This describe block is
+// what "cites the enforcing code path" for that vocabulary: every row on the two customer-facing pages
+// traces back to the same constants a script actually prints, not to a hand-typed guess. It gates two
+// things at once: (1) every reason the CLI can print has a row on both pages a customer is sent to, in
+// both directions — a stray reason string that drifted off the live roster reddens here exactly as a
+// missing one does; (2) every EXCLUSION_REASONS row on `why-is-it-stuck.md` names who acts, in the
+// ticket's own three-actor vocabulary plus the fourth honest answer, "no one acts".
+describe("the stuck-state catalogue is complete and every exclusion reason names who acts", () => {
+  const HOW = "how-catalyst-works/references/what-runs-next.md";
+  const STUCK = "whats-happening/references/why-is-it-stuck.md";
+  const read = (rel: string) => readFileSync(join(skillsRoot, rel), "utf8");
+
+  const REASON_TOKEN = /`([a-z][a-z0-9]*(?:_[a-z0-9]+)+)`/g;
+  const ACTOR_VOCAB = /the person, with their own login|a tenant owner or admin, in settings|\ban operator\b|no one acts/;
+  // A routing outcome, not an eligibility exclusion reason: measured at `what-runs-next.md:30`. The
+  // one documented allowance a stray reason string needs to be added deliberately, not by drift.
+  const ALLOWED_NON_ROSTER = ["no_eligible_account_slot"];
+
+  test("⭐ positive control: the reason matcher reads a row and rejects a header, on fixed strings", () => {
+    expect([..."| `claim_storm` | waits out the hour |".matchAll(REASON_TOKEN)].map((m) => m[1])).toEqual(["claim_storm"]);
+    expect([..."| -- | -- |".matchAll(REASON_TOKEN)]).toHaveLength(0);
+    expect([..."| reason | meaning |".matchAll(REASON_TOKEN)]).toHaveLength(0);
+    expect(ACTOR_VOCAB.test("the person, with their own login, releases it")).toBe(true);
+    expect(ACTOR_VOCAB.test("a tenant owner or admin, in settings, maps the team")).toBe(true);
+    expect(ACTOR_VOCAB.test("an operator resumes it")).toBe(true);
+    expect(ACTOR_VOCAB.test("no one acts; it clears on its own")).toBe(true);
+    expect(ACTOR_VOCAB.test("someone will look into it")).toBe(false);
+  });
+
+  test("every reason the CLI can print has at least one row on each customer page", () => {
+    for (const [id] of [...Object.entries(EXCLUSION_REASONS), ...Object.entries(UNKNOWN_REASONS), ...Object.entries(ADVISORIES)]) {
+      expect({ id, onHow: read(HOW).includes(`\`${id}\``) }).toEqual({ id, onHow: true });
+      expect({ id, onStuck: read(STUCK).includes(`\`${id}\``) }).toEqual({ id, onStuck: true });
+    }
+  });
+
+  test("no page names a reason string the CLI cannot print", () => {
+    const roster = new Set([...Object.keys(EXCLUSION_REASONS), ...Object.keys(UNKNOWN_REASONS), ...Object.keys(ADVISORIES)]);
+    for (const rel of [HOW, STUCK]) {
+      const tokens = new Set([...read(rel).matchAll(REASON_TOKEN)].map((m) => m[1]));
+      const extra = [...tokens].filter((t) => !roster.has(t));
+      expect({ rel, extra }).toEqual({ rel, extra: rel === HOW ? ALLOWED_NON_ROSTER : [] });
+    }
+  });
+
+  // CTC-2014 validate attempt 9, code-review finding 2: the "Reasons a release clears once the cause
+  // is fixed" section's own lede says "These do not release themselves: once the recorded cause is
+  // fixed, the person's own login releases them" — so a row in it whose who-acts cell reads "no one
+  // acts" tells the desk two opposite things about the same reason id. The reasons that genuinely
+  // need nobody have a section of their own; this holds the two apart.
+  test("no row under the release-clears lede says 'no one acts', which that lede contradicts", () => {
+    const RELEASE_CLEARS = "\n## Reasons a release clears once the cause is fixed\n";
+    const sectionOf = (text: string, heading: string): string => {
+      const start = text.indexOf(heading);
+      expect(start, `heading "${heading.trim()}" must be present`).toBeGreaterThanOrEqual(0);
+      const end = text.indexOf("\n## ", start + heading.length);
+      return text.slice(start, end === -1 ? undefined : end);
+    };
+
+    // ⭐ positive control, on fixed strings: the slicer stops at the next heading, and a planted
+    // contradicting row is caught while a legitimate one is not.
+    const fixture = [
+      "## Reasons a release clears once the cause is fixed",
+      "| `a_reason` | means | note | the person, with their own login |",
+      "| `b_reason` | means | note | no one acts |",
+      "## Reasons that are not problems",
+      "| `c_reason` | means | note | no one acts |",
+    ].join("\n");
+    const control = sectionOf(`\n${fixture}`, RELEASE_CLEARS);
+    expect(control.split("\n").filter((l) => l.startsWith("|") && l.includes("no one acts"))).toEqual([
+      "| `b_reason` | means | note | no one acts |",
+    ]);
+
+    const section = sectionOf(read(STUCK), RELEASE_CLEARS);
+    const contradicting = section.split("\n").filter((l) => l.startsWith("|") && l.includes("no one acts"));
+    expect(contradicting, "move these rows to 'Reasons that release themselves'").toEqual([]);
+  });
+
+  test("every exclusion reason's row on the human-facing page names who acts", () => {
+    const lines = read(STUCK).split("\n");
+    for (const id of Object.keys(EXCLUSION_REASONS)) {
+      const rows = lines.filter((l) => l.includes(`\`${id}\``));
+      expect({ id, hasRow: rows.length > 0 }).toEqual({ id, hasRow: true });
+      const named = rows.some((l) => ACTOR_VOCAB.test(l));
+      expect({ id, named }).toEqual({ id, named: true });
+    }
+  });
+
+  // CTC-2014 validate attempt 10, code-review finding 3: the two gates above prove a reason id
+  // APPEARS on both pages, and neither can see that the two rows say OPPOSITE things about it.
+  // `human_owned_pr` shipped as "it releases itself" on the mechanism page while the human-facing
+  // page filed it under a lede opening "These do not release themselves" — one reason id, two
+  // skills, contradictory next actions depending on which reference the session had loaded. Row
+  // presence cannot catch that class of drift; agreement on the release claim itself can.
+  test("a reason the mechanism page says releases itself is filed as self-releasing on the human page", () => {
+    const SELF_RELEASING = /releases itself|clears itself|releases on its own/;
+    const SELF_SECTION = "\n## Reasons that release themselves\n";
+    const idsIn = (text: string): Set<string> => new Set([...text.matchAll(REASON_TOKEN)].map((m) => m[1]));
+    const sectionOf = (text: string, heading: string): string => {
+      const start = text.indexOf(heading);
+      expect(start, `heading "${heading.trim()}" must be present`).toBeGreaterThanOrEqual(0);
+      const end = text.indexOf("\n## ", start + heading.length);
+      return text.slice(start, end === -1 ? undefined : end);
+    };
+    const offendersIn = (how: string, selfReleasing: Set<string>): string[] =>
+      how
+        .split("\n")
+        .filter((l) => l.startsWith("|") && SELF_RELEASING.test(l))
+        .flatMap((l) => [...idsIn(l)])
+        .filter((id) => !selfReleasing.has(id));
+
+    // positive control, on fixed strings: a self-release claim for an id the human page files
+    // under a human-action section is caught; the same claim for an id filed as self-releasing
+    // is not.
+    const stuckFixture = [
+      "## Reasons that release themselves",
+      "| `good_reason` | means | the phase finishes | no one acts |",
+      "## Reasons that need a human",
+      "| `bad_reason` | means | the person, with their own login, does it |",
+    ].join("\n");
+    const howFixture = [
+      "| `good_reason` | it releases itself when the phase ends |",
+      "| `bad_reason` | it releases itself when the pull request closes |",
+    ].join("\n");
+    expect(offendersIn(howFixture, idsIn(sectionOf(`\n${stuckFixture}`, SELF_SECTION)))).toEqual(["bad_reason"]);
+
+    const offenders = offendersIn(read(HOW), idsIn(sectionOf(read(STUCK), SELF_SECTION)));
+    expect(offenders, "these rows claim the reason releases itself while the human-facing page says someone must act").toEqual([]);
+  });
+});
+
+// CTC-2014 Tier 1 ①: the settings reference names the screen, the route and the rule, instead of the
+// concierge relaying from memory. `how-catalyst-works/references/settings-and-where-they-live.md`
+// carries the in-scope rules from the 2026-09-10 account/profile/repository-settings research.
+describe("the settings reference names the screen, the route and the rule", () => {
+  const SETTINGS_PAGE = "how-catalyst-works/references/settings-and-where-they-live.md";
+  const ROUTE_TOKEN = /\/settings\/[a-zA-Z0-9$/_-]*/g;
+  const normalizeRoute = (route: string): string => route.replace(/^(\/settings\/repositories)\/[^/]+(\/.+)$/, "$1/$repoId$2");
+  const routesIn = (text: string): string[] => [...text.matchAll(ROUTE_TOKEN)].map((m) => normalizeRoute(m[0]));
+
+  test("⭐ positive control: the route matcher extracts a settings route and normalises an id segment, on fixed strings", () => {
+    expect(routesIn("`<their cloud>/settings/repositories`")).toEqual(["/settings/repositories"]);
+    expect(routesIn("Settings → Repositories")).toEqual([]);
+    expect(routesIn("`<their cloud>/settings/repositories/$repoId/merging`")).toEqual(["/settings/repositories/$repoId/merging"]);
+  });
+
+  test("the reference exists, is non-empty, and is linked from SKILL.md by its literal path", () => {
+    expect(skill("how-catalyst-works")).toContain("references/settings-and-where-they-live.md");
+    const text = readFileSync(join(skillsRoot, SETTINGS_PAGE), "utf8");
+    expect(text.length).toBeGreaterThan(500);
+  });
+
+  test("every settings route on the page is on the vendored roster", () => {
+    const text = readFileSync(join(skillsRoot, SETTINGS_PAGE), "utf8");
+    for (const route of routesIn(text)) {
+      expect({ route, onRoster: (SETTINGS_ROUTES as readonly string[]).includes(route) }).toEqual({ route, onRoster: true });
+    }
+  });
+
+  test("the reference states each of the in-scope rules", () => {
+    const text = readFileSync(join(skillsRoot, SETTINGS_PAGE), "utf8");
+    const RULES = [
+      /Connecting Linear/,
+      /binds to exactly one account/,
+      /personal GitHub grant comes first/,
+      /Removing the App on GitHub self-heals the registry/,
+      /One team, one repository/,
+      /only editable field is its name/,
+      /Re-registering the same team-plus-repo pair is refused/,
+      /Merge policy/,
+      /Post review requests as/,
+      // CTC-2014 validate attempt 10, code-review finding 4: this rule used to be pinned as the
+      // literal "Mergify configuration", which is what made the page name one vendor and claim a
+      // repository without it "fails closed" — refuted by `catalyst-github/references/what-a-pr-accumulates.md`
+      // and by `is-it-mergeable.mjs`'s generic `queue:` prefix. Pin the vendor-neutral consequence.
+      /the merge itself is whatever the repository's own setup does with it/,
+      /runner cap/i,
+      /never both/,
+      /nothing reaches a runner, and the failure is silent/,
+      /no settings page for this/,
+    ];
+    for (const re of RULES) expect({ re: re.source, present: re.test(text) }).toEqual({ re: re.source, present: true });
+  });
+});
+
+// CTC-2014 Tier 1 (individual profile settings): the one profile-settings rule with a recorded live
+// failure — an agent told "an admin matches it in Settings → Members" cannot explain why the match is
+// wrong when the human insists they already connected Linear, because the identity and the personal
+// grant are two different stored facts.
+describe("the identity is distinguished from the personal Linear grant", () => {
+  const INBOX = "what-needs-me/references/reading-the-inbox.md";
+  const MATCHER = /identity[^.]*is not the same as[^.]*grant|identity[^.]*two different stored facts/i;
+
+  test("⭐ positive control: the matcher finds the identity/grant distinction in a literal sentence and rejects the bare admin-match sentence alone", () => {
+    expect(MATCHER.test("The identity is not the same as the personal Linear grant.")).toBe(true);
+    expect(MATCHER.test("an admin matches it in Settings → Members")).toBe(false);
+  });
+
+  test("the inbox reference distinguishes the declared identity from the proven grant, and says which to check first", () => {
+    const text = readFileSync(join(skillsRoot, INBOX), "utf8");
+    expect(text).toMatch(/\*\*identity\*\*/);
+    expect(text).toMatch(/\*\*personal Linear grant\*\*/);
+    expect(text).toMatch(/checked first, then the grant|check the identity first, then the grant/i);
+    expect(text).toContain("Connecting Linear personally does **not** set the identity");
+  });
+
+  test("connect-me says connecting Linear personally does not set the identity", () => {
+    expect(skill("connect-me")).toMatch(/connecting Linear personally does not (set|match) the identity/);
+  });
+});
+
+// CTC-2014 Tier 1 ③: readiness already names the check, its severity and who can click what
+// (`what-each-check-means.md`, gated by CTC-2542 above). This block PINS that fact for both setup
+// skills instead of rewriting the page — tests here are expected to land green immediately against
+// the current tree, converting an undefended fact into a defended one, and adds the one honest
+// health-signal sentence (flow metrics are not computed) the bundle was missing.
+describe("readiness is pinned for both setup skills, and the flow-metrics gap is named", () => {
+  test("catalyst-setup ends every answer with the verdict and the who-can-click-what list", () => {
+    expect(skill("catalyst-setup")).toMatch(/verdict and the who-can-click-what list/);
+  });
+
+  test("connect-me routes the full readiness vector through the catalyst-setup skill", () => {
+    expect(skill("connect-me")).toMatch(/readiness vector[^\n|]*\|\s*the `catalyst-setup` skill/);
+  });
+
+  test("every readiness check id's row on the page names a non-empty who-clicks cell", () => {
+    const page = readFileSync(join(skillsRoot, "catalyst-setup", "references", "what-each-check-means.md"), "utf8");
+    const start = page.indexOf("\n## The checks\n");
+    const end = page.indexOf("\n## ", start + 1);
+    const section = page.slice(start, end);
+    for (const id of TEAM_CHECK_IDS) {
+      const row = section.split("\n").find((l) => l.startsWith(`| \`${id}\` |`));
+      const cells = row?.split("|").slice(1, -1).map((c) => c.trim()) ?? [];
+      expect({ id, whoClicks: cells[3] ?? "" }).toEqual({ id, whoClicks: expect.stringMatching(/.+/) });
+    }
+  });
+
+  test("the README says flow metrics are not computed", () => {
+    const readme = readFileSync(join(pkgRoot, "README.md"), "utf8");
+    expect(readme).toMatch(/cycle time, throughput, or how long pull requests have been open/);
+    expect(readme).toMatch(/not computed/);
+  });
+
+  // CTC-2014 validate attempt 9, code-review finding 1: the README's lede claims "the skills say so
+  // by name rather than guess" for BOTH bullets, but a skill session loads SKILL.md plus its
+  // references/ and never the README. Pinning the README alone let that claim ship with nothing
+  // under skills/ behind its flow-metrics half, so a "what's our cycle time?" question reached a
+  // desk with no reference naming the gap. This gate holds the sentence where an agent reads it.
+  test("a reference a skill session actually loads names the flow-metrics gap, so the README's claim holds", () => {
+    const PHRASE = /cycle time, throughput, or how long pull requests have been open/;
+    const carriers = walk(skillsRoot)
+      .filter((f) => f.endsWith(".md"))
+      .filter((f) => PHRASE.test(readFileSync(f, "utf8")) && /not computed/.test(readFileSync(f, "utf8")))
+      .map((f) => relative(pkgRoot, f).replaceAll("\\", "/"));
+    expect(carriers, "the README is not loaded by a skill session; a reference must carry this too").toContain(
+      "skills/whats-happening/references/status-reply.md",
+    );
+  });
+});
+
+// CTC-2014 Tier 2 (route half): a settings route in customer prose that is not on the vendored
+// roster fails the gate, in both directions — an unused roster entry is as much a defect as an
+// unrostered route, or the roster rots into a wishlist nobody checks against the live product.
+describe("every settings route in customer prose is on the vendored roster, and every roster entry is used", () => {
+  const ROUTE_TOKEN = /\/settings\/[a-zA-Z0-9$/_-]*/g;
+  const normalizeRoute = (route: string): string => route.replace(/^(\/settings\/repositories)\/[^/]+(\/.+)$/, "$1/$repoId$2");
+  const mdFiles = [join(pkgRoot, "README.md"), ...walk(skillsRoot).filter((f) => f.endsWith(".md"))];
+
+  test("⭐ positive control: the route matcher reads a route and normalises an id segment, on fixed strings", () => {
+    expect(normalizeRoute("/settings/repositories/$repoId/merging")).toBe("/settings/repositories/$repoId/merging");
+    expect(normalizeRoute("/settings/repositories/abc123/merging")).toBe("/settings/repositories/$repoId/merging");
+    expect([..."Settings → Repositories".matchAll(ROUTE_TOKEN)]).toHaveLength(0);
+    expect((SETTINGS_ROUTES as readonly string[]).includes("/settings/nope")).toBe(false);
+  });
+
+  test("every settings route in customer prose is on the roster", () => {
+    const used = new Set<string>();
+    for (const f of mdFiles) {
+      const text = readFileSync(f, "utf8");
+      const rel = relative(pkgRoot, f);
+      for (const m of text.matchAll(ROUTE_TOKEN)) {
+        const route = normalizeRoute(m[0]);
+        used.add(route);
+        expect({ rel, route, onRoster: (SETTINGS_ROUTES as readonly string[]).includes(route) }).toEqual({ rel, route, onRoster: true });
+      }
+    }
+    // ⭐ negative control on the positive path: the walk actually found routes, so an empty roster
+    // could not have passed the loop above vacuously.
+    expect(used.size).toBeGreaterThan(0);
+  });
+
+  test("every roster entry is used by at least one page", () => {
+    const text = mdFiles.map((f) => readFileSync(f, "utf8")).join("\n");
+    const used = new Set([...text.matchAll(ROUTE_TOKEN)].map((m) => normalizeRoute(m[0])));
+    for (const route of SETTINGS_ROUTES) expect({ route, used: used.has(route) }).toEqual({ route, used: true });
+  });
+
+  test("no page invents an API route: the only /api/v1 literal under skills/ is GET /api/v1/agent/contract", () => {
+    const offenders: string[] = [];
+    for (const f of walk(skillsRoot).filter((p) => p.endsWith(".md"))) {
+      const text = readFileSync(f, "utf8");
+      for (const m of text.matchAll(/\/api\/v1\/[a-zA-Z/_-]*/g)) {
+        if (m[0] === "/api/v1/agent/contract") continue;
+        offenders.push(`${relative(pkgRoot, f)}: ${m[0]}`);
+      }
+    }
+    // Measured allowance, not a blanket ban: `how-catalyst-works/SKILL.md:13` states `GET
+    // /api/v1/agent/contract` and is load-bearing (CTC-2014 plan, "What I ran"). An unconditional
+    // ban on any /api/v1 literal would redden on day one; this allowlist of exactly one does not.
+    expect(offenders).toEqual([]);
   });
 });
 

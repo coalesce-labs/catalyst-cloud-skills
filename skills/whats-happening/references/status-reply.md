@@ -16,6 +16,8 @@ The person asked one question and gets one reply. If they would need a second su
 
 A sixth block, **cannot see**, appears only when it is non-empty: the facts your key cannot read (PR labels and reactions, which are not mirrored; an operator-only park release), each with the URL the CLI printed.
 
+A flow number is named in that block by name, not left out: cycle time, throughput, or how long pull requests have been open are not computed by anything a key reads today. Say they are not computed rather than counting ticket dates or open pull requests and calling it that.
+
 ## The header line
 
 The reply opens with one clause that says when and from where: the snapshot's `takenAt` and its source line. When the replica was stale or absent, the reply says the numbers came from the API; when it was fresh, it says the cursor. This is not decoration. A stale source that goes unmentioned is the way a wrong status reply happens.
