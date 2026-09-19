@@ -481,6 +481,11 @@ describe("the package manifest", () => {
     }
   });
 
+  test("the ticket-reading reference names --all as the way past the first page (CTC-2010)", () => {
+    const md = readFileSync(join(pkgRoot, "skills/catalyst-linear/references/reading-a-ticket.md"), "utf8");
+    expect(md).toContain("--all");
+  });
+
   test("the version matches the CHANGELOG's top entry, which is 0.7.0", () => {
     const changelog = readFileSync(join(pkgRoot, "CHANGELOG.md"), "utf8");
     expect(changelog).toContain(`## ${manifest.version}\n`);

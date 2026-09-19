@@ -55,10 +55,11 @@ export const FLAG_TABLES: Record<string, FlagTable> = {
     team: { value: true, help: "team key filter" },
     project: { value: true, help: "project id filter" },
     state: { value: true, help: "state name filter" },
-    limit: { value: true, help: "max rows (default 50)" },
+    limit: { value: true, help: "max rows (default 50); one page only unless --all" },
     since: { value: true, help: "changes: the cursor to read after" },
     source: { value: true, help: "replica | api (default: replica when fresh, else api)" },
     ticket: { value: true, help: "pulls: only PRs linked to this ticket" },
+    all: { value: false, help: "issues/pulls: follow the cloud's page cursor to the end of the scope" },
   },
   replica: {
     detach: { value: false, help: "start: run the writer in the background and write a pidfile" },
@@ -157,7 +158,7 @@ export const VERB_USAGE: Record<string, string> = {
   me: "me [--json]",
   contract: "contract [--refresh] [--path <a.b.c>] [--json]",
   query:
-    "query <issues|issue <id>|pulls|pull <id>|projects|cycles|search <terms>|changes --since <cursor|head>> [--team K] [--project P] [--state S] [--limit N] [--source replica|api] [--json]",
+    "query <issues|issue <id>|pulls|pull <id>|projects|cycles|search <terms>|changes --since <cursor|head>> [--team K] [--project P] [--state S] [--limit N] [--all] [--source replica|api] [--json]",
   replica:
     "replica <start [--detach]|stop|status [--probe] [--json]|sql \"<select>\"|schema [table]> [--db <path>]",
   events:

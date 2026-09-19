@@ -4,7 +4,7 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from "vitest";
 import { main } from "../src/cli";
 import { applyFilters, rowsOf, summaryLine } from "../src/query";
-import { fixtureIssues, startMeFixture, type FixtureServer } from "./fixture";
+import { fixtureIssues, manyIssues, startMeFixture, type FixtureServer } from "./fixture";
 import { makeCtx, seedJoined, seedReplica, tempHome, type TestCtx } from "./helpers";
 
 let server: FixtureServer;
@@ -235,6 +235,67 @@ describe("more replica reads", () => {
     const c3 = makeCtx(home);
     expect(await main(["query", "changes", "--since", String(server.headCursor), "--json"], c3)).toBe(0);
     expect((JSON.parse(c3.out.join("\n")) as { changes: unknown[] }).changes).toEqual([]);
+  });
+});
+
+// CTC-2010 — `query issues|pulls --all` follows the cloud's keyset cursor to the end of the scope,
+// and a capped read without `--all` says so on stderr.
+describe("--all and truncation", () => {
+  afterAll(() => {
+    server.pageCap = undefined;
+    server.pulls = undefined;
+    server.issues = fixtureIssues();
+  });
+
+  test("query issues --all follows the cursor to the end of the scope", async () => {
+    await seedJoined(home, server);
+    server.pageCap = 50;
+    server.issues = [...manyIssues(120), ...fixtureIssues()];
+    expect(await main(["query", "issues", "--all", "--json"], ctx)).toBe(0);
+    expect(JSON.parse(ctx.out.join("\n"))).toHaveLength(server.issues.length);
+    expect(server.requests.filter((r) => r.path.startsWith("/api/v1/issues?")).length).toBeGreaterThan(1);
+    expect(ctx.err[0]).toBe("source: api (--all follows the cloud's pages)");
+  });
+
+  test("query pulls --all follows the cursor to the end of the scope", async () => {
+    await seedJoined(home, server);
+    server.pageCap = 50;
+    server.pulls = manyIssues(130).map((row, i) => ({ ...row, node_id: `PR_${i + 1}`, number: i + 1 }));
+    expect(await main(["query", "pulls", "--all", "--json"], ctx)).toBe(0);
+    expect(JSON.parse(ctx.out.join("\n"))).toHaveLength(130);
+    expect(server.requests.filter((r) => r.path.startsWith("/api/v1/pulls?")).length).toBeGreaterThan(1);
+  });
+
+  test("without --all, a capped read says `truncated at N of M` on stderr", async () => {
+    await seedJoined(home, server);
+    server.pageCap = 50;
+    server.issues = manyIssues(120);
+    expect(await main(["query", "issues", "--source", "api", "--limit", "500", "--json"], ctx)).toBe(0);
+    expect(ctx.err.join("\n")).toContain("truncated at 50 of 120");
+  });
+
+  test("a scope that fits in one page prints no truncation line", async () => {
+    await seedJoined(home, server);
+    server.pageCap = undefined;
+    server.issues = fixtureIssues();
+    expect(await main(["query", "issues", "--source", "api", "--json"], ctx)).toBe(0);
+    expect(ctx.err.join("\n")).not.toMatch(/truncat/i);
+  });
+
+  test("--all is refused on a subcommand with no cursor, and beside --source replica", async () => {
+    await seedJoined(home, server);
+    expect(await main(["query", "projects", "--all"], ctx)).toBe(1);
+    expect(ctx.err.join("\n")).toContain("only issues and pulls");
+    expect(await main(["query", "issues", "--all", "--source", "replica"], makeCtx(home))).toBe(1);
+  });
+
+  test("--all with --limit says the limit is ignored, and the limit is ignored", async () => {
+    await seedJoined(home, server);
+    server.pageCap = 50;
+    server.issues = manyIssues(120);
+    expect(await main(["query", "issues", "--all", "--limit", "10", "--json"], ctx)).toBe(0);
+    expect(ctx.err.join("\n")).toContain("--all reads the whole scope, so --limit is ignored");
+    expect(JSON.parse(ctx.out.join("\n"))).toHaveLength(120);
   });
 });
 
