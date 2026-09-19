@@ -27,4 +27,38 @@ if (!file) {
 const res = runCliOffline(["env", "check", file, ...(json ? ["--json"] : [])]);
 if (res.stdout) process.stdout.write(res.stdout);
 if (res.stderr) process.stderr.write(res.stderr);
-process.exit(res.code);
+await finish(res.code);
+
+/**
+ * ⛔ NEVER `process.exit(code)` STRAIGHT AFTER A WRITE — the same rule `bin/catalyst-skills.js`
+ * states in full, reintroduced here at validate attempt 29 (M-3). When this script's own stdout is a
+ * PIPE — which is how an agent harness runs it — writes are asynchronous, so `process.exit` severs
+ * whatever is still in flight AND STILL REPORTS THE ORIGINAL EXIT CODE. Measured: a `--json` body of
+ * 385,633 bytes arrived as 65,536 bytes of invalid JSON at exit 0. Writing to a FILE hides it,
+ * because a file gives stdout a synchronous write path.
+ *
+ * So: park the code on `process.exitCode`, wait for both streams to drain, and only then exit.
+ */
+function drained(stream) {
+  return new Promise((resolve) => {
+    if (!stream || stream.destroyed || stream.writableEnded) return resolve();
+    let settled = false;
+    const done = () => {
+      if (settled) return;
+      settled = true;
+      resolve();
+    };
+    stream.once("error", done);
+    try {
+      stream.write("", done);
+    } catch {
+      done();
+    }
+  });
+}
+
+async function finish(code) {
+  process.exitCode = code;
+  await Promise.all([drained(process.stdout), drained(process.stderr)]);
+  process.exit(code);
+}

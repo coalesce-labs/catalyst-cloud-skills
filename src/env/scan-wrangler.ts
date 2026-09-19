@@ -21,6 +21,14 @@ const BINDING_KEY_BY_TABLE: Record<string, string> = {
   "queues.consumers": "binding",
 };
 
+// ⛔ TABLE_RE AND QUOTED_RE ARE END-ANCHORED, SO AN INLINE `#` COMMENT MUST BE STRIPPED FIRST
+// (validate attempt 29, CR-1 / CR-4). `[vars] # public settings` never matched TABLE_RE, so
+// `currentTable` stayed null and the scanner returned NOTHING for the whole file — zero bindings,
+// zero vars, zero notes: a silent, total failure in a tool whose entire value is completeness. And
+// `binding = "SESSIONS" # the session store` never matched QUOTED_RE, so the `: value` fallback
+// below made the raw remainder — quotes, comment and all — the binding NAME the customer is asked to
+// keep, drop or move. `stripInlineComment` is quote-aware, so a `#` inside a value (`id = "ab#cd"`)
+// is still value material and is left alone.
 const QUOTED_RE = /^"(.*)"$|^'(.*)'$/;
 const KEY_VALUE_RE = /^([A-Za-z_][A-Za-z0-9_-]*)\s*=\s*(.*)$/;
 const TABLE_RE = /^\[\[?([^\]]+)\]\]?$/;
@@ -42,8 +50,10 @@ export function scanWrangler(file: string, text: string): RawSighting[] {
       continue;
     }
     if (trimmed === "" || trimmed.startsWith("#")) continue;
+    const uncommented = stripInlineComment(trimmed).trim();
+    if (uncommented === "") continue;
 
-    const tableMatch = TABLE_RE.exec(trimmed);
+    const tableMatch = TABLE_RE.exec(uncommented);
     if (tableMatch) {
       let name = tableMatch[1]!.trim();
       currentEnvironment = undefined;
@@ -57,7 +67,7 @@ export function scanWrangler(file: string, text: string): RawSighting[] {
     }
 
     if (currentTable === null) continue;
-    const kv = KEY_VALUE_RE.exec(trimmed);
+    const kv = KEY_VALUE_RE.exec(uncommented);
     if (!kv) continue;
     const key = kv[1]!;
     const value = kv[2]!.trim();
@@ -92,6 +102,29 @@ export function scanWrangler(file: string, text: string): RawSighting[] {
     }
   }
   return sightings;
+}
+
+/**
+ * The line with any TOML inline comment removed. A `#` only starts a comment outside a string, so
+ * the scan tracks the quote it is inside. A line whose quotes do not balance — a `"""` opener, most
+ * importantly — is returned untouched rather than guessed at.
+ */
+function stripInlineComment(line: string): string {
+  let quote: '"' | "'" | null = null;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i]!;
+    if (quote !== null) {
+      if (ch === "\\") i++;
+      else if (ch === quote) quote = null;
+      continue;
+    }
+    if (ch === '"' || ch === "'") {
+      quote = ch;
+      continue;
+    }
+    if (ch === "#") return line.slice(0, i);
+  }
+  return line;
 }
 
 function isOpeningMultiline(value: string, marker: '"""' | "'''"): boolean {

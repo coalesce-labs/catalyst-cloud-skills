@@ -6,6 +6,11 @@
     "why": "every provenanceIds array and the top-level provenance array are empty; the cloud validator accepted exactly this shape in a recorded transcript (see the research behind CTC-2496)"
   },
   { "file": "valid-sh-lc-escape.json", "valid": true, "why": "[\"sh\",\"-lc\",…] is the one explicit escape from the argv-only rule" },
+  {
+    "file": "valid-ordinary-task-script.json",
+    "valid": true,
+    "why": "CR-6 (validate attempt 29): the known-prefix rule matched with includes(), and \"sk-\" is a substring of \"task-\", \"risk-\" and \"disk-\" — so these three entirely ordinary npm script names were refused as secret material. A known prefix counts only at a token boundary."
+  },
   { "file": "missing-provenance.json", "valid": false, "reason": "provenance must be an array" },
   { "file": "missing-environment.json", "valid": false, "reason": "environment must be an array" },
   { "file": "unknown-top-level-key.json", "valid": false, "reason": "unknown key" },

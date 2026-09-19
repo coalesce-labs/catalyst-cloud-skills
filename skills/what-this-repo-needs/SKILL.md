@@ -4,7 +4,7 @@ description: >-
   What environment variable names does this repository need, and where does each one come from? Scans the repository offline (no login, no network) and lists the names in three groups — build/test, deploy-only, bindings — each with where it was found, what uses it, and where a local value would come from. Never reads or prints a value. Also validates a catalyst.env.json file the same way the cloud does. Use when someone asks "what does catalyst.env.json mean", "what env vars does this repo need", "why does the container need this", or before reviewing or writing a repository's environment declaration.
 allowed-tools: Bash(catalyst-skills:*) Bash(npx @catalyst-cloud/catalyst-skills:*)
 ---
-<!-- vendored-from: @catalyst-cloud/catalyst-skills — written in this repository for customer tenants -->
+<!-- vendored-from: @catalyst-cloud/catalyst-skills@0.7.0 — written in this repository for customer tenants -->
 
 # What this repository needs
 

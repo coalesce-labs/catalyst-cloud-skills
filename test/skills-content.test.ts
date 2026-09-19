@@ -491,21 +491,16 @@ describe("the package manifest", () => {
     }
   });
 
-<<<<<<< HEAD
-=======
   test("the ticket-reading reference names --all as the way past the first page (CTC-2010)", () => {
     const md = readFileSync(join(pkgRoot, "skills/catalyst-linear/references/reading-a-ticket.md"), "utf8");
     expect(md).toContain("--all");
   });
 
->>>>>>> 50ef4290c2dc45e3582950b4c1130765df4dec74
   test("the version matches the CHANGELOG's top entry, which is 0.7.0", () => {
     const changelog = readFileSync(join(pkgRoot, "CHANGELOG.md"), "utf8");
     expect(changelog).toContain(`## ${manifest.version}\n`);
     expect(changelog.indexOf("## 0.7.0")).toBe(changelog.indexOf("## "));
     expect(manifest.version).toBe("0.7.0");
-<<<<<<< HEAD
-=======
   });
 
   test("every shipped skill stamps the package version on its provenance line", () => {
@@ -542,7 +537,6 @@ describe("the package manifest", () => {
     const r = spawnSync(process.execPath, [join(root, "scripts", "sync-plugin-version.mjs"), "--check"], { encoding: "utf8" });
     expect(r.status, r.stdout + r.stderr).toBe(0);
     expect(r.stderr).not.toContain("ENOENT");
->>>>>>> 50ef4290c2dc45e3582950b4c1130765df4dec74
   });
 });
 
@@ -906,7 +900,6 @@ describe("no customer-facing prose states a readiness check count", () => {
   });
 });
 
-<<<<<<< HEAD
 // The ticket's fourth acceptance criterion: "The skill text explains why before the scan and asks for
 // review after it. A test pins both." Three of the assertions below are indexOf orderings, and an
 // ordering assertion over a string containing neither substring passes for the wrong reason — hence
@@ -961,7 +954,8 @@ describe("what-this-repo-needs explains before it scans and asks for review afte
     expect(ref).not.toMatch(/a name a `package\.json` script .* uses/);
     expect(ref).toMatch(/does not read `package\.json` scripts/);
   });
-=======
+});
+
 // ⭐ CTC-2560 — THE `description:` FIELD IS THE ONE PLACE A STALE COUNT IS READ FIRST AND CHECKED
 // LAST. An agent picks a skill from its description, so a number written there is load-bearing prose
 // with no reader downstream to contradict it. Two gates above already cover counts: the repo-wide
@@ -1236,5 +1230,4 @@ describe("no skill description names a readiness-check count the engine does not
       }
     });
   }
->>>>>>> 50ef4290c2dc45e3582950b4c1130765df4dec74
 });

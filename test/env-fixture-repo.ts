@@ -16,6 +16,13 @@ export const SENTINELS = ["SENTINEL-DB-VALUE-9f3a", "SENTINEL-URL-7c21"];
 // prove the leak, and this is the fixture the no-value test's positive control reads back.
 export const MULTILINE_VALUE_SENTINEL = "SENTINELPEMBODY7b41";
 
+// M-1 / CR-2 (CTC-2496 validate attempt 29): the same shape with NO quotes at all — the ordinary way
+// a PEM block is pasted into a `.env.example`-family file. The quote tracker above never engaged, so
+// the base64 body's own pre-"=" run (base64 padding ends a line with "=") was emitted as a variable
+// NAME. Measured on real material: 18 of 60 freshly generated RSA-2048 PKCS#8 keys have a final
+// base64 line that matches the scanner's assignment regex.
+export const UNQUOTED_MULTILINE_SENTINEL = "SENTINELUNQUOTEDPEM3c92";
+
 export const ENV_FIXTURE_FILES: Record<string, string> = {
   ".env.example": ["DATABASE_URL=", "export API_BASE_URL=https://example.test", "#OPTIONAL_FLAG=", "", "# just a comment about SOMETHING"].join("\n"),
   ".env": [`DATABASE_URL=postgres://user:${SENTINELS[0]}@localhost/app`, `API_BASE_URL=https://${SENTINELS[1]}.example`].join("\n"),
@@ -97,6 +104,17 @@ export const ENV_FIXTURE_FILES: Record<string, string> = {
     "PLAIN_AFTER_KEY=",
     "",
   ].join("\n"),
+  ".env.template": [
+    "UNQUOTED_PRIVATE_KEY=-----BEGIN RSA PRIVATE KEY-----",
+    "MIIEowIBAAKCAQEAxAAAABBBBCCCCDDDDEEEEFFFFGGGG",
+    `j6bFlvQ6${UNQUOTED_MULTILINE_SENTINEL}CqOH0RhKQ==`,
+    "-----END RSA PRIVATE KEY-----",
+    "PLAIN_AFTER_UNQUOTED_KEY=",
+    "",
+  ].join("\n"),
+  // CR-3 (validate attempt 29): a COMMENTED assignment whose value opens an unclosed quote used to
+  // turn the multi-line tracker on and swallow every following line — real names silently lost.
+  ".env.sample": ['#COMMENTED_OPEN="still open', "AFTER_COMMENTED_ONE=", "AFTER_COMMENTED_TWO=", ""].join("\n"),
   "src/index.ts": ['const a = process.env.STRIPE_SECRET_KEY;', 'const b = process.env["DATABASE_URL"];', "console.log(a, b);"].join("\n"),
 };
 

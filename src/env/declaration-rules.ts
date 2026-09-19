@@ -19,7 +19,19 @@
 
 const MAX_ENV_REFS = 128;
 const ENV_NAME_RE = /^[A-Za-z_][A-Za-z0-9_]*$/;
-const KNOWN_SECRET_PREFIXES = ["ghp_", "github_pat_", "sk-", "AKIA", "xoxb-", "xoxp-", "-----BEGIN"];
+// ⛔ A PREFIX ONLY COUNTS AT A TOKEN BOUNDARY (validate attempt 29, CR-6). These were matched with
+// `text.includes(p)`, and "sk-" is a SUBSTRING of "task-", "risk-" and "disk-" — so a declaration
+// whose setup step was `["npm","run","task-build"]` was refused as containing secret material. Every
+// prefix here is identifier-shaped, so a match is real only at the start of the text or after a
+// character that cannot be part of a token; PEM armour, which is not identifier-shaped and carries
+// its own unmistakable delimiter, keeps a plain substring match of its own.
+const KNOWN_SECRET_PREFIXES = ["ghp_", "github_pat_", "sk-", "AKIA", "xoxb-", "xoxp-"];
+const PEM_ARMOUR = "-----BEGIN";
+const KNOWN_SECRET_PREFIX_RE = new RegExp(`(?:^|[^A-Za-z0-9_])(?:${KNOWN_SECRET_PREFIXES.map(escapeForRegExp).join("|")})`);
+
+function escapeForRegExp(literal: string): string {
+  return literal.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
 const SECRET_ASSIGNMENT_RE = /\b([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(\S{4,})/g;
 const SECRET_NAME_RE = /(_TOKEN|_SECRET|_KEY|_PASSWORD|_CREDENTIAL)$|^(TOKEN|SECRET|PASSWORD)$/i;
 
@@ -83,8 +95,7 @@ export function validateDeclaration(doc: unknown): string[] {
   // environment[].name: there is nothing to classify there. The refusal names the FIELD, never the
   // matched text, so this function never prints what it found.
   for (const { path, text } of collectFreeText(rec)) {
-    const prefix = KNOWN_SECRET_PREFIXES.find((p) => text.includes(p));
-    if (prefix) {
+    if (text.includes(PEM_ARMOUR) || KNOWN_SECRET_PREFIX_RE.test(text)) {
       errors.push(`${path} appears to contain secret material (matches a known credential prefix)`);
       continue;
     }
