@@ -160,6 +160,13 @@ export function teamByKey(doc: TenantContract, key: string): ContractTeam {
   return team;
 }
 
+/** The contract's team for a key, or null. `teamByKey` refuses; this one answers "is it there?" for
+ *  readers (explain's cached dispatch gate) that must stay silent for a team the contract omits. */
+export function findTeamByKey(doc: TenantContract, key: string): ContractTeam | null {
+  const wanted = key.toUpperCase();
+  return doc.teams.find((t) => (t.key ?? "").toUpperCase() === wanted) ?? null;
+}
+
 export function teamById(doc: TenantContract, id: string): ContractTeam | null {
   return doc.teams.find((t) => t.id === id) ?? null;
 }

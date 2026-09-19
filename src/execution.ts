@@ -3,8 +3,9 @@
 // exclusion reason and unknown the cloud names; an unlisted reason prints its raw string, never nothing.
 import { flagBool, flagString, positionals, type ParsedArgs } from "./args.js";
 import { normalizeBaseUrl, requireConfig, type Ctx } from "./config.js";
-import { loadContract } from "./contract.js";
-import { CliError, UsageError } from "./errors.js";
+import { findTeamByKey, loadContract } from "./contract.js";
+import type { ContractDispatchGate } from "./contract-types.js";
+import { CliError, MeError, UsageError } from "./errors.js";
 import { apiClient } from "./transport.js";
 
 /** Every exclusion reason the eligibility evaluator names, in plain English. */
@@ -91,12 +92,35 @@ export function describeReason(reason: string | undefined): string {
 /**
  * The team-level reason nothing in a team can start, sent by the cloud beside the eligibility rows when
  * the team's dispatch/pr/done/canceled stages are not mapped to live Linear stages. Absent when the
- * team's gate is open, and on an older cloud.
+ * team's gate is open, and on an older cloud eligibility response — but a cloud at contract 1.6.0+
+ * carries the same fact on the cached tenant contract too (`ContractTeam.dispatchGate`), which
+ * `cmdExplain` reads as a fallback when the live eligibility read is unavailable or silent (CTC-2208).
  */
 export interface DispatchGate {
   cause: string;
-  missingSlots?: string[];
-  remedy?: string;
+  missingSlots?: readonly string[];
+  remedy?: string | null;
+  /** Which read produced it: the live eligibility response, or the cached tenant contract. */
+  source?: "live" | "contract";
+}
+
+/** The contract spells the same concept `status`; normalize onto the `cause` the renderer uses.
+ *  `"open"` and an absent/shapeless gate both mean "nothing to report" — null. An unrecognized
+ *  status is passed through as `cause`, never swallowed (D2/D3 — CTC-2208). */
+export function gateFromContract(g: ContractDispatchGate | undefined): DispatchGate | null {
+  if (!g || typeof g.status !== "string") return null;
+  if (g.status === "open") return null;
+  return { cause: g.status, missingSlots: g.missingSlots, remedy: g.remedy, source: "contract" };
+}
+
+/** True when the live eligibility read failed in a way a cached gate may stand in for: the read was
+ *  UNAVAILABLE (network/timeout/non-JSON, or a 404/5xx). A cloud that ANSWERED — 401/403/400 — is
+ *  refusing, not silent, and a cached gate must never hide that refusal behind an unrelated mapping
+ *  story (D4 — CTC-2208). */
+export function liveReadMayFallBack(err: unknown): boolean {
+  if (err instanceof MeError) return true;
+  if (err instanceof CliError) return err.status === undefined || err.status === 404 || err.status >= 500;
+  return false;
 }
 
 export function renderDispatchGate(ticket: string, team: string, gate: DispatchGate): string {
@@ -165,28 +189,95 @@ export async function cmdExplain(args: ParsedArgs, ctx: Ctx): Promise<number> {
   if (dash <= 0) throw new UsageError(`"${ticket}" is not a ticket identifier (expected KEY-123)`);
   const team = ticket.slice(0, dash).toUpperCase();
   const api = apiClient(cfg, ctx);
-  const res = await api.getJson<{
-    eligibility?: { rows?: EligibilityRow[]; dispatchGate?: DispatchGate };
-    rows?: EligibilityRow[];
-  }>("/api/v1/work-eligibility", {
-    query: { team, capabilities: doc.ladder.phases.join(",") },
-  });
-  const rows = res.body.eligibility?.rows ?? res.body.rows ?? [];
-  const row = rows.find((r) => String(r.ticket ?? "").toUpperCase() === ticket.toUpperCase()) ?? null;
-  // No dispatch row is not proof of non-existence: probe the mirror so a Backlog ticket reads as known.
-  // The mirror compares identifiers exactly, so normalize (uppercase) as the row lookup above does —
-  // otherwise `explain eng-7` probes a lowercase id, 404s, and reports an existing ENG-7 as unknown.
+  // The cached contract's own gate for this team. Read BEFORE the live call so it can stand in when
+  // that call cannot be made at all. A team absent from the contract simply has none.
+  const cachedGate = gateFromContract(findTeamByKey(doc, team)?.dispatchGate);
+
+  let row: EligibilityRow | null = null;
   let knownState: string | null = null;
+  let liveGate: DispatchGate | null = null;
+  let liveFailure: Error | null = null;
+  let liveGateRaw: DispatchGate | null = null;
+  // This `try` wraps the eligibility read ALONE. It used to span the mirror probe below as well,
+  // which broke both reads at once: a probe outage was reported as "the live eligibility read was
+  // unavailable", and an eligibility outage skipped the probe entirely so `knownState` stayed null
+  // and a mistyped id inherited the team-wide gate — the very bug 4defc34 was written to fix.
+  try {
+    const res = await api.getJson<{
+      eligibility?: { rows?: EligibilityRow[]; dispatchGate?: DispatchGate };
+      rows?: EligibilityRow[];
+    }>("/api/v1/work-eligibility", { query: { team, capabilities: doc.ladder.phases.join(",") } });
+    const rows = res.body.eligibility?.rows ?? res.body.rows ?? [];
+    row = rows.find((r) => String(r.ticket ?? "").toUpperCase() === ticket.toUpperCase()) ?? null;
+    liveGateRaw = res.body.eligibility?.dispatchGate ?? null;
+  } catch (err) {
+    // A cached gate is an answer the live read cannot give right now — but ONLY for a failure that
+    // means "unavailable". A 401/403/400 is the cloud answering, and must still refuse (CTC-2208 D4).
+    if (!cachedGate || !liveReadMayFallBack(err)) throw err;
+    liveFailure = err instanceof Error ? err : new Error(String(err));
+  }
+
+  // No dispatch row is not proof of non-existence: probe the mirror so a Backlog ticket reads as
+  // known. The mirror compares identifiers exactly, so normalize as the row lookup above does —
+  // otherwise `explain eng-7` probes a lowercase id, 404s, and reports an existing ENG-7 unknown.
+  // Deliberately OUTSIDE the `try`: the probe is the ONLY read that can prove this id exists, so it
+  // must still run when the eligibility read was unavailable, and its own failure must surface as
+  // itself — a refusal naming the /issues/ read — never as a gate paragraph or as an eligibility
+  // failure. That is the pre-4defc34 behaviour for this call and it is restored unchanged.
   if (!row) {
     const probe = await api.getJson<{ state?: unknown }>(`/api/v1/issues/${encodeURIComponent(ticket.toUpperCase())}`, { accept: [404] });
     if (probe.status !== 404) knownState = typeof probe.body?.state === "string" ? probe.body.state : "unknown";
   }
-  // The gate is TEAM-wide: it can say why a real ticket in that team cannot start, never that this id
-  // exists. Applied only when the mirror probe above found the ticket; a 404 keeps the unknown wording.
-  const gate = !row && knownState ? (res.body.eligibility?.dispatchGate ?? null) : null;
-  const explanation = renderExplain(ticket, row, team, knownState, gate);
+  // The gate is TEAM-wide: it can say why a real ticket in that team cannot start, never that this
+  // id exists. Applied only when the probe found the ticket; a 404 keeps the unknown wording.
+  liveGate = !row && knownState && liveGateRaw ? { ...liveGateRaw, source: "live" } : null;
+
+  // The cached gate is team-wide too, so it answers on exactly the same condition as the live one:
+  // the mirror found the ticket and no row explains it. An unavailable eligibility read licenses the
+  // FALLBACK, never the claim that this id exists.
+  const usingCached = !liveGate && !row && knownState !== null;
+  const gate = liveGate ?? (usingCached ? cachedGate : null);
+  // Both sides spoke and disagreed: the live read wins, and the paragraph says the cache disagreed.
+  // Computed together with its sentence so the "live is non-null here" fact never needs re-asserting.
+  let overridden: DispatchGate | null = null;
+  let overriddenNote: string | null = null;
+  if (liveGate && cachedGate && liveGate.cause !== cachedGate.cause) {
+    overridden = cachedGate;
+    overriddenNote = `The cached tenant contract says ${cachedGate.cause}; this live eligibility read says ${liveGate.cause} and wins.`;
+  }
+  // A live read that produced a row contradicts a cached "nothing in this team can start".
+  const contradictedByRow = !liveFailure && row && cachedGate ? cachedGate : null;
+
+  const parts = [renderExplain(ticket, row, team, knownState, gate)];
+  if (gate && gate === cachedGate) {
+    parts.push(
+      liveFailure
+        ? `Read from the cached tenant contract: the live eligibility read was unavailable (${liveFailure.message}).`
+        : "Read from the cached tenant contract: this cloud's eligibility read sent no dispatch gate.",
+    );
+  }
+  if (overriddenNote) parts.push(overriddenNote);
+  // The mirror answered and the eligibility read did not: say so, rather than let a network outage
+  // read as a confident verdict from an explainer this run never actually reached.
+  if (liveFailure && gate !== cachedGate) {
+    parts.push(`The live eligibility read was unavailable (${liveFailure.message}); only the mirror answered.`);
+  }
+  if (contradictedByRow) {
+    parts.push(`The cached tenant contract says ${contradictedByRow.cause} for team ${team}; this live eligibility read has a row for ${ticket} and wins.`);
+  }
+  const explanation = parts.join(" ");
+
   if (args.json) {
-    ctx.stdout(JSON.stringify({ ticket, row, ...(gate ? { dispatchGate: gate } : {}), explanation }));
+    ctx.stdout(
+      JSON.stringify({
+        ticket,
+        row,
+        ...(gate ? { dispatchGate: gate } : {}),
+        ...(overridden || contradictedByRow ? { dispatchGateOverridden: overridden ?? contradictedByRow } : {}),
+        ...(liveFailure ? { liveReadFailed: liveFailure.message } : {}),
+        explanation,
+      }),
+    );
   } else {
     ctx.stdout(explanation);
   }

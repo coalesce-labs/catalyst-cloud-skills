@@ -38,6 +38,21 @@ export interface ContractReadinessCheck {
   count?: number;
 }
 
+/**
+ * OPTIONAL: the team's dispatch gate as the CONTRACT spells it. An older cloud omits it and every
+ * reader treats absence as "say nothing" — the `skillsBundle?` precedent below.
+ *
+ * ⛔ NOTE THE FIELD NAME. The eligibility response spells this same concept `cause`
+ * (`DispatchGate` in execution.ts); the contract spells it `status`. Both are real wire shapes.
+ * `status` is typed `string`, not a union: an unrecognized value must be PRINTED as the cloud
+ * spelled it, never swallowed. `"open"` is the one open value; anything else is a shut gate.
+ */
+export interface ContractDispatchGate {
+  status: string;
+  missingSlots?: readonly string[];
+  remedy?: string | null;
+}
+
 export interface ContractTeam {
   id: string;
   key: string | null;
@@ -53,6 +68,7 @@ export interface ContractTeam {
     expiresAt: number | null;
     workflowRev: number | null;
   };
+  dispatchGate?: ContractDispatchGate;
 }
 
 export interface ContractRoute {

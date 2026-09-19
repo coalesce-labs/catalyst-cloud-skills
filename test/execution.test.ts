@@ -3,9 +3,10 @@
 // with the settings URL and exit 0; running and queue print the fixture rows.
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from "vitest";
 import { main } from "../src/cli";
-import { EXCLUSION_REASONS, UNKNOWN_REASONS, describeReason, renderExplain } from "../src/execution";
+import { CliError, MeError } from "../src/errors";
+import { EXCLUSION_REASONS, UNKNOWN_REASONS, describeReason, gateFromContract, liveReadMayFallBack, renderExplain } from "../src/execution";
 import { fixtureIssues, startMeFixture, type FixtureServer } from "./fixture";
-import { makeCtx, seedJoined, tempHome, type TestCtx } from "./helpers";
+import { makeCtx, seedJoined, seedTeamGate, tempHome, type TestCtx } from "./helpers";
 
 let server: FixtureServer;
 let home: string;
@@ -169,6 +170,200 @@ describe("explain", () => {
     expect(renderExplain("X-1", { status: "unknown", unknown: "ordering_stale" }, "X")).toContain("cannot be judged (no queue position): the dispatch order is stale.");
     expect(renderExplain("X-1", { status: "excluded", reason: "runner_image_breaker", detail: "sha abc", failure: { weird: true } }, "X")).toContain('Last failure: {"weird":true}.');
     expect(renderExplain("X-1", { status: "excluded", reason: "ask_shape_suspected", marker: "ask_template_body", release: "catalyst-not-an-ask", nextPhase: "research" }, "X")).toMatch(/Marker: ask_template_body\. Next phase would be research\. Release: catalyst-not-an-ask\./);
+  });
+});
+
+describe("gateFromContract", () => {
+  test("normalizes the contract's `status` onto the renderer's `cause`, tagged as cached", () => {
+    expect(gateFromContract({ status: "mapping_missing", missingSlots: ["dispatch"], remedy: "Map it." })).toEqual({
+      cause: "mapping_missing",
+      missingSlots: ["dispatch"],
+      remedy: "Map it.",
+      source: "contract",
+    });
+  });
+  test("an open gate, an absent gate and a shapeless gate are all 'no gate'", () => {
+    expect(gateFromContract({ status: "open", missingSlots: [], remedy: null })).toBeNull();
+    expect(gateFromContract(undefined)).toBeNull();
+    expect(gateFromContract({} as never)).toBeNull();
+  });
+  test("an unknown status is passed through, not swallowed", () => {
+    expect(gateFromContract({ status: "frobnicated" })?.cause).toBe("frobnicated");
+  });
+});
+
+describe("liveReadMayFallBack", () => {
+  test("an unavailable read may fall back; a cloud that answered may not", () => {
+    expect(liveReadMayFallBack(new MeError("could not reach", "network"))).toBe(true);
+    expect(liveReadMayFallBack(new MeError("non-JSON body", "shape"))).toBe(true);
+    expect(liveReadMayFallBack(new CliError("boom", "server", 2, 503))).toBe(true);
+    expect(liveReadMayFallBack(new CliError("not found", "nf", 2, 404))).toBe(true);
+    expect(liveReadMayFallBack(new CliError("unauthorized", "unauthorized", 2, 401))).toBe(false);
+    expect(liveReadMayFallBack(new CliError("forbidden", "forbidden", 2, 403))).toBe(false);
+    expect(liveReadMayFallBack(new CliError("bad field", "invalid", 2, 400))).toBe(false);
+    expect(liveReadMayFallBack(new Error("something else"))).toBe(false);
+  });
+});
+
+describe("explain reads the dispatch gate from the cached contract", () => {
+  // The live eligibility read is unavailable — every other route (the mirror probe, /me, the
+  // contract) still reaches the real fixture server.
+  function offlineCtx(h: string): TestCtx {
+    const impl: typeof fetch = async (input, init) => {
+      if (String(input).includes("/api/v1/work-eligibility")) throw new TypeError("simulated network outage");
+      return fetch(input as Parameters<typeof fetch>[0], init);
+    };
+    return makeCtx(h, { fetch: impl });
+  }
+  // The live eligibility read is ANSWERED with a refusal (401) — never unavailable — so a cached
+  // gate must not stand in for it (D4).
+  function unauthorizedCtx(h: string): TestCtx {
+    const impl: typeof fetch = async (input, init) => {
+      if (String(input).includes("/api/v1/work-eligibility")) {
+        return new Response(JSON.stringify({ error: "unauthorized" }), { status: 401, headers: { "content-type": "application/json" } });
+      }
+      return fetch(input as Parameters<typeof fetch>[0], init);
+    };
+    return makeCtx(h, { fetch: impl });
+  }
+
+  test("AC1a — an unavailable live read falls back to the cached gate, leading with the gate and its remedy", async () => {
+    seedTeamGate(home, 0, {
+      status: "mapping_missing",
+      missingSlots: ["dispatch", "pr"],
+      remedy: "A tenant admin opens Settings → Linear teams → ENG and presses Map my stages.",
+    });
+    const c = offlineCtx(home);
+    expect(await main(["explain", "ENG-1"], c)).toBe(0);
+    const text = c.out.join("\n");
+    expect(text).toContain("ENG-1 cannot start: team ENG has no saved stage mapping for dispatch, pr.");
+    expect(text).toContain("A tenant admin opens Settings → Linear teams → ENG and presses Map my stages.");
+    expect(text).toContain("Read from the cached tenant contract: the live eligibility read was unavailable");
+    expect(text).not.toContain("not a dispatch state");
+  });
+
+  test("AC1b — the same for mapping_state_unresolved, and --json carries source and liveReadFailed", async () => {
+    seedTeamGate(home, 0, { status: "mapping_state_unresolved", missingSlots: ["dispatch"], remedy: "Re-map it." });
+    const c = offlineCtx(home);
+    expect(await main(["explain", "ENG-1", "--json"], c)).toBe(0);
+    const j = JSON.parse(c.out.at(-1)!) as { dispatchGate?: { cause: string; source: string; remedy: string }; liveReadFailed?: string; explanation: string };
+    expect(j.dispatchGate).toMatchObject({ cause: "mapping_state_unresolved", source: "contract", remedy: "Re-map it." });
+    expect(j.liveReadFailed).toContain("simulated network outage");
+    expect(j.explanation).toContain("the stage team ENG mapped for dispatch no longer exists in Linear. Re-map it.");
+  });
+
+  test("AC1c — an unavailable live read with NO cached gate still refuses exactly as before", async () => {
+    const c = offlineCtx(home); // no seedTeamGate
+    expect(await main(["explain", "ENG-1"], c)).toBe(2);
+    expect(c.out.join("\n")).toBe("");
+    expect(c.err.join("\n")).toContain("could not reach");
+  });
+
+  test("AC1c2 — a cached gate never stands in for a credential refusal", async () => {
+    seedTeamGate(home, 0, { status: "mapping_missing", missingSlots: ["dispatch"], remedy: "Map it." });
+    const c = unauthorizedCtx(home);
+    expect(await main(["explain", "ENG-1"], c)).toBe(2);
+    expect(c.out.join("\n")).toBe("");
+    expect(c.err.join("\n")).toContain("401");
+  });
+
+  test("AC1d — a live row beats a stale cached shut gate, and says so", async () => {
+    seedTeamGate(home, 0, { status: "mapping_missing", missingSlots: ["dispatch"], remedy: "Map it." });
+    expect(await main(["explain", "ENG-1"], ctx)).toBe(0);
+    expect(ctx.out.join("\n")).toBe(
+      "ENG-1 is offered (position 1) for phase research. " +
+        "The cached tenant contract says mapping_missing for team ENG; this live eligibility read has a row for ENG-1 and wins.",
+    );
+  });
+
+  test("AC1e — two gates that disagree: the live read wins and the paragraph says so", async () => {
+    seedTeamGate(home, 0, { status: "mapping_missing", missingSlots: ["dispatch"], remedy: "Map it." });
+    server.eligibilityByTeam.ENG = {
+      team: "ENG",
+      eligibility: { rows: [], dispatchGate: { cause: "mapping_state_unresolved", missingSlots: ["dispatch"], remedy: "Re-map it." } },
+    };
+    server.issues = fixtureIssues().map((i) => (i.identifier === "ENG-7" ? { ...i, state: "Todo" } : i));
+    try {
+      expect(await main(["explain", "ENG-7", "--json"], ctx)).toBe(0);
+      const j = JSON.parse(ctx.out.at(-1)!) as { dispatchGate?: { cause: string; source: string }; dispatchGateOverridden?: { cause: string; source: string }; explanation: string };
+      expect(j.dispatchGate).toMatchObject({ cause: "mapping_state_unresolved", source: "live" });
+      expect(j.dispatchGateOverridden).toMatchObject({ cause: "mapping_missing", source: "contract" });
+      expect(j.explanation).toContain("The cached tenant contract says mapping_missing; this live eligibility read says mapping_state_unresolved and wins.");
+    } finally {
+      delete server.eligibilityByTeam.ENG;
+      server.issues = fixtureIssues();
+    }
+  });
+
+  test("AC1f — a cloud older than the eligibility change: the live read sends no gate, the cache answers", async () => {
+    seedTeamGate(home, 0, { status: "mapping_missing", missingSlots: ["dispatch"], remedy: "Map it." });
+    server.issues = fixtureIssues().map((i) => (i.identifier === "ENG-7" ? { ...i, state: "Backlog" } : i));
+    try {
+      expect(await main(["explain", "ENG-7"], ctx)).toBe(0);
+      const text = ctx.out.join("\n");
+      expect(text).toContain("ENG-7 cannot start: team ENG has no saved stage mapping for dispatch. Map it.");
+      expect(text).toContain("Read from the cached tenant contract: this cloud's eligibility read sent no dispatch gate.");
+      expect(text).not.toContain("not a dispatch state");
+    } finally {
+      server.issues = fixtureIssues();
+    }
+  });
+
+  test("AC1g — a team-wide cached gate still never proves an id the mirror 404s on exists", async () => {
+    seedTeamGate(home, 0, { status: "mapping_missing", missingSlots: ["dispatch"], remedy: "Map it." });
+    expect(await main(["explain", "ENG-404"], ctx)).toBe(0);
+    expect(ctx.out.join("\n")).toBe("ENG-404: not in the ENG eligibility explainer — the ticket is unknown to the mirror, terminal, or on another team.");
+  });
+
+  test("AC1h — a team absent from the contract does not crash the cached-gate read", async () => {
+    server.eligibilityByTeam.HAG = { team: "HAG", eligibility: { rows: [] } };
+    try {
+      expect(await main(["explain", "HAG-404"], ctx)).toBe(0); // findTeamByKey → null, no throw
+    } finally {
+      delete server.eligibilityByTeam.HAG;
+    }
+  });
+
+  // The mirror probe is the ONLY read that can prove an id exists; it is not reached through the
+  // eligibility route at all. Everything below pins that the fallback never speaks for it.
+  test("AC1i — the offline twin of AC1g: an unavailable live read still never proves a 404 id exists", async () => {
+    seedTeamGate(home, 0, { status: "mapping_missing", missingSlots: ["dispatch"], remedy: "Map it." });
+    const c = offlineCtx(home);
+    expect(await main(["explain", "ENG-404"], c)).toBe(0);
+    const text = c.out.join("\n");
+    // The team-wide mapping verdict must NOT be inherited by an id the mirror does not know.
+    expect(text).toContain("ENG-404: not in the ENG eligibility explainer — the ticket is unknown to the mirror, terminal, or on another team.");
+    expect(text).not.toContain("cannot start");
+    expect(text).not.toContain("no saved stage mapping");
+    expect(text).not.toContain("Map it.");
+    // ...and the outage is still named, so a network failure never reads as a confident verdict.
+    expect(text).toContain("The live eligibility read was unavailable");
+  });
+
+  test("AC1i2 — --json on that same read carries no dispatchGate", async () => {
+    seedTeamGate(home, 0, { status: "mapping_missing", missingSlots: ["dispatch"], remedy: "Map it." });
+    const c = offlineCtx(home);
+    expect(await main(["explain", "ENG-404", "--json"], c)).toBe(0);
+    const j = JSON.parse(c.out.at(-1)!) as { dispatchGate?: unknown; liveReadFailed?: string };
+    expect(j.dispatchGate).toBeUndefined();
+    expect(j.liveReadFailed).toContain("simulated network outage");
+  });
+
+  test("AC1j — a mirror-probe outage is reported as itself, never as an eligibility failure", async () => {
+    seedTeamGate(home, 0, { status: "mapping_missing", missingSlots: ["dispatch"], remedy: "Map it." });
+    const impl: typeof fetch = async (input, init) => {
+      if (String(input).includes("/api/v1/issues/")) throw new TypeError("mirror probe outage");
+      return fetch(input as Parameters<typeof fetch>[0], init);
+    };
+    const c = makeCtx(home, { fetch: impl });
+    // The eligibility read SUCCEEDED. The cached gate may not stand in for the read that did fail,
+    // and the paragraph must never quote an /issues/ URL as an eligibility failure.
+    expect(await main(["explain", "ENG-404"], c)).toBe(2);
+    expect(c.out.join("\n")).toBe("");
+    const err = c.err.join("\n");
+    expect(err).toContain("/api/v1/issues/ENG-404");
+    expect(err).toContain("mirror probe outage");
+    expect(err).not.toContain("eligibility read was unavailable");
   });
 });
 

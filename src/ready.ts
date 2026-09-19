@@ -232,6 +232,26 @@ export async function readyReport(ctx: Ctx, deps: ReadyDeps): Promise<ReadyRepor
     const who = whoCanAnswer(doc);
     for (const team of doc.teams) {
       const label = team.key ?? team.id;
+      // The team's dispatch gate, straight off the cached contract: an older cloud omits it and this
+      // emits nothing (the `skillsBundle` precedent above). A shut gate means NOTHING in the team can
+      // start, so it is a FAIL carrying the cloud's own remedy as the fix — never an informational
+      // note. It is emitted before the `unchecked` branch below so a team whose readiness was never
+      // checked still reports its gate, which is exactly the team most likely to be unmapped.
+      const dg = team.dispatchGate;
+      if (dg && typeof dg.status === "string") {
+        const slots = (dg.missingSlots ?? []).join(", ");
+        checks.push(
+          dg.status === "open"
+            ? { id: `team:${label}:dispatchGate`, ok: true, line: `team ${label}: dispatch gate open` }
+            : {
+                id: `team:${label}:dispatchGate`,
+                ok: false,
+                line: `team ${label}: dispatch gate ${dg.status}${slots ? ` (${slots})` : ""}, blocking`,
+                fix: dg.remedy ?? `open settings for team ${label} and map its stages`,
+                who,
+              },
+        );
+      }
       if (team.readiness.status === "unchecked") {
         checks.push({ id: `team:${label}`, ok: true, note: true, line: `team ${label}: readiness not checked yet` });
         continue;

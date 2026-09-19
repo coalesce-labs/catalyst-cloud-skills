@@ -11,7 +11,7 @@ import { readyReport } from "../src/ready";
 import { PROVENANCE_MARKER } from "../src/skill-shape";
 import { installSkills } from "../src/skills";
 import { FIXTURE_ME_USER, startMeFixture, type FixtureServer } from "./fixture";
-import { makeCtx, seedJoined, seedReplica, seedWriterState, tempHome, type TestCtx } from "./helpers";
+import { makeCtx, seedJoined, seedReplica, seedTeamGate, seedWriterState, tempHome, type TestCtx } from "./helpers";
 
 const STAMP_RE = new RegExp(`${PROVENANCE_MARKER.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(@\\S+)?`);
 
@@ -287,6 +287,66 @@ describe("ready never recommends starting the replica (CTC-2499)", () => {
     expect(text).toContain("/snapshot 503");
     expect(text).toContain("catalyst-skills replica start --detach");
     expect(text.split("\n").filter((l) => l.startsWith("note  replica:"))).toHaveLength(1);
+  });
+});
+
+describe("ready prints each team's dispatch gate (CTC-2208)", () => {
+  test("AC2a — a shut gate is a FAIL with the cloud's own remedy as the fix, and the verdict is NOT READY", async () => {
+    await seedJoined(home, server);
+    installSkills(defaultSkillsDirFor(home), {});
+    seedTeamGate(home, 0, { status: "mapping_missing", missingSlots: ["dispatch", "pr"], remedy: "Open Settings → Linear teams → ENG and press Map my stages." });
+    expect(await main(["ready"], ctx)).toBe(1);
+    const text = ctx.out.join("\n");
+    expect(text).toMatch(/^FAIL {2}team ENG: dispatch gate mapping_missing \(dispatch, pr\), blocking$/m);
+    expect(text).toMatch(/^ {6}fix: Open Settings → Linear teams → ENG and press Map my stages\.$/m);
+    expect(text).toMatch(/^ {6}who: owner u-fixture-owner, admin u-fixture-admin$/m);
+    expect(text.split("\n").at(-1)).toBe("NOT READY");
+  });
+
+  test("AC2b — an open gate reads ok and the verdict stays READY", async () => {
+    await seedJoined(home, server);
+    installSkills(defaultSkillsDirFor(home), {});
+    seedTeamGate(home, 0, { status: "open", missingSlots: [], remedy: null });
+    seedTeamGate(home, 1, { status: "open", missingSlots: [], remedy: null });
+    expect(await main(["ready", "--json"], ctx)).toBe(0);
+    const j = JSON.parse(ctx.out.at(-1)!) as { ready: boolean; checks: { id: string; ok: boolean; line: string }[] };
+    expect(j.ready).toBe(true);
+    expect(j.checks.filter((c) => c.id.endsWith(":dispatchGate"))).toEqual([
+      { id: "team:ENG:dispatchGate", ok: true, line: "team ENG: dispatch gate open" },
+      { id: "team:OPS:dispatchGate", ok: true, line: "team OPS: dispatch gate open" },
+    ]);
+  });
+
+  test("AC2c — a contract with no dispatchGate (an older cloud) emits nothing and does not crash", async () => {
+    await seedJoined(home, server);
+    installSkills(defaultSkillsDirFor(home), {});
+    expect(await main(["ready", "--json"], ctx)).toBe(0);
+    const j = JSON.parse(ctx.out.at(-1)!) as { ready: boolean; checks: { id: string }[] };
+    expect(j.ready).toBe(true);
+    expect(j.checks.filter((c) => c.id.endsWith(":dispatchGate"))).toEqual([]);
+  });
+
+  test("AC2d — a team whose readiness was never checked still gets its gate line", async () => {
+    await seedJoined(home, server); // OPS is readiness.status === "unchecked"
+    installSkills(defaultSkillsDirFor(home), {});
+    seedTeamGate(home, 1, { status: "mapping_missing", missingSlots: ["dispatch"], remedy: "Map OPS." });
+    await main(["ready"], ctx);
+    const text = ctx.out.join("\n");
+    expect(text).toMatch(/^FAIL {2}team OPS: dispatch gate mapping_missing \(dispatch\), blocking$/m);
+    expect(text).toMatch(/^ {6}fix: Map OPS\.$/m);
+    expect(text).toMatch(/^note {2}team OPS: readiness not checked yet$/m); // still emitted, after it
+  });
+
+  test("AC2e — a status this bundle does not know is printed as the cloud spelled it, and a null remedy falls back", async () => {
+    await seedJoined(home, server);
+    installSkills(defaultSkillsDirFor(home), {});
+    seedTeamGate(home, 0, { status: "frobnicated", missingSlots: [], remedy: null });
+    expect(await main(["ready", "--json"], ctx)).toBe(1);
+    const j = JSON.parse(ctx.out.at(-1)!) as { checks: { id: string; ok: boolean; line: string; fix?: string }[] };
+    const c = j.checks.find((x) => x.id === "team:ENG:dispatchGate")!;
+    expect(c).toMatchObject({ ok: false });
+    expect(c.line).toBe("team ENG: dispatch gate frobnicated, blocking");
+    expect(c.fix).toBe("open settings for team ENG and map its stages");
   });
 });
 
