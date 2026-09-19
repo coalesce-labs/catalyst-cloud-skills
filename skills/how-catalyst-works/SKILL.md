@@ -1,10 +1,10 @@
 ---
 name: how-catalyst-works
 description: >-
-  How Catalyst Cloud runs a ticket on the customer's own tenant, as facts an agent loads on demand: the eight-phase ladder and what each phase produces, the eleven board slots and this team's live stage map, what happens when a phase fails (retry, backoff, Remediate, park), how the queue is ordered and routed and every reason a ticket is excluded, and the coding-account model. Use when a person asks "how does this work?", "why did it do that?", "why is this stuck?", "what runs next?" or "how does it prioritise?". Read-only; its scripts explain one ticket's eligibility in plain English, show what is running and queued, and print the tenant's stage map and thresholds straight from the contract.
+  How Catalyst Cloud runs a ticket on the customer's own tenant, as facts an agent loads on demand: the eight-phase ladder and what each phase produces, the eleven board slots and this team's live stage map, what happens when a phase fails (retry, backoff, Remediate, park), how the queue is ordered and routed and every reason a ticket is excluded, the coding-account model, and which settings screen governs which rule. Use when a person asks "how does this work?", "why did it do that?", "why is this stuck?", "what runs next?", "how does it prioritise?" or "what does this setting do, where is it set?". Read-only; its scripts explain one ticket's eligibility in plain English, show what is running and queued, and print the tenant's stage map and thresholds straight from the contract.
 allowed-tools: Bash(catalyst-skills:*) Bash(npx @catalyst-cloud/catalyst-skills:*)
 ---
-<!-- vendored-from: @catalyst-cloud/catalyst-skills@0.7.0 — written in this repository for customer tenants -->
+<!-- vendored-from: @catalyst-cloud/catalyst-skills@0.8.0 — written in this repository for customer tenants -->
 
 # How Catalyst works
 
@@ -31,10 +31,12 @@ Exit codes: 0 answered, 1 not found or a usage error, 2 this machine is not conn
 | a phase FAILED, a card went to Remediate, a ticket is parked or on hold | `references/when-a-phase-fails.md` |
 | "what runs next, why not this one, what does this exclusion reason mean?" | `references/what-runs-next.md` |
 | "why is nothing running", walls, quarantine, which provider ran a phase | `references/coding-accounts.md` |
+| "what does this setting do, where is it set, who can change it?" | `references/settings-and-where-they-live.md` |
 
 ## Rules
 
 - **Print, never recall.** A stage name, label, threshold or route in your answer must have come from a script's output in this session.
+- **A setting has a page.** Name the screen, its route and the rule from `references/settings-and-where-they-live.md`; never answer a settings question from memory, and never invent a route.
 - **A reason is a layer.** Translate an exclusion reason through `references/what-runs-next.md`; name what releases it and who can do that (a clock, a comment, a push, an operator).
 - **Unknown is not absent.** An `unknown` verdict from the explainer means the cloud could not look; report it as inconclusive.
 - **System causes are one alert.** A provider outage, the runner image breaker or a paused repository holds many tickets for one reason; never escalate it ticket by ticket.
