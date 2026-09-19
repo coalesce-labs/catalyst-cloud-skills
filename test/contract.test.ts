@@ -5,7 +5,7 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from "vitest";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { contractPathFor } from "../src/config";
-import { contractVersionInRange, loadContract, routePath, stageIdForSlot, teamByKey, labelId, teamForTicket } from "../src/contract";
+import { contractVersionInRange, findTeamByKey, loadContract, routePath, stageIdForSlot, teamByKey, labelId, teamForTicket } from "../src/contract";
 import { CliError, main } from "../src/cli";
 import { FIXTURE_ETAG, FIXTURE_USER_KEY, startMeFixture, type FixtureServer } from "./fixture";
 import { joinedConfig, makeCtx, seedJoined, tempHome, type TestCtx } from "./helpers";
@@ -154,6 +154,12 @@ describe("helpers", () => {
     expect(teamForTicket(doc, "ENG-4").key).toBe("ENG");
     expect(() => teamForTicket(doc, "nodash")).toThrow(CliError);
     expect(joinedConfig(server).account).toBe("tenant-3");
+  });
+  test("findTeamByKey answers null for a team the contract does not carry, where teamByKey refuses", () => {
+    const doc = server.contract;
+    expect(findTeamByKey(doc, "eng")?.key).toBe("ENG");
+    expect(findTeamByKey(doc, "HAG")).toBeNull();
+    expect(() => teamByKey(doc, "HAG")).toThrow();
   });
 });
 

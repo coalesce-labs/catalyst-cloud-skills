@@ -2,6 +2,8 @@
 
 ## 0.7.0
 
+`explain` and `ready` now name a team that cannot start work even when the live read is not available. Your tenant's contract carries each team's dispatch gate, and this machine already keeps a copy of that contract on disk; until now only the live eligibility read could name the gate, so a network hiccup, or a cloud older than that read, left `explain` printing nothing at all. `explain` now leads with the gate and the fix from the cached contract when the live read is unavailable or sends no gate, and says which of the two it read; when both answer and disagree, the live read wins and the paragraph says the cached one disagreed. A refusal from the cloud — a credential that is not accepted, for instance — is still a refusal, never quietly replaced by a cached answer. `ready` now prints one dispatch-gate line per team: open teams read `ok`, and a team whose stages are not saved reads `FAIL` with the remedy your tenant sent and turns the verdict to NOT READY, because nothing in that team can start. A cloud that does not send the gate changes nothing.
+
 `catalyst-skills ready` now tells you when the skills on this machine, or the CLI itself, are behind the newest published release — it names the version you have, the version that is out, and the one command that updates each, as a note that never changes the verdict. Every skill file now records the bundle version it was vendored at, so a copy installed months ago is visible as such instead of only by diffing files. The check reads the npm registry's `dist-tags.latest`, capped at 1500ms and cached for six hours, and never blocks: an unreachable registry is one note that says so, and `--offline` (or `CATALYST_SKILLS_OFFLINE=1`) skips the lookup entirely.
 
 ## 0.6.1
