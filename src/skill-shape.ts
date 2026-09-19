@@ -9,6 +9,19 @@ export const MAX_SKILL_LINES = 80;
 export const MAX_REFERENCE_LINES = 150;
 export const MAX_DESCRIPTION_CHARS = 1024;
 
+/** The first release whose SKILL.md files carry a version on the provenance line. An installed
+ *  skill with the marker and no version predates this release — but that only PROVES staleness
+ *  once a release at or above it has actually been published (CTC-2160 D4). */
+export const FIRST_STAMPED_VERSION = "0.7.0";
+
+const PROVENANCE_VERSION_RE = new RegExp(`${PROVENANCE_MARKER.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}@(\\S+)`);
+
+/** The version stamped on a provenance comment line, or null when the line carries none. */
+export function parseProvenanceVersion(line: string): string | null {
+  const m = PROVENANCE_VERSION_RE.exec(line);
+  return m ? m[1]! : null;
+}
+
 /** Strings no customer-facing skill file may contain. */
 export const FORBIDDEN_CONTENT: { name: string; re: RegExp }[] = [
   { name: "the maintainer tenant (tenant-0)", re: /tenant-0/ },

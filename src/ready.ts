@@ -8,8 +8,14 @@ import { defaultSkillsDirFor, loadConfig, readManifest, type Ctx, type CustomerC
 import { contractVersionInRange, readContractCache } from "./contract.js";
 import type { TenantContract } from "./contract-types.js";
 import { CliError } from "./errors.js";
+import { latestPublishedVersion, type PublishedLookup } from "./published.js";
 import { replicaStatus, writerIsRunning, type ReplicaStatus } from "./replica.js";
 import { loadSdk } from "./sdk.js";
+import { semverOlder } from "./semver.js";
+import { FIRST_STAMPED_VERSION } from "./skill-shape.js";
+import { installedBundleVersion } from "./skills.js";
+
+export { semverOlder };
 
 export interface ReadyCheck {
   id: string;
@@ -67,21 +73,10 @@ export interface ReadyDeps {
   skillNames: readonly string[];
   /** Test seam for the SDK-loads check. */
   loadSdk?: () => Promise<unknown>;
-}
-
-/** True when `a` is a semver-older release than `b`. Prerelease/build metadata is ignored; a segment
- *  that does not parse counts as 0. A tiny compare on purpose — no dependency for three fields. */
-export function semverOlder(a: string, b: string): boolean {
-  const parse = (v: string): [number, number, number] => {
-    const core = v.split("-")[0]!.split("+")[0]!;
-    const p = core.split(".");
-    return [Number(p[0]) || 0, Number(p[1]) || 0, Number(p[2]) || 0];
-  };
-  const [a0, a1, a2] = parse(a);
-  const [b0, b1, b2] = parse(b);
-  if (a0 !== b0) return a0 < b0;
-  if (a1 !== b1) return a1 < b1;
-  return a2 < b2;
+  /** Test seam for the published-release lookup (CTC-2160). NO test may reach the real registry. */
+  fetchLatestRelease?: () => Promise<PublishedLookup>;
+  /** Skip the published-release lookup entirely (--offline / CATALYST_SKILLS_OFFLINE=1). */
+  offline?: boolean;
 }
 
 function whoCanAnswer(doc: TenantContract): string {
@@ -145,6 +140,62 @@ export async function readyReport(ctx: Ctx, deps: ReadyDeps): Promise<ReadyRepor
     }
   }
 
+  // CTC-2160 — the two artefacts a customer installs drift apart: the CLI comes from npm, the skill
+  // files come from `npx skills add` (GitHub) or the plugin, and only the CLI's own version was ever
+  // knowable here. Both are NOTES: being behind a publish is a degrading fact about an install that
+  // still works, so `ready` stays READY. This is the one place `ready` touches the network, and it is
+  // capped, cached and skippable — see src/published.ts.
+  const skillsDir = cfg?.skillsDir ?? defaultSkillsDirFor(ctx.home);
+  const offline = deps.offline === true || ctx.env.CATALYST_SKILLS_OFFLINE === "1";
+  if (!offline) {
+    const pub = await (deps.fetchLatestRelease ?? (() => latestPublishedVersion(ctx)))();
+    if (pub.latest === null) {
+      checks.push({
+        id: "cliRelease",
+        ok: false,
+        note: true,
+        line: `cliRelease: could not check for a newer release (${pub.reason}) — nothing about this install is known to be wrong; re-run when the network is back`,
+      });
+    } else {
+      // clause 2 — the CLI. Suppressed when the tenant-minimum note already named this binary (D9).
+      const installedCli = readManifest().version;
+      const bundleNoteFired = checks.some((c) => c.id === "bundle");
+      if (!bundleNoteFired && semverOlder(installedCli, pub.latest)) {
+        checks.push({
+          id: "cliRelease",
+          ok: false,
+          note: true,
+          line: `cliRelease: ${installedCli} installed is older than the latest published ${pub.latest} — upgrade: npm install -g @catalyst-cloud/catalyst-skills@latest && catalyst-skills login`,
+        });
+      }
+      // clause 1 — the skill files on disk, read independently of whichever CLI is answering. Both
+      // facts can hold at once: a machine that pulled at different hours carries some skills stamped
+      // behind AND some old enough to carry no stamp at all — the field report's own mixed install.
+      // So they are ADDITIVE, not exclusive: an unstamped file's real version is unknown and may be
+      // older than any stamp, which is why the stamped half says "oldest STAMPED" and the unstamped
+      // names are always printed rather than hidden behind whichever branch happened to win.
+      const found = installedBundleVersion(skillsDir, deps.skillNames);
+      const stampBehind = found.version !== null && semverOlder(found.version, pub.latest);
+      const unstampedBehind = found.unstamped.length > 0 && !semverOlder(pub.latest, FIRST_STAMPED_VERSION);
+      if (stampBehind || unstampedBehind) {
+        const facts: string[] = [];
+        if (stampBehind) facts.push(`the oldest stamped skill is ${found.version} (${found.skill})`);
+        if (unstampedBehind) {
+          const one = found.unstamped.length === 1;
+          facts.push(
+            `${found.unstamped.join(", ")} ${one ? "carries" : "carry"} no version and so ${one ? "predates" : "predate"} ${FIRST_STAMPED_VERSION}`,
+          );
+        }
+        checks.push({
+          id: "skillsRelease",
+          ok: false,
+          note: true,
+          line: `skillsRelease: in ${skillsDir} ${facts.join(", and ")}, while the published bundle is ${pub.latest} — update: npx skills update -y`,
+        });
+      }
+    }
+  }
+
   if (cfg) {
     checks.push(
       cfg.cliPath && existsSync(cfg.cliPath)
@@ -156,7 +207,6 @@ export async function readyReport(ctx: Ctx, deps: ReadyDeps): Promise<ReadyRepor
   // The skills are installed by the customer's own agent (a plugin, or `npx skills add`), so an
   // empty copy directory is the normal case and must not read as NOT READY. A PARTIAL copy is the
   // one broken state this check can see: half a set this package put there and never finished.
-  const skillsDir = cfg?.skillsDir ?? defaultSkillsDirFor(ctx.home);
   const present = deps.skillNames.filter((n) => existsSync(join(skillsDir, n, "SKILL.md")));
   const missing = deps.skillNames.filter((n) => !present.includes(n));
   if (present.length === 0) {
@@ -182,6 +232,26 @@ export async function readyReport(ctx: Ctx, deps: ReadyDeps): Promise<ReadyRepor
     const who = whoCanAnswer(doc);
     for (const team of doc.teams) {
       const label = team.key ?? team.id;
+      // The team's dispatch gate, straight off the cached contract: an older cloud omits it and this
+      // emits nothing (the `skillsBundle` precedent above). A shut gate means NOTHING in the team can
+      // start, so it is a FAIL carrying the cloud's own remedy as the fix — never an informational
+      // note. It is emitted before the `unchecked` branch below so a team whose readiness was never
+      // checked still reports its gate, which is exactly the team most likely to be unmapped.
+      const dg = team.dispatchGate;
+      if (dg && typeof dg.status === "string") {
+        const slots = (dg.missingSlots ?? []).join(", ");
+        checks.push(
+          dg.status === "open"
+            ? { id: `team:${label}:dispatchGate`, ok: true, line: `team ${label}: dispatch gate open` }
+            : {
+                id: `team:${label}:dispatchGate`,
+                ok: false,
+                line: `team ${label}: dispatch gate ${dg.status}${slots ? ` (${slots})` : ""}, blocking`,
+                fix: dg.remedy ?? `open settings for team ${label} and map its stages`,
+                who,
+              },
+        );
+      }
       if (team.readiness.status === "unchecked") {
         checks.push({ id: `team:${label}`, ok: true, note: true, line: `team ${label}: readiness not checked yet` });
         continue;

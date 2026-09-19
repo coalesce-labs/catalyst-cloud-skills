@@ -39,7 +39,9 @@
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
     "version:sync": "node scripts/sync-plugin-version.mjs",
-    "skill-lib:sync": "node scripts/sync-skill-lib.mjs"
+    "skill-lib:sync": "node scripts/sync-skill-lib.mjs",
+    "skills:scan": "node scripts/scan-skills.mjs",
+    "evals": "node scripts/run-evals.mjs"
   },
   "dependencies": {
     "@catalyst-cloud/sdk": "^0.10.0",

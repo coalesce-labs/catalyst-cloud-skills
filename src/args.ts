@@ -55,10 +55,11 @@ export const FLAG_TABLES: Record<string, FlagTable> = {
     team: { value: true, help: "team key filter" },
     project: { value: true, help: "project id filter" },
     state: { value: true, help: "state name filter" },
-    limit: { value: true, help: "max rows (default 50)" },
+    limit: { value: true, help: "max rows (default 50); one page only unless --all" },
     since: { value: true, help: "changes: the cursor to read after" },
     source: { value: true, help: "replica | api (default: replica when fresh, else api)" },
     ticket: { value: true, help: "pulls: only PRs linked to this ticket" },
+    all: { value: false, help: "issues/pulls: follow the cloud's page cursor to the end of the scope" },
   },
   replica: {
     detach: { value: false, help: "start: run the writer in the background and write a pidfile" },
@@ -127,7 +128,9 @@ export const FLAG_TABLES: Record<string, FlagTable> = {
     answer: { value: true, help: "accept: the answering comment id" },
     role: { value: true, help: "accept: the role recording the answer" },
   },
-  ready: {},
+  ready: {
+    offline: { value: false, help: "skip the published-release check (no network)" },
+  },
   accounts: {},
   env: {},
   environment: {
@@ -156,7 +159,7 @@ export const VERB_USAGE: Record<string, string> = {
   me: "me [--json]",
   contract: "contract [--refresh] [--path <a.b.c>] [--json]",
   query:
-    "query <issues|issue <id>|pulls|pull <id>|projects|cycles|search <terms>|changes --since <cursor|head>> [--team K] [--project P] [--state S] [--limit N] [--source replica|api] [--json]",
+    "query <issues|issue <id>|pulls|pull <id>|projects|cycles|search <terms>|changes --since <cursor|head>> [--team K] [--project P] [--state S] [--limit N] [--all] [--source replica|api] [--json]",
   replica:
     "replica <start [--detach]|stop|status [--probe] [--json]|sql \"<select>\"|schema [table]> [--db <path>]",
   events:
@@ -169,7 +172,7 @@ export const VERB_USAGE: Record<string, string> = {
   write:
     "write <comment <ticket> --body|--stdin [--parent] [--bookkeeping] [--as-user] | state <ticket> --slot|--state-id|--state-type | label <ticket> --add... --remove... | create --team --title [--label] [--priority] | reaction <ticket>|--comment <id> --emoji <e> | attachment <ticket> --title --url | session <ticket> [--title] [--plan-file] [--activity]>",
   ask: "ask <raise --team --title [--context] [--option]... [--default] --blocks <ticket>...|--nothing-to-block [--ask-key] | accept <askTicket> --answer <commentId> --role <role> | list [--anyone] [--json]>",
-  ready: "ready [--json]",
+  ready: "ready [--json] [--offline]",
   accounts: "accounts [--json]",
   env: "env <inventory [path] | check <file>> [--json]   (THIS repository, offline — no login, no network)",
   environment:

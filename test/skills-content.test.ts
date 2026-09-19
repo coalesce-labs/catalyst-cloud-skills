@@ -2,16 +2,19 @@
 // the CLI's constant, every skill passes the shape validator (frontmatter, provenance, budgets,
 // linked references, node-only scripts, the mutating triple), every file under skills/ plus the
 // README and the current CHANGELOG entry are free of internal names, each skill's scripts reach the
-// cloud only through the catalyst-skills verbs it promises, and the README states what a customer
-// needs in the order they need it.
+// cloud only through the catalyst-skills verbs it promises, the README states what a customer
+// needs in the order they need it, and no description an agent picks a skill by states a
+// readiness-check count the engine does not report (CTC-2560, the last describe in this file).
 import { describe, expect, test } from "vitest";
-import { existsSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname, relative } from "node:path";
 import { fileURLToPath } from "node:url";
+import { parse as parseYaml } from "yaml";
 
 import { CUSTOMER_SKILLS, PROVENANCE_MARKER } from "../src/cli";
-import { FORBIDDEN_CONTENT, MAX_REFERENCE_LINES, MAX_SKILL_LINES, validateSkillDir } from "../src/skill-shape";
+import { FORBIDDEN_CONTENT, MAX_REFERENCE_LINES, MAX_SKILL_LINES, parseProvenanceVersion, validateSkillDir } from "../src/skill-shape";
 import { buildFixtureContract } from "./fixture-contract";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -407,7 +410,7 @@ describe("the install page (README) states what a customer needs, in the order t
     expect(readme).toMatch(/npm install -g @catalyst-cloud\/catalyst-skills@latest && catalyst-skills login/);
     expect(readme).not.toMatch(/npm update -g/);
     for (const name of CUSTOMER_SKILLS) expect(readme, `uninstall must name ${name}`).toContain(`\`${name}\``);
-    for (const f of ["customer.json", "contract.json", "replica.db", "replica.db.pid", "replica.db.writer.lock", "replica.db.writer.state", "watch-cursor.json"]) {
+    for (const f of ["customer.json", "contract.json", "published.json", "replica.db", "replica.db.pid", "replica.db.writer.lock", "replica.db.writer.state", "watch-cursor.json"]) {
       expect(readme, `uninstall must name ${f}`).toContain(f);
     }
     expect(readme).not.toContain("NPM_PUBLISH_TOKEN");
@@ -419,6 +422,16 @@ describe("the install page (README) states what a customer needs, in the order t
     const ref = readFileSync(join(skillsRoot, "catalyst-setup", "references", "what-each-check-means.md"), "utf8");
     expect(ref).toContain("consecutive snapshot failures");
     expect(ref).toContain("replica status");
+  });
+
+  test("the machine-check table documents every id ready can emit, including the version-drift notes", () => {
+    const ref = readFileSync(join(skillsRoot, "catalyst-setup", "references", "what-each-check-means.md"), "utf8");
+    const start = ref.indexOf("\n## The machine checks the CLI adds\n");
+    const end = ref.indexOf("\n## ", start + 1);
+    const section = ref.slice(start, end === -1 ? undefined : end);
+    for (const id of ["node", "config", "contract", "bundle", "cliPath", "skills", "cliRelease", "skillsRelease", "sdk", "replica"]) {
+      expect(section, `the machine table must document ${id}`).toMatch(new RegExp(`\`${id}\``));
+    }
   });
 });
 
@@ -478,11 +491,58 @@ describe("the package manifest", () => {
     }
   });
 
+<<<<<<< HEAD
+=======
+  test("the ticket-reading reference names --all as the way past the first page (CTC-2010)", () => {
+    const md = readFileSync(join(pkgRoot, "skills/catalyst-linear/references/reading-a-ticket.md"), "utf8");
+    expect(md).toContain("--all");
+  });
+
+>>>>>>> 50ef4290c2dc45e3582950b4c1130765df4dec74
   test("the version matches the CHANGELOG's top entry, which is 0.7.0", () => {
     const changelog = readFileSync(join(pkgRoot, "CHANGELOG.md"), "utf8");
     expect(changelog).toContain(`## ${manifest.version}\n`);
     expect(changelog.indexOf("## 0.7.0")).toBe(changelog.indexOf("## "));
     expect(manifest.version).toBe("0.7.0");
+<<<<<<< HEAD
+=======
+  });
+
+  test("every shipped skill stamps the package version on its provenance line", () => {
+    for (const name of CUSTOMER_SKILLS) {
+      const md = skill(name);
+      const lines = md.split("\n");
+      const close = lines.indexOf("---", 1);
+      const line = lines[close + 1] ?? "";
+      expect(parseProvenanceVersion(line), `${name} — run: npm run version:sync`).toBe(manifest.version);
+    }
+  });
+
+  test("the sync script's --check agrees with the committed tree", () => {
+    const r = spawnSync(process.execPath, [join(pkgRoot, "scripts", "sync-plugin-version.mjs"), "--check"], { encoding: "utf8" });
+    expect(r.status, r.stdout + r.stderr).toBe(0);
+  });
+
+  // A skills/ subdirectory with no SKILL.md is a state installSkills (src/skills.ts) skips on purpose;
+  // the stamping loop used to read it unguarded and die with an uncaught ENOENT, taking down both
+  // `npm run version:sync` (a release step) and the --check above.
+  test("the sync script skips a skills/ subdirectory with no SKILL.md instead of crashing", () => {
+    const root = mkdtempSync(join(tmpdir(), "catalyst-version-sync-"));
+    mkdirSync(join(root, "scripts"), { recursive: true });
+    mkdirSync(join(root, ".claude-plugin"), { recursive: true });
+    mkdirSync(join(root, "skills", "alpha"), { recursive: true });
+    mkdirSync(join(root, "skills", "references-only"), { recursive: true }); // no SKILL.md
+    copyFileSync(join(pkgRoot, "scripts", "sync-plugin-version.mjs"), join(root, "scripts", "sync-plugin-version.mjs"));
+    writeFileSync(join(root, "package.json"), `${JSON.stringify({ version: manifest.version }, null, 2)}\n`);
+    writeFileSync(join(root, ".claude-plugin", "plugin.json"), `${JSON.stringify({ version: manifest.version }, null, 2)}\n`);
+    writeFileSync(
+      join(root, "skills", "alpha", "SKILL.md"),
+      ["---", "name: alpha", "description: x", "---", `<!-- ${PROVENANCE_MARKER}@${manifest.version} -->`, ""].join("\n"),
+    );
+    const r = spawnSync(process.execPath, [join(root, "scripts", "sync-plugin-version.mjs"), "--check"], { encoding: "utf8" });
+    expect(r.status, r.stdout + r.stderr).toBe(0);
+    expect(r.stderr).not.toContain("ENOENT");
+>>>>>>> 50ef4290c2dc45e3582950b4c1130765df4dec74
   });
 });
 
@@ -846,6 +906,7 @@ describe("no customer-facing prose states a readiness check count", () => {
   });
 });
 
+<<<<<<< HEAD
 // The ticket's fourth acceptance criterion: "The skill text explains why before the scan and asks for
 // review after it. A test pins both." Three of the assertions below are indexOf orderings, and an
 // ordering assertion over a string containing neither substring passes for the wrong reason — hence
@@ -900,4 +961,280 @@ describe("what-this-repo-needs explains before it scans and asks for review afte
     expect(ref).not.toMatch(/a name a `package\.json` script .* uses/);
     expect(ref).toMatch(/does not read `package\.json` scripts/);
   });
+=======
+// ⭐ CTC-2560 — THE `description:` FIELD IS THE ONE PLACE A STALE COUNT IS READ FIRST AND CHECKED
+// LAST. An agent picks a skill from its description, so a number written there is load-bearing prose
+// with no reader downstream to contradict it. Two gates above already cover counts: the repo-wide
+// rule needs a "readiness"/"per-team"/"team" word beside the noun, and the bare-count rule is scoped
+// to two `catalyst-setup` `.md` files. A bare count in ANY OTHER skill's description falls between
+// them — planted live in this repository, `whats-happening`'s description reading "the team's
+// readiness from its ten checks" passed the whole suite — and `agents/openai.yaml`, the OpenAI
+// catalog's copy of the same field, is read by NO gate here at all: neither the repo-wide rule (it
+// walks `README.md` and `**/*.md` under `skills/`) nor the two-file rule ever opens a `.yaml`.
+//
+// This gate closes that seam at FIELD granularity, for every skill in the roster and both catalogs,
+// and ties the verdict to `TEAM_CHECK_IDS` — the list of record at the top of this file — so a count
+// is a defect exactly when it disagrees with the engine's own list. That is CTC-2560's acceptance
+// criterion read literally: a description "does not name a check count at all, or names one a test
+// pins to the engine's own list".
+//
+// ⛔ WHY IT TRIGGERS ON READINESS VOCABULARY RATHER THAN ON "checks" ALONE. A repo-wide bare-count
+// rule was tried and rejected in CTC-2542 because "checks" is not one concept here: `catalyst-github`
+// describes a pull request's CI checks, and "the four required checks" is true prose no gate should
+// redden. So the count rules run only over descriptions that are ABOUT readiness, and then only over
+// counts whose nearest population word is the tenant's, not the machine's or a pull request's.
+// Measured against the twenty shipped description fields, the readiness trigger selects
+// `catalyst-setup`'s two and nothing else, with 0 false positives. Deliberately NOT part of the
+// trigger: the word "contract", which five of the ten `SKILL.md` descriptions already use.
+//
+// ⛔ WHY EACH COUNT IS ATTRIBUTED TO ITS NEAREST POPULATION WORD. `catalyst-setup`'s description
+// names TWO populations of checks in one sentence — the machine's (Node, the connection, the cached
+// contract, the CLI path, the skills, the SDK, the optional replica) and the tenant's per-team ones.
+// Judging every count in the field against the team total would report a true statement about the
+// machine checks as a stale team count, which is the same false-positive class as the `catalyst-github`
+// case. So a count is judged only when the last population MARKER before it is the tenant's
+// ("tenant readiness", "the team's readiness", "per-team", "team checks", "readinessChecks"); a count
+// that follows "machine", "CI", "PR", "pull request" or "status" belongs to a different population
+// and is left alone (CTC-2560 validate round 1, code-review finding 3). A marker is a phrase and not
+// a bare noun for a reason measured on the shipped field: `catalyst-setup`'s machine parenthetical
+// names "the tenant connection", and reading that bare "tenant" as a population handed every machine
+// count straight back to the team total (validate round 2, code-review finding 1).
+//
+// ⛔ AND WHY THE FILLER MAY NOT SWALLOW A COUNT, AND WHY EVERY MATCH IS EXAMINED. Two defects the
+// first cut of this gate shipped, both caught in validate round 1 and both fixed here with a control
+// apiece: (1) the ≤3-word filler between the count and the noun used to match count words too, so
+// "readiness in one verdict from fourteen checks" latched onto "one" and reddened a CORRECT total
+// (finding 1) — the filler now refuses a count word, and the count itself may not sit inside a
+// hyphenated compound, so "twenty-one checks" reads as 21 rather than as 1; (2) only the first match
+// per rule was examined, so "…fourteen checks, and the ten per-team checks…" returned no defect at
+// all (finding 2) — the rules are global now and every match is judged.
+describe("no skill description names a readiness-check count the engine does not report", () => {
+  const COUNT_WORDS: Record<string, number> = {
+    one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10,
+    eleven: 11, twelve: 12, thirteen: 13, fourteen: 14, fifteen: 15, sixteen: 16, seventeen: 17,
+    eighteen: 18, nineteen: 19, twenty: 20,
+  };
+  const TENS: Record<string, number> = { twenty: 20, thirty: 30, forty: 40, fifty: 50 };
+  const ONES = "one|two|three|four|five|six|seven|eight|nine";
+  /** "twenty-one", "thirty five" — a compound the plain word list would otherwise read as its tail. */
+  const COMPOUND = `(?:${Object.keys(TENS).join("|")})[- ](?:${ONES})`;
+  const COUNT = `(?:\\d+|${COMPOUND}|${Object.keys(COUNT_WORDS).join("|")})`;
+  /** A filler word may be anything EXCEPT a count — otherwise the rule latches onto the wrong number. */
+  const NOT_A_COUNT = `(?!${COUNT}(?![\\w-]))`;
+  /** A description is about readiness when it uses the vocabulary of the tenant's readiness vector. */
+  const READINESS_CONTEXT = /\breadiness\b|\bper-team\b|\bteam checks?\b|readinessChecks/i;
+  // Global, because a stale count can follow a correct one in the same field. The compact
+  // "<count>-check" form needs its own rule: its noun is glued to the count by a hyphen, so the
+  // trailing "not inside a hyphenated word" guard the first rule carries cannot apply to it.
+  // A post-noun phrasing ("fourteen checks per team", "eleven checks for each team") needs no rule of
+  // its own: inside a readiness description the bare noun already means the readiness checks, so the
+  // first rule matches it. The positive control below pins that, so a future tightening that breaks it
+  // fails here.
+  const COUNT_RULES = [
+    new RegExp(`(?<![\\w-])(${COUNT})(?![\\w-])(?:\\s+${NOT_A_COUNT}[\\w'-]+){0,3}\\s+checks?\\b`, "gi"),
+    new RegExp(`(?<![\\w-])(${COUNT})-checks?\\b`, "gi"),
+  ];
+  // The populations a description can count. Only the tenant's are this gate's business.
+  //
+  // ⛔ A MARKER IS A PHRASE, NOT A BARE NOUN. The first cut listed bare `tenant` and `team`, and the
+  // SHIPPED `catalyst-setup` description says "the tenant connection" INSIDE its machine
+  // parenthetical — so every count written in that machine clause was attributed to the team and
+  // judged against `TEAM_CHECK_IDS.length`, reddening a true sentence about the machine checks
+  // (validate round 2, code-review finding 1). The tenant's population is therefore recognised only
+  // where the word actually names a population of readiness checks — "tenant readiness", "the team's
+  // readiness", "per-team", "team checks", `readinessChecks` — and a noun used for anything else (a
+  // connection, a name, a URL) is not a marker at all. The control below splices a machine count into
+  // the real description and pins this.
+  const TEAM_MARKER = /\b(?:tenants?|teams?)(?:['’]s)?\s+readiness\b|\bper-team\b|\bteams?\s+checks?\b|\breadinessChecks\b/;
+  const OTHER_MARKER = /\bmachine\b|\bCI\b|\bpull requests?\b|\bPRs?\b|\bstatus\b/;
+  const POPULATION = new RegExp(`${TEAM_MARKER.source}|${OTHER_MARKER.source}`, "gi");
+  const TEAM_POPULATION = new RegExp(`^(?:${TEAM_MARKER.source})$`, "i");
+  // ⛔ NO REVERSE RULE ("checks … fourteen"). Measured, not assumed: the loose form
+  // /checks?\b[^.]{0,30}?\b<count>\b/ matches the SHIPPED `catalyst-setup` description at
+  // "checks, in one verdict" — a false positive on correct prose. A count placed after the noun in
+  // some other phrasing is the residual this gate does not catch, and it is written down rather than
+  // implied. Same for a readiness count written with no readiness word anywhere in the field: for
+  // `catalyst-setup`'s SKILL.md that residual is covered by the bare-count gate above, but for a
+  // sidecar `short_description` nothing covers it, because no other gate in this repository reads a
+  // `.yaml` at all.
+
+  const countOf = (word: string): number => {
+    if (/^\d+$/.test(word)) return Number(word);
+    const w = word.toLowerCase();
+    if (COUNT_WORDS[w] !== undefined) return COUNT_WORDS[w];
+    const [tens, ones] = w.split(/[- ]/);
+    return TENS[tens] + COUNT_WORDS[ones];
+  };
+
+  /** The last population MARKER before `at`, or "" when the count stands before any of them. */
+  const populationBefore = (text: string, at: number): string => {
+    let last = "";
+    for (const m of text.matchAll(POPULATION)) {
+      if (m.index >= at) break;
+      last = m[0];
+    }
+    return last;
+  };
+
+  type CountDefect = { phrase: string; stated: number; engine: number };
+  /**
+   * The rule, as a function of the engine's list, so that "the engine gains or loses a check" is a
+   * thing this gate can be asked about rather than a thing only a human could notice.
+   */
+  function staleCount(description: string, checkIds: readonly string[]): CountDefect | null {
+    if (!READINESS_CONTEXT.test(description)) return null;
+    for (const rule of COUNT_RULES) {
+      for (const m of description.matchAll(rule)) {
+        if (!TEAM_POPULATION.test(populationBefore(description, m.index))) continue;
+        const stated = countOf(m[1]);
+        if (stated !== checkIds.length) return { phrase: m[0], stated, engine: checkIds.length };
+      }
+    }
+    return null;
+  }
+
+  /** The `description:` as a TOOL reads it — the real YAML parser, not a line scanner. */
+  const descriptionOf = (name: string): string => {
+    const lines = skill(name).split("\n");
+    const close = lines.indexOf("---", 1);
+    const fm = parseYaml(lines.slice(1, close).join("\n")) as { description?: unknown };
+    return typeof fm.description === "string" ? fm.description : "";
+  };
+
+  /** The OpenAI sidecar's `short_description` — the same job in the other catalog an agent reads. */
+  const shortDescriptionOf = (name: string): string => {
+    const sidecar = parseYaml(readFileSync(join(skillsRoot, name, "agents", "openai.yaml"), "utf8")) as {
+      interface?: { short_description?: unknown };
+    };
+    const text = sidecar.interface?.short_description;
+    return typeof text === "string" ? text : "";
+  };
+
+  /** Every field an agent picks this skill from, as (where, text) pairs. */
+  const descriptionFields = (name: string): ReadonlyArray<readonly [string, string]> => [
+    [`skills/${name}/SKILL.md description`, descriptionOf(name)],
+    [`skills/${name}/agents/openai.yaml short_description`, shortDescriptionOf(name)],
+  ];
+
+  test("⭐ positive control: every skill in the roster yields a non-empty description to read", () => {
+    // A parser that quietly returned "" would make every assertion below pass on nothing.
+    for (const name of ROSTER) {
+      for (const [where, text] of descriptionFields(name)) {
+        expect({ where, read: text.length > 50 }).toEqual({ where, read: true });
+      }
+    }
+    expect(ROSTER).toHaveLength(readdirSync(skillsRoot, { withFileTypes: true }).filter((e) => e.isDirectory()).length);
+  });
+
+  test("⭐ positive control: the rule flags every stale phrasing it claims to cover", () => {
+    const ctx = "Tenant readiness in one verdict. ";
+    for (const stale of [
+      "tenant readiness from the contract's ten checks",
+      "tenant readiness from the contract's ten per-team checks",
+      ctx + "The team always reports all eleven checks",
+      ctx + "a ten-check vector per team",
+      ctx + "the team runs fourteen checks per team",
+      ctx + "the team runs eleven checks for each team",
+      ctx + "The team runs twenty-one checks.",
+    ]) {
+      const defect = staleCount(stale, ["a", "b"]); // a two-id engine: every count above is stale
+      expect({ stale, flagged: defect !== null }).toEqual({ stale, flagged: true });
+    }
+    // The compound is read as itself, not as its tail — "twenty-one" is 21, never 1.
+    expect(staleCount(ctx + "The team runs twenty-one checks.", ["a", "b"])?.stated).toBe(21);
+  });
+
+  test("⭐ negative control: the engine gaining a check reddens a description that named the old total", () => {
+    // Written FROM the roster, not beside it: when the engine really does gain a check and
+    // `TEAM_CHECK_IDS` grows, this control still tests the thing it claims to test.
+    const total = TEAM_CHECK_IDS.length;
+    const named = `Tenant readiness from the contract's ${total} checks, in one verdict.`;
+    // Today's engine list: the description agrees with it, so the gate passes it.
+    expect(staleCount(named, TEAM_CHECK_IDS)).toBeNull();
+    // A further check arrives upstream and the roster above learns about it: the same sentence,
+    // untouched, is now wrong — and this gate is what says so.
+    expect(staleCount(named, [...TEAM_CHECK_IDS, "a_further_check"])).toEqual({
+      phrase: `${total} checks`,
+      stated: total,
+      engine: total + 1,
+    });
+    // And losing one is the same defect in the other direction.
+    expect(staleCount(named, TEAM_CHECK_IDS.slice(0, -1))?.engine).toBe(total - 1);
+  });
+
+  test("⭐ a count of something that is not a readiness check is not this defect", () => {
+    // `catalyst-github`'s description is about a pull request's CI checks. Counting those is true
+    // prose; reddening it would be a false positive, and CTC-2542 rejected a rule that did.
+    const pr = `${descriptionOf("catalyst-github")} It shows the four required checks.`;
+    expect(READINESS_CONTEXT.test(pr)).toBe(false);
+    expect(staleCount(pr, TEAM_CHECK_IDS)).toBeNull();
+    // And inside a readiness description, a count of the MACHINE checks is a different population.
+    expect(
+      staleCount(
+        "Machine readiness (seven checks) plus tenant readiness from the contract's per-team checks, in one verdict.",
+        TEAM_CHECK_IDS,
+      ),
+    ).toBeNull();
+    // ⛔ THE SAME CASE ON THE REAL FIELD, SPLICED OUT OF IT RATHER THAN RETYPED BESIDE IT. Round 2's
+    // version of this control quoted a hand-written sentence and CALLED it the shipped wording; it
+    // was not. It had replaced the shipped machine parenthetical — "(Node, the tenant connection,
+    // the cached contract, the CLI path, the skills, the SDK, the optional replica)" — with
+    // "(seven checks)", and the replacement dropped exactly the "the tenant connection" that made the
+    // real field fail: attribution read that bare "tenant" as the tenant population, so a true machine
+    // count in the shipped description WAS reddened while this control stayed green (validate round 2,
+    // code-review findings 1 and 2). A control built from `descriptionOf` cannot drift off its subject.
+    const shipped = descriptionOf("catalyst-setup");
+    const open = shipped.indexOf("(");
+    const close = shipped.indexOf(")", open + 1);
+    // The shape the splice needs. If the description loses its machine parenthetical, this control is
+    // no longer testing what it says it tests, and that must be a failure rather than a silent pass.
+    expect({ where: "catalyst-setup description", spliceable: open > 0 && close > open }).toEqual({
+      where: "catalyst-setup description",
+      spliceable: true,
+    });
+    const machineCounted = `${shipped.slice(0, close)} — seven checks${shipped.slice(close)}`;
+    expect(machineCounted).toContain("seven checks)");
+    expect(staleCount(machineCounted, TEAM_CHECK_IDS)).toBeNull();
+    // And pinned independently of how the shipped field happens to be worded today: a machine clause
+    // that names the tenant in passing must not hand its count to the team…
+    const machineClauseNamingTheTenant =
+      "Machine readiness (Node, the tenant connection, the SDK — seven checks) plus tenant readiness from the contract's per-team checks, in one verdict.";
+    expect(staleCount(machineClauseNamingTheTenant, TEAM_CHECK_IDS)).toBeNull();
+    // …while the tenant's own count in that very sentence is still judged, so the fix for the false
+    // positive did not buy itself a false negative.
+    expect(
+      staleCount(
+        "Machine readiness (Node, the tenant connection, the SDK) plus tenant readiness from the contract's ten per-team checks, in one verdict.",
+        TEAM_CHECK_IDS,
+      ),
+    ).toEqual({ phrase: "ten per-team checks", stated: 10, engine: TEAM_CHECK_IDS.length });
+  });
+
+  test("⭐ a correct total is not reddened by an unrelated number beside it, and a stale count after it is still caught", () => {
+    const total = TEAM_CHECK_IDS.length;
+    // The filler may not swallow a count: "one verdict" must not be read as the stated total.
+    expect(staleCount(`Machine and tenant readiness in one verdict from ${total} checks.`, TEAM_CHECK_IDS)).toBeNull();
+    // Every match is judged, not just the first: the stale one here follows a correct one.
+    expect(
+      staleCount(
+        `Tenant readiness from the contract's ${total} checks, and the ten per-team checks that are still waiting.`,
+        TEAM_CHECK_IDS,
+      ),
+    ).toEqual({ phrase: "ten per-team checks", stated: 10, engine: total });
+  });
+
+  for (const name of ROSTER) {
+    test(`${name}: every description an agent chooses it by names no stale readiness-check count`, () => {
+      for (const [where, text] of descriptionFields(name)) {
+        const defect = staleCount(text, TEAM_CHECK_IDS);
+        expect(
+          defect,
+          defect
+            ? `${where} says "${defect.phrase}" but the engine reports ${defect.engine} checks — say what the checks are, not how many; the scripts print the live list.`
+            : "",
+        ).toBeNull();
+      }
+    });
+  }
+>>>>>>> 50ef4290c2dc45e3582950b4c1130765df4dec74
 });

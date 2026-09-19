@@ -2,12 +2,15 @@
 // fresh, else the API, with the source named on stderr every time. Output shape is the read-model
 // view either way. `pull`, `cycles`, `search` and `changes` are API-only (the SDK wraps no view for
 // them and the read-model package is not a declared dependency of this bundle).
-import { flagInt, flagString, positionals, type ParsedArgs } from "./args.js";
+import { flagBool, flagInt, flagString, positionals, type ParsedArgs } from "./args.js";
 import { requireConfig, replicaDbPath, type Ctx, type CustomerConfig } from "./config.js";
 import { CliError, UsageError } from "./errors.js";
 import { apiClient } from "./transport.js";
+import { fetchAllPages, fetchPage, rowsOf, truncationNotice } from "./pagination.js";
 import { engineFor, replicaStatus, type EngineDeps } from "./replica.js";
 import { loadSdk } from "./sdk.js";
+
+export { rowsOf };
 
 export type QuerySource = "replica" | "api";
 
@@ -16,12 +19,16 @@ export interface QueryDeps {
 }
 
 const REPLICA_CAPABLE = new Set(["issues", "issue", "pulls", "projects"]);
+/** The two keyset routes `--all` can follow. `projects`/`cycles`/`search` are offset-paged or
+ *  unpaginated and send no cursor header. */
+const PAGINATED = new Set(["issues", "pulls"]);
 
 interface Filters {
   team?: string;
   project?: string;
   state?: string;
   limit: number;
+  all: boolean;
 }
 
 export async function cmdQuery(args: ParsedArgs, ctx: Ctx, deps: QueryDeps = {}): Promise<number> {
@@ -33,9 +40,19 @@ export async function cmdQuery(args: ParsedArgs, ctx: Ctx, deps: QueryDeps = {})
     project: flagString(args, "project"),
     state: flagString(args, "state"),
     limit: flagInt(args, "limit", 50),
+    all: flagBool(args, "all"),
   };
   const forced = flagString(args, "source");
   if (forced && forced !== "replica" && forced !== "api") throw new UsageError("--source must be replica or api");
+  if (filters.all && !PAGINATED.has(sub)) {
+    throw new UsageError(`--all follows the cloud's keyset pages, which only ${[...PAGINATED].join(" and ")} have`);
+  }
+  if (filters.all && forced === "replica") {
+    throw new UsageError("--all follows the cloud's page cursor; --source replica reads a local mirror that has none. Pick one.");
+  }
+  if (filters.all && flagString(args, "limit") !== undefined) {
+    ctx.stderr("--all reads the whole scope, so --limit is ignored");
+  }
 
   const status = replicaStatus(ctx, cfg);
   let source: QuerySource;
@@ -46,6 +63,9 @@ export async function cmdQuery(args: ParsedArgs, ctx: Ctx, deps: QueryDeps = {})
   } else if (forced) {
     source = forced as QuerySource;
     why = `--source ${forced}`;
+  } else if (filters.all) {
+    source = "api";
+    why = "--all follows the cloud's pages";
   } else if (status.verdict === "fresh") {
     source = "replica";
     why = `cursor ${status.cursor}`;
@@ -102,8 +122,15 @@ async function fromApi(ctx: Ctx, cfg: CustomerConfig, sub: string, rest: string[
   const common = { team: f.team, project: f.project, state: f.state, limit: f.limit };
   switch (sub) {
     case "issues": {
-      const res = await api.getJson<unknown>("/api/v1/issues", { query: common });
-      return applyFilters(rowsOf(res.body), f).slice(0, f.limit);
+      if (f.all) {
+        const { rows } = await fetchAllPages(api, "/api/v1/issues", { team: f.team, project: f.project, state: f.state });
+        return applyFilters(rows, f); // no .slice — --all means the whole scope
+      }
+      const page = await fetchPage(api, "/api/v1/issues", common);
+      const rows = applyFilters(page.rows, f).slice(0, f.limit);
+      const notice = truncationNotice(page);
+      if (notice) ctx.stderr(notice);
+      return rows;
     }
     case "issue": {
       const id = needArg(rest, "issue <identifier>");
@@ -111,8 +138,16 @@ async function fromApi(ctx: Ctx, cfg: CustomerConfig, sub: string, rest: string[
       return res.status === 404 ? null : res.body;
     }
     case "pulls": {
-      const res = await api.getJson<unknown>("/api/v1/pulls", { query: { limit: f.limit, ticket: flagString(args, "ticket") } });
-      return rowsOf(res.body).slice(0, f.limit);
+      const ticket = flagString(args, "ticket");
+      if (f.all) {
+        const { rows } = await fetchAllPages(api, "/api/v1/pulls", { ticket });
+        return rows;
+      }
+      const page = await fetchPage(api, "/api/v1/pulls", { limit: f.limit, ticket });
+      const rows = page.rows.slice(0, f.limit);
+      const notice = truncationNotice(page);
+      if (notice) ctx.stderr(notice);
+      return rows;
     }
     case "pull": {
       const id = needArg(rest, "pull <node id>");
@@ -198,18 +233,6 @@ function needArg(rest: string[], usage: string): string {
   const v = rest[0];
   if (!v) throw new UsageError(`query ${usage}`);
   return v;
-}
-
-/** The API answers a list route with either a bare array or `{rows|items|issues|...: []}`. */
-export function rowsOf(body: unknown): Record<string, unknown>[] {
-  if (Array.isArray(body)) return body as Record<string, unknown>[];
-  if (body && typeof body === "object") {
-    for (const key of ["rows", "items", "issues", "pulls", "projects", "cycles", "results", "changes", "data"]) {
-      const v = (body as Record<string, unknown>)[key];
-      if (Array.isArray(v)) return v as Record<string, unknown>[];
-    }
-  }
-  return [];
 }
 
 export function applyFilters(rows: Record<string, unknown>[], f: Partial<Filters>): Record<string, unknown>[] {

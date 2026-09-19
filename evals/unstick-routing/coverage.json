@@ -1,0 +1,11 @@
+{
+  "skill": "unstick",
+  "invocation": "explicit",
+  "exercised_phrase": "unpark this",
+  "promised_phrases": [
+    "why is this parked and can you release it?",
+    "unpark this",
+    "get things flowing again",
+    "the outage is over, retry what failed"
+  ]
+}

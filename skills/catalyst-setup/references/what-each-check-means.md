@@ -44,8 +44,11 @@ Some checks degrade a team without ever blocking it, and one is informational on
 | `node` | Node 22 or newer, which the SDK's built-in SQLite engine needs | install Node 22+ |
 | `config` | this machine is connected: `customer.json` exists and loads | `npx @catalyst-cloud/catalyst-skills login` (keyless: the person approves in their browser); or, with a personal key minted at Settings → API keys, the same command prefixed with `CATALYST_CLOUD_TOKEN=<your personal key>` |
 | `contract` | the tenant contract is cached and its major version is one this bundle accepts | `catalyst-skills contract --refresh`; a version outside the range means update the bundle. A 403 naming an older cloud means the cloud has not yet deployed personal-key access |
+| `bundle` | the installed CLI is at least the version this tenant requires | `npm install -g @catalyst-cloud/catalyst-skills@latest && catalyst-skills login`; a note, never a failure |
 | `cliPath` | the CLI path recorded at login still exists, so skill scripts can spawn it | re-run login |
 | `skills` | every skill of this bundle is present where the CLI installed them | `catalyst-skills install` |
+| `cliRelease` | the installed CLI is not behind the newest published release | the same upgrade command as `bundle`; a note, never a failure |
+| `skillsRelease` | the installed skill files are not behind the newest published bundle | `npx skills update -y`; a note, never a failure. A line saying the check could not run means the registry was unreachable, not that anything is wrong |
 | `sdk` | the SDK loads, so the replica and the watch are available | run under Node 22.15 or newer; every read still works through the API meanwhile |
 | `replica` | the optional replica is fresh | a note, never a failure; see below |
 

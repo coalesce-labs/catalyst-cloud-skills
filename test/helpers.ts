@@ -2,7 +2,7 @@
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { cliPath, configPathFor, defaultReplicaDbFor, type Ctx, type CustomerConfig } from "../src/config";
+import { cliPath, configPathFor, contractPathFor, defaultReplicaDbFor, type Ctx, type CustomerConfig } from "../src/config";
 import { loadContract } from "../src/contract";
 import { loadSdk } from "../src/sdk";
 import { writerStatePath, type ReplicaWriterState } from "../src/replica";
@@ -21,7 +21,11 @@ export function makeCtx(home: string, overrides: Partial<Ctx> = {}): TestCtx {
   const out: string[] = [];
   const err: string[] = [];
   return {
-    env: {},
+    // CTC-2160 — `ready` gained its first network call (the published-release lookup); every
+    // in-process test seam defaults offline so a test that forgets to inject `fetchLatestRelease`
+    // fails loudly instead of quietly reaching the real npm registry. Tests exercising the lookup
+    // override this explicitly via `overrides.env`.
+    env: { CATALYST_SKILLS_OFFLINE: "1" },
     home,
     stdout: (line) => out.push(line),
     stderr: (line) => err.push(line),
@@ -127,6 +131,16 @@ export function seedWriterState(home: string, over: Partial<Omit<ReplicaWriterSt
   };
   writeFileSync(writerStatePath(dbPath), JSON.stringify(state));
   return dbPath;
+}
+
+/** Put (or clear) a team's `dispatchGate` on the cached contract, the way a newer cloud would serve
+ *  it. Mirrors how ready.test.ts already tests the optional `skillsBundle` field. */
+export function seedTeamGate(home: string, teamIndex: number, gate: unknown | null): void {
+  const p = contractPathFor(home);
+  const cache = JSON.parse(readFileSync(p, "utf8")) as { doc: { teams: Record<string, unknown>[] } };
+  if (gate === null) delete cache.doc.teams[teamIndex]!.dispatchGate;
+  else cache.doc.teams[teamIndex]!.dispatchGate = gate;
+  writeFileSync(p, JSON.stringify(cache));
 }
 
 /** Sleep-based bounded wait: polls `pred` every `stepMs` up to `timeoutMs`. */

@@ -53,6 +53,9 @@ describe("every verb's --help", () => {
       expect(verbHelp(verb)).toBe(text);
     });
   }
+  test("query's usage documents --all (CTC-2010)", () => {
+    expect(VERB_USAGE.query).toContain("[--all]");
+  });
   test("an unknown verb is exit 1 with the usage", async () => {
     const ctx = makeCtx(tempHome());
     expect(await main(["frobnicate"], ctx)).toBe(1);

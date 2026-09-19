@@ -4,7 +4,8 @@ import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync } fr
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { PACKAGE_NAME, defaultSkillsDirFor, type Ctx, type CustomerConfig } from "./config.js";
-import { PROVENANCE_MARKER } from "./skill-shape.js";
+import { semverOlder } from "./semver.js";
+import { PROVENANCE_MARKER, parseFrontmatter, parseProvenanceVersion } from "./skill-shape.js";
 
 export interface SkillsInstallResult {
   installed: string[];
@@ -58,6 +59,63 @@ export function installSkills(
 
 export function resolveSkillsDir(args: { skillsDir?: string }, ctx: Ctx, cfg: CustomerConfig | null): string {
   return args.skillsDir ?? ctx.env.CATALYST_SKILLS_CLAUDE_DIR ?? cfg?.skillsDir ?? defaultSkillsDirFor(ctx.home);
+}
+
+export interface InstalledBundleVersion {
+  /** The oldest stamp found on disk, or null when nothing installed carries one. */
+  version: string | null;
+  /** A skill carrying `version`, for the report line. */
+  skill: string | null;
+  /** Installed skills carrying the marker but no stamp — they predate FIRST_STAMPED_VERSION. */
+  unstamped: string[];
+}
+
+/** The provenance comment in a SKILL.md, wherever that file's frontmatter actually ends.
+ *
+ *  `validateSkillDir` requires the comment on the line right after the closing fence and caps the
+ *  FILE's length, never the frontmatter's — so a fixed head window was an unpinned assumption, and a
+ *  skill with a long wrapped `description` fell past it and became invisible: no version and not even
+ *  counted as unstamped, silently dropping out of the staleness check. A file whose shape is off
+ *  falls back to the whole-file scan `installSkills` already uses to recognise our own copies. */
+function provenanceLine(text: string): string | undefined {
+  const lines = text.split("\n");
+  const fm = parseFrontmatter(lines);
+  if (fm && fm.closeIndex !== -1) {
+    const after = lines[fm.closeIndex + 1];
+    if (after?.includes(PROVENANCE_MARKER)) return after;
+  }
+  return lines.find((l) => l.includes(PROVENANCE_MARKER));
+}
+
+/** What skill-bundle version is actually sitting in `dir`. Reads only the provenance comment; a
+ *  directory this package did not write (no marker) is ignored, not counted as stale, and a name
+ *  that is not installed at all is skipped. */
+export function installedBundleVersion(dir: string, names: readonly string[]): InstalledBundleVersion {
+  let version: string | null = null;
+  let skill: string | null = null;
+  const unstamped: string[] = [];
+  for (const name of names) {
+    const skillMd = join(dir, name, "SKILL.md");
+    if (!existsSync(skillMd)) continue;
+    let text: string;
+    try {
+      text = readFileSync(skillMd, "utf8");
+    } catch {
+      continue;
+    }
+    const line = provenanceLine(text);
+    if (line === undefined) continue;
+    const stamp = parseProvenanceVersion(line);
+    if (stamp === null) {
+      unstamped.push(name);
+      continue;
+    }
+    if (version === null || semverOlder(stamp, version)) {
+      version = stamp;
+      skill = name;
+    }
+  }
+  return { version, skill, unstamped };
 }
 
 export function parseChangelogEntry(changelog: string, version: string): string | null {

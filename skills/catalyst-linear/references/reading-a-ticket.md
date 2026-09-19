@@ -48,3 +48,5 @@ Per-ticket execution history beyond the comments (the attempt ledger, the remedi
 ## Searching and listing
 
 `node scripts/search.mjs <terms>` matches ticket identifiers and titles, PR titles, project and initiative names and returns a few of each. It is the only search; a list read with a filter is not a search and will hand back the ordinary first page, which reads as a false "not found". Lists (`catalyst-skills query issues --team <key>`, `query projects`, `query cycles`) are for a board view, not for finding one ticket.
+
+A list verb now says when the cloud cut it short: without `--all`, `query issues`/`query pulls` print `truncated at N of M` on stderr the moment a scope holds more than one page. `query issues --all` and `query pulls --all` follow the cloud's page cursor to the end of the scope instead of stopping at the first page — use `--all` when the count, not just a sample, has to be right.

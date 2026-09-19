@@ -25,6 +25,12 @@ export default defineConfig({
     // whole window with room, still reports a genuine hang inside a minute, and sits well under the
     // 240s and 300s the two heavy files already choose for themselves.
     testTimeout: 60_000,
+    // CTC-2160 — `ready`'s published-release lookup is this package's first network call. The
+    // subprocess suites (smoke-publish, git-install-rail, bin-stdout, unstick-script,
+    // skill-scripts-credential) spawn the real binary with `{ ...process.env, ... }`, which inherits
+    // whatever vitest sets on this process's own env — this is the second belt beside
+    // test/helpers.ts's `makeCtx` default, for the tests that never go through it.
+    env: { CATALYST_SKILLS_OFFLINE: "1" },
     coverage: {
       provider: "v8",
       // Only measure first-party source — keep stray root/config files out of the denominator.

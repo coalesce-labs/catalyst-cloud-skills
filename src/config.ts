@@ -97,6 +97,10 @@ export function configPathFor(home: string): string {
 export function contractPathFor(home: string): string {
   return join(configDirFor(home), "contract.json");
 }
+/** CTC-2160 — the cached answer to "what is the newest published release" (src/published.ts). */
+export function publishedCachePathFor(home: string): string {
+  return join(configDirFor(home), "published.json");
+}
 export function watchCursorPathFor(home: string): string {
   return join(configDirFor(home), "watch-cursor.json");
 }
