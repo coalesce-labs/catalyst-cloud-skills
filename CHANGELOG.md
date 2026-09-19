@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.7.0
+
+`catalyst-skills ready` now tells you when the skills on this machine, or the CLI itself, are behind the newest published release — it names the version you have, the version that is out, and the one command that updates each, as a note that never changes the verdict. Every skill file now records the bundle version it was vendored at, so a copy installed months ago is visible as such instead of only by diffing files. The check reads the npm registry's `dist-tags.latest`, capped at 1500ms and cached for six hours, and never blocks: an unreachable registry is one note that says so, and `--offline` (or `CATALYST_SKILLS_OFFLINE=1`) skips the lookup entirely.
+
 ## 0.6.1
 
 The local replica writer no longer retries a failing snapshot pull forever. After a failed or incomplete pull it backs off with jitter (30s doubling to a 15-minute cap) and gives up after five consecutive failures, recording why; a pull that completes resets the count. `catalyst-skills replica status` and `catalyst-skills ready` both name the stopped state, the count, the last error, and the command that restarts it. Until the read side of a large snapshot is safe, `ready` no longer suggests starting the replica at all — it says plainly that the replica is optional and off by default for large tenants, and every read still works through the API either way.

@@ -3,12 +3,34 @@
 // with who can answer; the replica is a note, never a failure.
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from "vitest";
 import { readFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { CUSTOMER_SKILLS, main } from "../src/cli";
-import { contractPathFor, defaultSkillsDirFor } from "../src/config";
-import { installSkills } from "../src/skills";
+import { contractPathFor, defaultSkillsDirFor, readManifest, type Ctx } from "../src/config";
+import type { PublishedLookup } from "../src/published";
 import { readyReport } from "../src/ready";
+import { PROVENANCE_MARKER } from "../src/skill-shape";
+import { installSkills } from "../src/skills";
 import { FIXTURE_ME_USER, startMeFixture, type FixtureServer } from "./fixture";
 import { makeCtx, seedJoined, seedReplica, seedWriterState, tempHome, type TestCtx } from "./helpers";
+
+const STAMP_RE = new RegExp(`${PROVENANCE_MARKER.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(@\\S+)?`);
+
+/** Rewrite every installed skill's provenance line to carry `version` (or no stamp at all). */
+function stampInstalledSkillsAt(dir: string, version: string | null): void {
+  for (const name of CUSTOMER_SKILLS) {
+    const p = join(dir, name, "SKILL.md");
+    const text = readFileSync(p, "utf8");
+    writeFileSync(p, text.replace(STAMP_RE, version === null ? PROVENANCE_MARKER : `${PROVENANCE_MARKER}@${version}`));
+  }
+}
+
+function registryFetch(latest: string, status = 200): typeof fetch {
+  return (async () => new Response(JSON.stringify({ latest }), { status })) as typeof fetch;
+}
+
+function fixedLookup(latest: string | null, reason: string | null = null, source: PublishedLookup["source"] = "network"): () => Promise<PublishedLookup> {
+  return async () => ({ latest, reason, source });
+}
 
 let server: FixtureServer;
 let home: string;
@@ -265,5 +287,187 @@ describe("ready never recommends starting the replica (CTC-2499)", () => {
     expect(text).toContain("/snapshot 503");
     expect(text).toContain("catalyst-skills replica start --detach");
     expect(text.split("\n").filter((l) => l.startsWith("note  replica:"))).toHaveLength(1);
+  });
+});
+
+describe("ready reports when the installed skill bundle or CLI is behind the published release (CTC-2160)", () => {
+  const online = (overrides: Partial<Ctx> = {}) => makeCtx(home, { env: {}, ...overrides });
+
+  test("ready makes no request when the release check is off, and none of the release checks appear", async () => {
+    await seedJoined(home, server);
+    installSkills(defaultSkillsDirFor(home), {});
+    let calls = 0;
+    const report = await readyReport(online(), {
+      skillNames: CUSTOMER_SKILLS,
+      offline: true,
+      fetchLatestRelease: async () => {
+        calls += 1;
+        return { latest: "9.9.9", reason: null, source: "network" };
+      },
+    });
+    expect(calls).toBe(0);
+    expect(report.checks.find((c) => c.id === "cliRelease" || c.id === "skillsRelease")).toBeUndefined();
+  });
+
+  test("CATALYST_SKILLS_OFFLINE=1 does the same without --offline", async () => {
+    await seedJoined(home, server);
+    installSkills(defaultSkillsDirFor(home), {});
+    let calls = 0;
+    const report = await readyReport(makeCtx(home, { env: { CATALYST_SKILLS_OFFLINE: "1" } }), {
+      skillNames: CUSTOMER_SKILLS,
+      fetchLatestRelease: async () => {
+        calls += 1;
+        return { latest: "9.9.9", reason: null, source: "network" };
+      },
+    });
+    expect(calls).toBe(0);
+    expect(report.checks.find((c) => c.id === "cliRelease" || c.id === "skillsRelease")).toBeUndefined();
+  });
+
+  test("warns (never refuses) when the installed skill bundle is older than the published one", async () => {
+    await seedJoined(home, server);
+    installSkills(defaultSkillsDirFor(home), {});
+    stampInstalledSkillsAt(defaultSkillsDirFor(home), "0.2.1");
+    const report = await readyReport(online(), { skillNames: CUSTOMER_SKILLS, fetchLatestRelease: fixedLookup("0.9.9") });
+    expect(report.ready).toBe(true);
+    const note = report.checks.find((c) => c.id === "skillsRelease")!;
+    expect(note).toMatchObject({ ok: false, note: true });
+    expect(note.line).toContain("0.2.1");
+    expect(note.line).toContain("0.9.9");
+    expect(note.line).toContain("npx skills update -y");
+    expect(note.fix).toBeUndefined();
+  });
+
+  test("no skillsRelease note when the installed bundle matches the published one", async () => {
+    await seedJoined(home, server);
+    installSkills(defaultSkillsDirFor(home), {});
+    const report = await readyReport(online(), { skillNames: CUSTOMER_SKILLS, fetchLatestRelease: fixedLookup(readManifest().version) });
+    expect(report.checks.find((c) => c.id === "skillsRelease")).toBeUndefined();
+  });
+
+  test("no skillsRelease note when the installed bundle is NEWER than the published one", async () => {
+    await seedJoined(home, server);
+    installSkills(defaultSkillsDirFor(home), {});
+    const report = await readyReport(online(), { skillNames: CUSTOMER_SKILLS, fetchLatestRelease: fixedLookup("0.5.0") });
+    expect(report.checks.find((c) => c.id === "skillsRelease")).toBeUndefined();
+    expect(report.checks.find((c) => c.id === "cliRelease")).toBeUndefined();
+  });
+
+  test("unstamped installed skills warn only once a stamped release is published (D4)", async () => {
+    await seedJoined(home, server);
+    installSkills(defaultSkillsDirFor(home), {});
+    stampInstalledSkillsAt(defaultSkillsDirFor(home), null);
+    const behind = await readyReport(online(), { skillNames: CUSTOMER_SKILLS, fetchLatestRelease: fixedLookup("0.9.9") });
+    const note = behind.checks.find((c) => c.id === "skillsRelease");
+    expect(note).toBeDefined();
+    expect(note!.line).toContain("0.9.9");
+    const tooEarly = await readyReport(online(), { skillNames: CUSTOMER_SKILLS, fetchLatestRelease: fixedLookup("0.5.0") });
+    expect(tooEarly.checks.find((c) => c.id === "skillsRelease")).toBeUndefined();
+  });
+
+  test("no skillsRelease note when no skills are installed at all", async () => {
+    await seedJoined(home, server);
+    const report = await readyReport(online(), { skillNames: CUSTOMER_SKILLS, fetchLatestRelease: fixedLookup("9.9.9") });
+    expect(report.checks.find((c) => c.id === "skillsRelease")).toBeUndefined();
+  });
+
+  test("the oldest stamp is the one reported when installed skills disagree", async () => {
+    await seedJoined(home, server);
+    installSkills(defaultSkillsDirFor(home), {});
+    const dir = defaultSkillsDirFor(home);
+    const p = join(dir, "catalyst-setup", "SKILL.md");
+    writeFileSync(p, readFileSync(p, "utf8").replace(STAMP_RE, `${PROVENANCE_MARKER}@0.1.0`));
+    const report = await readyReport(online(), { skillNames: CUSTOMER_SKILLS, fetchLatestRelease: fixedLookup("9.9.9") });
+    expect(report.checks.find((c) => c.id === "skillsRelease")?.line).toContain("0.1.0");
+    expect(report.checks.find((c) => c.id === "skillsRelease")?.line).toContain("catalyst-setup");
+  });
+
+  // A mixed install is the field report itself: machines that pulled at different hours hold some
+  // skills stamped behind and some old enough to carry no stamp at all. Both facts have to reach the
+  // customer, and the "oldest" claim has to stay true while an unknown-version file sits beside it.
+  test("a mixed install names the unstamped skills as well as the oldest stamp, in one note", async () => {
+    await seedJoined(home, server);
+    const dir = defaultSkillsDirFor(home);
+    installSkills(dir, {});
+    stampInstalledSkillsAt(dir, "0.6.1");
+    const p = join(dir, "unstick", "SKILL.md");
+    writeFileSync(p, readFileSync(p, "utf8").replace(STAMP_RE, PROVENANCE_MARKER));
+    const report = await readyReport(online(), { skillNames: CUSTOMER_SKILLS, fetchLatestRelease: fixedLookup("1.0.0") });
+    const notes = report.checks.filter((c) => c.id === "skillsRelease");
+    expect(notes).toHaveLength(1);
+    expect(notes[0]!.line).toContain("0.6.1");
+    expect(notes[0]!.line).toContain("unstick");
+    expect(notes[0]!.line).toContain("1.0.0");
+    expect(notes[0]!.line).toContain("npx skills update -y");
+    expect(report.ready).toBe(true);
+  });
+
+  test("warns when the running CLI is older than the latest publish", async () => {
+    await seedJoined(home, server);
+    installSkills(defaultSkillsDirFor(home), {});
+    const report = await readyReport(online(), { skillNames: CUSTOMER_SKILLS, fetchLatestRelease: fixedLookup("9.9.9") });
+    const note = report.checks.find((c) => c.id === "cliRelease")!;
+    expect(note).toMatchObject({ ok: false, note: true });
+    expect(note.line).toContain(readManifest().version);
+    expect(note.line).toContain("9.9.9");
+    expect(note.line).toContain("npm install -g @catalyst-cloud/catalyst-skills@latest && catalyst-skills login");
+    expect(note.line).not.toContain("npm update");
+  });
+
+  test("no cliRelease note when the CLI is current or newer than the publish", async () => {
+    await seedJoined(home, server);
+    installSkills(defaultSkillsDirFor(home), {});
+    const report = await readyReport(online(), { skillNames: CUSTOMER_SKILLS, fetchLatestRelease: fixedLookup(readManifest().version) });
+    expect(report.checks.find((c) => c.id === "cliRelease")).toBeUndefined();
+  });
+
+  test("cliRelease stays silent when the tenant-minimum bundle check already fired (D9)", async () => {
+    await seedJoined(home, server);
+    installSkills(defaultSkillsDirFor(home), {});
+    const cache = JSON.parse(readFileSync(contractPathFor(home), "utf8")) as { doc: { skillsBundle?: unknown } };
+    cache.doc.skillsBundle = { package: "@catalyst-cloud/catalyst-skills", minVersion: "9.9.9" };
+    writeFileSync(contractPathFor(home), JSON.stringify(cache));
+    const report = await readyReport(online(), { skillNames: CUSTOMER_SKILLS, fetchLatestRelease: fixedLookup("9.9.9") });
+    const notes = report.checks.filter((c) => c.id === "bundle" || c.id === "cliRelease");
+    expect(notes.map((c) => c.id)).toEqual(["bundle"]);
+  });
+
+  test("an unreachable registry is one note that blames nothing on the install", async () => {
+    await seedJoined(home, server);
+    installSkills(defaultSkillsDirFor(home), {});
+    const report = await readyReport(online(), { skillNames: CUSTOMER_SKILLS, fetchLatestRelease: fixedLookup(null, "timed out", "none") });
+    expect(report.ready).toBe(true);
+    const notes = report.checks.filter((c) => c.id === "cliRelease" || c.id === "skillsRelease");
+    expect(notes).toHaveLength(1);
+    expect(notes[0]!.line).toContain("timed out");
+    expect(report.checks.find((c) => c.id === "skillsRelease")).toBeUndefined();
+  });
+
+  test("the verdict stays READY and the exit code stays 0 with both release notes present, end to end through main()", async () => {
+    await seedJoined(home, server);
+    installSkills(defaultSkillsDirFor(home), {});
+    stampInstalledSkillsAt(defaultSkillsDirFor(home), "0.1.0");
+    const c = online({ fetch: registryFetch("9.9.9") });
+    expect(await main(["ready"], c)).toBe(0);
+    const text = c.out.join("\n");
+    expect(text).toMatch(/READY$/);
+    expect(text).toMatch(/^note {2}cliRelease: /m);
+    expect(text).toMatch(/^note {2}skillsRelease: /m);
+  });
+
+  test("--offline emits neither release check, end to end", async () => {
+    await seedJoined(home, server);
+    installSkills(defaultSkillsDirFor(home), {});
+    stampInstalledSkillsAt(defaultSkillsDirFor(home), "0.1.0");
+    const c = online({ fetch: registryFetch("9.9.9") });
+    expect(await main(["ready", "--offline"], c)).toBe(0);
+    const text = c.out.join("\n");
+    expect(text).not.toContain("cliRelease");
+    expect(text).not.toContain("skillsRelease");
+  });
+
+  test("ready --help names --offline", async () => {
+    expect(await main(["ready", "--help"], ctx)).toBe(0);
+    expect(ctx.out.join("\n")).toContain("--offline");
   });
 });

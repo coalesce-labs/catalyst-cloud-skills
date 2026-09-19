@@ -3,7 +3,9 @@
 import { describe, expect, test } from "vitest";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { PROVENANCE_MARKER, parseFrontmatter, validateSkillDir } from "../src/skill-shape";
+import { readManifest } from "../src/config";
+import { semverOlder } from "../src/semver";
+import { FIRST_STAMPED_VERSION, PROVENANCE_MARKER, parseFrontmatter, parseProvenanceVersion, validateSkillDir } from "../src/skill-shape";
 import { tempHome } from "./helpers";
 
 interface Tree {
@@ -118,6 +120,27 @@ describe("validateSkillDir", () => {
       expect(problems[0]).toMatch(expected);
     });
   }
+});
+
+describe("the provenance marker carries the bundle version (CTC-2160)", () => {
+  test("⭐ positive control: the parser reads a stamp and rejects the unstamped form, on fixed strings", () => {
+    expect(parseProvenanceVersion(`<!-- ${PROVENANCE_MARKER}@0.7.0 — written here -->`)).toBe("0.7.0");
+    expect(parseProvenanceVersion(`<!-- ${PROVENANCE_MARKER}@1.2.3-rc.1 — x -->`)).toBe("1.2.3-rc.1");
+    expect(parseProvenanceVersion(`<!-- ${PROVENANCE_MARKER} — written here -->`)).toBeNull();
+    expect(parseProvenanceVersion("# not a provenance comment")).toBeNull();
+  });
+
+  test("a stamped skill still passes the shape validator, and so does an unstamped one", () => {
+    const stamped = write(tempHome(), "stamped", goodSkill("stamped", { "SKILL.md": goodSkill("stamped")["SKILL.md"]!.replace(PROVENANCE_MARKER, `${PROVENANCE_MARKER}@0.6.1`) }));
+    expect(validateSkillDir(stamped)).toEqual([]);
+    const unstamped = write(tempHome(), "unstamped", goodSkill("unstamped"));
+    expect(validateSkillDir(unstamped)).toEqual([]);
+  });
+
+  test("FIRST_STAMPED_VERSION is a release this package has reached", () => {
+    expect(FIRST_STAMPED_VERSION).toMatch(/^\d+\.\d+\.\d+$/);
+    expect(semverOlder(readManifest().version, FIRST_STAMPED_VERSION)).toBe(false);
+  });
 });
 
 describe("parseFrontmatter", () => {
