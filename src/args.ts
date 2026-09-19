@@ -127,7 +127,9 @@ export const FLAG_TABLES: Record<string, FlagTable> = {
     answer: { value: true, help: "accept: the answering comment id" },
     role: { value: true, help: "accept: the role recording the answer" },
   },
-  ready: {},
+  ready: {
+    offline: { value: false, help: "skip the published-release check (no network)" },
+  },
   accounts: {},
   environment: {
     file: { value: true, help: "propose: a JSON file holding the declaration" },
@@ -168,7 +170,7 @@ export const VERB_USAGE: Record<string, string> = {
   write:
     "write <comment <ticket> --body|--stdin [--parent] [--bookkeeping] [--as-user] | state <ticket> --slot|--state-id|--state-type | label <ticket> --add... --remove... | create --team --title [--label] [--priority] | reaction <ticket>|--comment <id> --emoji <e> | attachment <ticket> --title --url | session <ticket> [--title] [--plan-file] [--activity]>",
   ask: "ask <raise --team --title [--context] [--option]... [--default] --blocks <ticket>...|--nothing-to-block [--ask-key] | accept <askTicket> --answer <commentId> --role <role> | list [--anyone] [--json]>",
-  ready: "ready [--json]",
+  ready: "ready [--json] [--offline]",
   accounts: "accounts [--json]",
   environment:
     "environment [read] [--json] | environment propose --file <path>|--stdin [--expect-revision N] [--approve] [--json] | environment approve [--revision N --hash H] [--json]",
