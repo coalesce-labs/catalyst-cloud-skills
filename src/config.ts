@@ -218,6 +218,12 @@ export function formatMode(mode: number): string {
 interface Manifest {
   version: string;
   tenantContractRange: string;
+  /** The one declared supported Node range (`engines.node`), e.g. ">=22.15". CTC-2158: every runtime
+   *  message reads this instead of writing the floor a second time. Missing is a named error — the
+   *  range is not optional. */
+  enginesNode: string;
+  /** CTC-2158, Tier 2: the Node version `runtime install` downloads and pins. Must satisfy `enginesNode`. */
+  pinnedNode: string;
 }
 
 let manifestCache: Manifest | null = null;
@@ -226,11 +232,20 @@ export function readManifest(): Manifest {
   if (manifestCache) return manifestCache;
   const raw = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")) as {
     version: string;
-    catalystCloud?: { tenantContractRange?: string };
+    engines?: { node?: string };
+    catalystCloud?: { tenantContractRange?: string; pinnedNode?: string };
   };
+  if (!raw.engines?.node) {
+    throw new CliError("package.json is missing engines.node — the supported Node range is not optional", "manifest-corrupt");
+  }
+  if (!raw.catalystCloud?.pinnedNode) {
+    throw new CliError("package.json is missing catalystCloud.pinnedNode — the pinned runtime version is not optional", "manifest-corrupt");
+  }
   manifestCache = {
     version: raw.version,
     tenantContractRange: raw.catalystCloud?.tenantContractRange ?? "unpinned",
+    enginesNode: raw.engines.node,
+    pinnedNode: raw.catalystCloud.pinnedNode,
   };
   return manifestCache;
 }

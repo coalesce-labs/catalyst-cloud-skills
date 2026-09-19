@@ -32,6 +32,7 @@ import { cmdAccounts, cmdExplain, cmdHistory, cmdQueue, cmdRunning } from "./exe
 import { cmdQuery } from "./query.js";
 import { cmdReady } from "./ready.js";
 import { cmdReplica, type ReplicaDeps } from "./replica.js";
+import { cmdRuntime, type RuntimeVerbDeps } from "./runtime-verb.js";
 import { cmdEvents, type EventDeps } from "./events.js";
 import { stdinIsTty } from "./prompt.js";
 import { PROVENANCE_MARKER } from "./skill-shape.js";
@@ -105,6 +106,7 @@ export function usageText(): string {
     "  catalyst-skills contract [--refresh] [--path <a.b.c>]",
     "  catalyst-skills query <issues|issue <id>|pulls|pull <id>|projects|cycles|search <terms>|changes --since <cursor|head>>",
     "  catalyst-skills replica <start [--detach]|stop|status [--probe]|sql \"<select>\"|schema [table]>",
+    "  catalyst-skills runtime <status [--json]|install|path|uninstall>   (a pinned Node this CLI manages itself)",
     "  catalyst-skills events <tail|wait-for|query> [--type NAME] [--ticket CTC-N] [--after SEQUENCE]",
     "  catalyst-skills explain <ticket> | history <ticket> | running [--ticket T --phase P] | queue [--team K]",
     "  catalyst-skills watch [--team K] [--ticket T]... [--project P] [--exec CMD]",
@@ -130,6 +132,7 @@ export function usageText(): string {
 
 export interface MainDeps {
   replica?: ReplicaDeps;
+  runtime?: RuntimeVerbDeps;
   events?: EventDeps;
   watch?: WatchDeps;
   write?: WriteDeps;
@@ -224,6 +227,8 @@ export async function main(argv: string[], ctx: Ctx = defaultCtx(), deps: MainDe
         return await cmdQuery(args, ctx, { engineDeps: deps.replica?.engineDeps });
       case "replica":
         return await cmdReplica(args, ctx, deps.replica);
+      case "runtime":
+        return await cmdRuntime(args, ctx, deps.runtime);
       case "events":
         return await cmdEvents(args, ctx, deps.events);
       case "explain":
@@ -272,7 +277,7 @@ export async function main(argv: string[], ctx: Ctx = defaultCtx(), deps: MainDe
 }
 
 const VERB_HELP_KNOWN: Record<string, true> = Object.fromEntries(
-  ["login", "join", "install", "status", "notice", "me", "contract", "query", "replica", "events", "explain", "running", "queue", "watch", "write", "ask", "ready", "accounts", "release"].map((v) => [v, true]),
+  ["login", "join", "install", "status", "notice", "me", "contract", "query", "replica", "runtime", "events", "explain", "running", "queue", "watch", "write", "ask", "ready", "accounts", "release"].map((v) => [v, true]),
 );
 
 async function cmdLogin(args: ParsedArgs, ctx: Ctx, deps: MainDeps): Promise<number> {

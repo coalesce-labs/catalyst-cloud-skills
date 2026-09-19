@@ -1,6 +1,6 @@
 {
   "name": "@catalyst-cloud/catalyst-skills",
-  "version": "0.6.1",
+  "version": "0.7.0",
   "description": "Customer skill bundle for Catalyst Cloud, named from the executive's seat — get set up, see what is happening, see what needs you, run a project, unstick what is stuck — plus the catalyst-skills CLI that reads through the Catalyst Cloud SDK, writes through the agent proxy, and connects your machine to your tenant with one command. The skills directory is the roster; this line never counts it.",
   "license": "MIT",
   "type": "module",
@@ -16,7 +16,7 @@
     "url": "https://github.com/coalesce-labs/catalyst-cloud-skills/issues"
   },
   "engines": {
-    "node": ">=22"
+    "node": ">=22.15"
   },
   "bin": {
     "catalyst-skills": "bin/catalyst-skills.js"
@@ -30,7 +30,8 @@
     "LICENSE"
   ],
   "catalystCloud": {
-    "tenantContractRange": "1.x"
+    "tenantContractRange": "1.x",
+    "pinnedNode": "24.21.0"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.7.0
+
+`catalyst-skills ready` now loads the SDK on Node 26 — the current Homebrew default — instead of printing `sdk: could not load`. The type-stripping loader tries Node's `strip` mode before `transform`, because Node 26 accepts only `strip` and a loader that reaches for `transform` first dies there before it ever learns `strip` would have worked; `transform` stays reachable as a fallback for the handful of sources that genuinely need it. This fix shipped to this repository's `main` before this release but never to a published version, so if you saw `sdk: could not load` on Node 26 on 0.5.0 or 0.6.0, this is why, and this is the release that actually reaches you.
+
+The supported runtime range is now declared in one place and every message names it accurately: Node 22.15 or newer (22.15 is where `node:module.registerHooks` arrives, which the SDK's TypeScript dependencies need), or bun 1.4 or newer (1.4 is where `node:sqlite` arrives, which the replica needs). The old advice to "run under Node 22.15 or newer, or under bun" was wrong for any bun older than 1.4: that bun has no `node:sqlite` at all and could not run this CLI, so the suggestion sent you to a runtime that could not even start. No message in this package recommends bun any more without saying which version.
+
+The CLI itself no longer dies part-way through loading on a runtime it does not support. `node:sqlite` used to be imported at the top of a module every verb loads, so a bun without it aborted the whole process before `ready` ever got a chance to explain why — you saw a raw `ResolveMessage`, not a fix. The engine now loads on first use, and its absence becomes a named `runtime` check with the one command that fixes it, on every runtime, every time.
+
+That one command is `catalyst-skills runtime install`. It downloads a pinned Node release into this CLI's own cache, verifies it against that release's published checksum before unpacking anything, and uses it from then on — without touching your machine's default Node and without admin rights. Run it any time `ready` reports the runtime as unsupported, or ahead of time if you would rather not manage your system Node at all.
+
 ## 0.6.1
 
 The local replica writer no longer retries a failing snapshot pull forever. After a failed or incomplete pull it backs off with jitter (30s doubling to a 15-minute cap) and gives up after five consecutive failures, recording why; a pull that completes resets the count. `catalyst-skills replica status` and `catalyst-skills ready` both name the stopped state, the count, the last error, and the command that restarts it. Until the read side of a large snapshot is safe, `ready` no longer suggests starting the replica at all — it says plainly that the replica is optional and off by default for large tenants, and every read still works through the API either way.

@@ -11,11 +11,15 @@ import {
   classifyStartError,
   clearWriterState,
   engineFor,
+  loadSqlite,
   pidfilePath,
   readWriterState,
   replicaStatus,
+  resetSqliteCache,
   writerStatePath,
 } from "../src/replica";
+import { BUN_MIN, FIX_COMMAND } from "../src/runtime";
+import { CliError } from "../src/errors";
 import { loadSdk } from "../src/sdk";
 import { startMeFixture, type FixtureServer } from "./fixture";
 import { makeCtx, seedJoined, seedReplica, seedWriterState, tempHome, waitFor, type TestCtx } from "./helpers";
@@ -658,5 +662,33 @@ describe("replica start (foreground, in-process against the fixture)", () => {
     expect(await main(["replica", "sql", "", "--db", other], c5)).toBe(1);
     const c6 = makeCtx(home);
     expect(await main(["replica", "wat"], c6)).toBe(1);
+  });
+});
+
+describe("loadSqlite — CTC-2158: node:sqlite is loaded on first use, not at module load", () => {
+  beforeEach(() => resetSqliteCache());
+
+  test("a runtime that has node:sqlite loads it, and caches the module", () => {
+    const mod = loadSqlite();
+    expect(typeof mod.DatabaseSync).toBe("function");
+    expect(loadSqlite()).toBe(mod);
+  });
+
+  test("a runtime without node:sqlite raises a named CliError, never a raw ResolveMessage", () => {
+    resetSqliteCache();
+    let caught: unknown;
+    try {
+      loadSqlite(() => {
+        throw new Error("No such built-in module: node:sqlite");
+      });
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeInstanceOf(CliError);
+    const message = (caught as CliError).message;
+    expect(message).toContain("node:sqlite");
+    expect(message).toContain(BUN_MIN);
+    expect(message).toContain(FIX_COMMAND);
+    expect(message).not.toContain("ResolveMessage");
   });
 });

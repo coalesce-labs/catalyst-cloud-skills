@@ -6,12 +6,14 @@
 // needs in the order they need it.
 import { describe, expect, test } from "vitest";
 import { existsSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join, dirname, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { CUSTOMER_SKILLS, PROVENANCE_MARKER } from "../src/cli";
 import { FORBIDDEN_CONTENT, MAX_REFERENCE_LINES, MAX_SKILL_LINES, validateSkillDir } from "../src/skill-shape";
+import { parseNodeFloor } from "../src/runtime";
 import { buildFixtureContract } from "./fixture-contract";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -24,7 +26,7 @@ const manifest = JSON.parse(readFileSync(join(pkgRoot, "package.json"), "utf8"))
   files: string[];
   engines: { node: string };
   publishConfig: { access: string };
-  catalystCloud?: { tenantContractRange?: string };
+  catalystCloud?: { tenantContractRange?: string; pinnedNode?: string };
   dependencies?: Record<string, string>;
 };
 
@@ -433,8 +435,44 @@ describe("the package manifest", () => {
       expect(manifest.files).toContain(f);
     }
     expect(existsSync(join(pkgRoot, manifest.bin["catalyst-skills"]!))).toBe(true);
-    expect(manifest.engines.node).toBe(">=22");
+    // CTC-2158: the floor is 22.15, not 22. Measured: Node 22.14.0 has no node:module.registerHooks,
+    // so `ready` reported `ok node: 22` on a runtime where `sdk` could not load. `>=22` was a promise
+    // this package does not keep.
+    expect(manifest.engines.node).toBe(">=22.15");
     expect(manifest.catalystCloud?.tenantContractRange).toBe("1.x");
+    expect(manifest.catalystCloud?.pinnedNode).toMatch(/^\d+\.\d+\.\d+$/);
+  });
+
+  test("the pinned runtime satisfies the declared engines range", () => {
+    const floor = parseNodeFloor(manifest.engines.node);
+    const [maj, min, pat] = manifest.catalystCloud!.pinnedNode!.split(".").map(Number);
+    expect(maj! > floor.major || (maj === floor.major && (min! > floor.minor || (min === floor.minor && pat! >= floor.patch)))).toBe(true);
+  });
+});
+
+describe("CTC-2158: CI derives its Node matrix and exercises bun in both directions", () => {
+  const ci = readFileSync(join(pkgRoot, ".github", "workflows", "ci.yml"), "utf8");
+  const publish = readFileSync(join(pkgRoot, ".github", "workflows", "publish.yml"), "utf8");
+
+  test("ci.yml derives its Node matrix from the script and hard-codes no Node major", () => {
+    expect(ci).toContain("scripts/node-support-matrix.mjs");
+    // CTC-2158/D9: a literal list is exactly what the recorded decision says not to repeat.
+    expect(ci).not.toMatch(/node-version:\s*\[/);
+    expect(ci).toMatch(/matrix\.node/);
+    expect(ci).not.toMatch(/node-version:\s*22\b/);
+  });
+
+  test("ci.yml runs the built CLI under a real bun, in both directions", () => {
+    expect(ci).toMatch(/bun-version:\s*1\.3\.14/); // the version that must FAIL FRIENDLY
+    expect(ci).toMatch(/bun-version:\s*(\$\{\{\s*matrix\.bun\s*\}\}|latest)/); // the version that must LOAD THE SDK
+    expect(ci).toMatch(/bin\/catalyst-skills\.js ready/);
+    expect(ci).toMatch(/friendly-refusal/);
+    expect(ci).toMatch(/sdk-loads/);
+  });
+
+  test("publish.yml derives its Node from engines too, not a literal major", () => {
+    expect(publish).not.toMatch(/node-version:\s*22\b/);
+    expect(publish).toMatch(/node-version-file:\s*package\.json/);
   });
 
   test("the plugin manifests make this repository its own marketplace, at the package's version", () => {
@@ -468,11 +506,26 @@ describe("the package manifest", () => {
     }
   });
 
-  test("the version matches the CHANGELOG's top entry, which is 0.6.1", () => {
+  test("the version matches the CHANGELOG's top entry, which is 0.7.0", () => {
     const changelog = readFileSync(join(pkgRoot, "CHANGELOG.md"), "utf8");
     expect(changelog).toContain(`## ${manifest.version}\n`);
-    expect(changelog.indexOf("## 0.6.1")).toBe(changelog.indexOf("## "));
-    expect(manifest.version).toBe("0.6.1");
+    expect(changelog.indexOf("## 0.7.0")).toBe(changelog.indexOf("## "));
+    expect(manifest.version).toBe("0.7.0");
+  });
+
+  test("CTC-2158: the changelog's top entry records the Node 26 fix and the runtime contract", () => {
+    const changelog = readFileSync(join(pkgRoot, "CHANGELOG.md"), "utf8");
+    const top = changelog.split(/^## /m)[1]!;
+    expect(top).toMatch(/^0\.7\.0/);
+    expect(top).toMatch(/Node 26/);
+    expect(top).toMatch(/22\.15/);
+    expect(top).toMatch(/bun/);
+    expect(top).toMatch(/runtime install/);
+  });
+
+  test("the plugin manifest version tracks package.json", () => {
+    const check = spawnSync(process.execPath, ["scripts/sync-plugin-version.mjs", "--check"], { cwd: pkgRoot, encoding: "utf8" });
+    expect(check.status, check.stdout + check.stderr).toBe(0);
   });
 });
 

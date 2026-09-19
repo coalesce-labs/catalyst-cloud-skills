@@ -10,6 +10,7 @@ import type { TenantContract } from "./contract-types.js";
 import { CliError } from "./errors.js";
 import { replicaStatus, writerIsRunning, type ReplicaStatus } from "./replica.js";
 import { loadSdk } from "./sdk.js";
+import { FIX_COMMAND, detectRuntime, runtimeVerdict, supportedRangeText, type RuntimeFacts } from "./runtime.js";
 
 export interface ReadyCheck {
   id: string;
@@ -63,7 +64,10 @@ function readyReplicaLine(s: ReplicaStatus): string {
 }
 
 export interface ReadyDeps {
-  nodeMajor?: number;
+  /** CTC-2158: replaces `nodeMajor`. A check called `node` cannot honestly describe bun, and under
+   *  bun it used to print bun's Node-*compat* major as if it were Node. Test seam; defaults to the
+   *  real process's runtime. */
+  runtime?: RuntimeFacts;
   skillNames: readonly string[];
   /** Test seam for the SDK-loads check. */
   loadSdk?: () => Promise<unknown>;
@@ -91,12 +95,14 @@ function whoCanAnswer(doc: TenantContract): string {
 
 export async function readyReport(ctx: Ctx, deps: ReadyDeps): Promise<ReadyReport> {
   const checks: ReadyCheck[] = [];
-  const nodeMajor = deps.nodeMajor ?? Number(process.versions.node.split(".")[0]);
-  checks.push(
-    nodeMajor >= 22
-      ? { id: "node", ok: true, line: `node: ${nodeMajor} (22 or newer required)` }
-      : { id: "node", ok: false, line: `node: ${nodeMajor} is too old`, fix: "install Node 22 or newer (the SDK's built-in SQLite engine needs it)", who: "you" },
-  );
+  const facts = deps.runtime ?? detectRuntime();
+  const verdict = runtimeVerdict(facts, readManifest().enginesNode);
+  checks.push({
+    id: "runtime",
+    ok: verdict.supported,
+    line: verdict.line,
+    ...(verdict.supported ? {} : { fix: verdict.fix, who: "you" }),
+  });
 
   let cfg: CustomerConfig | null = null;
   try {
@@ -171,7 +177,13 @@ export async function readyReport(ctx: Ctx, deps: ReadyDeps): Promise<ReadyRepor
     await (deps.loadSdk ?? loadSdk)();
     checks.push({ id: "sdk", ok: true, line: "sdk: loads (replica and watch are available)" });
   } catch (err) {
-    checks.push({ id: "sdk", ok: false, line: `sdk: ${err instanceof Error ? err.message : String(err)}`, fix: "run under Node 22.15 or newer (or bun); every read still works through the API meanwhile", who: "you" });
+    checks.push({
+      id: "sdk",
+      ok: false,
+      line: `sdk: ${err instanceof Error ? err.message : String(err)}`,
+      fix: `${verdict.fix ?? FIX_COMMAND} — supported: ${supportedRangeText(readManifest().enginesNode)}; every read still works through the API meanwhile`,
+      who: "you",
+    });
   }
 
   const replica = replicaStatus(ctx, cfg);

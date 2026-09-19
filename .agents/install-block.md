@@ -73,6 +73,10 @@ CATALYST_CLOUD_TOKEN=<your-personal-key> catalyst-skills login
 
 `--key <your-personal-key>` is the third form, for a script.
 
+If `catalyst-skills ready` reports the runtime as unsupported (Node older than 22.15, or bun older
+than 1.4), run `npx -y @catalyst-cloud/catalyst-skills runtime install` — it installs a pinned Node
+under this CLI's own cache and uses it from then on, without changing your machine's default Node.
+
 The connect step is a `###` under `## Install`, never its own top-level section. It has to sit
 beside the install commands, in the same block a reader copies, or half of them stop at the install
 and never connect.

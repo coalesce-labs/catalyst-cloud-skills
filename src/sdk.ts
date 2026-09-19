@@ -4,6 +4,8 @@
 import type * as SdkNode from "@catalyst-cloud/sdk/node";
 import { CliError } from "./errors.js";
 import { installTsDepsLoader } from "./ts-deps-loader.js";
+import { readManifest } from "./config.js";
+import { FIX_COMMAND, supportedRangeText } from "./runtime.js";
 
 export type Sdk = typeof SdkNode;
 
@@ -23,7 +25,8 @@ export function loadSdk(importer: () => Promise<Sdk> = realImport): Promise<Sdk>
         const detail = err instanceof Error ? err.message.split("\n")[0] : String(err);
         const why = verdict.installed ? "" : ` (${verdict.reason})`;
         throw new CliError(
-          `the Catalyst Cloud SDK could not be loaded on Node ${process.version}${why}: ${detail} — this verb needs the SDK; run under Node 22.15 or newer, or under bun`,
+          `the Catalyst Cloud SDK could not be loaded on Node ${process.version}${why}: ${detail} — this verb needs the SDK. ` +
+            `Supported: ${supportedRangeText(readManifest().enginesNode)}. One command fixes it without changing your default Node: ${FIX_COMMAND}`,
           "sdk-unavailable",
         );
       }
