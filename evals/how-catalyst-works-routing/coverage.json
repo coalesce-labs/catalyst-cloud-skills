@@ -1,0 +1,12 @@
+{
+  "skill": "how-catalyst-works",
+  "invocation": "implicit",
+  "exercised_phrase": "why is this stuck?",
+  "promised_phrases": [
+    "how does this work?",
+    "why did it do that?",
+    "why is this stuck?",
+    "what runs next?",
+    "how does it prioritise?"
+  ]
+}

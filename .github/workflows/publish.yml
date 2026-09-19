@@ -47,6 +47,32 @@ jobs:
       - name: Test suite with coverage, including the pack-and-install smoke
         run: bun run test:coverage
 
+      - uses: astral-sh/setup-uv@v7
+
+      # CTC-2012 Tier 1b — "given a publish, when skill-scanner runs over skills/, then no finding
+      # blocks it": this is that gate, literally on the publish path, before npm publish below.
+      - name: Skill scanner over skills/
+        run: bun run skills:scan
+
+      # ⛔ WARNS LOUDLY, NEVER FAILS OPEN SILENTLY — same pattern as ci.yml's evals job. On the
+      # publish path there is no prior diff to filter by relevance: every publish runs the scored
+      # suite when the secrets exist, and says so plainly when they do not, because "this release
+      # shipped with no scored routing check" is exactly the fact a reader of this log needs.
+      - name: Install the Claude Code CLI
+        run: bun add -g @anthropic-ai/claude-code
+
+      - name: Run the scored eval suite
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY_FOR_EVALS }}
+          CLAUDE_CODE_WALNUT_SPIRE: ${{ secrets.CLAUDE_CODE_PLUGIN_EVAL_ENABLEMENT }}
+        run: |
+          set -euo pipefail
+          if [ -z "${ANTHROPIC_API_KEY:-}" ] || [ -z "${CLAUDE_CODE_WALNUT_SPIRE:-}" ]; then
+            echo "::warning title=skill evals not wired::This release is publishing with NO scored routing check. ANTHROPIC_API_KEY_FOR_EVALS and/or CLAUDE_CODE_PLUGIN_EVAL_ENABLEMENT are unset. The deterministic half (test/evals-suite.test.ts, run above via test:coverage) still holds every description to its cases. Add both secrets to close this gap."
+            exit 0
+          fi
+          bun run evals
+
       - name: Tag must name the version being published
         if: github.event_name == 'push'
         run: |
