@@ -1,0 +1,12 @@
+{
+  "skill": "whats-happening",
+  "invocation": "implicit",
+  "exercised_phrase": "what's happening?",
+  "promised_phrases": [
+    "what's happening?",
+    "where are we?",
+    "why is that stuck?",
+    "what closed?",
+    "what's next?"
+  ]
+}

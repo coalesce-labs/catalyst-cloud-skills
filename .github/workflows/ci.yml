@@ -36,6 +36,77 @@ jobs:
       - name: Test
         run: bun run test
 
+      - uses: astral-sh/setup-uv@v7
+
+      # CTC-2012 Tier 1b — the deterministic half of skill-scanner: no credential, no live model,
+      # runs on every PR and every push to main. Fails on any finding not written down in
+      # scripts/skill-scanner-accepted.json.
+      - name: Skill scanner over skills/
+        run: bun run skills:scan
+
+  # CTC-2012 Tier 1a — the scored half. `claude plugin eval . --no-publish` runs `--runs 1` (or
+  # more, per skill) `claude -p` sessions that spend a real credential, so it is a separate job
+  # from `check`, gated to paths that could actually change routing, and never fails the job over
+  # a credential nobody has minted yet — see scripts/run-evals.mjs and evals/README.md.
+  evals:
+    name: Skill routing evals
+    needs: check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+
+      - name: Install (frozen)
+        run: bun install --frozen-lockfile
+
+      - name: Install the Claude Code CLI
+        run: bun add -g @anthropic-ai/claude-code
+
+      - name: Assert a CLI new enough for --json result documents
+        run: |
+          set -euo pipefail
+          version="$(claude --version | awk '{print $1}')"
+          IFS=. read -r major minor patch <<<"$version"
+          if [ "$major" -lt 2 ] || { [ "$major" -eq 2 ] && [ "$minor" -lt 1 ]; } || { [ "$major" -eq 2 ] && [ "$minor" -eq 1 ] && [ "$patch" -lt 224 ]; }; then
+            echo "::error title=plugin eval::claude $version is older than the 2.1.224 minimum for --json result documents" >&2
+            exit 1
+          fi
+          echo "claude $version"
+
+      # ⛔ WARNS LOUDLY, NEVER FAILS OPEN SILENTLY — same pattern as notify-catalyst-cloud below.
+      # Two independent reasons this step can decide there is nothing scored to prove today: (1) the
+      # diff does not touch anything plugin-eval could catch (60 agent runs on a README typo is
+      # waste — the deterministic gate in the `check` job runs regardless of this filter), or (2)
+      # either secret this job needs is unset. Either way this must never fail the build, and must
+      # never report green having evaluated nothing — it names exactly which is true.
+      - name: Run the scored eval suite
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY_FOR_EVALS }}
+          CLAUDE_CODE_WALNUT_SPIRE: ${{ secrets.CLAUDE_CODE_PLUGIN_EVAL_ENABLEMENT }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          set -euo pipefail
+          if [ -n "${BASE_SHA:-}" ] && git cat-file -e "$BASE_SHA" 2>/dev/null; then
+            if ! git diff --name-only "$BASE_SHA" "${{ github.sha }}" | grep -qE '^(skills/|evals/|\.claude-plugin/)'; then
+              echo "::notice title=skill evals skipped::Nothing under skills/, evals/ or .claude-plugin/ changed in this diff, so the scored suite did not run. The deterministic gate (test/evals-suite.test.ts, in the check job) always runs regardless."
+              exit 0
+            fi
+          fi
+          if [ -z "${ANTHROPIC_API_KEY:-}" ] || [ -z "${CLAUDE_CODE_WALNUT_SPIRE:-}" ]; then
+            echo "::warning title=skill evals not wired::No skill was actually asked to trigger in this run. ANTHROPIC_API_KEY_FOR_EVALS and/or CLAUDE_CODE_PLUGIN_EVAL_ENABLEMENT are unset, so the scored 'claude plugin eval' suite did not run. The deterministic half (test/evals-suite.test.ts) DID run and still holds every description to its cases. Add both secrets to close this gap."
+            exit 0
+          fi
+          bun run evals
+
   # CTC-2534 — tell catalyst-cloud that the bundle moved, so its vendored `.well-known` index stops
   # lagging. It lagged 27 commits and a whole skill (`unstick`) before this existed, and served a
   # `connect-me` description naming the WRONG KEY TIER — copy that is actively wrong rather than
