@@ -806,6 +806,63 @@ describe("the stuck-state catalogue is complete and every exclusion reason names
     const offenders = offendersIn(read(HOW), idsIn(sectionOf(read(STUCK), SELF_SECTION)));
     expect(offenders, "these rows claim the reason releases itself while the human-facing page says someone must act").toEqual([]);
   });
+
+  // CTC-2014 remediate (validate attempt 10, code-review finding 1): `review_not_converging` and
+  // `round_threshold` shipped under the "Reasons a release clears once the cause is fixed" lede,
+  // whose own words are "the person's own login releases them with `catalyst-skills release
+  // <ticket>`" — while `unstick/references/playbook.md`'s refusal table lists BOTH as refusals, and
+  // that playbook's step 6 says "a refusal is terminal for that attempt: nothing was released". The
+  // desk would read the row, route the human to `unstick`, and the cloud would refuse: the exact
+  // "relay instead of guide" failure this ticket exists to remove. The sibling `human_owned_pr` was
+  // filed correctly under "Reasons that need a human" with that note and these two were left
+  // behind, which neither the row-presence gate nor the "no one acts" gate above can see — both
+  // ask whether a row EXISTS, not whether it promises a command the cloud refuses. The refusal
+  // roster is vendored prose in this repository, so the two pages can be held to each other.
+  test("no reason under the release-clears lede is one the release command refuses terminally", () => {
+    const RELEASE_CLEARS = "\n## Reasons a release clears once the cause is fixed\n";
+    const REFUSALS = "\n## What a refusal means and who fixes it\n";
+    const sectionOf = (text: string, heading: string): string => {
+      const start = text.indexOf(heading);
+      expect(start, `heading "${heading.trim()}" must be present`).toBeGreaterThanOrEqual(0);
+      const end = text.indexOf("\n## ", start + heading.length);
+      return text.slice(start, end === -1 ? undefined : end);
+    };
+    // The reason id is a row's FIRST cell; a later cell may name other ids in prose, and a
+    // separator or header row names none.
+    const firstCellIds = (section: string): string[] =>
+      section
+        .split("\n")
+        .filter((l) => l.startsWith("|") && !/^\|\s*-+/.test(l))
+        .flatMap((l) => [...(l.split("|")[1] ?? "").matchAll(REASON_TOKEN)].map((m) => m[1]));
+
+    // ⭐ positive control, on fixed strings: the first-cell reader skips the header and separator,
+    // ignores an id named only in a later cell, and the overlap between the two tables is found.
+    const refusalFixture = [
+      "## What a refusal means and who fixes it",
+      "| refusal | what it means | who acts |",
+      "| -- | -- | -- |",
+      "| `bad_reason` | means | a person |",
+    ].join("\n");
+    const clearsFixture = [
+      "## Reasons a release clears once the cause is fixed",
+      "| reason | what it means | note | who acts |",
+      "| -- | -- | -- | -- |",
+      "| `bad_reason` | means | note | the person, with their own login |",
+      "| `ok_reason` | means | not `bad_reason` | the person, with their own login |",
+    ].join("\n");
+    const refusedControl = new Set(firstCellIds(sectionOf(`\n${refusalFixture}`, REFUSALS)));
+    expect([...refusedControl]).toEqual(["bad_reason"]);
+    expect(firstCellIds(sectionOf(`\n${clearsFixture}`, RELEASE_CLEARS))).toEqual(["bad_reason", "ok_reason"]);
+    expect(firstCellIds(sectionOf(`\n${clearsFixture}`, RELEASE_CLEARS)).filter((id) => refusedControl.has(id))).toEqual(["bad_reason"]);
+
+    const refused = new Set(firstCellIds(sectionOf(read("unstick/references/playbook.md"), REFUSALS)));
+    expect(refused.size, "the playbook's refusal table must still be readable by this gate").toBeGreaterThan(0);
+    const refusedButPromised = firstCellIds(sectionOf(read(STUCK), RELEASE_CLEARS)).filter((id) => refused.has(id));
+    expect(
+      refusedButPromised,
+      "the release command refuses these terminally; file them under 'Reasons that need a human' with that note, as `human_owned_pr` is",
+    ).toEqual([]);
+  });
 });
 
 // CTC-2014 Tier 1 ①: the settings reference names the screen, the route and the rule, instead of the
@@ -859,6 +916,69 @@ describe("the settings reference names the screen, the route and the rule", () =
       /no settings page for this/,
     ];
     for (const re of RULES) expect({ re: re.source, present: re.test(text) }).toEqual({ re: re.source, present: true });
+  });
+});
+
+// CTC-2014 remediate (validate attempt 10, code-review finding 2): the settings page shipped the
+// runner cap as "the tenant page is display-only — lowering it is an operator action", while
+// `whats-happening/references/reprioritising.md` said the opposite — "a concurrency cap the tenant
+// admin can set in settings". One bundle, two skills, opposite answers to "can I lower the cap for
+// this repo?", and the rule this same ticket added at `how-catalyst-works/SKILL.md` routes every
+// settings question to the settings page. The 2026-09-10 repository-settings research settles which
+// is false: `/settings/repositories/$repoId/runner` is READ-ONLY because no GET exists
+// (`repo-runner-view.tsx`), and the only writes are the operator-only
+// `PUT|DELETE /admin/repos/concurrency-limit` (`repo-concurrency-routes.ts`), over
+// `DEFAULT_REPO_CONCURRENCY_LIMIT = 20` (`repo-concurrency-store.ts`), with a paused repo resolving
+// to 0 without touching the stored row. `what-runs-next.md`'s concurrency section already said
+// operator; `reprioritising.md` was the lone dissenter, so it is the sentence that changed.
+//
+// ⛔ WHY A GATE AND NOT JUST THE EDIT. A settings fact restated in three references drifts the
+// moment one of them is rewritten alone, and that is precisely how this contradiction arrived: the
+// author of the new page had no way to see the older sibling's claim. This holds every page that
+// names the cap to the same answer.
+describe("the runner cap has one answer everywhere the bundle names it", () => {
+  const mdFiles = [join(pkgRoot, "README.md"), ...walk(skillsRoot).filter((f) => f.endsWith(".md"))];
+  const CAP_LINE = /concurrency cap|runner cap/i;
+  const OPERATOR_ACTS = /\boperator\b/i;
+  // The retired claim, plus the shapes a rewrite would most likely reintroduce it in.
+  const TENANT_SETS_IT = /(?:tenant )?(?:admin|owner)s?\b[^.|]{0,40}?\b(?:can |could |may )?(?:set|sets|raise|raises|lower|lowers|change|changes)\b/i;
+
+  test("⭐ positive control: the matchers read the retired sentence and the one that replaced it, on fixed strings", () => {
+    const retired = "dispatch is bounded per repository (a concurrency cap the tenant admin can set in settings, and a paused repository resolves to zero)";
+    const replacement = "a concurrency cap of 20 running phases by default that an operator raises or lowers — the tenant's own settings page displays it and does not change it";
+    expect(CAP_LINE.test(retired)).toBe(true);
+    expect(TENANT_SETS_IT.test(retired)).toBe(true);
+    expect(OPERATOR_ACTS.test(retired)).toBe(false);
+    expect(CAP_LINE.test(replacement)).toBe(true);
+    expect(TENANT_SETS_IT.test(replacement)).toBe(false);
+    expect(OPERATOR_ACTS.test(replacement)).toBe(true);
+    // "a tenant owner or admin, in settings, reruns the environment check" is a different subject
+    // and not a cap line at all; the gate only ever reads lines that name the cap.
+    expect(CAP_LINE.test("a tenant owner or admin, in settings, reruns the environment check")).toBe(false);
+  });
+
+  const capLines = mdFiles.flatMap((file) =>
+    readFileSync(file, "utf8")
+      .split("\n")
+      .map((line, i) => ({ rel: relative(pkgRoot, file), line: i + 1, text: line }))
+      .filter((l) => CAP_LINE.test(l.text)),
+  );
+
+  test("the cap is named on more than one page, so the two gates below cannot pass vacuously", () => {
+    expect(new Set(capLines.map((l) => l.rel)).size).toBeGreaterThan(1);
+  });
+
+  test("no page says a tenant admin or owner sets the cap", () => {
+    const offenders = capLines.filter((l) => TENANT_SETS_IT.test(l.text)).map((l) => `${l.rel}:${l.line}`);
+    expect(
+      offenders,
+      "the tenant's runner page is read-only (no GET exists); the cap is written only by the operator-only /admin/repos/concurrency-limit route",
+    ).toEqual([]);
+  });
+
+  test("every page that names the cap names the operator as the one who changes it", () => {
+    const silent = capLines.filter((l) => !OPERATOR_ACTS.test(l.text)).map((l) => `${l.rel}:${l.line}`);
+    expect(silent, "a page that names the cap must also name who can change it, or the human is left to guess").toEqual([]);
   });
 });
 

@@ -12,7 +12,7 @@ Each team's queue is derived by the cloud itself from the team's own tickets, so
 
 Tickets that are already **mid-ladder** join the same candidate set and sort ahead by how many phases they have completed, so a ticket that is nearly done finishes before a fresh one starts. That is an ordering rule only; it never makes an ineligible ticket eligible.
 
-Within the order, dispatch is bounded per repository (a concurrency cap the tenant admin can set in settings, and a paused repository resolves to zero) and split across teams so one team cannot starve another. Comment-wake work, where the cloud answers a human comment on a ticket, shares the same cap as relay work.
+Within the order, dispatch is bounded per repository (a concurrency cap of 20 running phases by default that an operator raises or lowers — the tenant's own settings page displays it and does not change it — and a paused repository resolves to zero without losing the stored value) and split across teams so one team cannot starve another. Comment-wake work, where the cloud answers a human comment on a ticket, shares the same cap as relay work.
 
 The queue is recomputed on every ingest that touches the team and on each alarm pass, so a change you make shows up within seconds, not on a schedule.
 

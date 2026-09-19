@@ -42,6 +42,8 @@ This reference restates an invariant: the vocabulary the cloud's eligibility exp
 | `repo_paused` | an operator paused the repository | an operator resumes it |
 | `scope_overlap` | its declared file scope intersects a ticket already in flight | the person, with their own login, decides which goes first, or waits for the other ticket |
 | `human_owned_pr` | a person's own pull request holds the ticket | the person, with their own login, closes or merges that pull request, or hands it to Catalyst; never close someone's pull request for them. No release clears this one — the release command refuses it terminally — so do not route it to `unstick` expecting one |
+| `review_not_converging` | review and repair kept finding new problems without converging | the person, with their own login, reads the findings (`catalyst-github`) and comments on the ticket to resume; raise an ask for that read. No release clears this one — the release command refuses it terminally — so do not route it to `unstick` expecting one |
+| `round_threshold` | the ticket spent its lifetime repair budget | the person, with their own login, answers the ask the cloud already raised, or pushes a fix; point at that ask rather than raising a second one. No release clears this one — the release command refuses it terminally — so do not route it to `unstick` expecting one |
 
 ## Reasons a release clears once the cause is fixed
 
@@ -52,8 +54,6 @@ These do not release themselves: once the recorded cause is fixed, the person's 
 | `phase_parked` / `cooling_down` (parked after repeated failures, or the round cap was spent) | the phase is parked and does not release itself | `unstick`; `explain --history` names the park and the failure class it recorded | the person, with their own login |
 | `remediate_parked` | the repair phase itself is parked, so the failing phase has nowhere to be repaired | as above | the person, with their own login |
 | `validate_class_spent` | this validate failure already spent its one repair round in this episode | a push or a comment saying what to change releases it on its own; otherwise `unstick` | the person, with their own login |
-| `review_not_converging` | review and repair kept finding new problems without converging | a person reads the findings and comments on the ticket to resume; raise an ask for that read | the person, with their own login |
-| `round_threshold` | the ticket spent its lifetime repair budget | a person answers the ask the cloud raised, or pushes a fix | the person, with their own login |
 | `branch_gone` | a branch that existed was deleted | the person, with their own login, decides whether to recreate it or drop the ticket | the person, with their own login |
 
 ## Reasons that are not problems
