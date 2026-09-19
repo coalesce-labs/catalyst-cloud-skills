@@ -50,6 +50,17 @@ const ROSTER = [
  *  through tenant setup: the person asks for it by name, an agent never starts it on its own. */
 const MUTATING = new Set(["catalyst-linear", "catalyst-onboard", "what-needs-me", "run-this-project", "connect-me", "unstick"]);
 
+/** The per-team readiness checks the engine reports, in wire order. The bundle cannot import the
+ *  engine's own READINESS_CHECK_IDS: it lives in @catalyst-cloud/types, which is not published and
+ *  is not a dependency of this package (pinned by the dependency test below). This array is the one
+ *  place the check vocabulary is written down here — the page's table and the test fixture are both
+ *  held to it, so adding a check is one line plus one documented row. */
+const TEAM_CHECK_IDS = [
+  "oauth_scope", "token_live", "team_visible", "mapped_states_exist", "mapping_total",
+  "types_compatible", "labels_present", "writes_land", "webhook_covers_team", "hosts_current",
+  "environment_declared", "tools_resolvable", "reviewer_required", "reviewer_configured",
+] as const;
+
 function walk(dir: string): string[] {
   const out: string[] = [];
   for (const e of readdirSync(dir, { withFileTypes: true })) {
@@ -396,12 +407,18 @@ describe("the install page (README) states what a customer needs, in the order t
     expect(readme).toMatch(/npm install -g @catalyst-cloud\/catalyst-skills@latest && catalyst-skills login/);
     expect(readme).not.toMatch(/npm update -g/);
     for (const name of CUSTOMER_SKILLS) expect(readme, `uninstall must name ${name}`).toContain(`\`${name}\``);
-    for (const f of ["customer.json", "contract.json", "replica.db", "replica.db.pid", "replica.db.writer.lock", "watch-cursor.json"]) {
+    for (const f of ["customer.json", "contract.json", "replica.db", "replica.db.pid", "replica.db.writer.lock", "replica.db.writer.state", "watch-cursor.json"]) {
       expect(readme, `uninstall must name ${f}`).toContain(f);
     }
     expect(readme).not.toContain("NPM_PUBLISH_TOKEN");
     expect(contributing).toContain("NPM_PUBLISH_TOKEN");
     expect(contributing).toContain("skills-bundle-v<version>");
+  });
+
+  test("the setup reference explains that the writer stops after repeated snapshot failures", () => {
+    const ref = readFileSync(join(skillsRoot, "catalyst-setup", "references", "what-each-check-means.md"), "utf8");
+    expect(ref).toContain("consecutive snapshot failures");
+    expect(ref).toContain("replica status");
   });
 });
 
@@ -537,6 +554,100 @@ describe("the dispatch gate is the stage mapping, not git automation", () => {
   });
 });
 
+// CTC-2542: the page documents every readiness check the engine reports, and nothing hand-writes a
+// count of them. What this gate actually holds is the PAGE against `TEAM_CHECK_IDS` above — this
+// repository's own vendored roster — so a row dropped, renamed, duplicated or left out of wire order
+// reddens here, as does a hand-written count coming back. It cannot notice the engine adding a
+// fifteenth check: nothing in this repository imports `READINESS_CHECK_IDS` (see the array's comment
+// at the top of this file), so a new check is one line there plus one documented row, by hand. That
+// is why the page itself names the contract's `readinessChecks[]` as the list of record.
+describe("what-each-check-means documents every readiness check, and no file counts them", () => {
+  const pagePath = "catalyst-setup/references/what-each-check-means.md";
+  const page = () => readFileSync(join(skillsRoot, pagePath), "utf8");
+  const HEADING = "## The checks";
+
+  /** Rows of the table directly under `heading`, up to the next `## ` heading. Each row is its
+   *  trimmed cells, in file order; the header and separator rows are excluded. */
+  function tableRows(text: string, heading: string): string[][] {
+    const lines = text.split("\n");
+    const start = lines.indexOf(heading);
+    expect(start, `heading "${heading}" must be present`).toBeGreaterThanOrEqual(0);
+    const rows: string[][] = [];
+    for (let i = start + 1; i < lines.length; i++) {
+      const line = lines[i]!;
+      if (line.startsWith("## ")) break;
+      if (!line.startsWith("|")) continue;
+      const cells = line.split("|").slice(1, -1).map((c) => c.trim());
+      if (cells.every((c) => /^-+$/.test(c))) continue; // separator row
+      if (cells[0] === "check id") continue; // header row
+      rows.push(cells);
+    }
+    return rows;
+  }
+
+  test("the table lists exactly the fourteen check ids, in wire order", () => {
+    const rows = tableRows(page(), HEADING);
+    expect(rows.map((r) => r[0])).toEqual(TEAM_CHECK_IDS.map((id) => `\`${id}\``));
+  });
+
+  test("every row carries all four columns, none empty", () => {
+    const rows = tableRows(page(), HEADING);
+    for (const row of rows) {
+      expect(row).toHaveLength(4);
+      for (const cell of row) expect(cell.length).toBeGreaterThan(0);
+    }
+  });
+
+  test("no file under skills/ or the README states a hand-written count of the readiness checks", () => {
+    const COUNT_WORD = String.raw`(?:\d+|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|twenty)`;
+    const CHECK_PHRASE = String.raw`(?:readiness|per-team|team)\s+checks?`;
+    const wideRule = new RegExp(String.raw`\b${COUNT_WORD}\b(?:\s+[\w-]+){0,2}\s+${CHECK_PHRASE}\b`, "i");
+    const dashCheckRule = new RegExp(String.raw`\b${COUNT_WORD}-checks?\b`, "i");
+    // The count can also sit BEFORE a bare "checks" with the readiness noun AFTER it — "fourteen
+    // checks per team", "fourteen checks for each team". The pre-noun rule above walks straight past
+    // those, so the name of this test would have promised coverage it did not have.
+    const postNounRule = new RegExp(
+      String.raw`\b${COUNT_WORD}\b(?:\s+[\w-]+){0,2}\s+checks?\s+(?:per|for|on|against)\s+(?:each\s+|every\s+|the\s+|a\s+)?team`,
+      "i",
+    );
+    const RULES = [wideRule, dashCheckRule, postNounRule];
+    // The page rule: the whole page is about readiness checks, so any count word before a bare
+    // "check"/"checks" here is this defect, even without "readiness"/"per-team"/"team" beside it.
+    // It stays scoped to the page — a bare "the two checks" is ordinary prose anywhere else.
+    const pageRule = new RegExp(String.raw`\b${COUNT_WORD}\b(?:\s+[\w-]+){0,2}\s+checks?\b`, "i");
+
+    // ⭐ positive control, on fixed strings only, so it still fires when the pages are broken: each
+    // phrasing this gate claims to cover must match at least one of its rules. The last two are the
+    // post-noun form a mutation proved was walking through (CTC-2542 validate attempt 1, finding 3).
+    for (const stale of [
+      "the ten per-team readiness checks the cloud runs",
+      "The engine always reports all eleven checks",
+      "## The eleven checks",
+      "tenant readiness from the contract's ten per-team checks",
+      "a ten-check readiness vector",
+      "The engine reports fourteen checks per team.",
+      "fourteen readiness checks for each team",
+    ]) {
+      expect([...RULES, pageRule].some((r) => r.test(stale)), `no rule matches "${stale}"`).toBe(true);
+    }
+
+    const mdFiles = [join(pkgRoot, "README.md"), ...walk(skillsRoot).filter((f) => f.endsWith(".md"))];
+    for (const f of mdFiles) {
+      const text = readFileSync(f, "utf8");
+      const rel = relative(pkgRoot, f);
+      for (const rule of RULES) {
+        expect(text, `${rel} must not name a readiness-check count`).not.toMatch(rule);
+      }
+    }
+
+    expect(page(), `${pagePath} must not name any check count`).not.toMatch(pageRule);
+  });
+
+  test("the fixture contract's readinessChecks ids equal the documented list", () => {
+    const contract = buildFixtureContract();
+    expect(contract.readinessChecks.map((c) => c.id)).toEqual([...TEAM_CHECK_IDS]);
+  });
+});
 
 // A person releases a parked or held ticket from their own seat now (`catalyst-skills release`, the
 // `unstick` skill); the references that sent every park to an operator are rewritten, not left beside it.
@@ -584,17 +695,95 @@ describe("releasing a park is a verb the person's agent runs, not an operator ac
 // ("The live check ids, severities, states and the people who can answer come from the contract");
 // its description contradicted it.
 //
-// ⛔ WHY THIS GATE DOES NOT ASSERT THE TABLE IS COMPLETE. There is no roster in this repository to
-// compare against: `src/ready.ts` and `src/contract-types.ts` contain zero check ids (positive
-// control: both files export freely, so the search reached them), and the only enumeration we hold
-// is `test/fixture-contract.ts`, itself hand-vendored and SHORTER than the live list. Gating the
-// page against that fixture would pin customer prose to something staler than the page it guards.
-// So the page names the contract as the list of record, and this gate keeps a count from coming
-// back. A fifteenth check leaves the page incomplete — which the page now says it may be — rather
-// than wrong, and `check.mjs` still prints it.
+// ⛔ WHY THIS GATE IS ABOUT THE COUNT, NOT THE TABLE. Completeness IS asserted — by a different
+// gate, below: "every readiness check the engine reports has exactly one row on the page a customer
+// is sent to" loops `DOCUMENTED_CHECKS` requiring exactly one row per id and then asserts sorted
+// equality, so a missing row and an extra row both fail. `DOCUMENTED_CHECKS` is `TEAM_CHECK_IDS`
+// (the roster at the top of this file), and `test/fixture-contract.ts` is held to that same roster
+// by "the fixture contract's readinessChecks ids equal the documented list" — one list of record,
+// three consumers.
+//
+// What THIS gate holds is narrower and separate: no customer-facing prose may state a COUNT. A
+// count is the one claim that cannot be kept true by adding a row, because it goes stale the moment
+// a check is added while every table entry is still correct. So the page names the contract as the
+// list of record and never says how long it is.
+//
+// ⚠️ This paragraph previously said the opposite — that this gate does not assert completeness, that
+// no roster exists here, and that the fixture is shorter than the live list. All three were false
+// when written (PR #20 added the comment alongside its own literal roster and a completeness test),
+// and the repair commit that replaced that literal with `TEAM_CHECK_IDS` left the prose behind.
+// Corrected against the code, line by line (CTC-2542 validate round 3, code-review finding 1).
 //
 // Modelled on catalyst-cloud's `apps/mirror/test/agent-guide.test.ts` ("never hard-codes the number
 // of team checks"), written after CTC-2028's eleventh check reddened a hard-coded "ten".
+// ⭐ CTC-2542 round 3 — the header above describes THIS FILE, so it is drift-gated like the customer
+// pages are. The three retired claims are named literally: a future edit that reinstates any of them
+// fails here instead of shipping a comment that contradicts the code eight lines below it.
+describe("this file's own header does not contradict the gates it heads", () => {
+  // ⛔ SCOPED TO THE HEADER, NOT THE WHOLE FILE. The retired phrases are quoted literally below, so
+  // a whole-file search matches this gate's own source and fails on itself — the first run did
+  // exactly that. The header is everything before this describe, which is the text the claims live
+  // in and the only text they can go stale in.
+  const FULL = readFileSync(new URL(import.meta.url).pathname, "utf8");
+  const MARKER = 'describe("this file\'s own header does not contradict the gates it heads"';
+  const SELF = FULL.slice(0, FULL.indexOf(MARKER));
+
+  // ⛔ AND THE INVERSE TRAP, WHICH ROUND 4 WALKED INTO. The gate below names three things it claims
+  // exist elsewhere. Searching `FULL` for them cannot fail: the assertion lines ARE those literals,
+  // so the needle is always found in the gate's own source. Same self-reference as the warning
+  // above, opposite direction — that one failed on itself, this one PASSED on itself.
+  //
+  // `ELSEWHERE` is the file minus two regions: this describe block (the assertions' own text) and
+  // the header comment immediately above it (the prose under audit — it QUOTES one of the two test
+  // titles at "…by \"the fixture contract's readinessChecks ids…\"", so a header-inclusive search
+  // would let the header vouch for itself). What remains is code this gate does not write, which is
+  // the only place a claim about the gates below can be honestly confirmed.
+  const END_SENTINEL = "END OF THE SELF-DRIFT GATE — the assertions above may not see past here.";
+  const ELSEWHERE = ((): string => {
+    const lines = FULL.split("\n");
+    const gateStart = lines.findIndex((line) => line.startsWith(MARKER));
+    if (gateStart < 0) throw new Error("self-drift gate: could not locate its own describe");
+    let headerStart = gateStart;
+    while (headerStart > 0 && lines[headerStart - 1].trimStart().startsWith("//")) headerStart -= 1;
+    const gateEnd = lines.length - 1 - [...lines].reverse().findIndex((l) => l.includes(END_SENTINEL));
+    if (gateEnd < gateStart) throw new Error("self-drift gate: could not locate its end sentinel");
+    return [...lines.slice(0, headerStart), ...lines.slice(gateEnd + 1)].join("\n");
+  })();
+
+  test("⭐ the three retired false claims never come back", () => {
+    // Positive control: the matcher finds a claim that IS present, so an empty result means absent
+    // rather than a dead search.
+    expect(SELF).toContain("Completeness IS asserted");
+    for (const retired of [
+      "WHY THIS GATE DOES NOT ASSERT THE TABLE IS COMPLETE",
+      "There is no roster in this repository",
+      "SHORTER than the live list",
+    ]) {
+      expect({ retired, present: SELF.includes(retired) }).toEqual({ retired, present: false });
+    }
+  });
+
+  test("⭐ and the gates the header now points at actually exist", () => {
+    // The header says completeness is asserted by a gate below, that DOCUMENTED_CHECKS is the
+    // roster, and that the fixture is held to the same list. If any of those stops being true the
+    // header is wrong again — so each is pinned by name here, against `ELSEWHERE` rather than the
+    // whole file, so that renaming the thing named makes this red.
+    //
+    // Positive control: a literal that genuinely lives outside both excluded regions is found, so a
+    // miss below means the needle is absent rather than the region being empty or mis-sliced.
+    expect(ELSEWHERE).toContain("const TEAM_CHECK_IDS = [");
+    for (const claimed of [
+      "const DOCUMENTED_CHECKS = TEAM_CHECK_IDS;",
+      "every readiness check the engine reports has exactly one row on the page a customer is sent to",
+      "the fixture contract's readinessChecks ids equal the documented list",
+    ]) {
+      expect({ claimed, present: ELSEWHERE.includes(claimed) }).toEqual({ claimed, present: true });
+    }
+  });
+
+  // END OF THE SELF-DRIFT GATE — the assertions above may not see past here.
+});
+
 describe("no customer-facing prose states a readiness check count", () => {
   const COUNTED_CHECKS =
     // `{0,3}` because the stale wording put two qualifiers between the count and the noun ("ten
@@ -647,22 +836,10 @@ describe("no customer-facing prose states a readiness check count", () => {
   // reader the contract is the list of record and that `check.mjs` prints whatever it sends.
   // Upstream: catalyst-cloud `packages/types/src/workflow-readiness.ts`, READINESS_CHECK_IDS, read
   // at origin/main e0b790eb (2026-09-17). Declaration order there IS wire order.
-  const DOCUMENTED_CHECKS = [
-    "oauth_scope",
-    "token_live",
-    "team_visible",
-    "mapped_states_exist",
-    "mapping_total",
-    "types_compatible",
-    "labels_present",
-    "writes_land",
-    "webhook_covers_team",
-    "hosts_current",
-    "environment_declared",
-    "tools_resolvable",
-    "reviewer_required",
-    "reviewer_configured",
-  ] as const;
+  // One roster, not two: `TEAM_CHECK_IDS` at the top of this file IS the vendored list described
+  // above, and the merge that brought these two gates together is exactly when a second hand-written
+  // copy would have started drifting from the first.
+  const DOCUMENTED_CHECKS = TEAM_CHECK_IDS;
 
   /**
    * The first cell of every backtick-quoted row in the READINESS table, in page order — scoped to
