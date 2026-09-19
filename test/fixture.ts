@@ -59,6 +59,10 @@ export interface FixtureServer {
   requests: RecordedRequest[];
   /** Override the issue list the read routes serve. */
   issues: Record<string, unknown>[];
+  /** Override the pull list the read routes serve; falls back to the module-level `PULLS`. */
+  pulls?: Record<string, unknown>[];
+  /** The server-side page cap the keyset routes (`/issues`, `/pulls`) enforce (production: 500). */
+  pageCap?: number;
   /** A whole `/api/v1/work-eligibility` body served for one team key instead of the ENG fixture. */
   eligibilityByTeam: Record<string, Record<string, unknown>>;
   /** The contract's `ticket-release` route answers this (status + body) when set; `{outcome: "released"}` otherwise. */
@@ -177,6 +181,13 @@ export function fixtureIssues(): Record<string, unknown>[] {
     }),
     issue({ identifier: "OPS-1", team_id: "team-ops", project_id: "proj-b" }),
   ];
+}
+
+/** N throwaway issues (`ENG-1`..`ENG-N`) for pagination tests that need a scope bigger than the
+ *  server's page cap. Unlabelled and unrelated — a test that combines these with `fixtureIssues()`
+ *  relies on the latter's ENG-7/ENG-8 ask rows being the only labelled ones in the combined scope. */
+export function manyIssues(n: number): Record<string, unknown>[] {
+  return Array.from({ length: n }, (_, i) => issue({ identifier: `ENG-${i + 1}` }));
 }
 
 function issueDetail(row: Record<string, unknown>): Record<string, unknown> {
@@ -419,6 +430,42 @@ const TICKET_EXECUTION = {
 
 // ── the server ───────────────────────────────────────────────────────────────────────────────────
 
+interface KeysetPageResult {
+  rows: Record<string, unknown>[];
+  total: number;
+  headers: Record<string, string>;
+  bad?: string;
+}
+
+/** One keyset page, exactly as the mirror builds it: `limit` clamped to the server's page cap
+ *  (`state.pageCap`, default 500), `X-Mirror-Total` set to the WHOLE scope's count, and
+ *  `X-Mirror-Next-Cursor` present ONLY when rows remain past this page — absent, not empty, on the
+ *  last one. The cursor is opaque to the client, so its encoding here is deliberately arbitrary. */
+function keysetPage(rows: Record<string, unknown>[], url: URL, state: FixtureServer, route: string): KeysetPageResult {
+  const total = rows.length;
+  const requested = Number(url.searchParams.get("limit") ?? "100");
+  const limit = Math.min(Math.max(1, Number.isFinite(requested) ? requested : 100), state.pageCap ?? 500);
+  const after = url.searchParams.get("after");
+  let start = 0;
+  if (after !== null) {
+    const decoded = Number(Buffer.from(after, "base64url").toString("utf8").split("|")[0] ?? "");
+    if (!Number.isInteger(decoded) || decoded < 0) {
+      return { rows: [], total, headers: {}, bad: `invalid ?after= cursor for ${route}` };
+    }
+    start = decoded;
+  }
+  const page = rows.slice(start, start + limit);
+  const end = start + page.length;
+  const headers: Record<string, string> = {
+    "x-mirror-cursor": String(state.headCursor),
+    "x-mirror-total": String(total),
+  };
+  if (end < total) {
+    headers["x-mirror-next-cursor"] = Buffer.from(`${end}|`, "utf8").toString("base64url");
+  }
+  return { rows: page, total, headers };
+}
+
 function readBody(req: IncomingMessage): Promise<string> {
   return new Promise((resolve) => {
     let raw = "";
@@ -641,7 +688,8 @@ export async function startMeFixture(
       const project = url.searchParams.get("project");
       if (team) rows = rows.filter((r) => String(r.identifier).startsWith(`${team}-`));
       if (project) rows = rows.filter((r) => r.project_id === project);
-      return send(200, { rows, total: rows.length }, { "x-mirror-total": String(rows.length) });
+      const p = keysetPage(rows, url, state, "/api/v1/issues");
+      return p.bad ? send(400, { error: p.bad }) : send(200, { rows: p.rows, total: p.total }, p.headers);
     }
     const issueMatch = /^\/api\/v1\/issues\/([^/]+)$/.exec(path);
     if (issueMatch) {
@@ -651,7 +699,10 @@ export async function startMeFixture(
     }
     if (path === "/api/v1/pulls") {
       const ticket = url.searchParams.get("ticket");
-      return send(200, { rows: ticket ? PULLS.filter((p) => p.linear_issue_identifier === ticket) : PULLS });
+      let rows = state.pulls ?? PULLS;
+      if (ticket) rows = rows.filter((p) => p.linear_issue_identifier === ticket);
+      const p = keysetPage(rows, url, state, "/api/v1/pulls");
+      return p.bad ? send(400, { error: p.bad }) : send(200, { rows: p.rows, total: p.total }, p.headers);
     }
     const pullMatch = /^\/api\/v1\/pulls\/([^/]+)$/.exec(path);
     if (pullMatch) {

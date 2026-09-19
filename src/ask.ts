@@ -7,7 +7,7 @@ import { loadContract, teamByKey } from "./contract.js";
 import type { TenantContract } from "./contract-types.js";
 import { UsageError } from "./errors.js";
 import { apiClient, type ApiClient } from "./transport.js";
-import { rowsOf } from "./query.js";
+import { fetchAllPages } from "./pagination.js";
 import { fetchWorkflowStates, postAgent, resolveIssue } from "./write.js";
 
 export async function cmdAsk(args: ParsedArgs, ctx: Ctx): Promise<number> {
@@ -136,8 +136,11 @@ export function rankAsks(issues: Record<string, unknown>[], doc: TenantContract,
 }
 
 async function list(args: ParsedArgs, ctx: Ctx, doc: TenantContract, api: ApiClient, cfg: CustomerConfig): Promise<number> {
-  const [issuesRes, states] = await Promise.all([api.getJson<unknown>("/api/v1/issues", { query: { limit: 500 } }), fetchWorkflowStates(api)]);
-  const issues = rowsOf(issuesRes.body);
+  // ⛔ THE INBOX IS THE WHOLE SCOPE, NOT A PAGE. The mirror caps every page at 500 rows regardless of
+  // the requested limit, so a single `limit: 500` read drops every ask past the cap — and, worse,
+  // scores the asks it does show against a partial view of what they block (rankAsks below).
+  const [inbox, states] = await Promise.all([fetchAllPages(api, "/api/v1/issues", {}), fetchWorkflowStates(api)]);
+  const issues = inbox.rows;
   const terminal = new Set(states.filter((s) => ["completed", "canceled", "cancelled"].includes(s.type.toLowerCase())).map((s) => s.name.toLowerCase()));
   const openState = (issue: Record<string, unknown>) => !terminal.has(String(issue.state ?? "").toLowerCase());
   const all = rankAsks(issues, doc, openState);
