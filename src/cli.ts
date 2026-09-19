@@ -34,8 +34,17 @@ import { cmdReady } from "./ready.js";
 import { cmdReplica, type ReplicaDeps } from "./replica.js";
 import { cmdEvents, type EventDeps } from "./events.js";
 import { stdinIsTty } from "./prompt.js";
-import { PROVENANCE_MARKER } from "./skill-shape.js";
-import { installSkills, parseChangelogEntry, readChangelog, resolveSkillsDir, skillsSourceDir, updateNoticeLine, type SkillsInstallResult } from "./skills.js";
+import { FIRST_STAMPED_VERSION, PROVENANCE_MARKER, parseProvenanceVersion } from "./skill-shape.js";
+import {
+  installedBundleVersion,
+  installSkills,
+  parseChangelogEntry,
+  readChangelog,
+  resolveSkillsDir,
+  skillsSourceDir,
+  updateNoticeLine,
+  type SkillsInstallResult,
+} from "./skills.js";
 import { cmdWatch, type WatchDeps } from "./watch.js";
 import { cmdWrite, type WriteDeps } from "./write.js";
 import { cmdAsk } from "./ask.js";
@@ -45,6 +54,7 @@ import { cmdEnvironment, type EnvironmentDeps } from "./environment.js";
 export {
   CONFIG_MODE,
   DEFAULT_BASE_URL,
+  FIRST_STAMPED_VERSION,
   PACKAGE_NAME,
   PROVENANCE_MARKER,
   CliError,
@@ -57,11 +67,13 @@ export {
   defaultSkillsDirFor,
   fetchMe,
   formatMode,
+  installedBundleVersion,
   installSkills,
   loadConfig,
   normalizeBaseUrl,
   parseArgs,
   parseChangelogEntry,
+  parseProvenanceVersion,
   readChangelog,
   readManifest,
   resolveSkillsDir,
@@ -241,7 +253,7 @@ export async function main(argv: string[], ctx: Ctx = defaultCtx(), deps: MainDe
       case "ask":
         return await cmdAsk(args, ctx);
       case "ready":
-        return await cmdReady(args, ctx, { skillNames: CUSTOMER_SKILLS, loadSdk: deps.loadSdk });
+        return await cmdReady(args, ctx, { skillNames: CUSTOMER_SKILLS, loadSdk: deps.loadSdk, offline: args.flags.offline === true });
       case "accounts":
         return await cmdAccounts(args, ctx);
       case "release":

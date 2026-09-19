@@ -5,13 +5,14 @@
 // cloud only through the catalyst-skills verbs it promises, and the README states what a customer
 // needs in the order they need it.
 import { describe, expect, test } from "vitest";
-import { existsSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, dirname, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { CUSTOMER_SKILLS, PROVENANCE_MARKER } from "../src/cli";
-import { FORBIDDEN_CONTENT, MAX_REFERENCE_LINES, MAX_SKILL_LINES, validateSkillDir } from "../src/skill-shape";
+import { FORBIDDEN_CONTENT, MAX_REFERENCE_LINES, MAX_SKILL_LINES, parseProvenanceVersion, validateSkillDir } from "../src/skill-shape";
 import { buildFixtureContract } from "./fixture-contract";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -405,7 +406,7 @@ describe("the install page (README) states what a customer needs, in the order t
     expect(readme).toMatch(/npm install -g @catalyst-cloud\/catalyst-skills@latest && catalyst-skills login/);
     expect(readme).not.toMatch(/npm update -g/);
     for (const name of CUSTOMER_SKILLS) expect(readme, `uninstall must name ${name}`).toContain(`\`${name}\``);
-    for (const f of ["customer.json", "contract.json", "replica.db", "replica.db.pid", "replica.db.writer.lock", "replica.db.writer.state", "watch-cursor.json"]) {
+    for (const f of ["customer.json", "contract.json", "published.json", "replica.db", "replica.db.pid", "replica.db.writer.lock", "replica.db.writer.state", "watch-cursor.json"]) {
       expect(readme, `uninstall must name ${f}`).toContain(f);
     }
     expect(readme).not.toContain("NPM_PUBLISH_TOKEN");
@@ -417,6 +418,16 @@ describe("the install page (README) states what a customer needs, in the order t
     const ref = readFileSync(join(skillsRoot, "catalyst-setup", "references", "what-each-check-means.md"), "utf8");
     expect(ref).toContain("consecutive snapshot failures");
     expect(ref).toContain("replica status");
+  });
+
+  test("the machine-check table documents every id ready can emit, including the version-drift notes", () => {
+    const ref = readFileSync(join(skillsRoot, "catalyst-setup", "references", "what-each-check-means.md"), "utf8");
+    const start = ref.indexOf("\n## The machine checks the CLI adds\n");
+    const end = ref.indexOf("\n## ", start + 1);
+    const section = ref.slice(start, end === -1 ? undefined : end);
+    for (const id of ["node", "config", "contract", "bundle", "cliPath", "skills", "cliRelease", "skillsRelease", "sdk", "replica"]) {
+      expect(section, `the machine table must document ${id}`).toMatch(new RegExp(`\`${id}\``));
+    }
   });
 });
 
@@ -468,11 +479,47 @@ describe("the package manifest", () => {
     }
   });
 
-  test("the version matches the CHANGELOG's top entry, which is 0.6.1", () => {
+  test("the version matches the CHANGELOG's top entry, which is 0.7.0", () => {
     const changelog = readFileSync(join(pkgRoot, "CHANGELOG.md"), "utf8");
     expect(changelog).toContain(`## ${manifest.version}\n`);
-    expect(changelog.indexOf("## 0.6.1")).toBe(changelog.indexOf("## "));
-    expect(manifest.version).toBe("0.6.1");
+    expect(changelog.indexOf("## 0.7.0")).toBe(changelog.indexOf("## "));
+    expect(manifest.version).toBe("0.7.0");
+  });
+
+  test("every shipped skill stamps the package version on its provenance line", () => {
+    for (const name of CUSTOMER_SKILLS) {
+      const md = skill(name);
+      const lines = md.split("\n");
+      const close = lines.indexOf("---", 1);
+      const line = lines[close + 1] ?? "";
+      expect(parseProvenanceVersion(line), `${name} — run: npm run version:sync`).toBe(manifest.version);
+    }
+  });
+
+  test("the sync script's --check agrees with the committed tree", () => {
+    const r = spawnSync(process.execPath, [join(pkgRoot, "scripts", "sync-plugin-version.mjs"), "--check"], { encoding: "utf8" });
+    expect(r.status, r.stdout + r.stderr).toBe(0);
+  });
+
+  // A skills/ subdirectory with no SKILL.md is a state installSkills (src/skills.ts) skips on purpose;
+  // the stamping loop used to read it unguarded and die with an uncaught ENOENT, taking down both
+  // `npm run version:sync` (a release step) and the --check above.
+  test("the sync script skips a skills/ subdirectory with no SKILL.md instead of crashing", () => {
+    const root = mkdtempSync(join(tmpdir(), "catalyst-version-sync-"));
+    mkdirSync(join(root, "scripts"), { recursive: true });
+    mkdirSync(join(root, ".claude-plugin"), { recursive: true });
+    mkdirSync(join(root, "skills", "alpha"), { recursive: true });
+    mkdirSync(join(root, "skills", "references-only"), { recursive: true }); // no SKILL.md
+    copyFileSync(join(pkgRoot, "scripts", "sync-plugin-version.mjs"), join(root, "scripts", "sync-plugin-version.mjs"));
+    writeFileSync(join(root, "package.json"), `${JSON.stringify({ version: manifest.version }, null, 2)}\n`);
+    writeFileSync(join(root, ".claude-plugin", "plugin.json"), `${JSON.stringify({ version: manifest.version }, null, 2)}\n`);
+    writeFileSync(
+      join(root, "skills", "alpha", "SKILL.md"),
+      ["---", "name: alpha", "description: x", "---", `<!-- ${PROVENANCE_MARKER}@${manifest.version} -->`, ""].join("\n"),
+    );
+    const r = spawnSync(process.execPath, [join(root, "scripts", "sync-plugin-version.mjs"), "--check"], { encoding: "utf8" });
+    expect(r.status, r.stdout + r.stderr).toBe(0);
+    expect(r.stderr).not.toContain("ENOENT");
   });
 });
 

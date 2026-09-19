@@ -21,7 +21,11 @@ export function makeCtx(home: string, overrides: Partial<Ctx> = {}): TestCtx {
   const out: string[] = [];
   const err: string[] = [];
   return {
-    env: {},
+    // CTC-2160 — `ready` gained its first network call (the published-release lookup); every
+    // in-process test seam defaults offline so a test that forgets to inject `fetchLatestRelease`
+    // fails loudly instead of quietly reaching the real npm registry. Tests exercising the lookup
+    // override this explicitly via `overrides.env`.
+    env: { CATALYST_SKILLS_OFFLINE: "1" },
     home,
     stdout: (line) => out.push(line),
     stderr: (line) => err.push(line),
