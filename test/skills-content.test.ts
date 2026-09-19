@@ -722,6 +722,39 @@ describe("the stuck-state catalogue is complete and every exclusion reason names
     }
   });
 
+  // CTC-2014 validate attempt 9, code-review finding 2: the "Reasons a release clears once the cause
+  // is fixed" section's own lede says "These do not release themselves: once the recorded cause is
+  // fixed, the person's own login releases them" — so a row in it whose who-acts cell reads "no one
+  // acts" tells the desk two opposite things about the same reason id. The reasons that genuinely
+  // need nobody have a section of their own; this holds the two apart.
+  test("no row under the release-clears lede says 'no one acts', which that lede contradicts", () => {
+    const RELEASE_CLEARS = "\n## Reasons a release clears once the cause is fixed\n";
+    const sectionOf = (text: string, heading: string): string => {
+      const start = text.indexOf(heading);
+      expect(start, `heading "${heading.trim()}" must be present`).toBeGreaterThanOrEqual(0);
+      const end = text.indexOf("\n## ", start + heading.length);
+      return text.slice(start, end === -1 ? undefined : end);
+    };
+
+    // ⭐ positive control, on fixed strings: the slicer stops at the next heading, and a planted
+    // contradicting row is caught while a legitimate one is not.
+    const fixture = [
+      "## Reasons a release clears once the cause is fixed",
+      "| `a_reason` | means | note | the person, with their own login |",
+      "| `b_reason` | means | note | no one acts |",
+      "## Reasons that are not problems",
+      "| `c_reason` | means | note | no one acts |",
+    ].join("\n");
+    const control = sectionOf(`\n${fixture}`, RELEASE_CLEARS);
+    expect(control.split("\n").filter((l) => l.startsWith("|") && l.includes("no one acts"))).toEqual([
+      "| `b_reason` | means | note | no one acts |",
+    ]);
+
+    const section = sectionOf(read(STUCK), RELEASE_CLEARS);
+    const contradicting = section.split("\n").filter((l) => l.startsWith("|") && l.includes("no one acts"));
+    expect(contradicting, "move these rows to 'Reasons that release themselves'").toEqual([]);
+  });
+
   test("every exclusion reason's row on the human-facing page names who acts", () => {
     const lines = read(STUCK).split("\n");
     for (const id of Object.keys(EXCLUSION_REASONS)) {
@@ -839,6 +872,22 @@ describe("readiness is pinned for both setup skills, and the flow-metrics gap is
     const readme = readFileSync(join(pkgRoot, "README.md"), "utf8");
     expect(readme).toMatch(/cycle time, throughput, or how long pull requests have been open/);
     expect(readme).toMatch(/not computed/);
+  });
+
+  // CTC-2014 validate attempt 9, code-review finding 1: the README's lede claims "the skills say so
+  // by name rather than guess" for BOTH bullets, but a skill session loads SKILL.md plus its
+  // references/ and never the README. Pinning the README alone let that claim ship with nothing
+  // under skills/ behind its flow-metrics half, so a "what's our cycle time?" question reached a
+  // desk with no reference naming the gap. This gate holds the sentence where an agent reads it.
+  test("a reference a skill session actually loads names the flow-metrics gap, so the README's claim holds", () => {
+    const PHRASE = /cycle time, throughput, or how long pull requests have been open/;
+    const carriers = walk(skillsRoot)
+      .filter((f) => f.endsWith(".md"))
+      .filter((f) => PHRASE.test(readFileSync(f, "utf8")) && /not computed/.test(readFileSync(f, "utf8")))
+      .map((f) => relative(pkgRoot, f).replaceAll("\\", "/"));
+    expect(carriers, "the README is not loaded by a skill session; a reference must carry this too").toContain(
+      "skills/whats-happening/references/status-reply.md",
+    );
   });
 });
 

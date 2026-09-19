@@ -20,6 +20,8 @@ This reference restates an invariant: the vocabulary the cloud's eligibility exp
 | `runner_image_breaker` | fleet-wide: the live runner image fails every phase at startup, so dispatch is held rather than parking tickets | an operator moves the pin; one alert per tenant, no per-ticket action | an operator |
 | `routing_unavailable` | claimed, then refused at kickoff: no route, no eligible coding-account slot, or the provider is unavailable | provider recovery or a slot freeing | usually no one acts; if it persists, a tenant owner or admin, in settings, checks coding accounts |
 | `cooling_down` (with a named callback) | the phase is parked on a condition the cloud watches | the callback fires; the `detail` names it | no one acts; an operator can release it directly if the callback stalls |
+| `no_branch_to_remediate` / `branch_missing` | a branch-dependent phase has no branch yet | the cloud releases these parks on its own budget | no one acts |
+| `stale_failure_episode` | the ladder advanced after the recorded failure, so the round would repair a phase already passed | the round is dropped automatically; the reason is informational | no one acts |
 
 ## Reasons that need a human
 
@@ -52,9 +54,7 @@ These do not release themselves: once the recorded cause is fixed, the person's 
 | `human_owned_pr` | a person's own pull request holds the ticket | that person closes or merges it; no release clears it | the person, with their own login |
 | `review_not_converging` | review and repair kept finding new problems without converging | a person reads the findings and comments on the ticket to resume; raise an ask for that read | the person, with their own login |
 | `round_threshold` | the ticket spent its lifetime repair budget | a person answers the ask the cloud raised, or pushes a fix | the person, with their own login |
-| `no_branch_to_remediate` / `branch_missing` | a branch-dependent phase has no branch yet | the cloud releases these parks on its own budget | no one acts |
 | `branch_gone` | a branch that existed was deleted | the person, with their own login, decides whether to recreate it or drop the ticket | the person, with their own login |
-| `stale_failure_episode` | the ladder advanced after the recorded failure | informational; the round is dropped automatically | no one acts |
 
 ## Reasons that are not problems
 
