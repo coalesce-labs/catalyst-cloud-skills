@@ -67,11 +67,15 @@ if (flags.board) {
   if (flags.team) args.push("--team", flags.team);
   const r = runCli(args);
   const sourceLine = (r.stderr.match(/^source: .*$/m) ?? [null])[0];
+  // A board read is a window (`--limit` stays the default), and a window the cloud cut short must
+  // say so rather than reading as the whole team.
+  const truncatedLine = (r.stderr.match(/^truncated at .*$/m) ?? [null])[0];
   if (r.code !== 0) errors.board = (r.stderr || `exit ${r.code}`).trim().split("\n").at(-1);
   else {
     const rows = parseJson(r.stdout, "issues");
     out.board = groupByStage(rows, contract, flags.team);
     if (sourceLine) out.source.board = sourceLine.replace(/^source: /, "");
+    if (truncatedLine) out.source.boardTruncated = truncatedLine;
   }
 }
 
