@@ -181,7 +181,17 @@ if (!connected) {
     }
     for (const c of projectChecks) lines.push(`${c.ok ? "note" : "FAIL"} ${c.line}${c.who ? ` — who: ${c.who}` : ""}`);
     lines.push("⛔ MAPPED projects only. An empty list means nothing is mapped yet, NOT that there are no projects — the full list is on the page below.");
-    const ready = rows.length > 0 && rows.every((t) => (t.readiness?.status ?? "unchecked") === "ready");
+    // A project is set up when its dispatch gate is open (its stages are mapped), or when its
+    // readiness reads ready. Readiness alone kept `--next` on "map its stages" for a tenant whose
+    // gates were open: readiness stays "unchecked" until someone presses Re-check, and a new team
+    // stays "degraded" until a repository is attached, which is the step AFTER this one.
+    const setUp = (t) => t.dispatchGate?.status === "open" || (t.readiness?.status ?? "unchecked") === "ready";
+    for (const t of rows) {
+      if (t.dispatchGate?.status === "open" && (t.readiness?.status ?? "unchecked") === "unchecked") {
+        lines.push(`${t.key ?? t.id ?? "(unkeyed)"}: stages mapped; readiness not checked yet: press Re-check on the page below to see the rest`);
+      }
+    }
+    const ready = rows.length > 0 && rows.every(setUp);
     add("projects", "catalyst-skills contract --path teams, and the team: checks of ready", ready ? "ok" : "unfinished", lines, "a tenant owner or admin", link("/settings/linear-teams"));
   }
 }
