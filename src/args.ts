@@ -43,6 +43,12 @@ export const FLAG_TABLES: Record<string, FlagTable> = {
   login: {
     "start-replica": { value: false, help: "run `replica start --detach` after connecting" },
   },
+  mcp: {
+    url: { value: true, help: "add: the upstream HTTPS endpoint" },
+    auth: { value: true, help: "add: none for an unauthenticated upstream" },
+    bearer: { value: true, help: "add: vault secret NAME for a bearer token, never its value" },
+    header: { value: true, repeat: true, help: "add: HEADER_NAME=VAULT_SECRET_NAME (repeatable)" },
+  },
   install: {},
   status: {},
   notice: {},
@@ -173,6 +179,7 @@ export const VERB_USAGE: Record<string, string> = {
   ask: "ask <raise --team --title [--context] [--option]... [--default] --blocks <ticket>...|--nothing-to-block [--ask-key] | accept <askTicket> --answer <commentId> --role <role> | list [--anyone] [--json]>",
   ready: "ready [--json] [--offline]",
   accounts: "accounts [--json]",
+  mcp: "mcp <add <name> --url URL <--auth none|--bearer SECRET_NAME|--header NAME=SECRET_NAME...>|list|remove <name>> [--json]",
   environment:
     "environment [read] [--json] | environment propose --file <path>|--stdin [--expect-revision N] [--approve] [--json] | environment approve [--revision N --hash H] [--json]",
   release:

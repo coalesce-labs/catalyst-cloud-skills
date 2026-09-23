@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.8.0
+
+Register, list and remove MCP servers with `catalyst-skills mcp`, using vault-secret names for authentication. Custom HTTPS servers wait for account-admin approval; query strings, userinfo and fragments are refused. Requires a cloud exposing the portal-server registry routes.
+
 ## 0.7.0
 
 `explain` and `ready` now name a team that cannot start work even when the live read is not available. Your tenant's contract carries each team's dispatch gate, and this machine already keeps a copy of that contract on disk; until now only the live eligibility read could name the gate, so a network hiccup, or a cloud older than that read, left `explain` printing nothing at all. `explain` now leads with the gate and the fix from the cached contract when the live read is unavailable or sends no gate, and says which of the two it read; when both answer and disagree, the live read wins and the paragraph says the cached one disagreed. A refusal from the cloud — a credential that is not accepted, for instance — is still a refusal, never quietly replaced by a cached answer. `ready` now prints one dispatch-gate line per team: open teams read `ok`, and a team whose stages are not saved reads `FAIL` with the remedy your tenant sent and turns the verdict to NOT READY, because nothing in that team can start. A cloud that does not send the gate changes nothing.
