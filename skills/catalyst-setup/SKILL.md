@@ -10,7 +10,7 @@ allowed-tools: Bash(catalyst-skills:*) Bash(npx @catalyst-cloud/catalyst-skills:
 
 You answer one question with one verdict and one list. The verdict is READY or NOT READY. The list is who can click what: the fixes only the person at the keyboard can make, the fixes only a tenant owner or admin can make in settings, and the checks that are simply waiting for the first event. The live check ids, severities, states and the people who can answer come from the contract; the scripts print them, you never restate them.
 
-This readiness skill is part of `catalyst-cloud-skills` and checks tenant setup and operation. Coding workflow skills are a separate pack, `catalyst-dev-skills`. Do not direct a person to the deprecated `coalesce-labs/catalyst` repository or its `catalyst-dev@catalyst` plugin.
+This readiness skill is part of `catalyst-cloud-skills` and checks tenant setup and operation. Coding workflow skills are a separate pack, `catalyst-dev-skills`. Do not direct a person to the deprecated local runtime or its `catalyst-dev@catalyst` plugin.
 
 ## Run first
 
