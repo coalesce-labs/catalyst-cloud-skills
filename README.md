@@ -12,17 +12,25 @@ Help me understand and set up Catalyst Cloud. Read https://staging.catalystcloud
 
 Your agent reads the guide, explains Catalyst Cloud in terms of your own repositories and tickets, finds out where it is running and what is already installed, and does the setup below itself — asking once before it writes to your machine. Everything else on this page is the reference it follows.
 
+This repository supplies skills for setting up and operating a Catalyst Cloud tenant. A coding workstation also uses [`coalesce-labs/catalyst-dev-skills`](https://github.com/coalesce-labs/catalyst-dev-skills) for research, planning, implementation, review, and shipping.
+
 Or by hand. One command, for every coding agent on the machine:
 
 ```sh
-npx skills@latest add coalesce-labs/catalyst-cloud-skills --all
+npx skills@latest add coalesce-labs/catalyst-cloud-skills --all -g
 ```
 
-It installs every skill in the bundle for each agent it detects (Claude Code, Codex, Cursor, OpenCode and the rest). Add `-g` to install into your home directory instead of the project. Skills installed this way do not auto-update; run `npx skills update -y` to refresh them.
+It installs every skill in the bundle for each agent it detects (Claude Code, Codex, Cursor, OpenCode and the rest). A coding workstation also installs the development pack:
+
+```sh
+npx skills@latest add coalesce-labs/catalyst-dev-skills --all -g
+```
+
+The two packs have different jobs and independent versions. Omit `-g` for a project-scoped Cloud skills install. Skills installed this way do not auto-update; run `npx skills update -g -y` for a workstation install or `npx skills update -y` for a project install.
 
 <details><summary><strong>Alternative for Claude Code: the plugin marketplace</strong></summary>
 
-The plugin installs the set as a managed bundle that updates when we ship. It needs a GitHub SSH key, and it does not load into the session you are already in — run `/reload-plugins` or restart afterwards. Pick one rail; installing both leaves you with every skill twice.
+The plugin installs this pack's same `skills/` tree as a managed bundle that updates when we ship. It needs a GitHub SSH key, and it does not load into the session you are already in — run `/reload-plugins` or restart afterwards. Pick one rail for this pack; installing both leaves you with every skill twice. The development pack has its own optional Claude plugin, `catalyst-dev@catalyst-dev-skills`.
 
 ```
 /plugin marketplace add coalesce-labs/catalyst-cloud-skills

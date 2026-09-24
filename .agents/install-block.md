@@ -4,9 +4,13 @@ This file is the one copy of the install wording. The README quotes it verbatim,
 doc that shows a Catalyst skills install command copies it from here rather than writing its own. If
 you change a command, change it here first.
 
-**The two rails are exclusive.** The plugin installs the set as a managed bundle that updates when we
-ship. `npx skills` copies editable files into your project. A reader who runs both ends up with every
-skill twice, so every rendering of this block keeps the exclusivity sentence.
+**The two rails are exclusive.** `npx skills` is the normal install for this pack. The Claude plugin
+installs the same `skills/` tree as a managed bundle. Installing both leaves you with every skill twice,
+so every rendering of this block keeps the exclusivity sentence.
+
+**The packs have separate jobs.** This repository contains tenant setup and operation skills. A coding
+workstation also installs `coalesce-labs/catalyst-dev-skills` for research, planning, implementation and
+shipping. Neither pack comes from the deprecated `coalesce-labs/catalyst` local runtime.
 
 **The credential is separate from the install.** No install command carries a key. The person's own
 personal key enters once, through `catalyst-skills login`, and lands in a `0600` config file. Keep the connect step
@@ -16,8 +20,23 @@ beside the install commands, never inside them.
 
 ## Install
 
-Two ways in. The plugin installs the set as a managed bundle that updates when we ship. `npx skills`
-copies editable files into your project. Pick one; installing both leaves you with every skill twice.
+Install the Catalyst Cloud skills globally on a workstation:
+
+```sh
+npx skills@latest add coalesce-labs/catalyst-cloud-skills --all -g
+```
+
+For a coding workstation, also install the development skills from their own repository:
+
+```sh
+npx skills@latest add coalesce-labs/catalyst-dev-skills --all -g
+```
+
+The two commands install different skill sets. A project-scoped Cloud skills install is also supported:
+omit `-g` when you want this repository's skills only in the current project.
+
+**Claude Code alternative for this pack.** Pick the `npx skills` rail or the Claude plugin for this
+pack; using both leaves each Cloud skill twice.
 
 **Claude Code**
 
@@ -44,9 +63,9 @@ npx skills@latest add coalesce-labs/catalyst-cloud-skills -a cursor
 npx skills@latest add coalesce-labs/catalyst-cloud-skills
 ```
 
-The installer asks which skills to take and which agents to install them on. Add `-g` to install into
-your home directory instead of the project. Skills installed this way do not auto-update; run
-`npx skills update -y` to refresh them.
+The installer asks which skills to take and which agents to install them on. Skills installed this way
+do not auto-update; run `npx skills update -g -y` for the workstation install above, or
+`npx skills update -y` for a project install.
 
 ### Then connect to your tenant
 
