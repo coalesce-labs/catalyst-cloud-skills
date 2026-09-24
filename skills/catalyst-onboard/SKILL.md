@@ -1,7 +1,7 @@
 ---
 name: catalyst-onboard
 description: >-
-  Walk a person from nothing to their first Catalyst Cloud ticket running, one step at a time, hand-held. Use when someone says "set me up", "onboard me", "I just signed up", "get me started", "what do I do first", or when they have the skills installed and nothing else. Reads each part of the setup with the instrument that owns it — this machine, the person, the account, one project, one repository — never folding one into another, does every step a key can do through the catalyst-skills CLI, and for the steps only a browser can do hands over the exact page and says what to come back with. Never claims a step it did not watch succeed.
+  Walk a person from nothing to their first Catalyst Cloud ticket running, one step at a time, hand-held. Use when someone says "set me up", "onboard me", "I just signed up", "get me started", "what do I do first", or when they have the Catalyst Cloud skills installed and nothing else. Reads each part of the setup with the instrument that owns it — this machine, the person, the account, one project, one repository — never folding one into another, does every step a key can do through the catalyst-skills CLI, and for the steps only a browser can do hands over the exact page and says what to come back with. Never claims a step it did not watch succeed.
 disable-model-invocation: true
 allowed-tools: Bash(catalyst-skills:*) Bash(npx @catalyst-cloud/catalyst-skills:*)
 ---
@@ -32,6 +32,7 @@ Start every session with it, and run it again after every step the person comple
 | the next step is a browser page, or a page said it worked and you have to confirm it | `references/what-the-browser-owns.md` |
 | the person asks what Catalyst actually is, or how a ticket gets worked | the `how-catalyst-works` skill |
 | the machine will not connect, or a login expired | the `connect-me` skill |
+| the person asks how to install, update, or migrate Catalyst skills | `references/skill-sources.md` |
 | setup is finished and they want the standing readiness verdict | the `catalyst-setup` skill |
 | the first ticket did not start and you need the reason | the `how-catalyst-works` skill, then `unstick` |
 
@@ -46,4 +47,5 @@ Start every session with it, and run it again after every step the person comple
 - **Some steps a key cannot do yet.** Listing every project, saving a stage mapping, adopting the workflow, registering a repository and declaring one repository's environment are settings-page work today; a key-callable path for them is being built. Route those through the browser and say plainly that it is a gap, not the design. Never guess at a route for them.
 - **The account-wide environment declaration is the exception, and the one setup write you can perform.** `catalyst-skills environment` reads it, proposes it and approves it. Use the verb; do not send them to a page for it.
 - **Their tenant, as them.** Everything goes through the CLI and the person's own login. You never name another tenant, and you never ask for a key you could avoid — the keyless login needs nothing pasted.
+- **Use the right skill source.** This tenant onboarding skill comes from `catalyst-cloud-skills`. Coding workflows come from `catalyst-dev-skills`. Never direct a person to install skills from the deprecated `coalesce-labs/catalyst` repository or its `catalyst-dev@catalyst` plugin.
 - **Stop at a wall you cannot pass.** A suspended account, a seat that is not active, a person who is not an owner or admin where one is required: say what you found, name who can act, and stop. Do not loop.
