@@ -1,1 +1,1 @@
-Independent review caught a vacuous content-order assertion after the event cursor race fix; assert the actual phrase and nonnegative positions, and correct the cursor comment.
+Rebased optional local sync guidance onto the current consent guide; resolved only section spacing conflicts.
