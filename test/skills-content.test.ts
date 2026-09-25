@@ -407,6 +407,11 @@ describe("the install page (README) states what a customer needs, in the order t
     // The install alone does not rewrite customer.json.cliPath — the re-login step must be documented.
     expect(readme).toMatch(/npm install -g @catalyst-cloud\/catalyst-skills@latest && catalyst-skills login/);
     expect(readme).not.toMatch(/npm update -g/);
+    expect(readme).toContain("npx skills@latest add coalesce-labs/catalyst-cloud-skills --all -g");
+    expect(readme).toContain("npx skills@latest add coalesce-labs/catalyst-dev-skills --all -g");
+    expect(readme).toContain("Do not schedule raw add commands unattended");
+    expect(readme).toMatch(/npm install -g @catalyst-cloud\/catalyst-skills@latest && catalyst-skills login[\s\S]*npx skills@latest add coalesce-labs\/catalyst-cloud-skills --all -g[\s\S]*npx skills@latest add coalesce-labs\/catalyst-dev-skills --all -g/);
+    expect(readme).toMatch(/Catalyst Cloud installer owns the guarded daily workstation refresh[\s\S]*checks the lock and destination[\s\S]*leaves unrelated, changed, or uncertain skill paths alone/i);
     for (const name of CUSTOMER_SKILLS) expect(readme, `uninstall must name ${name}`).toContain(`\`${name}\``);
     for (const f of ["customer.json", "contract.json", "published.json", "replica.db", "replica.db.pid", "replica.db.writer.lock", "replica.db.writer.state", "watch-cursor.json"]) {
       expect(readme, `uninstall must name ${f}`).toContain(f);
@@ -437,7 +442,15 @@ describe("the package manifest", () => {
   test("is the documented name, public, and carries exactly the SDK as its runtime dependency", () => {
     expect(manifest.name).toBe("@catalyst-cloud/catalyst-skills");
     expect(manifest.publishConfig.access).toBe("public");
-    expect(manifest.dependencies).toEqual({ "@catalyst-cloud/sdk": expect.stringMatching(/^\^0\.12\./) });
+    const sdkVersionRange = manifest.dependencies?.["@catalyst-cloud/sdk"];
+    expect(manifest.dependencies).toEqual({ "@catalyst-cloud/sdk": "^0.12.0" });
+    if (sdkVersionRange === undefined) throw new Error("SDK dependency missing from package.json");
+    const sdkMinor = sdkVersionRange.match(/^\^(\d+\.\d+)\./)?.[1];
+    const bundleMinor = manifest.version.match(/^(\d+\.\d+)\./)?.[1];
+    expect(sdkMinor, "the Cloud CLI release follows the SDK minor series").toBe(bundleMinor);
+    const lock = readFileSync(join(pkgRoot, "bun.lock"), "utf8");
+    expect(lock).toContain(`"@catalyst-cloud/sdk": "${sdkVersionRange}"`);
+    expect(lock).toContain(`"@catalyst-cloud/sdk@${sdkVersionRange.slice(1)}"`);
   });
 
   test("bin, shipped files, engines, and the pinned contract range are wired", () => {
@@ -486,11 +499,11 @@ describe("the package manifest", () => {
     expect(md).toContain("--all");
   });
 
-  test("the version matches the CHANGELOG's top entry, which is 0.7.0", () => {
+  test("the version matches the CHANGELOG's top entry", () => {
     const changelog = readFileSync(join(pkgRoot, "CHANGELOG.md"), "utf8");
     expect(changelog).toContain(`## ${manifest.version}\n`);
-    expect(changelog.indexOf("## 0.7.0")).toBe(changelog.indexOf("## "));
-    expect(manifest.version).toBe("0.7.0");
+    expect(changelog.indexOf(`## ${manifest.version}`)).toBe(changelog.indexOf("## "));
+    expect(manifest.version).toBe("0.12.0");
   });
 
   test("every shipped skill stamps the package version on its provenance line", () => {

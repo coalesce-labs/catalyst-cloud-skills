@@ -5,7 +5,7 @@ description: >-
 disable-model-invocation: true
 allowed-tools: Bash(catalyst-skills:*) Bash(npx @catalyst-cloud/catalyst-skills:*)
 ---
-<!-- vendored-from: @catalyst-cloud/catalyst-skills@0.7.0 — written in this repository for customer tenants -->
+<!-- vendored-from: @catalyst-cloud/catalyst-skills@0.12.0 — written in this repository for customer tenants -->
 
 # Unstick
 
