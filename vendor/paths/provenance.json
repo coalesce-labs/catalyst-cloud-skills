@@ -1,0 +1,17 @@
+{
+  "repository": "coalesce-labs/catalyst-cloud",
+  "commit": "c391358d06720985126c15b7fa9d9d6ad1878211",
+  "sourceSha256": {
+    "index.ts": "f44b08a7de1c72d20b77f0c79a1b54b9485c6b0e76eecca298c78f170d7773cd",
+    "node.ts": "eb8ad2be272c1d9cf8f2b754e10c89bee237260f8ed0769e612e17a6a94517c5",
+    "legacy-installer.ts": "7da0a9c78d44b48e69a0e0ed9c2059d79391b2a519549fff824aaa8130924c2e"
+  },
+  "runtimeSha256": {
+    "index.d.ts": "02fdf46bf7bf39acf01fde211655d0c60e5cc529ec7964bbb9a8876270fc8f19",
+    "index.js": "9ed35d5cfd765383584047ed408746e0154209a627861d252729dce741ef0830",
+    "legacy-installer.d.ts": "e712488bc7e7aac77e47bbf89e31b6bdcdda9a61c7e81b8a424eb234ac0bb7c3",
+    "legacy-installer.js": "78e198e4d6b8b8c8998b18b10d52481b1b5507f8e0f3de6d1049f9b0f9a4b6d9",
+    "node.d.ts": "c931a7b077f5b87ed6f4520debf8d584dae7cfb7f15ee9a38db9100870ef5c4b",
+    "node.js": "f68dfba24f86b492249f2cfce4a45e72091338be32046c9d8abd246a3c916f98"
+  }
+}

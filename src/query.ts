@@ -94,7 +94,7 @@ export async function cmdQuery(args: ParsedArgs, ctx: Ctx, deps: QueryDeps = {})
 
 async function fromReplica(ctx: Ctx, cfg: CustomerConfig, sub: string, rest: string[], f: Filters, deps: QueryDeps): Promise<unknown> {
   const sdk = await loadSdk();
-  const dbPath = replicaDbPath(cfg, ctx.home);
+  const dbPath = replicaDbPath(cfg, ctx.home, ctx.env);
   const engine = await engineFor(sdk, dbPath, ctx, { ...deps.engineDeps, readonly: true });
   const replica = await sdk.CatalystReplica.openReadOnly({ dbPath, engine, log: () => {} });
   try {
