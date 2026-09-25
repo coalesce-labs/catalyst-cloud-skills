@@ -96,7 +96,7 @@ export const FLAG_TABLES: Record<string, FlagTable> = {
   },
   write: {
     body: { value: true, help: "comment: the body text" },
-    stdin: { value: false, help: "comment: read the body from stdin" },
+    stdin: { value: false, help: "comment: read the body from stdin; create: read the description from stdin" },
     parent: { value: true, help: "comment: reply under this comment id" },
     bookkeeping: { value: false, help: "comment: prefix the contract's bookkeeping marker" },
     "as-user": { value: false, help: "post with the personal identity instead of the app actor" },
@@ -107,6 +107,7 @@ export const FLAG_TABLES: Record<string, FlagTable> = {
     remove: { value: true, repeat: true, help: "label: label name or id to remove (repeatable)" },
     team: { value: true, help: "create: team key" },
     title: { value: true, help: "create/attachment/session: title" },
+    description: { value: true, help: "create: the ticket description (markdown)" },
     label: { value: true, repeat: true, help: "create: label name or id (repeatable)" },
     priority: { value: true, help: "create: Linear priority 0-4" },
     comment: { value: true, help: "reaction: react to this comment id instead of the ticket" },
@@ -169,7 +170,7 @@ export const VERB_USAGE: Record<string, string> = {
   queue: "queue [--team K] [--json]",
   watch: "watch [--team K] [--ticket T]... [--project P] [--exec CMD] [--cursor-file <path>] [--from cursor|head]",
   write:
-    "write <comment <ticket> --body|--stdin [--parent] [--bookkeeping] [--as-user] | state <ticket> --slot|--state-id|--state-type | label <ticket> --add... --remove... | create --team --title [--label] [--priority] | reaction <ticket>|--comment <id> --emoji <e> | attachment <ticket> --title --url | session <ticket> [--title] [--plan-file] [--activity]>",
+    "write <comment <ticket> --body|--stdin [--parent] [--bookkeeping] [--as-user] | state <ticket> --slot|--state-id|--state-type | label <ticket> --add... --remove... | create --team --title [--description|--stdin] [--label] [--priority] | reaction <ticket>|--comment <id> --emoji <e> | attachment <ticket> --title --url | session <ticket> [--title] [--plan-file] [--activity]>",
   ask: "ask <raise --team --title [--context] [--option]... [--default] --blocks <ticket>...|--nothing-to-block [--ask-key] | accept <askTicket> --answer <commentId> --role <role> | list [--anyone] [--json]>",
   ready: "ready [--json] [--offline]",
   accounts: "accounts [--json]",

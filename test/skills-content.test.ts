@@ -193,7 +193,7 @@ describe("no internal name reaches a customer", () => {
     const planted = join(dir, "planted.md");
     writeFileSync(
       planted,
-      ["tenant-0", "coalesce-labs/catalyst", "thoughts/shared", "CTC-1", "CTL-22", "Linearis", "catalyst-replica"].join("\n"),
+      ["tenant-0", "coalesce-labs/catalyst", "thoughts/shared", "CTC-1", "CTL-22", "Linearis", "catalyst-replica", "LINEAR_API_TOKEN", "https://api.linear.app/graphql"].join("\n"),
     );
     const text = readFileSync(planted, "utf8");
     const hits = FORBIDDEN_CONTENT.filter((f) => f.re.test(text)).map((f) => f.name);
@@ -486,11 +486,11 @@ describe("the package manifest", () => {
     expect(md).toContain("--all");
   });
 
-  test("the version matches the CHANGELOG's top entry, which is 0.7.0", () => {
+  test("the version matches the CHANGELOG's top entry, which is 0.8.0", () => {
     const changelog = readFileSync(join(pkgRoot, "CHANGELOG.md"), "utf8");
     expect(changelog).toContain(`## ${manifest.version}\n`);
-    expect(changelog.indexOf("## 0.7.0")).toBe(changelog.indexOf("## "));
-    expect(manifest.version).toBe("0.7.0");
+    expect(changelog.indexOf("## 0.8.0")).toBe(changelog.indexOf("## "));
+    expect(manifest.version).toBe("0.8.0");
   });
 
   test("every shipped skill stamps the package version on its provenance line", () => {
