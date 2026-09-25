@@ -1,1 +1,6 @@
-Rebased the SDK 0.12 release candidate onto the current identity guide; retained guarded two-pack update instructions.
+Revision history for #59:
+
+rev 2 (content) 2026-09-25 23:57 UTC — Rebased the SDK 0.12 release candidate onto the current identity guide; retained guarded two-pack update instructions.
+rev 1 (initial) 2026-09-25 23:57 UTC
+
+<!-- mergify-revision-data: {"schema_version":1,"pull_number":59,"entries":[{"number":1,"change_type":"initial","old_sha":null,"new_sha":"f5928c504b150146c2d3a5277b60ffc056a8936a","timestamp_iso":"2026-09-25T23:57:20Z","reason":"","replay_sha":null,"compare_url":null},{"number":2,"change_type":"content","old_sha":"f5928c504b150146c2d3a5277b60ffc056a8936a","new_sha":"6e17a9820068f7be4eb2503ea66d70d2efb61c2c","timestamp_iso":"2026-09-25T23:57:20Z","reason":"Rebased the SDK 0.12 release candidate onto the current identity guide; retained guarded two-pack update instructions.","replay_sha":null,"compare_url":"https://github.com/coalesce-labs/catalyst-cloud-skills/compare/f5928c504b150146c2d3a5277b60ffc056a8936a...6e17a9820068f7be4eb2503ea66d70d2efb61c2c"}]} -->
