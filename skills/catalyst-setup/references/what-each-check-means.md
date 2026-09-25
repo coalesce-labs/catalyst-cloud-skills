@@ -48,7 +48,7 @@ Some checks degrade a team without ever blocking it, and one is informational on
 | `cliPath` | the CLI path recorded at login still exists, so skill scripts can spawn it | re-run login |
 | `skills` | every skill in the Cloud setup and operations pack is present in its install scope; this check does not cover coding workflow skills | read `catalyst-onboard`'s `references/skill-sources.md` and install `coalesce-labs/catalyst-cloud-skills` in the intended scope |
 | `cliRelease` | the installed CLI is not behind the newest published release | the same upgrade command as `bundle`; a note, never a failure |
-| `skillsRelease` | the installed skill files are not behind the newest published bundle | `npx skills update -g -y` for a global install or `npx skills update -y` for a project install; a note, never a failure. A line saying the check could not run means the registry was unreachable, not that anything is wrong |
+| `skillsRelease` | the installed skill files are not behind the newest published bundle | check the active lock and every same-named agent path as described in this pack's README, then re-run `npx skills@latest add coalesce-labs/catalyst-cloud-skills --all -g` for a verified global install or omit `-g` inside a project; stop on independent, changed, or uncertain copies. Re-adding picks up new skills. A line saying the check could not run means the registry was unreachable, not that anything is wrong |
 | `sdk` | the SDK loads, so the replica and the watch are available | run under Node 22.15 or newer; every read still works through the API meanwhile |
 | `replica` | the optional replica is fresh | a note, never a failure; see below |
 
