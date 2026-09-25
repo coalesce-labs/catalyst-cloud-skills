@@ -1,1 +1,1 @@
-capture event cursor before the ticket action so wait-for replays cached events from that baseline
+Independent review caught a vacuous content-order assertion after the event cursor race fix; assert the actual phrase and nonnegative positions, and correct the cursor comment.
