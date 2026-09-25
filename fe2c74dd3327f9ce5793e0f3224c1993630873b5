@@ -1,0 +1,1 @@
+Review found raw add can overwrite independent same-named skill paths. Add a provenance and path preflight warning before commands, keep unattended refresh off, and update the command assertion to the new-skills refresh form.
