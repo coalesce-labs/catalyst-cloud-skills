@@ -142,7 +142,7 @@ if (!connected) {
       "person",
       "catalyst-skills me, and catalyst-skills connections personal <provider> status --json",
       matched && !personalGrantIncomplete ? "ok" : "unfinished",
-      [`${user.label ?? "(unnamed)"} (${user.role ?? "role unknown"})`, matched ? "Linear identity matched" : "Linear identity NOT matched — asks assigned to you cannot be told apart from everyone else's. It blocks nothing below; get it fixed when convenient.", ...grantLines],
+      [`${user.label ?? "(unnamed)"} (${user.role ?? "role unknown"})`, matched ? "Linear identity matched" : "Linear identity NOT matched — asks assigned to you cannot be told apart from everyone else's. It blocks nothing below. Run catalyst-skills identity linear options for self-service recovery; personal Linear consent normally binds its viewer automatically.", ...grantLines],
       personalGrantIncomplete ? "you" : matched ? null : "a tenant owner or admin",
       personalGrantIncomplete ? "catalyst-skills connections personal <provider> start or status" : matched ? null : link("/settings/account"),
       false,

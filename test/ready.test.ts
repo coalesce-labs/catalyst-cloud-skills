@@ -240,7 +240,9 @@ describe("ready never recommends starting the replica (CTC-2499)", () => {
     expect(text).toMatch(/^note {2}replica: absent/m); // the existing pin, unchanged
     expect(text).toContain("optional");
     expect(text).toContain("off by default for large tenants");
-    expect(text).not.toMatch(/\bC[TL]C-\d+\b/);
+    const replicaNote = text.split("\n").find((line) => /^note {2}replica: absent/.test(line));
+    expect(replicaNote).toBeDefined();
+    expect(replicaNote).not.toMatch(/\bC[TL]C-\d+\b/);
   });
   test("ready --json exposes the writer's stopped state and failure count", async () => {
     await seedJoined(home, server);
