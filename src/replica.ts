@@ -169,7 +169,13 @@ export function replicaStatus(ctx: Ctx, cfg: CustomerConfig | null, opts: Status
     writer: null,
   };
   if (!cfg) return { ...base, reasons: ["not connected"] };
-  const dbPath = opts.dbPath ?? replicaDbPath(cfg, ctx.home);
+  let dbPath: string;
+  try {
+    dbPath = opts.dbPath ?? replicaDbPath(cfg, ctx.home, ctx.env);
+  } catch (error) {
+    if (error instanceof CliError && error.code === "replica-not-configured") return { ...base, reasons: [error.message] };
+    throw error;
+  }
   const writer = readWriterState(dbPath);
   if (!existsSync(dbPath)) return { ...base, verdict: "absent", exitCode: 3, dbPath, reasons: ["no replica file"], writer };
   const staleMs = opts.staleMs ?? DEFAULT_STALE_MS;
@@ -202,7 +208,7 @@ export function replicaStatus(ctx: Ctx, cfg: CustomerConfig | null, opts: Status
 function baseStatusLine(s: ReplicaStatus): string {
   switch (s.verdict) {
     case "not-configured":
-      return "replica: not configured — run login first";
+      return `replica: not configured (${s.reasons.join("; ")})`;
     case "absent":
       return `replica: absent at ${s.dbPath} — start it with: catalyst-skills replica start --detach`;
     case "fresh":
@@ -350,7 +356,7 @@ export async function cmdReplica(args: ParsedArgs, ctx: Ctx, deps: ReplicaDeps =
   if (sub === "status") return cmdStatus(args, ctx);
   const cfg = loadConfig(ctx.home);
   if (!cfg) throw new CliError("not connected yet — run login first", "not-configured");
-  const dbPath = flagString(args, "db") ?? replicaDbPath(cfg, ctx.home);
+  const dbPath = flagString(args, "db") ?? replicaDbPath(cfg, ctx.home, ctx.env);
   switch (sub) {
     case "start":
       return cmdStart(args, ctx, cfg, dbPath, deps);

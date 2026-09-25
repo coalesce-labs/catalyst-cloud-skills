@@ -1,10 +1,13 @@
 // config.ts — ~/.config/catalyst-cloud/customer.json and its siblings. The ONLY place the base URL
 // and the `/api/v1` prefix are joined: the SDK wants the base with the prefix, GET /me without.
-import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, lstatSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { randomBytes } from "node:crypto";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { CliError } from "./errors.js";
+
+import { parseMachinePaths, resolveCatalystPath } from "../vendor/paths/index.js";
+import { machinePathsFile } from "../vendor/paths/node.js";
 
 export const PACKAGE_NAME = "@catalyst-cloud/catalyst-skills";
 export const DEFAULT_BASE_URL = "https://staging.catalystcloud.dev";
@@ -129,8 +132,24 @@ export function apiBase(cfg: Pick<CustomerConfig, "baseUrl">): string {
   return `${normalizeBaseUrl(cfg.baseUrl)}/api/v1`;
 }
 
-export function replicaDbPath(cfg: Pick<CustomerConfig, "replicaDb">, home: string): string {
-  return cfg.replicaDb ?? defaultReplicaDbFor(home);
+function machineFilePresent(file: string): boolean {
+  try { lstatSync(file); return true; }
+  catch (error) {
+    if (error instanceof Error && "code" in error && error.code === "ENOENT") return false;
+    throw error;
+  }
+}
+
+export function replicaDbPath(cfg: Pick<CustomerConfig, "replicaDb">, home: string, env: NodeJS.ProcessEnv = {}): string {
+  if (env.CATALYST_REPLICA_DB !== undefined) return resolveCatalystPath("replicaDb", { env });
+  const file = machinePathsFile({ env: { ...env, HOME: home } });
+  if (file && (env.CATALYST_PATHS_FILE !== undefined || machineFilePresent(file))) {
+    const machine = parseMachinePaths(JSON.parse(readFileSync(file, "utf8")));
+    if (machine.paths.replicaDb === undefined) throw new CliError("optional replica is not configured; set CATALYST_REPLICA_DB or declare replicaDb in the machine paths file", "replica-not-configured");
+    return resolveCatalystPath("replicaDb", { env, machine });
+  }
+  // Compatibility for machines that have not run paths setup. Keep the existing DB in place.
+  return resolveCatalystPath("replicaDb", { overrides: { replicaDb: cfg.replicaDb ?? defaultReplicaDbFor(home) } });
 }
 
 export function loadConfig(home: string): CustomerConfig | null {
