@@ -1,1 +1,7 @@
-Fix the onboarding order: personal GitHub consent follows tenant App installation, and the next-step report waits for repository registration as proof.
+Revision history for #49:
+
+rev 3 (content) 2026-09-25 03:59 UTC — Fix the onboarding order: personal GitHub consent follows tenant App installation, and the next-step report waits for repository registration as proof.
+rev 2 (content) 2026-09-25 02:20 UTC
+rev 1 (initial) 2026-09-25 02:20 UTC
+
+<!-- mergify-revision-data: {"schema_version":1,"pull_number":49,"entries":[{"number":1,"change_type":"initial","old_sha":null,"new_sha":"7549d0f4a949268e218a1b26659cacf944744fd8","timestamp_iso":"2026-09-25T02:20:37Z","reason":"","replay_sha":null,"compare_url":null},{"number":2,"change_type":"content","old_sha":"7549d0f4a949268e218a1b26659cacf944744fd8","new_sha":"a4fc200780b46d0cb6f3b3957889645e3e5b4ed3","timestamp_iso":"2026-09-25T02:20:37Z","reason":"","replay_sha":null,"compare_url":"https://github.com/coalesce-labs/catalyst-cloud-skills/compare/7549d0f4a949268e218a1b26659cacf944744fd8...a4fc200780b46d0cb6f3b3957889645e3e5b4ed3"},{"number":3,"change_type":"content","old_sha":"a4fc200780b46d0cb6f3b3957889645e3e5b4ed3","new_sha":"f4355b183de8337b4bba667301c185b8f55fd677","timestamp_iso":"2026-09-25T03:59:19Z","reason":"Fix the onboarding order: personal GitHub consent follows tenant App installation, and the next-step report waits for repository registration as proof.","replay_sha":null,"compare_url":"https://github.com/coalesce-labs/catalyst-cloud-skills/compare/a4fc200780b46d0cb6f3b3957889645e3e5b4ed3...f4355b183de8337b4bba667301c185b8f55fd677"}]} -->
