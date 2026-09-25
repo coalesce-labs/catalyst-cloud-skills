@@ -22,6 +22,9 @@ beside the install commands, never inside them.
 
 Install the Catalyst Cloud skills globally on a workstation:
 
+On an existing machine, inspect same-named skill paths before running either add command. The
+commands replace existing directories and links; the inspection rule is below.
+
 ```sh
 npx skills@latest add coalesce-labs/catalyst-cloud-skills --all -g
 ```
@@ -63,9 +66,15 @@ npx skills@latest add coalesce-labs/catalyst-cloud-skills -a cursor
 npx skills@latest add coalesce-labs/catalyst-cloud-skills
 ```
 
-The installer asks which skills to take and which agents to install them on. Skills installed this way
-do not auto-update; run `npx skills update -g -y` for the workstation install above, or
-`npx skills update -y` for a project install.
+The installer asks which skills to take and which agents to install them on. Copied skills do not
+auto-update. Re-adding the pack refreshes existing skills and picks up new ones; `npx skills update`
+refreshes only names already in the lock. Before an add or refresh, inspect the active global lock
+at `$XDG_STATE_HOME/skills/.skill-lock.json` when XDG state is set, or `~/.agents/.skill-lock.json`
+otherwise. A project install uses its own `skills-lock.json`. Check every same-named agent path, not
+just the canonical lock entry. Proceed only if each destination is absent or a verified, unmodified
+copy of the intended pack or its symlink. Leave independent, changed, or uncertain copies in place.
+Do not schedule raw add commands as an unattended refresh. After that check, re-run the Cloud add
+command above with `-g` for a workstation or without `-g` inside a project.
 
 ### Then connect to your tenant
 
