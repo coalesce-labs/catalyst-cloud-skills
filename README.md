@@ -215,3 +215,15 @@ npm uninstall -g @catalyst-cloud/catalyst-skills
 ## License
 
 MIT — see [LICENSE](LICENSE). How to contribute and how releases happen are described in [CONTRIBUTING.md](CONTRIBUTING.md). The install commands above are one canonical block kept in [`.agents/install-block.md`](.agents/install-block.md); change them there first.
+
+### Unmatched Linear identity
+
+Personal Linear consent normally binds the provider viewer automatically. For an unmatched identity, inspect your choices and explicitly select yourself:
+
+```sh
+catalyst-skills identity linear status
+catalyst-skills identity linear options --json
+catalyst-skills identity linear set <linearUserId>
+```
+
+The command uses your personal credential and reads the result back after selection. It cannot change another member, replace an automatic match, or take an already-claimed identity. A missing options field means no choice was offered, which can include a temporarily unreadable roster. This command depends on the pending SDK 0.12.0 release with identity support.

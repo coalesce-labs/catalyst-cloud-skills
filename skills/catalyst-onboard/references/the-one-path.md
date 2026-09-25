@@ -37,7 +37,7 @@ If it refuses, stop here and use the `connect-me` skill; it owns every failure m
 
 **Read back:** their label and role, and whether their Linear identity is matched.
 
-**Owner:** a personal Linear connection normally matches the person's Linear identity automatically. If it remains unmatched after personal consent, a tenant owner or admin can inspect Settings → Members. An inactive seat also needs an owner or admin. Say which finding the instrument reported.
+**Owner:** a personal Linear connection normally matches the person's Linear identity automatically. If it remains unmatched after personal consent, run `catalyst-skills identity linear status`, then `catalyst-skills identity linear options`. Let the member select their own listed identity and run `catalyst-skills identity linear set <linearUserId>`. The command reads the result back. An automatically resolved identity cannot be replaced; an existing claim conflict needs a tenant owner or admin. An inactive seat also needs an owner or admin. Say which finding the instrument reported.
 
 ## 3 — Connect Linear
 
@@ -57,7 +57,7 @@ If it refuses, stop here and use the `connect-me` skill; it owns every failure m
 
 **Read back:** after approval, run `catalyst-skills connections personal linear status`. `node scripts/where-am-i.mjs` also reads the personal grant statuses. A URL opening is not proof that a grant landed.
 
-**Owner:** you start and check; the member approves in a browser. If the member's Linear identity is still unmatched after the grant is connected, an owner or admin should check Settings → Members.
+**Owner:** you start and check; the member approves in a browser. A usable personal Linear grant normally binds its viewer automatically. If identity remains unmatched, use `catalyst-skills identity linear options` for supported self-service recovery. Never choose a roster entry on the member's behalf. An already-resolved or already-claimed refusal needs an owner or admin to inspect the conflict.
 
 ## 4 — Pick one project, and map its stages
 

@@ -50,6 +50,7 @@ import { cmdWrite, type WriteDeps } from "./write.js";
 import { cmdAsk } from "./ask.js";
 import { cmdRelease } from "./release.js";
 import { cmdEnvironment, type EnvironmentDeps } from "./environment.js";
+import { cmdIdentity, type IdentityDeps } from "./identity.js";
 import { cmdConnections, type ConnectionsDeps } from "./connections.js";
 
 export {
@@ -125,6 +126,7 @@ export function usageText(): string {
     "  catalyst-skills ask <raise|accept|list> ...",
     "  catalyst-skills release <ticket> --because <what changed> [--retry-unchanged] [--dry-run] | release --class <c> --team <K> ...",
     "  catalyst-skills environment [read] | environment propose --file <path>|--stdin [--approve] | environment approve",
+    "  catalyst-skills identity linear <status|options|set> [<linearUserId>] [--json]",
     "  catalyst-skills connections personal <linear|github> <start|status> [--wait <seconds>] [--json]",
     "",
     "Every verb takes --help. --json makes the output machine-readable.",
@@ -149,6 +151,7 @@ export interface MainDeps {
   write?: WriteDeps;
   environment?: EnvironmentDeps;
   connections?: ConnectionsDeps;
+  identity?: IdentityDeps;
   loadSdk?: () => Promise<unknown>;
   /** Injected by the tests so no suite ever touches a real terminal. */
   isTty?: () => boolean;
@@ -263,6 +266,8 @@ export async function main(argv: string[], ctx: Ctx = defaultCtx(), deps: MainDe
         return await cmdRelease(args, ctx);
       case "environment":
         return await cmdEnvironment(args, ctx, deps.environment ?? {});
+      case "identity":
+        return await cmdIdentity(args, ctx, deps.identity ?? {});
       case "connections":
         return await cmdConnections(args, ctx, deps.connections ?? {});
       default:
@@ -289,7 +294,7 @@ export async function main(argv: string[], ctx: Ctx = defaultCtx(), deps: MainDe
 }
 
 const VERB_HELP_KNOWN: Record<string, true> = Object.fromEntries(
-  ["login", "join", "install", "status", "notice", "me", "contract", "query", "replica", "events", "explain", "running", "queue", "watch", "write", "ask", "ready", "accounts", "release", "environment", "connections"].map((v) => [v, true]),
+  ["login", "join", "install", "status", "notice", "me", "contract", "query", "replica", "events", "explain", "running", "queue", "watch", "write", "ask", "ready", "accounts", "release", "environment", "connections", "identity"].map((v) => [v, true]),
 );
 
 async function cmdLogin(args: ParsedArgs, ctx: Ctx, deps: MainDeps): Promise<number> {
