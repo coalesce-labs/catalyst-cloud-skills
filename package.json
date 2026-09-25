@@ -27,7 +27,8 @@
     "skills",
     "README.md",
     "CHANGELOG.md",
-    "LICENSE"
+    "LICENSE",
+    "vendor"
   ],
   "catalystCloud": {
     "tenantContractRange": "1.x"
@@ -41,7 +42,8 @@
     "version:sync": "node scripts/sync-plugin-version.mjs",
     "skill-lib:sync": "node scripts/sync-skill-lib.mjs",
     "skills:scan": "node scripts/scan-skills.mjs",
-    "evals": "node scripts/run-evals.mjs"
+    "evals": "node scripts/run-evals.mjs",
+    "paths:check": "node scripts/vendor-paths.mjs --check"
   },
   "dependencies": {
     "@catalyst-cloud/sdk": "^0.10.0"
