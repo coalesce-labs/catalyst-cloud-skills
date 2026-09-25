@@ -486,11 +486,11 @@ describe("the package manifest", () => {
     expect(md).toContain("--all");
   });
 
-  test("the version matches the CHANGELOG's top entry, which is 0.7.0", () => {
+  test("the version matches the CHANGELOG's top entry, which is 0.8.0", () => {
     const changelog = readFileSync(join(pkgRoot, "CHANGELOG.md"), "utf8");
     expect(changelog).toContain(`## ${manifest.version}\n`);
-    expect(changelog.indexOf("## 0.7.0")).toBe(changelog.indexOf("## "));
-    expect(manifest.version).toBe("0.7.0");
+    expect(changelog.indexOf("## 0.8.0")).toBe(changelog.indexOf("## "));
+    expect(manifest.version).toBe("0.8.0");
   });
 
   test("every shipped skill stamps the package version on its provenance line", () => {

@@ -36,3 +36,13 @@ export function loadSdk(importer: () => Promise<Sdk> = realImport): Promise<Sdk>
 export function resetSdkCache(): void {
   cached = null;
 }
+
+/** HTTP tenant methods live on the SDK's root entry, separate from replica/node exports. */
+export async function loadTenantSdk(): Promise<typeof import("@catalyst-cloud/sdk")> {
+  installTsDepsLoader();
+  try {
+    return await import("@catalyst-cloud/sdk");
+  } catch {
+    throw new CliError("the Catalyst Cloud SDK could not be loaded; reinstall the skills bundle", "sdk-unavailable");
+  }
+}
