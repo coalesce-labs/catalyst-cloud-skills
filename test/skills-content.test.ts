@@ -296,7 +296,7 @@ describe("the install page (README) states what a customer needs, in the order t
       "npx skills@latest add coalesce-labs/catalyst-cloud-skills -a codex",
       "npx skills@latest add coalesce-labs/catalyst-cloud-skills -a cursor",
       "npx skills@latest add coalesce-labs/catalyst-cloud-skills",
-      "npx skills update -y",
+      "npx skills@latest add coalesce-labs/catalyst-cloud-skills --all -g",
     ]) {
       expect(readme, `the install block must carry ${cmd}`).toContain(cmd);
       expect(installBlock, `.agents/install-block.md must carry ${cmd}`).toContain(cmd);
