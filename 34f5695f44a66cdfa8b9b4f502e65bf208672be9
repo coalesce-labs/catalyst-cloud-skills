@@ -1,0 +1,1 @@
+Clarify the active skills CLI lock paths and inspect every agent path before targeted removal so legacy cleanup cannot delete an independent same-named skill.
