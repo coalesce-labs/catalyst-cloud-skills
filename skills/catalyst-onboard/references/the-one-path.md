@@ -63,11 +63,13 @@ If it refuses, stop here and use the `connect-me` skill; it owns every failure m
 
 **For:** the project grain. A project is one Linear team. Until a project's stages are mapped, a card moved into it does nothing at all — this is the single most common reason a new tenant sees no activity.
 
-**You hand over:** `<their cloud>/settings/linear-teams`. They pick one project and press **Map my stages**, or **Adopt the Catalyst workflow** if they want Catalyst's own stages created for them.
+**You run:** `catalyst-skills team list` to inventory teams without checking readiness or creating readiness asks. Have the person choose one team key. Run `catalyst-skills team check <KEY>` only for the selected team when you need its current readiness. For existing stages, run `catalyst-skills team map <KEY>` or pass `--stage role=StateName` for names the person chooses. Show the proposed mapping and every added, changed, or removed slot. If they approve it, rerun with `--yes --plan-hash <hash>` using the exact hash in the preview. To create Catalyst's recommended stages, run `catalyst-skills team adopt <KEY>` for its preview and outcomes, then rerun with `--yes --plan-hash <hash>` after approval. The person needs an active personal Linear grant for Adopt.
 
-**Read back:** re-run the script and read the `projects` line. A project that now appears with a readiness verdict is proof it was saved. Read them the verdict and any failing checks by name.
+For manual setup, `catalyst-skills team checklist <KEY>` prints the same lines as the browser. If it cannot read the live stages, fix the Linear connection and retry. Moving tickets out of old stages is a separate decision: preview with `team migrate <KEY>`, review source and destination ids and counts, then confirm with `--yes --plan-hash <hash>` from that preview. Retiring emptied source stages requires a later `team migrate <KEY> --retire` preview and a separate approval using its preview hash. `team adopt <KEY> --undo` likewise previews the exact stages previously created by Adopt before asking for confirmation.
 
-**Owner:** a tenant owner or admin. ⛔ **Listing the projects and saving a mapping are settings-page work today** — a key cannot do either yet, and a key-callable path is being built. Say that plainly; it is a gap in the product, not something they did wrong.
+**Read back:** re-run the script and read the `projects` line. Its teams read refreshes the contract so a saved mapping is not hidden by an old cache. Read the verdict and any failing checks by name.
+
+**Owner:** a tenant owner or admin using their own login. The agent can run the commands, but the person decides which team to set up and approves each write after seeing the preview. A run that exits 3 stopped before applying. A run that exits 1 was refused; show the named reason. Use `<their cloud>/settings/linear-teams` if they prefer the browser.
 
 ⭐ **One project at a time is safe, and lead with this.** Mapping one project changes no other project's stages and moves no other project's tickets. Encourage a pilot: pick the project they care least about breaking.
 
@@ -138,7 +140,7 @@ If they do not know what their build needs yet, skip this step. It blocks nothin
 
 **You run:** `catalyst-skills ready`. Read them the verdict and every failing line, each with its own fix and owner. If it says NOT READY, go to `references/who-fixes-what.md` before you touch anything — a project check failing is not something re-running anything on this machine can fix.
 
-**Then:** have them move one card into the project's dispatch stage, and watch. `catalyst-skills explain <ticket>` says why it is or is not about to run.
+**Then:** before code work, use the person's workspace path to find the registered repository's existing checkout. Verify it with `git -C <path> rev-parse --show-toplevel`, inspect `git -C <root> worktree list`, and read `AGENTS.md` and `.catalyst/config.json` when present before following that project's worktree setup. Resolve the shared-notes mapping and symlink; its files may live outside this checkout. Then have them move one card into the project's dispatch stage, and watch. `catalyst-skills explain <ticket>` says why it is or is not about to run.
 
 **Read back:** what `explain` actually said. If it says the ticket cannot start, the reason it names is the answer — read it to them and use the `how-catalyst-works` skill for what the reason means, then `unstick` if something is holding it.
 

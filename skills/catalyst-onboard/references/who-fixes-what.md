@@ -9,14 +9,14 @@ Setup is five parts. Each has one instrument, and each instrument answers about 
 | **machine** | `catalyst-skills status`, and the non-team checks of `catalyst-skills ready` | Node is new enough, this machine holds a credential, the CLI is where the config says, the contract is cached, the skills are on disk | anything at all about the tenant | the person at this keyboard, here |
 | **person** | `catalyst-skills me`, and `catalyst-skills connections personal <linear|github> status` | the credential resolves to this person, shows their role and Linear identity match, and reports each personal grant's state | that their seat is active, or that they may change tenant settings | the member approves missing or expired personal grants in a browser; an owner or admin handles seat or identity conflicts in Settings → Members |
 | **account** | `catalyst-skills contract --path account` | a resolved Linear workspace means the tenant's Linear grant landed | that the GitHub App is installed — the contract does not carry it | a tenant owner or admin, `<their cloud>/settings/connections` |
-| **project** | `catalyst-skills contract --path teams`, and the `team:` checks of `ready` | for each project **that has been mapped**: its readiness verdict and each failing check by name | that this is every project they have — see below | a tenant owner or admin, `<their cloud>/settings/linear-teams` |
+| **project** | `catalyst-skills team list`, then `team check <KEY>` and the `team:` checks of `ready` for the selected team | the live team list and the selected team's latest readiness verdict | that an unchecked team is ready | a tenant owner or admin, through `catalyst-skills team` or `<their cloud>/settings/linear-teams` |
 | **repository** | `catalyst-skills contract --path merge.repositories` | the repository is registered to the account | that it is active, that a project can dispatch into it, or that its environment is declared | a tenant owner or admin, `<their cloud>/settings/repositories` |
 
 `node scripts/where-am-i.mjs` runs all five and labels each finding with its part. Use it rather than composing this by hand.
 
 ## The two silences that are not absences
 
-⛔ **An empty project list means nothing is mapped yet — it does not mean they have no projects.** The tenant contract carries a project only once someone has saved a stage mapping for it. A brand-new tenant has projects in Linear and an empty list here, and reading that as "you have no projects" sends the person looking for a problem that does not exist. Say: *nothing is mapped yet*, and go to step 4. The list of every project they could map is browser-only today.
+⛔ **An empty contract project list means nothing is mapped yet — it does not mean they have no projects.** The tenant contract carries a project only once someone has saved a stage mapping for it. Read the available team list with `catalyst-skills team list`, choose one, then go to step 4. `team check --all` performs readiness checks and may create asks for every team.
 
 ⛔ **A registered repository is not a dispatchable one.** The contract's repository list carries no status and no project attachment, so a paused repository and an active one look identical there, and a repository registered without a project attached looks exactly like a correctly attached one. Registration is all it proves. If a card does not start, `catalyst-skills explain <ticket>` names the real reason; do not conclude anything about the repository from its presence in a list.
 
@@ -31,7 +31,7 @@ Setup is five parts. Each has one instrument, and each instrument answers about 
 3. Report the two groups separately, in that order, each with its own owner.
 
 - **A machine check failed.** This is the person's, here, now. Each failing check carries its own `fix` line; read it and do it. A missing or partial skill set is `catalyst-skills install`; a stale contract is `catalyst-skills contract --refresh`; a missing CLI path is one more `catalyst-skills login`.
-- **A project check failed.** ⛔ **Nothing you run on this machine can move it.** Name the check, name the project, and name the owner — the `who` field carries the tenant's own owners and admins. Point at `<their cloud>/settings/linear-teams`. Then stop. Re-running `ready` in a loop is the failure this section exists to prevent: it will keep saying NOT READY for a reason that lives somewhere else entirely.
+- **A project check failed.** Name the check, the project, and the owner. An admin or owner can preview a stage mapping or adoption through `catalyst-skills team`; some failures still need provider consent or a browser action. Use the check's reason to choose the next action. Re-running `ready` alone does not fix it.
 - **A check is a note.** Notes never move the verdict. A stale or absent replica is optional; a check that has never been run is waiting, not failing; a check the engine could not run is unknown, which is not a pass and not a failure. Say which of the three it is.
 
 ## When to stop rather than continue
