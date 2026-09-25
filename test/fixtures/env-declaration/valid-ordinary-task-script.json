@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "toolchains": [],
+  "systemPackages": [],
+  "setup": [
+    { "id": "build", "command": ["npm", "run", "task-build"], "timeoutSeconds": 120, "provenanceIds": [] },
+    { "id": "audit", "command": ["npm", "run", "risk-report"], "timeoutSeconds": 120, "provenanceIds": [] }
+  ],
+  "verify": [
+    { "id": "disk", "command": ["npm", "run", "disk-usage"], "timeoutSeconds": 60, "provenanceIds": [] }
+  ],
+  "services": [],
+  "environment": [],
+  "agentAssets": [],
+  "provenance": []
+}

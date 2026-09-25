@@ -31,6 +31,7 @@ const CASES: Record<(typeof CUSTOMER_SKILLS)[number], { script: string; args: st
   "run-this-project": { script: "scope-status.mjs", args: ["--team", "ENG"] },
   unstick: { script: "unstick.mjs", args: ["ENG-2"] },
   "what-needs-me": { script: "inbox.mjs", args: [] },
+  "what-this-repo-needs": { script: "inventory.mjs", args: [] },
   "whats-happening": { script: "explain.mjs", args: ["ENG-2"] },
 };
 
@@ -106,7 +107,11 @@ describe("every skill's scripts run for either credential", () => {
   // whose first reading is the machine grain and whose FIRST STATE is "no credential here yet".
   // Neither is a launcher gate, so neither has a negative case; every other skill must still refuse.
   const REPORTS_NOT_CONNECTED = new Set(["connect-me", "catalyst-onboard"]);
-  for (const skill of CUSTOMER_SKILLS.filter((s) => !REPORTS_NOT_CONNECTED.has(s))) {
+  // what-this-repo-needs is local, offline and repo-scoped: `env inventory` / `env check` call no
+  // route and need no login, so gating its launcher on a credential would break the feature. It is
+  // excluded from the exit-2 loop below and asserted the OTHER way instead, just after this loop.
+  const RUNS_OFFLINE = new Set(["what-this-repo-needs"]);
+  for (const skill of CUSTOMER_SKILLS.filter((s) => !REPORTS_NOT_CONNECTED.has(s) && !RUNS_OFFLINE.has(s))) {
     test(`${skill}: a config holding neither credential is not connected — exit 2, the CLI never spawned`, () => {
       const { home, calls } = connectedHome({});
       const r = runScript(skill, home);
@@ -119,6 +124,21 @@ describe("every skill's scripts run for either credential", () => {
       expect(r.stderr).not.toMatch(/run: CATALYST_CLOUD_TOKEN=/);
     });
   }
+
+  test("what-this-repo-needs: a customer.json with NEITHER credential still runs — exit 0, and it reached the CLI", () => {
+    // Not "no customer.json at all": that would fall through to the real `npx` fallback, which would
+    // try to reach the real registry — wrong for a unit test. This home DOES carry a recorded
+    // cliPath (like every other fixture in this file), so the assertion that actually matters —
+    // "no credential gate" — is isolated from "no recorded CLI path", which is a different, already
+    // well-covered fallback. `connectedHome({})` is the SAME fixture the exit-2 loop above uses for
+    // every other skill; what's different here is that this skill, alone, does not treat it as
+    // "not connected".
+    const { home, calls } = connectedHome({});
+    const r = runScript("what-this-repo-needs", home);
+    expect(r.status, r.stderr).toBe(0);
+    expect(r.stderr).not.toMatch(/not connected/i);
+    expect(calls().length, "it must have reached the CLI, not merely exited 0").toBeGreaterThan(0);
+  });
 
   // Every connect instruction a person reads leads with the keyless login; the key form is the
   // alternative. Codex P2 (#11): read every supported spelling, not three literal strings — the npx

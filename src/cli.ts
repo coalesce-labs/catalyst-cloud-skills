@@ -50,6 +50,7 @@ import { cmdWrite, type WriteDeps } from "./write.js";
 import { cmdAsk } from "./ask.js";
 import { cmdRelease } from "./release.js";
 import { cmdEnvironment, type EnvironmentDeps } from "./environment.js";
+import { cmdEnv, type EnvDeps } from "./env.js";
 
 export {
   CONFIG_MODE,
@@ -94,6 +95,7 @@ export const CUSTOMER_SKILLS = [
   "run-this-project",
   "unstick",
   "what-needs-me",
+  "what-this-repo-needs",
   "whats-happening",
 ] as const;
 
@@ -123,7 +125,8 @@ export function usageText(): string {
     "  catalyst-skills write <comment|state|label|create|reaction|attachment|session> ...",
     "  catalyst-skills ask <raise|accept|list> ...",
     "  catalyst-skills release <ticket> --because <what changed> [--retry-unchanged] [--dry-run] | release --class <c> --team <K> ...",
-    "  catalyst-skills environment [read] | environment propose --file <path>|--stdin [--approve] | environment approve",
+    "  catalyst-skills environment [read] | environment propose --file <path>|--stdin [--approve] | environment approve   (your account; needs login)",
+    "  catalyst-skills env <inventory [path] | check <file>>   (this repository, offline — no login, no network)",
     "",
     "Every verb takes --help. --json makes the output machine-readable.",
     "",
@@ -146,6 +149,7 @@ export interface MainDeps {
   watch?: WatchDeps;
   write?: WriteDeps;
   environment?: EnvironmentDeps;
+  env?: EnvDeps;
   loadSdk?: () => Promise<unknown>;
   /** Injected by the tests so no suite ever touches a real terminal. */
   isTty?: () => boolean;
@@ -260,6 +264,8 @@ export async function main(argv: string[], ctx: Ctx = defaultCtx(), deps: MainDe
         return await cmdRelease(args, ctx);
       case "environment":
         return await cmdEnvironment(args, ctx, deps.environment ?? {});
+      case "env":
+        return await cmdEnv(args, ctx, deps.env ?? {});
       default:
         ctx.stderr(`unknown command: ${args.command}`);
         ctx.stderr(usageText());
@@ -284,7 +290,7 @@ export async function main(argv: string[], ctx: Ctx = defaultCtx(), deps: MainDe
 }
 
 const VERB_HELP_KNOWN: Record<string, true> = Object.fromEntries(
-  ["login", "join", "install", "status", "notice", "me", "contract", "query", "replica", "events", "explain", "running", "queue", "watch", "write", "ask", "ready", "accounts", "release"].map((v) => [v, true]),
+  ["login", "join", "install", "status", "notice", "me", "contract", "query", "replica", "events", "explain", "running", "queue", "watch", "write", "ask", "ready", "accounts", "release", "env", "environment"].map((v) => [v, true]),
 );
 
 async function cmdLogin(args: ParsedArgs, ctx: Ctx, deps: MainDeps): Promise<number> {

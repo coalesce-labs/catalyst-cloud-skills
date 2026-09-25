@@ -2,6 +2,22 @@
 
 ## 0.7.0
 
+`catalyst-skills env inventory [path]` scans a repository offline — no login, no network — and lists
+the environment variable NAMES it needs, never a value. Names are grouped build/test (needed to
+install, build and run the tests), deploy-only (a CI secret only a deploy job uses) and bindings (a
+Cloudflare or other platform binding, which is not an environment value). Each name shows where it
+was found (file:line), what uses it, and where a local value would come from — a `.env` file, your
+shell, a CI secret, or a Cloudflare binding. `--json` gives the same data in machine form. `env check
+<file>` validates a `catalyst.env.json` offline, against this bundle's own dated, cited copy of the
+cloud's validation rules (it does not compute the cloud's canonical hash — only a `valid` / `invalid`
+verdict and the refusal reasons). The new `what-this-repo-needs` skill explains why a cloud container
+needs these names before it scans, then asks you to review the list: keep, drop or move each one.
+
+Reading a GitHub Actions workflow now goes through a real YAML parser (`yaml`, now a runtime
+dependency of this package — it carries no transitive dependencies of its own) rather than a
+hand-written line scanner, so a workflow that declares its `env:` in flow style (`{ A: 1, B: 2 }`) is
+read correctly instead of silently missed.
+
 `explain` and `ready` now name a team that cannot start work even when the live read is not available. Your tenant's contract carries each team's dispatch gate, and this machine already keeps a copy of that contract on disk; until now only the live eligibility read could name the gate, so a network hiccup, or a cloud older than that read, left `explain` printing nothing at all. `explain` now leads with the gate and the fix from the cached contract when the live read is unavailable or sends no gate, and says which of the two it read; when both answer and disagree, the live read wins and the paragraph says the cached one disagreed. A refusal from the cloud — a credential that is not accepted, for instance — is still a refusal, never quietly replaced by a cached answer. `ready` now prints one dispatch-gate line per team: open teams read `ok`, and a team whose stages are not saved reads `FAIL` with the remedy your tenant sent and turns the verdict to NOT READY, because nothing in that team can start. A cloud that does not send the gate changes nothing.
 
 `catalyst-skills ready` now tells you when the skills on this machine, or the CLI itself, are behind the newest published release — it names the version you have, the version that is out, and the one command that updates each, as a note that never changes the verdict. Every skill file now records the bundle version it was vendored at, so a copy installed months ago is visible as such instead of only by diffing files. The check reads the npm registry's `dist-tags.latest`, capped at 1500ms and cached for six hours, and never blocks: an unreachable registry is one note that says so, and `--offline` (or `CATALYST_SKILLS_OFFLINE=1`) skips the lookup entirely.
