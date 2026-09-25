@@ -182,7 +182,15 @@ The skill files themselves are written by whichever install command you ran, in 
 
 ## Updating
 
-A plugin install updates when we ship. Skills copied by `npx skills add` do not. After the source and destination check in Install, re-run the Cloud add command to refresh existing skills and pick up new ones. Update the CLI with `npm install -g @catalyst-cloud/catalyst-skills@latest && catalyst-skills login` — the re-login rewrites the CLI path the skills spawn, so they stop running the old bundle. To run one command against the latest publish without installing, use `npx @catalyst-cloud/catalyst-skills@latest login`. The next `catalyst-skills` run prints a one-line notice:
+A plugin install updates when we ship. Skills copied by `npx skills add` do not. After the source and destination check in Install, re-run these commands to refresh both packs and pick up new skills:
+
+```sh
+npm install -g @catalyst-cloud/catalyst-skills@latest && catalyst-skills login
+npx skills@latest add coalesce-labs/catalyst-cloud-skills --all -g
+npx skills@latest add coalesce-labs/catalyst-dev-skills --all -g
+```
+
+The re-login rewrites the CLI path the skills spawn, so they stop running the old bundle. The Catalyst Cloud installer owns the guarded daily workstation refresh: it checks the lock and destination before updating and leaves unrelated, changed, or uncertain skill paths alone. Do not schedule raw add commands unattended. To run one command against the latest publish without installing, use `npx @catalyst-cloud/catalyst-skills@latest login`. The next `catalyst-skills` run prints a one-line notice:
 
 ```
 [catalyst-skills] updated 0.1.1 → 0.2.0: <that version's CHANGELOG.md summary> · update with: npm install -g @catalyst-cloud/catalyst-skills@latest && catalyst-skills login

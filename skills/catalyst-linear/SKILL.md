@@ -5,7 +5,7 @@ description: >-
 allowed-tools: Bash(catalyst-skills:*) Bash(npx @catalyst-cloud/catalyst-skills:*)
 disable-model-invocation: true
 ---
-<!-- vendored-from: @catalyst-cloud/catalyst-skills@0.7.0 — written in this repository for customer tenants -->
+<!-- vendored-from: @catalyst-cloud/catalyst-skills@0.12.0 — written in this repository for customer tenants -->
 
 # Catalyst Linear
 

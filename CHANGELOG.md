@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.12.0
+
+The Cloud onboarding CLI can now inspect personal GitHub and Linear grants, open a browser consent handoff when a grant is missing, and confirm the grant after the person returns. It can show and resolve an unmatched Linear identity without replacing a recorded match. These commands use the typed `@catalyst-cloud/sdk` 0.12 series.
+
 ## 0.7.0
 
 `explain` and `ready` now name a team that cannot start work even when the live read is not available. Your tenant's contract carries each team's dispatch gate, and this machine already keeps a copy of that contract on disk; until now only the live eligibility read could name the gate, so a network hiccup, or a cloud older than that read, left `explain` printing nothing at all. `explain` now leads with the gate and the fix from the cached contract when the live read is unavailable or sends no gate, and says which of the two it read; when both answer and disagree, the live read wins and the paragraph says the cached one disagreed. A refusal from the cloud — a credential that is not accepted, for instance — is still a refusal, never quietly replaced by a cached answer. `ready` now prints one dispatch-gate line per team: open teams read `ok`, and a team whose stages are not saved reads `FAIL` with the remedy your tenant sent and turns the verdict to NOT READY, because nothing in that team can start. A cloud that does not send the gate changes nothing.
