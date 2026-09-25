@@ -236,7 +236,7 @@ describe("each skill's scripts spawn the catalyst-skills verbs it teaches", () =
     // Each grain by its own instrument: the machine by `status` and `ready`, the person by `me`, and
     // the account, the projects and the repositories by three DIFFERENT `contract --path` reads. A
     // regression that folded any of these into one call would take this assertion with it.
-    "catalyst-onboard": [/"status"/, /"ready",\s*"--json"/, /"me",\s*"--json"/, /"connections",\s*"personal"/, /"contract",\s*"--path",\s*"account"/, /"contract",\s*"--path",\s*"teams"/, /"contract",\s*"--path",\s*"merge\.repositories"/, /"environment",\s*"read"/],
+    "catalyst-onboard": [/"status"/, /"ready",\s*"--json"/, /"replica",\s*"status",\s*"--probe",\s*"--json"/, /"events",\s*"status",\s*"--probe",\s*"--json"/, /"replica",\s*"start",\s*"--detach"/, /"me",\s*"--json"/, /"connections",\s*"personal"/, /"contract",\s*"--path",\s*"account"/, /"contract",\s*"--path",\s*"teams"/, /"contract",\s*"--path",\s*"merge\.repositories"/, /"environment",\s*"read"/],
     "catalyst-github": [/"query",\s*"pull"/, /"contract"/, /"replica",\s*"status"/],
     "catalyst-linear": [/"query",\s*"issue"/, /"query",\s*"search"/, /"write",\s*"comment"/, /"write",\s*"state"/, /"write",\s*"label"/, /"write",\s*"create"/],
     "how-catalyst-works": [/"explain"/, /"running"/, /"queue"/, /"accounts"/, /"contract",\s*"--path"/],
@@ -253,6 +253,27 @@ describe("each skill's scripts spawn the catalyst-skills verbs it teaches", () =
       expect(src, "every script passes --json to the CLI for machine-read output").toContain("--json");
     });
   }
+
+  test("onboarding keeps local sync optional and waits for the first ticket event honestly", () => {
+    const onboard = skill("catalyst-onboard");
+    const path = readFileSync(join(skillsRoot, "catalyst-onboard", "references", "the-one-path.md"), "utf8");
+    const localSync = readFileSync(join(skillsRoot, "catalyst-onboard", "references", "local-sync.md"), "utf8");
+    expect(onboard).toContain("Local sync is opt-in");
+    expect(onboard).toContain("references/local-sync.md");
+    expect(path).toContain("optional first-event check in `references/local-sync.md`");
+    expect(localSync).toContain("catalyst-skills events wait-for --ticket <ticket-identifier> --after <cursor-before-move> --timeout 300");
+    const cursorCapture = localSync.indexOf("record its `cursor`");
+    const cardMove = localSync.indexOf("Move the card");
+    const eventWait = localSync.indexOf("events wait-for --ticket");
+    expect(cursorCapture).toBeGreaterThanOrEqual(0);
+    expect(cardMove).toBeGreaterThan(cursorCapture);
+    expect(eventWait).toBeGreaterThan(cardMove);
+    expect(localSync).toContain("Exit 1 means no matching cached event arrived within five minutes");
+    expect(localSync).toContain("without inferring a cloud or webhook failure");
+    expect(localSync).toContain("replica status --probe --json");
+    expect(localSync).toContain("events status --probe --json");
+    expect(localSync).toContain("replica freshness alone does not prove event freshness");
+  });
 
   test("skills that write move cards by slot or state type, never by a stage name literal", () => {
     for (const name of ["catalyst-linear", "run-this-project", "what-needs-me"]) {
@@ -377,6 +398,8 @@ describe("the install page (README) states what a customer needs, in the order t
     expect(readme).toContain("catalyst-skills replica start");
     expect(readme).toContain("--detach");
     expect(readme).toContain("catalyst-skills replica status");
+    expect(readme).toContain("catalyst-skills events status --probe");
+    expect(readme).toContain("A fresh replica does not prove event freshness");
     expect(readme).toMatch(/`0` for fresh, `1` for present but stale, `2` for not connected, `3` for absent/);
     expect(readme).toContain("catalyst-skills watch");
     expect(readme).toContain("seven days or 256 MiB");

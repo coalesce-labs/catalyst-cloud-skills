@@ -112,6 +112,44 @@ describe("events", () => {
     expect(JSON.parse(ctx.out[0]!)).toEqual(rows[1]);
   });
 
+  test("wait-for catches an event already cached after a pre-move cursor", async () => {
+    const fixture = sdk();
+    fixture.tailCachedEvents = async function* ({ after }) {
+      // This models the SDK: absent --after starts at the current local cursor (5),
+      // while the pre-move cursor (3) replays event 4 cached before wait-for began.
+      const localHead = 5;
+      let cursor = after ?? localHead;
+      for (const event of rows.filter((row) => row.sequence > cursor)) {
+        cursor = event.sequence;
+        yield event;
+      }
+    };
+    expect(
+      await main(
+        ["events", "wait-for", "--ticket", "CTC-1352", "--timeout", "1"],
+        ctx,
+        { events: { loadSdk: async () => fixture } },
+      ),
+    ).toBe(1);
+    expect(
+      await main(
+        [
+          "events",
+          "wait-for",
+          "--ticket",
+          "CTC-1352",
+          "--after",
+          "3",
+          "--timeout",
+          "1",
+        ],
+        ctx,
+        { events: { loadSdk: async () => fixture } },
+      ),
+    ).toBe(0);
+    expect(JSON.parse(ctx.out[0]!)).toEqual(rows[0]);
+  });
+
   test("tail honors an explicit cursor and nested ticket references", async () => {
     const fixture = sdk();
     fixture.tailCachedEvents = async function* ({ after, directory, signal }) {

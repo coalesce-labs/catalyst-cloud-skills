@@ -68,6 +68,7 @@ export const FLAG_TABLES: Record<string, FlagTable> = {
     "stale-ms": { value: true, help: "status: heartbeat age that counts as stale (default 15000)" },
   },
   events: {
+    probe: { value: false, help: "status: compare the local event cursor with the cloud event head" },
     type: { value: true, help: "exact event type" },
     ticket: { value: true, help: "ticket identifier found in the event payload" },
     after: { value: true, help: "event sequence to read after (tail/wait default to local head)" },
@@ -165,7 +166,7 @@ export const VERB_USAGE: Record<string, string> = {
   replica:
     "replica <start [--detach]|stop|status [--probe] [--json]|sql \"<select>\"|schema [table]> [--db <path>]",
   events:
-    "events <tail|wait-for|query> [--type NAME] [--ticket CTC-N] [--after SEQUENCE] [--limit N] [--timeout SECONDS] [--directory PATH]",
+    "events <tail|wait-for|query|status [--probe] [--json]> [--type NAME] [--ticket CTC-N] [--after SEQUENCE] [--limit N] [--timeout SECONDS] [--directory PATH]",
   explain: "explain <ticket> [--history] [--json]",
   history: "history <ticket> [--json]",
   running: "running [--ticket T --phase P] [--json]",
