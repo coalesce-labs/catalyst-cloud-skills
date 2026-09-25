@@ -132,6 +132,15 @@ export const FLAG_TABLES: Record<string, FlagTable> = {
     offline: { value: false, help: "skip the published-release check (no network)" },
   },
   accounts: {},
+  team: {
+    all: { value: false, help: "check every team, one request at a time" },
+    stage: { value: true, repeat: true, help: "map a role to a live Linear state name (role=StateName)" },
+    choice: { value: true, repeat: true, help: "migrate a source state to a destination (sourceId=destinationId)" },
+    yes: { value: false, help: "apply the plan you have reviewed with the person" },
+    "plan-hash": { value: true, help: "apply only the exact preview hash the person reviewed" },
+    undo: { value: false, help: "adopt: preview or archive stages a prior adoption created" },
+    retire: { value: false, help: "migrate: separately preview or retire emptied source stages" },
+  },
   environment: {
     file: { value: true, help: "propose: a JSON file holding the declaration" },
     stdin: { value: false, help: "propose: read the declaration from stdin" },
@@ -177,6 +186,7 @@ export const VERB_USAGE: Record<string, string> = {
   ask: "ask <raise --team --title [--context] [--option]... [--default] --blocks <ticket>...|--nothing-to-block [--ask-key] | accept <askTicket> --answer <commentId> --role <role> | list [--anyone] [--json]>",
   ready: "ready [--json] [--offline]",
   accounts: "accounts [--json]",
+  team: "team <list|check <KEY>|check --all|map <KEY> [--stage role=StateName]... [--yes --plan-hash H]|adopt <KEY> [--undo] [--yes --plan-hash H]|migrate <KEY> [--choice sourceId=destinationId]... [--retire] [--yes --plan-hash H]|checklist <KEY>> [--json]",
   environment:
     "environment [read] [--json] | environment propose --file <path>|--stdin [--expect-revision N] [--approve] [--json] | environment approve [--revision N --hash H] [--json]",
   identity: "identity linear <status|options|set> [<linearUserId>] [--json]",

@@ -128,6 +128,8 @@ Open a new session and ask about your own tenant. The skills read the config `lo
 - Run this project for me until it closes.
 - Am I set up?
 
+`catalyst-skills team list` inventories visible teams without running readiness checks. `team check ENG` prints readiness for one team; `team check --all` runs checks for every team. `team map ENG`, `team adopt ENG`, and `team migrate ENG` print a plan and exit 3 before changing configuration; review the plan and rerun the chosen command with `--yes --plan-hash <hash>` from that preview. `team adopt ENG --undo` previews the exact previously created stages, and `team migrate ENG --retire` requires its own confirmation after the ticket move. `team checklist ENG` prints the same manual setup lines as the browser. These commands use the member's own login; an admin or owner seat is required for setup, and Adopt and Migrate also need that member's personal Linear connection.
+
 ## What has to be running
 
 Nothing, by default. After `login`, every read, write, ask and explanation goes to the cloud's origin-fresh API with the config file and the cached contract on disk. Two optional processes exist for people who want them:

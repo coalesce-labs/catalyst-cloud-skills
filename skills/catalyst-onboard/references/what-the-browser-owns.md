@@ -22,9 +22,6 @@ These are settings pages today because the routes behind them take a browser ses
 
 | step | where | what you say |
 | -- | -- | -- |
-| seeing every project they could set up | `<their cloud>/settings/linear-teams` | "I can read the projects that are already mapped, but the full list is only on this page today. Open it and tell me the ones you see." |
-| checking a project's readiness, or re-checking it | the same page | "I can read the verdict your tenant last stored, from the contract. Asking for a fresh check is on that page." |
-| mapping stages, or adopting the workflow | the same page, per project | "Pick one project, then **Map my stages** — or **Adopt the Catalyst workflow** if you want Catalyst's stages created for you." |
 | registering a repository | `<their cloud>/settings/repositories` | "Add the repository here, and attach it to the project you just mapped, in the same form." |
 | declaring the environment **for one repository** | that repository's environment section under `<their cloud>/settings/repositories` | "The names only this repository needs go here. Values are entered once, by you — nothing I run ever sees them." (Account-wide names are **not** on this list: `catalyst-skills environment` does those.) |
 

@@ -13,7 +13,7 @@ const SPEC = {
 };
 const NOTES = [
   "Reads, in this order: `status` (machine), `ready --json` (machine checks and project checks, kept apart),",
-  "`me --json` and personal connection statuses (person), then `contract --path …` for the account, projects and repositories.",
+  "`me --json` and personal connection statuses (person), then `contract --path …` for the account and repositories; the teams read is refreshed for mapping readback.",
   "Writes nothing and changes nothing. Runs before this machine is connected — that is one of the states it reports.",
 ];
 
@@ -66,7 +66,7 @@ const machineLines = connected ? statusLines : [statusLines[0] ?? "status printe
 let machineVerdict = connected ? "ok" : "unfinished";
 
 // `ready` is ONE verdict over two parts; split it by check id before anything is reported. A check
-// whose id begins with "team:" belongs to a project and cannot be moved from this machine.
+// whose id begins with "team:" belongs to a project and needs the member's admin or owner seat.
 let projectChecks = [];
 let machineFix = null;
 if (connected) {
@@ -196,7 +196,9 @@ if (!connected) {
 if (!connected) {
   add("projects", "catalyst-skills contract --path teams", "unreadable", ["not readable until this machine is connected"], null, null);
 } else {
-  const teams = runCli(["contract", "--path", "teams", "--json"]);
+  // The mapping write updates the cloud before the cached contract's dispatchGate projection.
+  // Revalidate this one read so a successful save does not appear unmapped on the next step.
+  const teams = runCli(["contract", "--refresh", "--path", "teams", "--json"]);
   const doc = tryJson(teams.stdout);
   const rows = Array.isArray(doc) ? doc : null;
   if (rows === null) {
@@ -210,7 +212,7 @@ if (!connected) {
       lines.push(`${key}: ${readiness.status ?? "unknown"}${bad.length ? ` — ${bad.map((c) => `${c.id} ${c.state}`).join(", ")}` : ""}`);
     }
     for (const c of projectChecks) lines.push(`${c.ok ? "note" : "FAIL"} ${c.line}${c.who ? ` — who: ${c.who}` : ""}`);
-    lines.push("⛔ MAPPED projects only. An empty list means nothing is mapped yet, NOT that there are no projects — the full list is on the page below.");
+    lines.push("MAPPED projects only. An empty list means nothing is mapped yet, NOT that there are no projects. Run catalyst-skills team list to inspect the live list without checking readiness.");
     // A project is set up when its dispatch gate is open (its stages are mapped), or when its
     // readiness reads ready. Readiness alone kept `--next` on "map its stages" for a tenant whose
     // gates were open: readiness stays "unchecked" until someone presses Re-check, and a new team
@@ -218,7 +220,7 @@ if (!connected) {
     const setUp = (t) => t.dispatchGate?.status === "open" || (t.readiness?.status ?? "unchecked") === "ready";
     for (const t of rows) {
       if (t.dispatchGate?.status === "open" && (t.readiness?.status ?? "unchecked") === "unchecked") {
-        lines.push(`${t.key ?? t.id ?? "(unkeyed)"}: stages mapped; readiness not checked yet: press Re-check on the page below to see the rest`);
+        lines.push(`${t.key ?? t.id ?? "(unkeyed)"}: stages mapped; readiness not checked yet: run catalyst-skills team check ${t.key ?? t.id} to see the rest`);
       }
     }
     const ready = rows.length > 0 && rows.every(setUp);
