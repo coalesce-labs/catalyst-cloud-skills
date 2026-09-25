@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.8.0
+
+A ticket filed through `catalyst-linear` can now carry a body. `catalyst-skills write create` takes `--description <text>`, or `--stdin` for a multi-line body, and the skill's `create-ticket.mjs` passes either through; before this a new ticket could only have a title, so filing one meant opening Linear to write what it was for. The body goes out through the same tenant write route as the rest of the ticket, as the app actor.
+
+The skill-content check now also refuses a personal Linear API token variable and Linear's own API host anywhere a customer reads. Every Linear write in these skills goes through your tenant's write route, and a skill that told you to paste a Linear token would be describing the path it exists to replace.
+
 ## 0.7.0
 
 `explain` and `ready` now name a team that cannot start work even when the live read is not available. Your tenant's contract carries each team's dispatch gate, and this machine already keeps a copy of that contract on disk; until now only the live eligibility read could name the gate, so a network hiccup, or a cloud older than that read, left `explain` printing nothing at all. `explain` now leads with the gate and the fix from the cached contract when the live read is unavailable or sends no gate, and says which of the two it read; when both answer and disagree, the live read wins and the paragraph says the cached one disagreed. A refusal from the cloud — a credential that is not accepted, for instance — is still a refusal, never quietly replaced by a cached answer. `ready` now prints one dispatch-gate line per team: open teams read `ok`, and a team whose stages are not saved reads `FAIL` with the remedy your tenant sent and turns the verdict to NOT READY, because nothing in that team can start. A cloud that does not send the gate changes nothing.

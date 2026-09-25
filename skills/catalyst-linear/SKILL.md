@@ -5,7 +5,7 @@ description: >-
 allowed-tools: Bash(catalyst-skills:*) Bash(npx @catalyst-cloud/catalyst-skills:*)
 disable-model-invocation: true
 ---
-<!-- vendored-from: @catalyst-cloud/catalyst-skills@0.7.0 — written in this repository for customer tenants -->
+<!-- vendored-from: @catalyst-cloud/catalyst-skills@0.8.0 — written in this repository for customer tenants -->
 
 # Catalyst Linear
 
@@ -20,7 +20,7 @@ Run each with `--help` first; scripts are executed, never read.
 - `node scripts/comment.mjs <ticket> --body <text> [--parent <id>] [--bookkeeping]` — a comment as the app actor; a machine record takes `--bookkeeping`.
 - `node scripts/move.mjs <ticket> --slot <slot>` — a card move by slot (`--state-type backlog` parks).
 - `node scripts/label.mjs <ticket> --add <name> --remove <name>` — labels, resolved through the contract.
-- `node scripts/create-ticket.mjs --team <key> --title <text>` — a new ticket; cite its identifier only after it prints.
+- `node scripts/create-ticket.mjs --team <key> --title <text> [--description <text> | --stdin]` — a new ticket; cite its identifier only after it prints.
 
 Exit codes: 0 done, 1 not found or a usage error, 2 this machine is not connected or the write was refused (budget spent, slot unmapped, label absent; the one line printed says which).
 
