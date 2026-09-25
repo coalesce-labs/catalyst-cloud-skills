@@ -1,1 +1,1 @@
-fix #53: preserve workflow settings, bind approval to the preview hash, report partial migration outcomes, and inventory teams without readiness checks
+Reject paused migration previews before showing an approval command and preserve mid-run 409 refusals.
