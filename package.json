@@ -46,7 +46,7 @@
     "paths:check": "node scripts/vendor-paths.mjs --check"
   },
   "dependencies": {
-    "@catalyst-cloud/sdk": "^0.10.0"
+    "@catalyst-cloud/sdk": "^0.12.0"
   },
   "devDependencies": {
     "@types/node": "^26.3.0",
