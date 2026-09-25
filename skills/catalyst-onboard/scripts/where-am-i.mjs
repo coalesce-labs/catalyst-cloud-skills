@@ -6,6 +6,7 @@
 //
 // Every count and every name below is read off what a verb printed. Nothing here is written down.
 import { cliTarget, CONNECT_LINE, parseFlags, printHelp, runCli, tryJson, tryLoadConfig } from "./lib/cli.mjs";
+import { runLocalSync } from "./local-sync.mjs";
 
 const SPEC = {
   next: { help: "print only the single next step" },
@@ -13,6 +14,7 @@ const SPEC = {
 };
 const NOTES = [
   "Reads, in this order: `status` (machine), `ready --json` (machine checks and project checks, kept apart),",
+  "`replica status --probe --json` and `events status --probe --json` (optional local freshness),",
   "`me --json` and personal connection statuses (person), then `contract --path …` for the account, projects and repositories.",
   "Writes nothing and changes nothing. Runs before this machine is connected — that is one of the states it reports.",
 ];
@@ -69,6 +71,7 @@ let machineVerdict = connected ? "ok" : "unfinished";
 // whose id begins with "team:" belongs to a project and cannot be moved from this machine.
 let projectChecks = [];
 let machineFix = null;
+let localSync;
 if (connected) {
   const ready = runCli(["ready", "--json"]);
   const report = tryJson(ready.stdout);
@@ -86,6 +89,17 @@ if (connected) {
       machineFix = failed.find((c) => typeof c.fix === "string")?.fix ?? null;
     }
   }
+  // Supplemental only: local caches are optional and do not change setup completion or --next.
+  localSync = await runLocalSync({ waitSeconds: 0 });
+  machineLines.push(
+    `note optional local sync ${localSync.assessment.verdict}: ${localSync.assessment.reason}; check with 'node scripts/local-sync.mjs', and start only with the person's opt-in via 'node scripts/local-sync.mjs --start'`,
+  );
+} else {
+  localSync = {
+    assessment: { verdict: "unknown", current: false, reason: "connect this machine before local freshness can be checked" },
+    started: false,
+    recovery: "catalyst-skills login",
+  };
 }
 add(
   "machine",
@@ -281,7 +295,7 @@ const next =
 const finished = parts.every((p) => p.verdict === "ok");
 
 if (flags.json) {
-  console.log(JSON.stringify({ cli: via, connected, cloud, personalConnections, parts, next, finished }));
+  console.log(JSON.stringify({ cli: via, connected, cloud, personalConnections, parts, localSync, next, finished }));
 } else if (flags.next) {
   if (next === null) console.log("nothing left: every part this machine can read is finished. Move one card into the project's dispatch stage.");
   else console.log(`${next.part}: ${next.action}${next.blocking ? "" : " (does not block the steps below)"}${next.owner ? ` — who: ${next.owner}` : ""}${next.where ? ` — ${next.where.startsWith("http") ? "where" : "do"}: ${next.where}` : ""}`);

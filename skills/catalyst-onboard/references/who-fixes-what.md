@@ -32,7 +32,7 @@ Setup is five parts. Each has one instrument, and each instrument answers about 
 
 - **A machine check failed.** This is the person's, here, now. Each failing check carries its own `fix` line; read it and do it. A missing or partial skill set is `catalyst-skills install`; a stale contract is `catalyst-skills contract --refresh`; a missing CLI path is one more `catalyst-skills login`.
 - **A project check failed.** ⛔ **Nothing you run on this machine can move it.** Name the check, name the project, and name the owner — the `who` field carries the tenant's own owners and admins. Point at `<their cloud>/settings/linear-teams`. Then stop. Re-running `ready` in a loop is the failure this section exists to prevent: it will keep saying NOT READY for a reason that lives somewhere else entirely.
-- **A check is a note.** Notes never move the verdict. A stale or absent replica is optional; a check that has never been run is waiting, not failing; a check the engine could not run is unknown, which is not a pass and not a failure. Say which of the three it is.
+- **A check is a note.** Notes never move the verdict. A stale or absent replica or event cache is optional; an unknown freshness probe means the cloud comparison could not be proved. The API-backed skills still work. Say whether the local cache is absent, stale or unknown, and ask before starting the optional writer.
 
 ## When to stop rather than continue
 
