@@ -1,0 +1,1 @@
+Reject paused migration previews before showing an approval command and preserve mid-run 409 refusals.
