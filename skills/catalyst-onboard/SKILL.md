@@ -20,6 +20,7 @@ Scripts are run, never read. Each prints `--help`.
 - `node scripts/where-am-i.mjs` — every part, each with the instrument that read it, its verdict, and for anything unfinished who can fix it and the page it is on. Works before the machine is connected; that is one of the states it reports.
 - `node scripts/where-am-i.mjs --next` — the same reading, reduced to the single next step.
 - `node scripts/where-am-i.mjs --json` — the same document for you to branch on.
+- `node scripts/local-sync.mjs` — optional local replica and event sync status. Run `node scripts/local-sync.mjs --start` only after the person chooses local sync; the script starts the supported writer and waits for a live heartbeat at the cloud cursor.
 
 Start every session with it, and run it again after every step the person completes. It is the only thing that decides where you are.
 
@@ -28,6 +29,7 @@ Start every session with it, and run it again after every step the person comple
 | when | read |
 | -- | -- |
 | walking the steps — what each one does, what to read back, when it is done | `references/the-one-path.md` |
+| the person chooses an optional local event and replica cache | `references/local-sync.md` |
 | anything reports not ready, or you are about to say who should fix something | `references/who-fixes-what.md` |
 | the next step is a browser page, or a page said it worked and you have to confirm it | `references/what-the-browser-owns.md` |
 | the person asks what Catalyst actually is, or how a ticket gets worked | the `how-catalyst-works` skill |
@@ -39,6 +41,7 @@ Start every session with it, and run it again after every step the person comple
 ## Rules
 
 - **One step, then stop.** Say what you are about to do, do it, show the real output, say what it means and what comes next. Never queue several steps into one message, and never move on from a step you did not watch finish.
+- **Local sync is opt-in.** API-backed skills work without it. Ask whether the person wants a local event and replica cache before running `local-sync.mjs --start`. A detached process starting is not evidence of freshness; only the script's verified current verdict is.
 - **Report what you observed, not what you expected.** Print the lines the command actually produced. "That worked" without the output it produced is the single easiest thing to get wrong here, and a person who later finds it did not work stops trusting every other step you reported.
 - **Each part by its own instrument.** Read the machine with the machine's instrument and the project with the project's, and label every finding with the part it belongs to. The script does this for you; keep it that way when you summarize.
 - **Not ready is a question about who, not a reason to retry.** When something reports not ready, name which check, who can fix it, and where. If the owner is not the person in front of you, say so and stop — re-running a local command cannot move a check that belongs to a tenant owner, an admin, or a browser page.

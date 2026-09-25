@@ -6,8 +6,6 @@ Walk them **one at a time**. Before each step say what you are about to do and w
 
 Each step below states: what it is for, what you run or hand over, **what you read back to prove it landed**, and **who owns it**.
 
----
-
 ## 0 — Where are we
 
 **For:** starting from the truth instead of from an assumption. A person arrives here having done anything from nothing to most of it.
@@ -17,7 +15,6 @@ Each step below states: what it is for, what you run or hand over, **what you re
 **Read back:** the whole thing, as it printed. Then say in one sentence which part is unfinished and whose it is.
 
 **Owner:** you.
----
 
 ## 1 — Connect this machine
 
@@ -30,7 +27,6 @@ Each step below states: what it is for, what you run or hand over, **what you re
 **Owner:** you run it; **the approval is the person's, in a browser, and always will be.** Wait for them. Do not re-run the command while a code is outstanding — that invalidates the code they are typing.
 
 If it refuses, stop here and use the `connect-me` skill; it owns every failure mode of this step.
----
 
 ## 2 — Who you are
 
@@ -41,7 +37,6 @@ If it refuses, stop here and use the `connect-me` skill; it owns every failure m
 **Read back:** their label and role, and whether their Linear identity is matched.
 
 **Owner:** a personal Linear connection normally matches the person's Linear identity automatically. If it remains unmatched after personal consent, a tenant owner or admin can inspect Settings → Members. An inactive seat also needs an owner or admin. Say which finding the instrument reported.
----
 
 ## 3 — Connect Linear
 
@@ -52,7 +47,6 @@ If it refuses, stop here and use the `connect-me` skill; it owns every failure m
 **Read back:** after they say it is done, re-run `node scripts/where-am-i.mjs` and read them the `account` line. A resolved workspace is proof. If it still reads unresolved, say the contract may be cached and run `catalyst-skills contract --refresh`, then read it again.
 
 **Owner:** a tenant owner or admin, in a browser. **This is a browser step by construction** — it is an authorization grant, and no key can perform one.
----
 
 ## 3a — Connect your personal Linear account
 
@@ -63,7 +57,6 @@ If it refuses, stop here and use the `connect-me` skill; it owns every failure m
 **Read back:** after approval, run `catalyst-skills connections personal linear status`. `node scripts/where-am-i.mjs` also reads the personal grant statuses. A URL opening is not proof that a grant landed.
 
 **Owner:** you start and check; the member approves in a browser. If the member's Linear identity is still unmatched after the grant is connected, an owner or admin should check Settings → Members.
----
 
 ## 4 — Pick one project, and map its stages
 
@@ -77,8 +70,6 @@ If it refuses, stop here and use the `connect-me` skill; it owns every failure m
 
 ⭐ **One project at a time is safe, and lead with this.** Mapping one project changes no other project's stages and moves no other project's tickets. Encourage a pilot: pick the project they care least about breaking.
 
----
-
 ## 5 — Install the GitHub App
 
 **For:** the account grain again. Without it Catalyst can read tickets but cannot touch code.
@@ -88,8 +79,6 @@ If it refuses, stop here and use the `connect-me` skill; it owns every failure m
 **Read back:** it is confirmed by step 6 succeeding — a repository cannot be registered through an app that is not installed. Say that is what you are waiting for rather than claiming you verified it here.
 
 **Owner:** a tenant owner or admin, in a browser. **Browser by construction**, same reason as step 3.
-
----
 
 ## 6 — Register the repository
 
@@ -101,8 +90,6 @@ If it refuses, stop here and use the `connect-me` skill; it owns every failure m
 
 **Owner:** a tenant owner or admin. ⛔ **Registering is settings-page work today**; a key-callable path is being built. ⛔ A repository registered without a project attached is the trap here: the call succeeds, the repository is listed, and nothing can ever dispatch into it. Make sure they attach the project in the same form, and say why.
 
----
-
 ## 6a — Connect your personal GitHub account
 
 **For:** letting Catalyst act as you in GitHub. This grant is separate from the tenant's GitHub App installation.
@@ -112,8 +99,6 @@ If it refuses, stop here and use the `connect-me` skill; it owns every failure m
 **Read back:** run `catalyst-skills connections personal github status`. A connected result confirms the personal grant; repository registration earlier confirmed the tenant App is available.
 
 **Owner:** you start and check; the member approves in a browser.
-
----
 
 ## 7 — Declare what the containers need
 
@@ -141,21 +126,17 @@ Add `--approve` to approve exactly the revision that propose just returned, whic
 
 If they do not know what their build needs yet, skip this step. It blocks nothing until a phase needs a secret.
 
----
-
 ## 8 — Verify, then run the first ticket
 
 **For:** the only thing that proves setup worked.
 
 **You run:** `catalyst-skills ready`. Read them the verdict and every failing line, each with its own fix and owner. If it says NOT READY, go to `references/who-fixes-what.md` before you touch anything — a project check failing is not something re-running anything on this machine can fix.
 
-**Then:** have them move one card into the project's dispatch stage, and watch. `catalyst-skills explain <ticket>` says why it is or is not about to run.
+**Then:** have them move one card into the project's dispatch stage, and watch. `catalyst-skills explain <ticket>` says why it is or is not about to run. If they opted into local sync, use the optional first-event check in `references/local-sync.md`.
 
 **Read back:** what `explain` actually said. If it says the ticket cannot start, the reason it names is the answer — read it to them and use the `how-catalyst-works` skill for what the reason means, then `unstick` if something is holding it.
 
 **Owner:** the card move is theirs. The verdict is the tenant's.
-
----
 
 ## When you are done
 

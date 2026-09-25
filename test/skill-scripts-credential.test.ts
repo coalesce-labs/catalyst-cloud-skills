@@ -51,8 +51,20 @@ function connectedHome(credential: Record<string, unknown>): { home: string; cal
     cli,
     [
       'import { appendFileSync } from "node:fs";',
+      'const args = process.argv.slice(2);',
       `appendFileSync(${JSON.stringify(log)}, JSON.stringify(process.argv.slice(2)) + "\\n");`,
-      'process.stdout.write("{}\\n");',
+      'let out = "{}\\n";',
+      'if (args[0] === "status") out = "Tenant: Fixture\\nAPI: https://cloud.example/api/v1\\n";',
+      'else if (args[0] === "ready") out = JSON.stringify({ ready: true, checks: [] }) + "\\n";',
+      'else if (args[0] === "me") out = JSON.stringify({ user: { id: "user-fixture", label: "Fixture", role: "member", linearUserId: "linear-fixture" } }) + "\\n";',
+      'else if (args[0] === "connections") out = JSON.stringify({ outcome: "connected" }) + "\\n";',
+      'else if (args[0] === "contract" && args[2] === "account") out = JSON.stringify({ name: "Fixture", slug: "fixture", linearWorkspaceSlug: "fixture" }) + "\\n";',
+      'else if (args[0] === "contract" && args[2] === "teams") out = JSON.stringify([{ key: "ENG", dispatchGate: { status: "open" }, readiness: { status: "ready" } }]) + "\\n";',
+      'else if (args[0] === "contract" && args[2] === "merge.repositories") out = JSON.stringify([{ owner: "coalesce-labs", name: "fixture" }]) + "\\n";',
+      'else if (args[0] === "environment") out = JSON.stringify({ current: { revision: 1, canonicalHash: "fixture" }, isApproved: true, delivered: { revision: 1 }, unresolvedReferences: [] }) + "\\n";',
+      'else if (args[0] === "replica" && args[1] === "status") out = JSON.stringify({ verdict: "absent", exitCode: 3, dbPath: "/tmp/replica.db", writerAlive: false }) + "\\n";',
+      'else if (args[0] === "events" && args[1] === "status") out = JSON.stringify({ verdict: "absent", cursor: null, head: null, writerAlive: false, reasons: ["event cache cursor is absent"] }) + "\\n";',
+      'process.stdout.write(out);',
     ].join("\n"),
   );
   mkdirSync(join(home, ".config", "catalyst-cloud"), { recursive: true });
@@ -100,6 +112,27 @@ describe("every skill's scripts run for either credential", () => {
       expect(calls().length).toBeGreaterThan(0);
     });
   }
+
+  test("catalyst-onboard reports optional local freshness without making it block setup", () => {
+    const { home, calls } = connectedHome({ auth: OAUTH });
+    const script = join(skillsRoot, "catalyst-onboard", "scripts", "where-am-i.mjs");
+    const r = spawnSync(process.execPath, [script, "--json"], {
+      encoding: "utf8",
+      timeout: 20_000,
+      env: { ...process.env, CATALYST_SKILLS_HOME: home, HOME: home },
+    });
+    expect(r.status, r.stderr).toBe(0);
+    const report = JSON.parse(r.stdout) as {
+      finished: boolean;
+      localSync: { assessment: { verdict: string; reason: string } };
+      parts: { part: string; lines: string[] }[];
+    };
+    expect(report.finished).toBe(true);
+    expect(report.localSync.assessment.verdict).toBe("absent");
+    expect(report.parts.find((part) => part.part === "machine")?.lines.join("\n")).toContain("note optional local sync absent");
+    expect(calls()).toContainEqual(["replica", "status", "--probe", "--json"]);
+    expect(calls()).toContainEqual(["events", "status", "--probe", "--json"]);
+  });
 
   // Two skills deliberately run `status` even with no usable config, because asking the CLI whether
   // this machine is connected IS their job: connect-me's verifier, and catalyst-onboard's report,

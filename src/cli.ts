@@ -118,7 +118,7 @@ export function usageText(): string {
     "  catalyst-skills contract [--refresh] [--path <a.b.c>]",
     "  catalyst-skills query <issues|issue <id>|pulls|pull <id>|projects|cycles|search <terms>|changes --since <cursor|head>>",
     "  catalyst-skills replica <start [--detach]|stop|status [--probe]|sql \"<select>\"|schema [table]>",
-    "  catalyst-skills events <tail|wait-for|query> [--type NAME] [--ticket CTC-N] [--after SEQUENCE]",
+    "  catalyst-skills events <tail|wait-for|query|status [--probe]> [--type NAME] [--ticket CTC-N] [--after SEQUENCE]",
     "  catalyst-skills explain <ticket> | history <ticket> | running [--ticket T --phase P] | queue [--team K]",
     "  catalyst-skills watch [--team K] [--ticket T]... [--project P] [--exec CMD]",
     "  catalyst-skills write <comment|state|label|create|reaction|attachment|session> ...",
