@@ -140,6 +140,9 @@ export const FLAG_TABLES: Record<string, FlagTable> = {
     revision: { value: true, help: "approve: the revision to approve (with --hash; default is whatever read returns)" },
     hash: { value: true, help: "approve: the canonical hash to approve (with --revision)" },
   },
+  connections: {
+    wait: { value: true, help: "start: wait up to this many seconds for browser approval (0-600)" },
+  },
   release: {
     because: { value: true, help: "what changed since the ticket was held (required unless --dry-run)" },
     "retry-unchanged": { value: false, help: "release even though nothing the mirror can see changed (say what did in --because)" },
@@ -175,6 +178,7 @@ export const VERB_USAGE: Record<string, string> = {
   accounts: "accounts [--json]",
   environment:
     "environment [read] [--json] | environment propose --file <path>|--stdin [--expect-revision N] [--approve] [--json] | environment approve [--revision N --hash H] [--json]",
+  connections: "connections personal <linear|github> <start|status> [--wait <seconds>] [--json]",
   release:
     "release <ticket> --because <what changed> [--retry-unchanged] [--dry-run] [--json] | release --class <failure-class> --team <K> --because <what changed> [--retry-unchanged] [--dry-run] [--limit N] [--json]",
 };
