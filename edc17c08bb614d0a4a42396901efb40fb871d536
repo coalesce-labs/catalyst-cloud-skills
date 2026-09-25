@@ -1,1 +1,1 @@
-restack onto updated CTC-3216; refresh a cached contract once when team routes are absent, and preserve personal OAuth sequencing guidance
+fix onboarding readback to refresh team mapping projection; document existing checkout, worktrees, and shared notes before code work
