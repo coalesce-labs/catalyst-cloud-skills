@@ -1,1 +1,1 @@
-Clarify the active skills CLI lock paths and inspect every agent path before targeted removal so legacy cleanup cannot delete an independent same-named skill.
+Trim redundant Markdown spacer lines in the onboarding reference to satisfy the existing 150-line content gate; preserve all wording.
