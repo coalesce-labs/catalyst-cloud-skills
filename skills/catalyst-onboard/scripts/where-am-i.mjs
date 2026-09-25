@@ -13,7 +13,7 @@ const SPEC = {
 };
 const NOTES = [
   "Reads, in this order: `status` (machine), `ready --json` (machine checks and project checks, kept apart),",
-  "`me --json` (person), and `contract --path …` for the account, the projects and the repositories.",
+  "`me --json` and personal connection statuses (person), then `contract --path …` for the account, projects and repositories.",
   "Writes nothing and changes nothing. Runs before this machine is connected — that is one of the states it reports.",
 ];
 
@@ -29,6 +29,13 @@ if (positionals.length > 0) {
 
 const via = cliTarget().via;
 const parts = [];
+const personalConnections = {};
+let personalGrantIncomplete = false;
+let personalLinearIncomplete = false;
+let personalGithubIncomplete = false;
+let personalNext = null;
+let workspaceResolved = false;
+let repositoryRegistered = false;
 // `blocking` is false for a finding that is real and reportable but does not stop the next step —
 // an unmatched Linear identity is the one that matters: it must be said, and it must not become the
 // thing the person is told to go and do before they can map a project.
@@ -109,13 +116,35 @@ if (!connected) {
     );
   } else {
     const matched = typeof user.linearUserId === "string" && user.linearUserId !== "";
+    const grantLines = [];
+    for (const provider of ["linear", "github"]) {
+      const read = runCli(["connections", "personal", provider, "status", "--json"]);
+      const result = tryJson(read.stdout);
+      const outcome = typeof result?.outcome === "string" ? result.outcome : "unreadable";
+      personalConnections[provider] = outcome;
+      if (outcome === "connected") {
+        grantLines.push(`personal ${provider}: connected`);
+      } else if (outcome === "absent" || outcome === "lapsed") {
+        personalGrantIncomplete = true;
+        if (provider === "linear") personalLinearIncomplete = true;
+        else personalGithubIncomplete = true;
+        grantLines.push(`personal ${provider}: ${outcome === "absent" ? "not connected" : "expired"}`);
+        if (provider === "linear") personalNext ??= "connect your personal linear account";
+      } else {
+        personalGrantIncomplete = true;
+        if (provider === "linear") personalLinearIncomplete = true;
+        else personalGithubIncomplete = true;
+        grantLines.push(`personal ${provider}: ${outcome === "unavailable" ? "temporarily unavailable; grant state unknown" : "could not be checked; update the catalyst-skills CLI or inspect its status output"}`);
+        if (provider === "linear") personalNext ??= "re-check your personal linear connection";
+      }
+    }
     add(
       "person",
-      "catalyst-skills me",
-      matched ? "ok" : "unfinished",
-      [`${user.label ?? "(unnamed)"} (${user.role ?? "role unknown"})`, matched ? "Linear identity matched" : "Linear identity NOT matched — asks assigned to you cannot be told apart from everyone else's. It blocks nothing below; get it fixed when convenient."],
-      matched ? null : "a tenant owner or admin",
-      matched ? null : link("/settings/account"),
+      "catalyst-skills me, and catalyst-skills connections personal <provider> status --json",
+      matched && !personalGrantIncomplete ? "ok" : "unfinished",
+      [`${user.label ?? "(unnamed)"} (${user.role ?? "role unknown"})`, matched ? "Linear identity matched" : "Linear identity NOT matched — asks assigned to you cannot be told apart from everyone else's. It blocks nothing below; get it fixed when convenient.", ...grantLines],
+      personalGrantIncomplete ? "you" : matched ? null : "a tenant owner or admin",
+      personalGrantIncomplete ? "catalyst-skills connections personal <provider> start or status" : matched ? null : link("/settings/account"),
       false,
     );
   }
@@ -131,6 +160,7 @@ if (!connected) {
     add("account", "catalyst-skills contract --path account", "unreadable", ["the account block could not be read — try: catalyst-skills contract --refresh"], null, null);
   } else {
     const workspace = typeof doc.linearWorkspaceSlug === "string" && doc.linearWorkspaceSlug !== "" ? doc.linearWorkspaceSlug : typeof doc.linearWorkspaceId === "string" && doc.linearWorkspaceId !== "" ? doc.linearWorkspaceId : null;
+    workspaceResolved = workspace !== null;
     // The declaration is the one part of the account a key can also READ — and it is the one part a
     // key can WRITE, so it is reported here rather than left to the settings page like the rest.
     const envLines = [];
@@ -207,6 +237,7 @@ if (!connected) {
     add("repositories", "catalyst-skills contract --path merge.repositories", "unreadable", ["the repository list could not be read — try: catalyst-skills contract --refresh"], null, null);
   } else {
     const lines = [`${rows.length} registered`, ...rows.map((r) => `${r.owner ?? "?"}/${r.name ?? "?"}`)];
+    repositoryRegistered = rows.length > 0;
     lines.push("⛔ REGISTRATION only. This carries no status and no project attachment, so it never proves a repository can be dispatched into.");
     add("repositories", "catalyst-skills contract --path merge.repositories", rows.length > 0 ? "ok" : "unfinished", lines, "a tenant owner or admin", link("/settings/repositories"));
   }
@@ -221,11 +252,26 @@ const machineNext = connected
   : "connect this machine";
 const NEXT = {
   machine: machineNext,
-  person: "get this person's seat and Linear identity sorted",
+  person: personalLinearIncomplete
+    ? personalNext
+    : personalGithubIncomplete && repositoryRegistered
+      ? "connect your personal github account"
+      : personalGithubIncomplete
+        ? "install the tenant GitHub App and register its repository before connecting your personal GitHub account"
+        : "get this person's seat and Linear identity sorted",
   account: "connect Linear, and install the GitHub App",
   projects: "pick ONE project and map its stages (or adopt the Catalyst workflow)",
   repositories: "register the repository, attaching it to the project you mapped",
 };
+// A personal Linear grant cannot start until the tenant's Linear workspace exists. Once that account
+// connection is present, a missing personal grant becomes the next member step before project setup.
+const personPart = parts.find((p) => p.part === "person");
+// A personal Linear grant is the next provider step once the tenant workspace exists. A personal
+// GitHub grant is sequenced after the tenant GitHub App: successful repository registration is the
+// onboarding path's existing proof that the App installation is usable.
+if (personPart && personalGrantIncomplete && workspaceResolved) {
+  personPart.blocking = personalLinearIncomplete || (personalGithubIncomplete && repositoryRegistered);
+}
 const blocked = parts.filter((p) => p.verdict !== "ok" && p.blocking);
 const stuck = blocked[0] ?? parts.find((p) => p.verdict !== "ok") ?? null;
 const next =
@@ -235,7 +281,7 @@ const next =
 const finished = parts.every((p) => p.verdict === "ok");
 
 if (flags.json) {
-  console.log(JSON.stringify({ cli: via, connected, cloud, parts, next, finished }));
+  console.log(JSON.stringify({ cli: via, connected, cloud, personalConnections, parts, next, finished }));
 } else if (flags.next) {
   if (next === null) console.log("nothing left: every part this machine can read is finished. Move one card into the project's dispatch stage.");
   else console.log(`${next.part}: ${next.action}${next.blocking ? "" : " (does not block the steps below)"}${next.owner ? ` — who: ${next.owner}` : ""}${next.where ? ` — ${next.where.startsWith("http") ? "where" : "do"}: ${next.where}` : ""}`);

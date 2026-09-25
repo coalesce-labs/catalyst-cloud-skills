@@ -236,7 +236,7 @@ describe("each skill's scripts spawn the catalyst-skills verbs it teaches", () =
     // Each grain by its own instrument: the machine by `status` and `ready`, the person by `me`, and
     // the account, the projects and the repositories by three DIFFERENT `contract --path` reads. A
     // regression that folded any of these into one call would take this assertion with it.
-    "catalyst-onboard": [/"status"/, /"ready",\s*"--json"/, /"me",\s*"--json"/, /"contract",\s*"--path",\s*"account"/, /"contract",\s*"--path",\s*"teams"/, /"contract",\s*"--path",\s*"merge\.repositories"/, /"environment",\s*"read"/],
+    "catalyst-onboard": [/"status"/, /"ready",\s*"--json"/, /"me",\s*"--json"/, /"connections",\s*"personal"/, /"contract",\s*"--path",\s*"account"/, /"contract",\s*"--path",\s*"teams"/, /"contract",\s*"--path",\s*"merge\.repositories"/, /"environment",\s*"read"/],
     "catalyst-github": [/"query",\s*"pull"/, /"contract"/, /"replica",\s*"status"/],
     "catalyst-linear": [/"query",\s*"issue"/, /"query",\s*"search"/, /"write",\s*"comment"/, /"write",\s*"state"/, /"write",\s*"label"/, /"write",\s*"create"/],
     "how-catalyst-works": [/"explain"/, /"running"/, /"queue"/, /"accounts"/, /"contract",\s*"--path"/],
@@ -437,7 +437,7 @@ describe("the package manifest", () => {
   test("is the documented name, public, and carries exactly the SDK as its runtime dependency", () => {
     expect(manifest.name).toBe("@catalyst-cloud/catalyst-skills");
     expect(manifest.publishConfig.access).toBe("public");
-    expect(manifest.dependencies).toEqual({ "@catalyst-cloud/sdk": expect.stringMatching(/^\^0\.10\./) });
+    expect(manifest.dependencies).toEqual({ "@catalyst-cloud/sdk": expect.stringMatching(/^\^0\.12\./) });
   });
 
   test("bin, shipped files, engines, and the pinned contract range are wired", () => {

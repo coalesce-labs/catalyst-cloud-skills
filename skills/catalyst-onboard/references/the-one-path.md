@@ -1,6 +1,6 @@
 # The one path
 
-Eight steps, in this order. The order is the product's own: the tenant-side steps run Linear, then the project, then GitHub, then the repository, because each one is the cheapest place to catch the failure the next one would otherwise hide.
+Ten steps, in this order. Connect the tenant's Linear workspace before starting personal Linear consent. Install the tenant's GitHub App and register its repository before starting personal GitHub consent.
 
 Walk them **one at a time**. Before each step say what you are about to do and why; after it, show what actually came back. `node scripts/where-am-i.mjs --next` decides which step you are on — never your memory of the last turn.
 
@@ -17,7 +17,6 @@ Each step below states: what it is for, what you run or hand over, **what you re
 **Read back:** the whole thing, as it printed. Then say in one sentence which part is unfinished and whose it is.
 
 **Owner:** you.
-
 ---
 
 ## 1 — Connect this machine
@@ -31,7 +30,6 @@ Each step below states: what it is for, what you run or hand over, **what you re
 **Owner:** you run it; **the approval is the person's, in a browser, and always will be.** Wait for them. Do not re-run the command while a code is outstanding — that invalidates the code they are typing.
 
 If it refuses, stop here and use the `connect-me` skill; it owns every failure mode of this step.
-
 ---
 
 ## 2 — Who you are
@@ -42,8 +40,7 @@ If it refuses, stop here and use the `connect-me` skill; it owns every failure m
 
 **Read back:** their label and role, and whether their Linear identity is matched.
 
-**Owner:** an unmatched Linear identity is fixed by a tenant owner or admin in Settings → Members. A seat that is not active is the same. Say which, and move on — neither blocks the steps below, but an unmatched identity means "what needs me" will show everyone's asks until it is fixed, and they should know that now rather than later.
-
+**Owner:** a personal Linear connection normally matches the person's Linear identity automatically. If it remains unmatched after personal consent, a tenant owner or admin can inspect Settings → Members. An inactive seat also needs an owner or admin. Say which finding the instrument reported.
 ---
 
 ## 3 — Connect Linear
@@ -55,7 +52,17 @@ If it refuses, stop here and use the `connect-me` skill; it owns every failure m
 **Read back:** after they say it is done, re-run `node scripts/where-am-i.mjs` and read them the `account` line. A resolved workspace is proof. If it still reads unresolved, say the contract may be cached and run `catalyst-skills contract --refresh`, then read it again.
 
 **Owner:** a tenant owner or admin, in a browser. **This is a browser step by construction** — it is an authorization grant, and no key can perform one.
+---
 
+## 3a — Connect your personal Linear account
+
+**For:** giving this person's agent its own provider access. The tenant's Linear connection and GitHub App serve the tenant; they do not prove that this member has approved personal grants.
+
+**You run:** `catalyst-skills connections personal linear start`. It gives a short-lived URL and tries to open it. The person approves in their own browser. If the browser does not open, give them the URL printed by the command. Never paste a provider token into a prompt.
+
+**Read back:** after approval, run `catalyst-skills connections personal linear status`. `node scripts/where-am-i.mjs` also reads the personal grant statuses. A URL opening is not proof that a grant landed.
+
+**Owner:** you start and check; the member approves in a browser. If the member's Linear identity is still unmatched after the grant is connected, an owner or admin should check Settings → Members.
 ---
 
 ## 4 — Pick one project, and map its stages
@@ -96,11 +103,23 @@ If it refuses, stop here and use the `connect-me` skill; it owns every failure m
 
 ---
 
+## 6a — Connect your personal GitHub account
+
+**For:** letting Catalyst act as you in GitHub. This grant is separate from the tenant's GitHub App installation.
+
+**You run:** `catalyst-skills connections personal github start` after the GitHub App is installed and the repository is registered. The command gives a short-lived URL and tries to open it. The person approves in their own browser. If the browser does not open, give them the printed URL. Never paste a provider token into a prompt.
+
+**Read back:** run `catalyst-skills connections personal github status`. A connected result confirms the personal grant; repository registration earlier confirmed the tenant App is available.
+
+**Owner:** you start and check; the member approves in a browser.
+
+---
+
 ## 7 — Declare what the containers need
 
 **For:** the environment a phase runs in — the names of the variables and secrets the person's code needs. Names leave the machine; values are entered once, by them, in the app.
 
-⭐ **This is the one setup step you can actually do.** Every other step above is a page. This one is a command, and it is worth saying so to the person.
+You can read, propose, and approve the account-wide declaration through the CLI if this member has an admin or owner seat. Personal connection initiation and status are also CLI actions; the provider approval remains in the browser.
 
 **You run:** `catalyst-skills environment` first, to read what the tenant already declares — the current revision, whether it is approved, and which revision a phase's checkout actually carries. Those last two are different things more often than people expect: a proposal that nobody approved changes nothing.
 
