@@ -114,7 +114,8 @@ function connectedHome(s: Scenario): string {
     cli,
     [
       `const answers = ${JSON.stringify(answers(s))};`,
-      "const a = process.argv.slice(2).join(' ');",
+      // `--refresh` is a cache instruction, not a different read: the stand-in answers the same either way.
+      "const a = process.argv.slice(2).filter((x) => x !== '--refresh').join(' ');",
       `if (a === "status") { console.log("Tenant: example\\nAPI: https://cloud.example (ok)\\nBundle: @catalyst-cloud/cli ${s.bundleVersion ?? "0.9.1"} (tenant contract range: 1.x)"); process.exit(0); }`,
       `const contractError = ${JSON.stringify(s.contractError ?? null)};`,
       'if (contractError !== null && a.startsWith("contract --path ")) { process.stderr.write(`contract: 2.2.0 from cloud\\n${contractError}\\n`); process.exit(2); }',
