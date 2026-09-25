@@ -1,1 +1,1 @@
-add optional local replica and separate event-cache freshness guidance, preserving onboarding completion and opt-in writer startup
+capture event cursor before the ticket action so wait-for replays cached events from that baseline
