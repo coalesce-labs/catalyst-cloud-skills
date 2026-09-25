@@ -5,7 +5,7 @@ description: >-
 disable-model-invocation: true
 allowed-tools: Bash(catalyst-skills:*) Bash(npx @catalyst-cloud/catalyst-skills:*)
 ---
-<!-- vendored-from: @catalyst-cloud/catalyst-skills@0.7.0 — written in this repository for customer tenants -->
+<!-- vendored-from: @catalyst-cloud/catalyst-skills@0.8.0 — written in this repository for customer tenants -->
 
 # Connect me
 
@@ -34,7 +34,7 @@ CATALYST_CLOUD_TOKEN=<your-personal-key> catalyst-skills login
 ## What you do
 
 1. Prefer keyless: run `catalyst-skills login` with no key and have the person approve the code in their browser (or from a phone). Nothing to mint, nothing to paste, nothing to keep out of the transcript. A **personal key** is the fallback for a script or unattended shell — they mint it at Settings → API keys (every active member can; no admin is needed) and hand it to the login command via `CATALYST_CLOUD_TOKEN`; it is shown once, so never put it in a file, a ticket, or this conversation beyond that one command. Either way, do not ask an admin for the tenant's **account key** (`ctc_acct_`, Settings → Account keys): that is a host credential — runners, daemons, the host replica — and a person connected with it has no name on anything their agent writes, and "what needs me" cannot mean them. If they connect with one anyway, login says so on stderr and still works.
-2. Run the login command. Its output names the tenant (`Connected to <name> (<slug>)`), the person (`Connected as <label> (<role>)`), the config path, and the cached contract version. If the person line says their Linear identity is not matched yet, tell them: an admin matches it in Settings → Members, and until then "what needs me" shows everyone's asks.
+2. Run the login command. Its output names the tenant (`Connected to <name> (<slug>)`), the person (`Connected as <label> (<role>)`), the config path, and the cached contract version. If the person line says their Linear identity is not matched yet, tell them: an admin matches it in Settings → Members, and until then "what needs me" shows everyone's asks — connecting Linear personally does not match the identity.
 3. Verify with `node scripts/verify-connection.mjs`: one line each for the tenant, the contract version, and the replica; exit 1 when the machine is not connected.
 4. Run `catalyst-skills ready` and read the verdict to them.
 5. Do not offer the replica. It is optional and off by default for large projects while the snapshot path is made safe, and every read works through the API without it. Start it only if the person asks for local SQL, and then load `references/keeping-the-replica-running.md`.
@@ -54,7 +54,7 @@ Every skill session opens with these, in this order, before doing anything else:
 | when | read |
 | -- | -- |
 | the person wants the replica writer to survive a reboot, or asks what it stores and whether anything needs cleaning | `references/keeping-the-replica-running.md` |
-| the full readiness vector and what each check means | the `catalyst-setup` skill |
+| the full readiness vector — the check, its severity, and who can click what | the `catalyst-setup` skill |
 
 ## Rules
 
