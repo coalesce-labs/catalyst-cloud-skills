@@ -19,6 +19,7 @@ import {
   CliError,
   CUSTOMER_SKILLS,
   MeError,
+  LEGACY_PACKAGE_NAME,
   PACKAGE_NAME,
   PROVENANCE_MARKER,
   UsageError,
@@ -323,7 +324,7 @@ describe("main — login (and the deprecated join alias)", () => {
       user: FIXTURE_ME_USER,
     });
     expect(cfg.key).toBe(FIXTURE_USER_KEY);
-    expect(cfg.cliPath, "the skill scripts spawn the CLI login recorded").toMatch(/bin\/catalyst-skills\.js$/);
+    expect(cfg.cliPath, "the skill scripts spawn the CLI login recorded").toMatch(/bin\/catalyst\.js$/);
     expect(statSync(configPathFor(home)).mode & 0o777).toBe(0o600);
     // Installing is the agent's own command. A login that also copied the set would leave a plugin
     // user with every skill twice, which is the one thing the README's install section warns about.
@@ -599,7 +600,7 @@ describe("main — status / install / help / version", () => {
   test("status before login says how to connect, naming login and the env form", async () => {
     const code = await main(["status"], ctx());
     expect(code).toBe(0);
-    expect(out.join("\n")).toContain(`npx ${PACKAGE_NAME} login`);
+    expect(out.join("\n")).toContain(`npx ${LEGACY_PACKAGE_NAME} login`);
     expect(out.join("\n")).toContain("CATALYST_CLOUD_TOKEN");
   });
   test("status after login names the tenant and contract range", async () => {
@@ -639,6 +640,7 @@ describe("main — status / install / help / version", () => {
     const code = await main(["--version"], ctx());
     expect(code).toBe(0);
     expect(out.join("\n")).toContain(PACKAGE_NAME);
+    expect(PACKAGE_NAME).toBe("@catalyst-cloud/cli");
     expect(out.join("\n")).toContain("1.x");
   });
 });

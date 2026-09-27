@@ -18,7 +18,7 @@ import { configPathFor } from "../src/config";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const pkgRoot = join(here, "..");
-const BIN = join(pkgRoot, "bin", "catalyst-skills.js");
+const BIN = join(pkgRoot, "bin", "catalyst.js");
 /** The pipe buffer on Linux/macOS is 64KB; the payload has to be comfortably past it. */
 const PIPE_BUFFER_BYTES = 64 * 1024;
 const ROWS = 500;

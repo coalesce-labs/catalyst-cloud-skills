@@ -9,7 +9,14 @@ import { CliError } from "./errors.js";
 import { parseMachinePaths, resolveCatalystPath } from "../vendor/paths/index.js";
 import { machinePathsFile } from "../vendor/paths/node.js";
 
-export const PACKAGE_NAME = "@catalyst-cloud/catalyst-skills";
+/** CTC-3479 — the package this CLI publishes as. Its command is `catalyst`. */
+export const PACKAGE_NAME = "@catalyst-cloud/cli";
+/** The old package name, now a thin forwarder that depends on PACKAGE_NAME at the same version. The
+ *  npx login hints keep naming it until CTC-3480/3481 move them; upgrade hints name whichever package
+ *  is installed (updatePackageName). `npx @catalyst-cloud/cli`
+ *  cannot run a verb: that package has two bins and neither is named `cli`, so npx cannot pick one.
+ *  The forwarder has a bin named after itself, so `npx @catalyst-cloud/catalyst-skills` still works. */
+export const LEGACY_PACKAGE_NAME = "@catalyst-cloud/catalyst-skills";
 export const DEFAULT_BASE_URL = "https://staging.catalystcloud.dev";
 export const CONFIG_MODE = 0o600;
 
@@ -65,7 +72,8 @@ export interface CustomerConfig {
    *  login (your agent's own install command does), and the update notice only refreshes what is
    *  already there. Still read, still written, so an older config keeps working. */
   skillsDir?: string;
-  /** Absolute path of bin/catalyst-skills.js, so a skill script can spawn this exact CLI. */
+  /** Absolute path of this CLI's launcher, so a skill script can spawn this exact CLI. Logins since
+   *  CTC-3479 record bin/catalyst.js; older ones recorded bin/catalyst-skills.js, which still exists. */
   cliPath?: string;
   /** The replica file (default ~/.config/catalyst-cloud/replica.db). */
   replicaDb?: string;
@@ -118,9 +126,61 @@ export function defaultSkillsDirFor(home: string): string {
   return join(home, ".claude", "skills");
 }
 
-/** The CLI launcher this very package ships — recorded by login so skill scripts can spawn it. */
+/** The CLI launcher this very package ships, recorded by login so skill scripts can spawn it. It is
+ *  the `catalyst` launcher, so a skill script's call does not print the deprecated-name line. */
 export function cliPath(): string {
-  return fileURLToPath(new URL("../bin/catalyst-skills.js", import.meta.url));
+  return fileURLToPath(new URL("../bin/catalyst.js", import.meta.url));
+}
+
+/** This package's root directory (the one holding package.json, bin/ and dist/). */
+export function packageRoot(): string {
+  return fileURLToPath(new URL("..", import.meta.url));
+}
+
+function packageNameAt(dir: string): string | null {
+  try {
+    const raw = JSON.parse(readFileSync(join(dir, "package.json"), "utf8")) as { name?: unknown };
+    return typeof raw.name === "string" ? raw.name : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * CTC-3479 — the package whose `npm install -g <name>@latest` updates this install. Both packages
+ * ship the `catalyst` and `catalyst-skills` bins, so npm refuses to install one over the other
+ * (EEXIST). An upgrade hint must therefore name the package this machine already has.
+ *
+ * The forwarder carries this package as its dependency, in one of two layouts:
+ * - nested, as `npm install -g` lays it out: `<forwarder>/node_modules/@catalyst-cloud/cli`;
+ * - flat, as npx and a project install lay it out: `node_modules/@catalyst-cloud/catalyst-skills`
+ *   sits beside `node_modules/@catalyst-cloud/cli`.
+ * Anything else is a direct install of this package (or a checkout of this repository).
+ */
+export function updatePackageName(root: string = packageRoot()): string {
+  const scopeDir = dirname(root);
+  const nested = dirname(dirname(scopeDir));
+  if (packageNameAt(nested) === LEGACY_PACKAGE_NAME) return LEGACY_PACKAGE_NAME;
+  if (packageNameAt(join(scopeDir, "catalyst-skills")) === LEGACY_PACKAGE_NAME) return LEGACY_PACKAGE_NAME;
+  return PACKAGE_NAME;
+}
+
+/** The one upgrade command every hint prints: update the installed package, then log in again so
+ *  customer.json records the new launcher path. */
+export function upgradeCommand(root?: string): string {
+  return `npm install -g ${updatePackageName(root)}@latest && catalyst-skills login`;
+}
+
+/**
+ * CTC-3479 — logins before this release recorded bin/catalyst-skills.js as cliPath. That launcher is
+ * now the deprecated name and prints a notice, so every skill script call through it would carry
+ * the notice. When the recorded launcher has a `catalyst.js` beside it (any 0.8.0-or-later install of
+ * either package), point cliPath at that instead. Returns the new path, or null when nothing changes.
+ */
+export function modernCliPath(recorded: string | undefined): string | null {
+  if (typeof recorded !== "string" || !recorded.endsWith("catalyst-skills.js")) return null;
+  const sibling = join(dirname(recorded), "catalyst.js");
+  return existsSync(sibling) ? sibling : null;
 }
 
 export function normalizeBaseUrl(url: string): string {
@@ -181,7 +241,7 @@ export function requireConfig(ctx: Ctx): CustomerConfig {
   const cfg = loadConfig(ctx.home);
   if (!cfg) {
     throw new CliError(
-      `not connected yet — run: npx ${PACKAGE_NAME} login (keyless; or pass --key / set CATALYST_CLOUD_TOKEN for a key)`,
+      `not connected yet — run: npx ${LEGACY_PACKAGE_NAME} login (keyless; or pass --key / set CATALYST_CLOUD_TOKEN for a key)`,
       "not-configured",
     );
   }

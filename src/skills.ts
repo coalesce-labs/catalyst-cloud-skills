@@ -3,7 +3,7 @@
 import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { PACKAGE_NAME, defaultSkillsDirFor, type Ctx, type CustomerConfig } from "./config.js";
+import { defaultSkillsDirFor, upgradeCommand, type Ctx, type CustomerConfig } from "./config.js";
 import { semverOlder } from "./semver.js";
 import { PROVENANCE_MARKER, parseFrontmatter, parseProvenanceVersion } from "./skill-shape.js";
 
@@ -142,5 +142,5 @@ export function updateNoticeLine(previous: string, current: string, entry: strin
   // minor — so it never crosses 0.2.x → 0.3.0. Pin @latest via `npm install`, THEN re-run login: the
   // install alone does not rewrite customer.json.cliPath, so the skill helpers would keep spawning the
   // stale recorded bundle and repeat this notice forever; the new global bin records its own path.
-  return `[catalyst-skills] updated ${previous} → ${current}: ${summary} · update with: npm install -g ${PACKAGE_NAME}@latest && catalyst-skills login`;
+  return `[catalyst-skills] updated ${previous} → ${current}: ${summary} · update with: ${upgradeCommand()}`;
 }

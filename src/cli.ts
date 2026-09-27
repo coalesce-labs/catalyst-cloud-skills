@@ -5,6 +5,7 @@ import { parseArgs, positionals, verbHelp, type ParsedArgs } from "./args.js";
 import {
   CONFIG_MODE,
   DEFAULT_BASE_URL,
+  LEGACY_PACKAGE_NAME,
   PACKAGE_NAME,
   cliPath,
   configPathFor,
@@ -14,6 +15,7 @@ import {
   defaultSkillsDirFor,
   formatMode,
   loadConfig,
+  modernCliPath,
   normalizeBaseUrl,
   readManifest,
   requireConfig,
@@ -57,6 +59,7 @@ export {
   CONFIG_MODE,
   DEFAULT_BASE_URL,
   FIRST_STAMPED_VERSION,
+  LEGACY_PACKAGE_NAME,
   PACKAGE_NAME,
   PROVENANCE_MARKER,
   CliError,
@@ -72,6 +75,7 @@ export {
   installedBundleVersion,
   installSkills,
   loadConfig,
+  modernCliPath,
   normalizeBaseUrl,
   parseArgs,
   parseChangelogEntry,
@@ -162,6 +166,30 @@ export interface MainDeps {
 }
 
 /**
+ * CTC-3479 — a login before the rename recorded bin/catalyst-skills.js as cliPath. Skill scripts
+ * spawn that path, and it now prints the deprecated-name notice on every call. Move the record onto
+ * the `catalyst` launcher beside it, once, on the next run of either name. Read and write back to
+ * back, so the window for racing a concurrent OAuth refresh is as small as the update notice's.
+ */
+function migrateLegacyCliPath(ctx: Ctx): void {
+  let cfg: CustomerConfig | null;
+  try {
+    cfg = loadConfig(ctx.home);
+  } catch {
+    return;
+  }
+  if (!cfg) return;
+  const next = modernCliPath(cfg.cliPath);
+  if (next === null) return;
+  cfg.cliPath = next;
+  try {
+    saveConfig(ctx.home, cfg);
+  } catch {
+    // Best effort: the old launcher still works, it only prints the notice.
+  }
+}
+
+/**
  * The Tier-2 update path: when the bundle on disk is newer than the version the config last
  * recorded, refresh the copied skills FIRST and record the new version only once that succeeded.
  */
@@ -224,6 +252,7 @@ export async function main(argv: string[], ctx: Ctx = defaultCtx(), deps: MainDe
     return 0;
   }
   try {
+    migrateLegacyCliPath(ctx);
     maybePrintUpdateNotice(args, ctx);
     switch (args.command) {
       case "login":
@@ -403,7 +432,7 @@ function cmdStatus(ctx: Ctx): number {
   const manifest = readManifest();
   const cfg = loadConfig(ctx.home);
   if (!cfg) {
-    ctx.stdout(`Not connected yet — run: npx ${PACKAGE_NAME} login (keyless; or pass --key / set CATALYST_CLOUD_TOKEN)`);
+    ctx.stdout(`Not connected yet — run: npx ${LEGACY_PACKAGE_NAME} login (keyless; or pass --key / set CATALYST_CLOUD_TOKEN)`);
     return 0;
   }
   ctx.stdout(`Tenant: ${cfg.name} (${cfg.slug}) — account ${cfg.account}`);

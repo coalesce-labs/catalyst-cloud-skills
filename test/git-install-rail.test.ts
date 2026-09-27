@@ -88,24 +88,27 @@ test(
       { ...process.env, HOME: homeDir, npm_config_prefix: join(homeDir, "npm-global") },
     );
 
-    const shim = join(homeDir, "npm-global", "bin", "catalyst-skills");
-    const pkgDir = join(homeDir, "npm-global", "lib", "node_modules", "@catalyst-cloud", "catalyst-skills");
+    // CTC-3479: the package is @catalyst-cloud/cli, with `catalyst` and the deprecated `catalyst-skills`.
+    const shim = join(homeDir, "npm-global", "bin", "catalyst");
+    const legacyShim = join(homeDir, "npm-global", "bin", "catalyst-skills");
+    const pkgDir = join(homeDir, "npm-global", "lib", "node_modules", "@catalyst-cloud", "cli");
 
     if (installed.status === 0) {
       // If npm ever starts giving `prepare` a toolchain, the rail becomes real — and then it must be
       // real all the way down: the files the shim needs, and a shim that runs.
-      expect(existsSync(join(pkgDir, "bin", "catalyst-skills.js")), "an install that succeeds must ship bin/").toBe(true);
+      expect(existsSync(join(pkgDir, "bin", "catalyst.js")), "an install that succeeds must ship bin/").toBe(true);
       expect(existsSync(join(pkgDir, "dist", "cli.js")), "an install that succeeds must ship a built dist/").toBe(true);
       expect(existsSync(shim), "an install that succeeds must place the shim").toBe(true);
       const version = run(shim, ["--version"], scratch, { ...process.env, HOME: homeDir });
       expect(version.status, `the installed shim did not run:\n${version.stdout}\n${version.stderr}`).toBe(0);
-      expect(version.stdout).toContain("@catalyst-cloud/catalyst-skills");
+      expect(version.stdout).toContain("@catalyst-cloud/cli");
       return;
     }
 
     // ⛔ The failure this test exists for: exit 0 with a shim pointing at nothing. A non-zero exit is
     // fine — a customer sees it and stops — but only if PATH is left clean.
-    expect(existsSync(shim), "a failed git install must leave no catalyst-skills on PATH").toBe(false);
+    expect(existsSync(shim), "a failed git install must leave no catalyst on PATH").toBe(false);
+    expect(existsSync(legacyShim), "a failed git install must leave no catalyst-skills on PATH").toBe(false);
     expect(existsSync(pkgDir), "a failed git install must leave no half-unpacked package").toBe(false);
   },
 );
