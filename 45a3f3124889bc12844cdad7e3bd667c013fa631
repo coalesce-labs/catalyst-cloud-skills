@@ -1,0 +1,6 @@
+Revision history for #57:
+
+rev 2 (content) 2026-09-25 05:34 UTC — Review found raw add can overwrite independent same-named skill paths. Add a provenance and path preflight warning before commands, keep unattended refresh off, and update the command assertion to the new-skills refresh form.
+rev 1 (initial) 2026-09-25 05:34 UTC
+
+<!-- mergify-revision-data: {"schema_version":1,"pull_number":57,"entries":[{"number":1,"change_type":"initial","old_sha":null,"new_sha":"fe2c74dd3327f9ce5793e0f3224c1993630873b5","timestamp_iso":"2026-09-25T05:34:59Z","reason":"","replay_sha":null,"compare_url":null},{"number":2,"change_type":"content","old_sha":"fe2c74dd3327f9ce5793e0f3224c1993630873b5","new_sha":"45a3f3124889bc12844cdad7e3bd667c013fa631","timestamp_iso":"2026-09-25T05:34:59Z","reason":"Review found raw add can overwrite independent same-named skill paths. Add a provenance and path preflight warning before commands, keep unattended refresh off, and update the command assertion to the new-skills refresh form.","replay_sha":null,"compare_url":"https://github.com/coalesce-labs/catalyst-cloud-skills/compare/fe2c74dd3327f9ce5793e0f3224c1993630873b5...45a3f3124889bc12844cdad7e3bd667c013fa631"}]} -->

@@ -1,0 +1,1 @@
+replace temporary team HTTP bridge with SDK #93 typed methods; handle successful saves with null readiness and named SDK refusals
