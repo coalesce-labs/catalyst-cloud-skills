@@ -1,12 +1,14 @@
 // runtime-store.test.ts — CTC-2158, Tier 2. The pinned runtime this CLI downloads, verifies and
 // unpacks under its own cache. Fully injected: no network, no real tar, no disk outside a temp home.
-import { describe, expect, test, vi } from "vitest";
+import { afterEach, describe, expect, test, vi } from "vitest";
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   installPinnedRuntime,
+  pinPath,
   pinnedNodePath,
   readPin,
   runtimesDir,
@@ -136,5 +138,119 @@ describe("installPinnedRuntime", () => {
     expect(readPin(home)).toBeNull();
     expect(existsSync(runtimesDir(home))).toBe(false);
     expect(uninstallPinnedRuntime(home)).toBe(false);
+  });
+});
+
+describe("the pin file and the paths it names", () => {
+  test("a pin file that is not JSON reads as no pin, so a broken cache never claims an install", () => {
+    const home = tempHome();
+    mkdirSync(runtimesDir(home), { recursive: true });
+    writeFileSync(pinPath(home), "{ not json");
+    expect(readPin(home)).toBeNull();
+    expect(uninstallPinnedRuntime(home)).toBe(false);
+  });
+
+  test("the node binary is node.exe on win32 and node everywhere else", () => {
+    const home = tempHome();
+    expect(pinnedNodePath(home, "24.21.0", "win32", "x64")).toBe(join(runtimesDir(home), "node-v24.21.0-win32-x64", "bin", "node.exe"));
+    expect(pinnedNodePath(home, "24.21.0", "darwin", "arm64")).toBe(join(runtimesDir(home), "node-v24.21.0-darwin-arm64", "bin", "node"));
+  });
+});
+
+describe("installPinnedRuntime's own fetch and tar", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  /** A real node-shaped .tar.gz: one top-level directory holding bin/node, the layout nodejs.org ships. */
+  function realTarball(): Uint8Array {
+    const src = mkdtempSync(join(tmpdir(), "catalyst-runtime-src-"));
+    mkdirSync(join(src, "node-v24.21.0-linux-x64", "bin"), { recursive: true });
+    writeFileSync(join(src, "node-v24.21.0-linux-x64", "bin", "node"), "#!/bin/sh\necho placeholder-node\n");
+    const out = join(src, "node.tar.gz");
+    const res = spawnSync("tar", ["-czf", out, "-C", src, "node-v24.21.0-linux-x64"]);
+    expect(res.status).toBe(0);
+    return new Uint8Array(readFileSync(out));
+  }
+
+  test("with no seams it fetches SHASUMS and the tarball itself, unpacks with tar, and pins the result", async () => {
+    const home = tempHome();
+    const bytes = realTarball();
+    const sum = createHash("sha256").update(bytes).digest("hex");
+    const fetched: string[] = [];
+    vi.stubGlobal("fetch", async (url: string) => {
+      fetched.push(url);
+      return url.endsWith("SHASUMS256.txt")
+        ? new Response(`${sum}  node-v24.21.0-linux-x64.tar.gz\n`)
+        : new Response(bytes);
+    });
+    const res = await installPinnedRuntime({ home, version: "24.21.0", platform: "linux", arch: "x64" });
+    expect(fetched).toEqual([
+      "https://nodejs.org/dist/v24.21.0/SHASUMS256.txt",
+      "https://nodejs.org/dist/v24.21.0/node-v24.21.0-linux-x64.tar.gz",
+    ]);
+    expect(res).toEqual({ version: "24.21.0", nodePath: pinnedNodePath(home, "24.21.0", "linux", "x64"), alreadyPresent: false });
+    expect(readFileSync(res.nodePath, "utf8")).toContain("placeholder-node");
+    expect(readPin(home)).toEqual({ version: "24.21.0", nodePath: res.nodePath });
+    expect(readdirSync(join(runtimesDir(home), ".tmp"))).toEqual([]);
+  });
+
+  test("a SHASUMS fetch that is not 2xx is a named failure, and nothing is downloaded after it", async () => {
+    const home = tempHome();
+    const fetched: string[] = [];
+    vi.stubGlobal("fetch", async (url: string) => (fetched.push(url), new Response("gone", { status: 404 })));
+    await expect(installPinnedRuntime({ home, version: "24.21.0", platform: "linux", arch: "x64" })).rejects.toThrow(
+      "GET https://nodejs.org/dist/v24.21.0/SHASUMS256.txt -> 404",
+    );
+    expect(fetched).toHaveLength(1);
+    expect(readPin(home)).toBeNull();
+  });
+
+  test("a tarball fetch that is not 2xx is a named failure, and nothing is unpacked", async () => {
+    const home = tempHome();
+    const extract = vi.fn(async () => {});
+    vi.stubGlobal("fetch", async () => new Response("unavailable", { status: 503 }));
+    await expect(
+      installPinnedRuntime({ home, version: "24.21.0", platform: "linux", arch: "x64", fetchText: async () => "aaaa  node-v24.21.0-linux-x64.tar.gz", extract }),
+    ).rejects.toThrow("GET https://nodejs.org/dist/v24.21.0/node-v24.21.0-linux-x64.tar.gz -> 503");
+    expect(extract).not.toHaveBeenCalled();
+  });
+
+  test("bytes that match their checksum but are not a tarball fail in tar by name, leave no temp file, and pin nothing", async () => {
+    const home = tempHome();
+    const bytes = new TextEncoder().encode("placeholder: not a gzip stream");
+    const sum = createHash("sha256").update(bytes).digest("hex");
+    await expect(
+      installPinnedRuntime({
+        home,
+        version: "24.21.0",
+        platform: "linux",
+        arch: "x64",
+        fetchText: async () => `${sum}  node-v24.21.0-linux-x64.tar.gz`,
+        fetchBytes: async () => bytes,
+      }),
+    ).rejects.toThrow(/^tar -xzf .*node-v24\.21\.0-linux-x64\.tar\.gz failed: /);
+    expect(readdirSync(join(runtimesDir(home), ".tmp"))).toEqual([]);
+    expect(readPin(home)).toBeNull();
+  });
+
+  test("a tarball whose layout has no bin/node is refused rather than pinned", async () => {
+    const home = tempHome();
+    const bytes = new Uint8Array([4, 5, 6]);
+    const sum = createHash("sha256").update(bytes).digest("hex");
+    await expect(
+      installPinnedRuntime({
+        home,
+        version: "24.21.0",
+        platform: "linux",
+        arch: "x64",
+        fetchText: async () => `${sum}  node-v24.21.0-linux-x64.tar.gz`,
+        fetchBytes: async () => bytes,
+        extract: async (_tar, dest) => {
+          mkdirSync(join(dest, "lib"), { recursive: true });
+        },
+      }),
+    ).rejects.toThrow(/extraction did not produce .*bin\/node — the tarball's layout may have changed/);
+    expect(readPin(home)).toBeNull();
   });
 });
