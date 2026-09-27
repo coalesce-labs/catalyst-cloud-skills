@@ -3,7 +3,7 @@
   "configVersion": 1,
   "workspaces": {
     "": {
-      "name": "@catalyst-cloud/catalyst-skills",
+      "name": "@catalyst-cloud/cli",
       "dependencies": {
         "@catalyst-cloud/sdk": "^0.10.0",
       },

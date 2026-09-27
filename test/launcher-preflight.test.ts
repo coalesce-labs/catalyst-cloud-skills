@@ -11,7 +11,9 @@ import { tempHome } from "./helpers";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const pkgRoot = join(here, "..");
-const BIN = join(pkgRoot, "bin", "catalyst-skills.js");
+const BIN = join(pkgRoot, "bin", "catalyst.js");
+// CTC-3479: the deprecated name runs the same launcher and adds one stderr line.
+const LEGACY_BIN = join(pkgRoot, "bin", "catalyst-skills.js");
 
 beforeAll(() => {
   const built = spawnSync("npm", ["run", "build"], { cwd: pkgRoot, encoding: "utf8" });
@@ -19,9 +21,9 @@ beforeAll(() => {
   expect(existsSync(join(pkgRoot, "dist", "cli.js"))).toBe(true);
 }, 120_000);
 
-function spawnBin(args: string[], env: Record<string, string> = {}, home = tempHome()): Promise<{ status: number | null; stdout: string; stderr: string }> {
+function spawnBin(args: string[], env: Record<string, string> = {}, home = tempHome(), bin = BIN): Promise<{ status: number | null; stdout: string; stderr: string }> {
   return new Promise((resolve, reject) => {
-    const child = spawn(process.execPath, [BIN, ...args], {
+    const child = spawn(process.execPath, [bin, ...args], {
       cwd: pkgRoot,
       env: { ...process.env, HOME: home, CATALYST_SKILLS_HOME: home, ...env },
       stdio: ["ignore", "pipe", "pipe"],
@@ -81,7 +83,7 @@ test("an unsupported ambient runtime WITH a pin re-execs into the pinned node an
 test("a supported ambient runtime with no pin runs IN PROCESS — no re-exec, no extra process", async () => {
   const r = await spawnBin(["--version"]);
   expect(r.status).toBe(0);
-  expect(r.stdout).toContain("@catalyst-cloud/catalyst-skills");
+  expect(r.stdout).toContain("@catalyst-cloud/cli");
   expect(r.stderr).toBe("");
 });
 
@@ -90,7 +92,7 @@ test("CATALYST_SKILLS_RUNTIME=ambient forces the in-process path even with a pin
   installFakePin(home, 7);
   const r = await spawnBin(["--version"], { CATALYST_SKILLS_RUNTIME: "ambient" }, home);
   expect(r.status).toBe(0);
-  expect(r.stdout).toContain("@catalyst-cloud/catalyst-skills");
+  expect(r.stdout).toContain("@catalyst-cloud/cli");
   expect(r.stdout).not.toContain("PINNED");
 });
 
@@ -98,4 +100,22 @@ test("CATALYST_SKILLS_RUNTIME=pinned with no pin installed fails with the one co
   const r = await spawnBin(["ready"], { CATALYST_SKILLS_RUNTIME: "pinned" });
   expect(r.status).toBe(1);
   expect(r.stderr).toContain("runtime install");
+});
+
+test("the deprecated name gets the same preflight: the verdict comes first on a pipe and the rename line last", async () => {
+  const r = await spawnBin(["ready"], { CATALYST_SKILLS_RUNTIME_FACTS: JSON.stringify({ kind: "bun", version: "1.3.14", nodeCompat: "24.3.0" }) }, tempHome(), LEGACY_BIN);
+  expect(r.status).toBe(1);
+  const lines = r.stderr.trim().split("\n");
+  expect(lines[0]).toMatch(/^catalyst-skills: .*bun 1\.3\.14/);
+  expect(lines.at(-1)).toContain("this command name is deprecated");
+});
+
+test("the deprecated name re-execs into the pin without printing the rename line itself", async () => {
+  const home = tempHome();
+  installFakePin(home, 7);
+  const r = await spawnBin(["ready"], {}, home, LEGACY_BIN);
+  expect(r.status).toBe(7);
+  expect(r.stdout).toContain("catalyst-skills.js");
+  // The fake pinned node never runs the launcher, so any rename line here came from the parent.
+  expect(r.stderr).not.toContain("deprecated");
 });

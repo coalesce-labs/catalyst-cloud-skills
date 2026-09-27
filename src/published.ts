@@ -4,9 +4,13 @@
 // reason instead of throwing: a customer who cannot reach npm must still get a verdict (CTC-2160).
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
-import { PACKAGE_NAME, publishedCachePathFor, type Ctx } from "./config.js";
+import { LEGACY_PACKAGE_NAME, publishedCachePathFor, type Ctx } from "./config.js";
 
-export const REGISTRY_DIST_TAGS_URL = `https://registry.npmjs.org/-/package/${encodeURIComponent(PACKAGE_NAME)}/dist-tags`;
+/** CTC-3479 — asks about the forwarder package whichever package is installed. The release publishes
+ *  @catalyst-cloud/cli first and the forwarder last, at one version, so the forwarder's `latest`
+ *  never names a release that either package lacks. The upgrade hint names the installed package
+ *  (config.ts updatePackageName). */
+export const REGISTRY_DIST_TAGS_URL = `https://registry.npmjs.org/-/package/${encodeURIComponent(LEGACY_PACKAGE_NAME)}/dist-tags`;
 export const PUBLISHED_TTL_SECONDS = 6 * 60 * 60;
 export const PUBLISHED_TIMEOUT_MS = 1500;
 

@@ -1,10 +1,10 @@
 // ready.ts — `ready`: the machine checks plus the tenant's own readiness vector from the contract,
 // one verdict, and per failure the fix and who can apply it. The replica is optional, so its absence
 // is a note, never a failure; the SDK loading IS a check, because the replica and watch need it.
-import { existsSync } from "node:fs";
-import { join } from "node:path";
+import { accessSync, constants, existsSync, readFileSync, realpathSync, statSync } from "node:fs";
+import { basename, delimiter, dirname, join } from "node:path";
 import type { ParsedArgs } from "./args.js";
-import { defaultSkillsDirFor, loadConfig, readManifest, type Ctx, type CustomerConfig } from "./config.js";
+import { LEGACY_PACKAGE_NAME, PACKAGE_NAME, defaultSkillsDirFor, loadConfig, readManifest, upgradeCommand, type Ctx, type CustomerConfig } from "./config.js";
 import { contractVersionInRange, readContractCache } from "./contract.js";
 import type { ContractReadinessCheck, TenantContract } from "./contract-types.js";
 import { CliError } from "./errors.js";
@@ -67,6 +67,61 @@ function readyReplicaLine(s: ReplicaStatus): string {
     case "stale":
       return `replica: stale at ${s.dbPath} (${s.reasons.join("; ")}${s.cursor !== null ? `; cursor ${s.cursor}` : ""}) — reads fall back to the API`;
   }
+}
+
+/** The first executable file called `name` on `env.PATH`, or null. */
+export function firstOnPath(name: string, env: NodeJS.ProcessEnv): string | null {
+  for (const dir of (env.PATH ?? "").split(delimiter)) {
+    if (dir === "") continue;
+    const candidate = join(dir, name);
+    try {
+      accessSync(candidate, constants.X_OK);
+      if (statSync(candidate).isFile()) return candidate;
+    } catch {
+      // not here, or not executable: keep looking, as a shell would
+    }
+  }
+  return null;
+}
+
+/** True when `path` resolves to the `catalyst` launcher of this CLI or of its forwarder package. */
+export function isThisCliLauncher(path: string): boolean {
+  let real: string;
+  try {
+    real = realpathSync(path);
+  } catch {
+    return false;
+  }
+  if (basename(real) !== "catalyst.js" || basename(dirname(real)) !== "bin") return false;
+  try {
+    const raw = JSON.parse(readFileSync(join(dirname(dirname(real)), "package.json"), "utf8")) as { name?: unknown };
+    return raw.name === PACKAGE_NAME || raw.name === LEGACY_PACKAGE_NAME;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * CTC-3479 — the name `catalyst` is also the catalyst-dev router, which install-cli.sh links into
+ * ~/.catalyst/bin and puts at the front of PATH. Where it wins, `catalyst ready` runs the router, not
+ * this CLI. `ready` cannot fix that, but it can say so: a note (never a failure, because
+ * `catalyst-skills` still reaches this CLI) naming the program that answers to `catalyst`. Nothing
+ * on PATH is normal while the old name is still the one installed, so that emits nothing. POSIX
+ * only: on Windows npm installs `.cmd` shims, and PATHEXT lookup is not worth guessing at here.
+ */
+export function catalystCommandCheck(env: NodeJS.ProcessEnv, platform: NodeJS.Platform = process.platform): ReadyCheck | null {
+  if (platform === "win32") return null;
+  const found = firstOnPath("catalyst", env);
+  if (found === null) return null;
+  if (isThisCliLauncher(found)) return { id: "command", ok: true, line: `command: catalyst on PATH is this CLI (${found})` };
+  return {
+    id: "command",
+    ok: false,
+    note: true,
+    line:
+      `command: catalyst on PATH is ${found}, a different program with the same name, so \`catalyst <verb>\` does not reach this CLI. ` +
+      "Keep using catalyst-skills on this machine, or put the npm global bin directory ahead of that one on PATH.",
+  };
 }
 
 export interface ReadyDeps {
@@ -176,7 +231,7 @@ export async function readyReport(ctx: Ctx, deps: ReadyDeps): Promise<ReadyRepor
   if (!cache) {
     checks.push({ id: "contract", ok: false, line: "contract: not cached", fix: "catalyst-skills contract --refresh", who: "you" });
   } else if (contractVersionInRange(cache.contractVersion, range) !== true) {
-    checks.push({ id: "contract", ok: false, line: `contract: version ${cache.contractVersion} is outside this bundle's range ${range}`, fix: "npm install -g @catalyst-cloud/catalyst-skills@latest && catalyst-skills login", who: "you" });
+    checks.push({ id: "contract", ok: false, line: `contract: version ${cache.contractVersion} is outside this bundle's range ${range}`, fix: upgradeCommand(), who: "you" });
   } else {
     checks.push({ id: "contract", ok: true, line: `contract: ${cache.contractVersion} cached ${cache.fetchedAt} (range ${range})` });
   }
@@ -192,7 +247,7 @@ export async function readyReport(ctx: Ctx, deps: ReadyDeps): Promise<ReadyRepor
         id: "bundle",
         ok: false,
         note: true,
-        line: `bundle: ${installed} installed is older than the tenant's minimum ${minVersion} — upgrade: npm install -g @catalyst-cloud/catalyst-skills@latest && catalyst-skills login`,
+        line: `bundle: ${installed} installed is older than the tenant's minimum ${minVersion} — upgrade: ${upgradeCommand()}`,
       });
     }
   }
@@ -222,7 +277,7 @@ export async function readyReport(ctx: Ctx, deps: ReadyDeps): Promise<ReadyRepor
           id: "cliRelease",
           ok: false,
           note: true,
-          line: `cliRelease: ${installedCli} installed is older than the latest published ${pub.latest} — upgrade: npm install -g @catalyst-cloud/catalyst-skills@latest && catalyst-skills login`,
+          line: `cliRelease: ${installedCli} installed is older than the latest published ${pub.latest} — upgrade: ${upgradeCommand()}`,
         });
       }
       // clause 1 — the skill files on disk, read independently of whichever CLI is answering. Both
@@ -260,6 +315,9 @@ export async function readyReport(ctx: Ctx, deps: ReadyDeps): Promise<ReadyRepor
         : { id: "cliPath", ok: false, line: `cliPath: ${cfg.cliPath ? `${cfg.cliPath} does not exist` : "not recorded"}`, fix: "re-run login so the skill scripts can find this CLI", who: "you" },
     );
   }
+
+  const command = catalystCommandCheck(ctx.env);
+  if (command) checks.push(command);
 
   // The skills are installed by the customer's own agent (a plugin, or `npx skills add`), so an
   // empty copy directory is the normal case and must not read as NOT READY. A PARTIAL copy is the

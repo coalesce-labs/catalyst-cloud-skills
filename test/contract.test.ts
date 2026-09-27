@@ -123,7 +123,7 @@ describe("loadContract", () => {
     const code = await main(["join", "--key", "fixture-key", "--base-url", server.url], ctx);
     expect(code).toBe(0);
     const cfg = JSON.parse(readFileSync(`${home}/.config/catalyst-cloud/customer.json`, "utf8")) as { cliPath: string; replicaDb: string };
-    expect(cfg.cliPath.endsWith("bin/catalyst-skills.js")).toBe(true);
+    expect(cfg.cliPath.endsWith("bin/catalyst.js")).toBe(true);
     expect(cfg.replicaDb).toBe(`${home}/.config/catalyst-cloud/replica.db`);
     expect(existsSync(contractPathFor(home))).toBe(true);
     expect(ctx.out.join("\n")).toContain("Tenant contract 1.0.0 cached at");

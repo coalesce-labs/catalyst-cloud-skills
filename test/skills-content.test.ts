@@ -436,17 +436,18 @@ describe("the install page (README) states what a customer needs, in the order t
 
 describe("the package manifest", () => {
   test("is the documented name, public, and carries exactly the SDK as its runtime dependency", () => {
-    expect(manifest.name).toBe("@catalyst-cloud/catalyst-skills");
+    expect(manifest.name).toBe("@catalyst-cloud/cli");
     expect(manifest.publishConfig.access).toBe("public");
     expect(manifest.dependencies).toEqual({ "@catalyst-cloud/sdk": expect.stringMatching(/^\^0\.10\./) });
   });
 
   test("bin, shipped files, engines, and the pinned contract range are wired", () => {
+    expect(manifest.bin.catalyst).toBe("bin/catalyst.js");
     expect(manifest.bin["catalyst-skills"]).toBe("bin/catalyst-skills.js");
     for (const f of ["bin", "dist", "skills", "README.md", "CHANGELOG.md", "LICENSE"]) {
       expect(manifest.files).toContain(f);
     }
-    expect(existsSync(join(pkgRoot, manifest.bin["catalyst-skills"]!))).toBe(true);
+    for (const file of Object.values(manifest.bin)) expect(existsSync(join(pkgRoot, file))).toBe(true);
     // CTC-2158: the floor is 22.15, not 22. Measured: Node 22.14.0 has no node:module.registerHooks,
     // so `ready` reported `ok node: 22` on a runtime where `sdk` could not load. `>=22` was a promise
     // this package does not keep.
