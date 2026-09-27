@@ -78,6 +78,17 @@ export interface FixtureServer {
     approved: { revision: number; canonicalHash: string } | null;
     unresolvedReferences: string[];
   };
+  /** CTC-3549 — the repo secret store behind `/me/secrets` and `/me/secrets/import`: what was stored
+   *  (keyed `owner/name:NAME`, value kept only so a test can assert the stored value), the audit
+   *  `source` each write declared, the approved declaration's secret names, and the caller's seat. */
+  secrets: {
+    stored: Map<string, { value: string; version: number; source: string | null }>;
+    repos: string[];
+    declared: string[] | null;
+    role: "admin" | "owner" | "member";
+    /** `false` answers 401 to a bearer, the way a cloud that predates CTC-3549 does. */
+    deployed: boolean;
+  };
   /** Force one raw answer for the next environment call, by verb (e.g. a 400 invalid_declaration). */
   environmentForced?: Partial<Record<"read" | "propose" | "approve", { status: number; body: unknown }>>;
   /** Fields merged over the fixture execution report, for the renderer's null and park branches. */
@@ -496,6 +507,7 @@ export async function startMeFixture(
     issues: fixtureIssues(),
     eligibilityByTeam: {},
     accountEnvironment: { current: null, approved: null, unresolvedReferences: [] },
+    secrets: { stored: new Map(), repos: ["acme/app"], declared: null, role: "admin", deployed: true },
     oauth: {
       clientId: "client_fixture",
       pendingPolls: 0,
@@ -802,6 +814,48 @@ export async function startMeFixture(
         unresolvedReferences: env.unresolvedReferences,
         audit: [],
       });
+    }
+
+    // CTC-3549 — the repo secret writes, on the browser's own paths, admitting a person's bearer.
+    if (req.method === "POST" && (path === "/me/secrets" || path === "/me/secrets/import")) {
+      const sec = state.secrets;
+      if (!sec.deployed) return send(401, { error: "unauthorized" });
+      if (machine) return send(403, { error: "personal_credential_required", message: "this route acts as a person: use your personal key (ctc_user_…) or a CLI login, not an account key" });
+      state.writes.push({ method: "POST", path, headers: req.headers, body });
+      if (sec.role === "member") return send(403, { error: "forbidden", message: "managing the organization's secrets requires an admin or owner role" });
+      const b = (body ?? {}) as Record<string, unknown>;
+      const repo = typeof b.repo === "string" ? b.repo : "";
+      if (!sec.repos.includes(repo)) return send(404, { error: "not_found", message: "no such repository" });
+      const source = typeof b.source === "string" ? b.source : null;
+      const held = (n: string) => sec.stored.has(`${repo}:${n}`);
+      const put = (n: string, value: string): { version: number; created: boolean } => {
+        const prior = sec.stored.get(`${repo}:${n}`);
+        const version = (prior?.version ?? 0) + 1;
+        sec.stored.set(`${repo}:${n}`, { value, version, source });
+        return { version, created: prior === undefined };
+      };
+      const declared = () =>
+        sec.declared === null ? null : { declared: [...sec.declared].sort(), missing: sec.declared.filter((n) => !held(n)).sort() };
+      if (path === "/me/secrets") {
+        if (typeof b.name !== "string" || typeof b.value !== "string" || b.value === "") return send(400, { error: "invalid_value" });
+        const r = put(b.name, b.value);
+        return send(r.created ? 201 : 200, { secret: { name: b.name, value: null }, version: r.version, created: r.created, declared: declared() });
+      }
+      const rotate = Array.isArray(b.rotateExisting) ? (b.rotateExisting as string[]) : [];
+      const created: string[] = [];
+      const rotated: string[] = [];
+      const errors: Array<{ name: string; reason: string }> = [];
+      for (const line of String(b.text ?? "").split("\n")) {
+        const m = /^\s*(?:export\s+)?([^=#\s]+)\s*=(.*)$/.exec(line);
+        if (!m) continue;
+        const [, n, v] = m as unknown as [string, string, string];
+        if (held(n) && !rotate.includes(n)) {
+          errors.push({ name: n, reason: "name_exists" });
+          continue;
+        }
+        (put(n, v.trim()).created ? created : rotated).push(n);
+      }
+      return send(200, { created, rotated, errors, declared: declared() });
     }
 
     if (req.method === "POST" && postRoutes().has(path)) {
