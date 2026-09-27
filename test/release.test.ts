@@ -5,6 +5,7 @@
 // `--because` unless it is a dry run.
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from "vitest";
 import { main } from "../src/cli";
+import { describeAction, renderClassRelease, renderTicketRelease } from "../src/release";
 import { FIXTURE_ROUTE_PREFIX, buildFixtureContract } from "./fixture-contract";
 import { startMeFixture, type FixtureServer } from "./fixture";
 import { makeCtx, seedJoined, tempHome, type TestCtx } from "./helpers";
@@ -183,5 +184,93 @@ describe("release --class <class> --team <key>", () => {
     expect(await main(["release", "--class", "phase-timeout", "--because", "x"], ctx)).toBe(1);
     expect(await main(["release", "ENG-2", "--class", "phase-timeout", "--team", "ENG", "--because", "x"], ctx)).toBe(1);
     expect(releaseWrites("ticket-release-class")).toEqual([]);
+  });
+});
+
+describe("release usage errors are caught before anything is sent", () => {
+  test.each([
+    [["release", "ENG-2", "ENG-3", "--because", "x"], "release takes one ticket"],
+    [["release", "--because", "x"], "release needs a ticket, or --class <failure-class> --team <K>"],
+    [["release", "--class", "phase-timeout", "--team", "ENG", "--because", "x", "--limit", "2.5"], "--limit must be an integer"],
+  ])("%j is refused with its own sentence", async (argv, message) => {
+    expect(await main(argv, ctx)).toBe(1);
+    expect(ctx.err[0]).toBe(message);
+    expect(server.writes).toEqual([]);
+  });
+
+  test("a ticket the tenant's mirror does not carry is named, and exits 2 like any other cloud refusal", async () => {
+    server.release = { status: 404, body: { error: "not_found" } };
+    expect(await main(["release", "ENG-404", "--because", "x"], ctx)).toBe(2);
+    expect(ctx.err.join("\n")).toContain("ticket ENG-404 is not in this tenant's mirror — check the identifier");
+    expect(ctx.out).toEqual([]);
+  });
+
+  test("a class release in --json prints the cloud's body and keeps the refusal exit", async () => {
+    const body = { team: "ENG", class: "phase-timeout", dryRun: false, released: [], refused: [{ ticket: "ENG-3", refused: [] }], nothingHeld: [] };
+    server.releaseClass = { status: 200, body };
+    expect(await main(["release", "--class", "phase-timeout", "--team", "ENG", "--because", "x", "--json"], ctx)).toBe(1);
+    expect(JSON.parse(ctx.out.join("\n"))).toEqual(body);
+  });
+});
+
+describe("how a release reads to a person", () => {
+  test("every governor op the cloud names reads as a sentence, and an unknown op keeps its name and phase", () => {
+    expect(describeAction({ governor: "g", phase: null, op: "unpark" })).toBe("unparked a phase");
+    expect(describeAction({ governor: "g", phase: "validate", op: "clear_no_change_hold" })).toBe("cleared the no-change hold");
+    expect(describeAction({ governor: "g", phase: "remediate", op: "grant_round_threshold_cycle" })).toBe("bought one more repair cycle");
+    expect(describeAction({ governor: "g", phase: "pr", op: "reset_lease" })).toBe("reset_lease at pr");
+    expect(describeAction({ governor: "g", phase: null, op: "reset_lease" })).toBe("reset_lease");
+  });
+
+  test("a team move with a missing side says (none) rather than undefined", () => {
+    expect(renderTicketRelease("ENG-2", { error: "team_changed" })).toEqual([
+      "ENG-2 moved from team (none) to (none) while the release was being checked — run it again",
+    ]);
+  });
+
+  test("a dry run that would release lists what it would clear", () => {
+    expect(
+      renderTicketRelease("ENG-2", {
+        outcome: "released",
+        dryRun: true,
+        releasable: [
+          { governor: "phase_park", phase: "implement", op: "unpark" },
+          { governor: "validate_hold", phase: null, op: "clear_validate_hold" },
+        ],
+      }),
+    ).toEqual(["ENG-2 (dry run): would release — unparked implement, cleared the validate hold"]);
+  });
+
+  test("a refusal with nothing else blocked prints only the refusal lines, and a sparse body does not crash", () => {
+    expect(
+      renderTicketRelease("ENG-2", { outcome: "refused", refused: [{ governor: "live_lease", phase: "validate", code: "lease_held", humanAction: "wait for it" }] }),
+    ).toEqual(["ENG-2: refused — nothing was released:", "  lease_held: wait for it"]);
+    expect(renderTicketRelease("ENG-2", { outcome: "refused" })).toEqual(["ENG-2: refused — nothing was released:"]);
+    expect(renderTicketRelease("ENG-2", {})).toEqual(["ENG-2: released — "]);
+  });
+
+  test("a dry-run class release says would release and lists each ticket's releasable actions", () => {
+    expect(
+      renderClassRelease({
+        team: "ENG",
+        class: "phase-timeout",
+        dryRun: true,
+        released: [{ ticket: "ENG-2", releasable: [{ governor: "phase_park", phase: "implement", op: "unpark" }] }, {}],
+        refused: [{ refused: [{ governor: "live_lease", phase: null, code: "lease_held", humanAction: "wait" }] }, { ticket: "ENG-5" }],
+      }),
+    ).toEqual([
+      "ENG phase-timeout (dry run): released 2, refused 2, nothing held 0",
+      "  would release ENG-2: unparked implement",
+      "  would release ?: ",
+      "  refused ? — lease_held: wait",
+    ]);
+  });
+
+  test("an empty class answer still names what was asked, with ? for what the cloud left out", () => {
+    expect(renderClassRelease({})).toEqual(["? ?: released 0, refused 0, nothing held 0"]);
+    expect(renderClassRelease({ team: "ENG", class: "x", released: [{ ticket: "ENG-2" }] })).toEqual([
+      "ENG x: released 1, refused 0, nothing held 0",
+      "  released ENG-2: ",
+    ]);
   });
 });

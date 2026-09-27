@@ -267,3 +267,118 @@ describe("the route paths come from the contract, never from a constant", () => 
     expect(ctx.err.join("\n")).toContain("propose route");
   });
 });
+
+// ── the shapes the state machine does not produce on its own ─────────────────────────────────────
+
+describe("environment usage errors are caught before any request", () => {
+  test.each([
+    [["environment", "read", "extra"], 'environment takes one subcommand (got an extra "extra")'],
+    [["environment", "delete"], 'unknown environment subcommand "delete": read | propose | approve'],
+  ])("%j is refused with its own sentence", async (argv, message) => {
+    expect(await main(argv, ctx)).toBe(1);
+    expect(ctx.err[0]).toBe(message);
+    expect(server.writes).toEqual([]);
+  });
+
+  test("--file beside --stdin is refused, so which declaration was meant is never guessed", async () => {
+    expect(await main(["environment", "propose", "--file", declarationFile(DECLARATION), "--stdin"], ctx)).toBe(1);
+    expect(ctx.err[0]).toBe("environment propose takes --file <path> or --stdin, not both");
+    expect(envWrites("propose")).toEqual([]);
+  });
+
+  test("an empty stdin and a non-JSON stdin are each refused as coming from stdin", async () => {
+    expect(await main(["environment", "propose", "--stdin"], ctx, { environment: { readStdin: async () => "  \n" } })).toBe(1);
+    expect(ctx.err[0]).toBe("the declaration on stdin is empty");
+    const again = makeCtx(home);
+    expect(await main(["environment", "propose", "--stdin"], again, { environment: { readStdin: async () => "{nope" } })).toBe(1);
+    expect(again.err[0]).toMatch(/^the declaration on stdin is not JSON: /);
+    expect(envWrites("propose")).toEqual([]);
+  });
+
+  test("an empty file is refused by its path", async () => {
+    const path = declarationFile(DECLARATION);
+    writeFileSync(path, "");
+    expect(await main(["environment", "propose", "--file", path], ctx)).toBe(1);
+    expect(ctx.err[0]).toBe(`the declaration in ${path} is empty`);
+  });
+});
+
+describe("environment read with a sparse cloud answer", () => {
+  test("an approved revision with no proposer, no approver, no delivered revision and no reference list still reads plainly", async () => {
+    server.environmentForced = { read: { status: 200, body: { current: { revision: 2, canonicalHash: "sha-2", declaration: {} }, isApproved: true } } };
+    expect(await main(["environment", "read"], ctx)).toBe(0);
+    expect(ctx.out).toEqual(["revision 2 (sha-2)", "approved", "delivered to phases: nothing yet"]);
+  });
+
+  test("an approval names who approved it", async () => {
+    server.accountEnvironment.current = { revision: 1, canonicalHash: "sha-1", declaration: DECLARATION, proposedBy: "d1-user-tony" };
+    server.accountEnvironment.approved = { revision: 1, canonicalHash: "sha-1" };
+    expect(await main(["environment", "read"], ctx)).toBe(0);
+    expect(ctx.out[0]).toBe("revision 1 (sha-1), proposed by d1-user-tony");
+    expect(ctx.out[1]).toMatch(/^approved by \S+$/);
+    expect(ctx.out[2]).toBe("delivered to phases: revision 1 (sha-1)");
+  });
+});
+
+describe("environment propose and approve in --json, and odd cloud answers", () => {
+  test("a refused propose in --json prints the cloud's body and exits 1", async () => {
+    const body = { error: "invalid_declaration", message: "bad" };
+    server.environmentForced = { propose: { status: 400, body } };
+    expect(await main(["environment", "propose", "--file", declarationFile(DECLARATION), "--json"], ctx)).toBe(1);
+    expect(JSON.parse(ctx.out.join(""))).toEqual(body);
+  });
+
+  test("a refusal with no message, no reason and no revision says no reason was given", async () => {
+    server.environmentForced = { propose: { status: 404, body: {} } };
+    expect(await main(["environment", "propose", "--file", declarationFile(DECLARATION)], ctx)).toBe(1);
+    expect(ctx.out).toEqual(["refused (404): no reason given"]);
+  });
+
+  test("a propose in --json prints only the cloud's body, with no human lines beside it", async () => {
+    expect(await main(["environment", "propose", "--file", declarationFile(DECLARATION), "--json"], ctx)).toBe(0);
+    expect(ctx.out).toHaveLength(1);
+    expect(JSON.parse(ctx.out[0] ?? "")).toMatchObject({ status: "created", state: { revision: 1, canonicalHash: "sha-1" } });
+  });
+
+  test("an unchanged propose does not tell the person to approve it again", async () => {
+    server.accountEnvironment.current = { revision: 3, canonicalHash: "sha-3", declaration: DECLARATION, proposedBy: "d1-user-tony" };
+    expect(await main(["environment", "propose", "--file", declarationFile(DECLARATION)], ctx)).toBe(0);
+    expect(ctx.out).toEqual(["unchanged: revision 3 (sha-3)"]);
+  });
+
+  test("a success with no state and no status is reported as proposed-without-state, and --approve refuses to guess one", async () => {
+    server.environmentForced = { propose: { status: 200, body: {} } };
+    expect(await main(["environment", "propose", "--file", declarationFile(DECLARATION)], ctx)).toBe(0);
+    expect(ctx.out[0]).toBe("proposed, but the cloud returned no state");
+    const again = makeCtx(home);
+    expect(await main(["environment", "propose", "--file", declarationFile(DECLARATION), "--approve"], again)).toBe(1);
+    expect(again.err).toEqual(["the cloud returned no state to approve — run: catalyst-skills environment read"]);
+    expect(envWrites("approve")).toEqual([]);
+  });
+
+  test("propose --approve --json prints both answers, and exits 1 when the approve half is refused", async () => {
+    expect(await main(["environment", "propose", "--file", declarationFile(DECLARATION), "--approve", "--json"], ctx)).toBe(0);
+    expect(JSON.parse(ctx.out.join(""))).toMatchObject({ propose: { status: "created" }, approve: { approved: true } });
+
+    server.environmentForced = { approve: { status: 409, body: { error: "stale" } } };
+    const again = makeCtx(home);
+    expect(await main(["environment", "propose", "--file", declarationFile({ other: true }), "--approve", "--json"], again)).toBe(1);
+    expect(JSON.parse(again.out.join(""))).toMatchObject({ propose: { status: "updated" }, approve: { error: "stale" } });
+  });
+
+  test("approve --json prints the cloud's answer and carries its exit code", async () => {
+    server.accountEnvironment.current = { revision: 5, canonicalHash: "sha-5", declaration: DECLARATION, proposedBy: "d1-user-tony" };
+    expect(await main(["environment", "approve", "--json"], ctx)).toBe(0);
+    expect(JSON.parse(ctx.out.join(""))).toMatchObject({ approved: true, state: { revision: 5 } });
+    const again = makeCtx(home);
+    expect(await main(["environment", "approve", "--revision", "4", "--hash", "sha-4", "--json"], again)).toBe(1);
+    expect(JSON.parse(again.out.join(""))).toMatchObject({ error: "stale", currentRevision: 5, currentHash: "sha-5" });
+  });
+
+  test("a refused approve with only a revision and no words says so without inventing a hash", async () => {
+    server.accountEnvironment.current = { revision: 5, canonicalHash: "sha-5", declaration: DECLARATION, proposedBy: "d1-user-tony" };
+    server.environmentForced = { approve: { status: 409, body: { currentRevision: 6 } } };
+    expect(await main(["environment", "approve"], ctx)).toBe(1);
+    expect(ctx.out).toEqual(["refused (409): no reason given", "  it is now at revision 6 — read it again before approving"]);
+  });
+});
