@@ -36,6 +36,9 @@ export interface ContractReadinessCheck {
   state: "pass" | "fail" | "unknown";
   reason?: string;
   count?: number;
+  /** OPTIONAL (contract 1.24.0, CTC-3547): the declared variable NAMES a `required_values` fail found
+   *  with no value. Names only, never a value. An older cloud omits it. */
+  names?: readonly string[];
 }
 
 /**
