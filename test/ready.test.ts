@@ -130,6 +130,48 @@ describe("ready", () => {
     expect(text).toMatch(/who: owner u-fixture-owner, admin u-fixture-admin/);
     expect(text).toMatch(/^FAIL {2}team OPS: blocked/m);
   });
+  test("CTC-3561: a required_values fail names the missing variables and where to set them, and prints no value", async () => {
+    await seedJoined(home, server);
+    installSkills(defaultSkillsDirFor(home), {});
+    const cache = JSON.parse(readFileSync(contractPathFor(home), "utf8")) as { doc: { teams: { readiness: { status: string; checks: Record<string, unknown>[] } }[] } };
+    const eng = cache.doc.teams[0]!;
+    eng.readiness.status = "degraded";
+    // A value-shaped key rides along to prove the renderer reads `names` only.
+    eng.readiness.checks.push({ id: "required_values", state: "fail", names: ["DATABASE_URL", "STRIPE_KEY"], value: "sk_live_never_printed" });
+    writeFileSync(contractPathFor(home), JSON.stringify(cache));
+    expect(await main(["ready"], ctx)).toBe(1);
+    const text = ctx.out.join("\n");
+    expect(text).toMatch(/^FAIL {2}team ENG: required_values is fail/m);
+    expect(text).toContain(
+      "fix: set DATABASE_URL, STRIPE_KEY on the repository's Environment page under Settings → Repositories (team ENG; they have no value at repository or account scope)",
+    );
+    expect(text).not.toContain("sk_live_never_printed");
+    expect(text).not.toContain("resolve required_values");
+  });
+  test("CTC-3561: one missing variable reads in the singular", async () => {
+    await seedJoined(home, server);
+    const cache = JSON.parse(readFileSync(contractPathFor(home), "utf8")) as { doc: { teams: { readiness: { checks: Record<string, unknown>[] } }[] } };
+    cache.doc.teams[0]!.readiness.checks.push({ id: "required_values", state: "fail", names: ["DATABASE_URL"] });
+    writeFileSync(contractPathFor(home), JSON.stringify(cache));
+    const r = await readyReport(ctx, { skillNames: CUSTOMER_SKILLS, offline: true });
+    expect(r.checks.find((c) => c.id === "team:ENG:required_values")!.fix).toBe(
+      "set DATABASE_URL on the repository's Environment page under Settings → Repositories (team ENG; it has no value at repository or account scope)",
+    );
+  });
+  test("CTC-3561: a team check without names, or with an empty list, keeps today's fix line", async () => {
+    await seedJoined(home, server);
+    const cache = JSON.parse(readFileSync(contractPathFor(home), "utf8")) as { doc: { teams: { readiness: { checks: Record<string, unknown>[] } }[] } };
+    cache.doc.teams[0]!.readiness.checks[0] = { id: "oauth_scope", state: "fail", reason: "missing_scope" };
+    cache.doc.teams[0]!.readiness.checks.push({ id: "required_values", state: "fail", names: [] });
+    writeFileSync(contractPathFor(home), JSON.stringify(cache));
+    const r = await readyReport(ctx, { skillNames: CUSTOMER_SKILLS, offline: true });
+    expect(r.checks.find((c) => c.id === "team:ENG:oauth_scope")!.fix).toBe("open settings for team ENG and resolve oauth_scope");
+    expect(r.checks.find((c) => c.id === "team:ENG:required_values")!.fix).toBe("open settings for team ENG and resolve required_values");
+  });
+  test("CTC-3561: the bundle's contract range accepts 1.24.0, the version that ships names", async () => {
+    const { contractVersionInRange } = await import("../src/contract");
+    expect(contractVersionInRange("1.24.0", readManifest().tenantContractRange)).toBe(true);
+  });
 });
 
 describe("the runtime check — CTC-2158", () => {
