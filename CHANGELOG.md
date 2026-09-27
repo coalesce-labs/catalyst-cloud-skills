@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.8.0
+
+`catalyst-skills ready` loads the SDK on Node 26, the current Homebrew default, and has since 0.7.0: the type-stripping loader tries Node's `strip` mode before `transform`, because Node 26 accepts only `strip`. The 0.7.0 entry did not say so. If you saw `sdk: could not load` on Node 26 on 0.5.0 or earlier, updating is the fix.
+
+The supported runtime range is now declared in one place and every message names it accurately: Node 22.15 or newer (22.15 is where `node:module.registerHooks` arrives, which the SDK's TypeScript dependencies need), or bun 1.4 or newer (1.4 is where `node:sqlite` arrives, which the replica needs). The old advice to "run under Node 22.15 or newer, or under bun" was wrong for any bun older than 1.4: that bun has no `node:sqlite` at all and could not run this CLI, so the suggestion sent you to a runtime that could not even start. No message in this package recommends bun any more without saying which version.
+
+The CLI itself no longer dies part-way through loading on a runtime it does not support. `node:sqlite` used to be imported at the top of a module every verb loads, so a bun without it aborted the whole process before `ready` ever got a chance to explain why — you saw a raw `ResolveMessage`, not a fix. The engine now loads on first use, and its absence becomes a named `runtime` check with the one command that fixes it, on every runtime, every time.
+
+That one command is `catalyst-skills runtime install`. It downloads a pinned Node release into this CLI's own cache, verifies it against that release's published checksum before unpacking anything, and uses it from then on — without touching your machine's default Node and without admin rights. Run it any time `ready` reports the runtime as unsupported, or ahead of time if you would rather not manage your system Node at all.
+
 ## 0.7.0
 
 `explain` and `ready` now name a team that cannot start work even when the live read is not available. Your tenant's contract carries each team's dispatch gate, and this machine already keeps a copy of that contract on disk; until now only the live eligibility read could name the gate, so a network hiccup, or a cloud older than that read, left `explain` printing nothing at all. `explain` now leads with the gate and the fix from the cached contract when the live read is unavailable or sends no gate, and says which of the two it read; when both answer and disagree, the live read wins and the paragraph says the cached one disagreed. A refusal from the cloud — a credential that is not accepted, for instance — is still a refusal, never quietly replaced by a cached answer. `ready` now prints one dispatch-gate line per team: open teams read `ok`, and a team whose stages are not saved reads `FAIL` with the remedy your tenant sent and turns the verdict to NOT READY, because nothing in that team can start. A cloud that does not send the gate changes nothing.
