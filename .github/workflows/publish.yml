@@ -1,4 +1,6 @@
-# CTC-1949: publish @catalyst-cloud/catalyst-skills to npm from a tag, never from a laptop. This
+# CTC-1949: publish the CLI to npm from a tag, never from a laptop. Since CTC-3479 that is two
+# packages at one version: @catalyst-cloud/cli, and @catalyst-cloud/catalyst-skills as a forwarder
+# that depends on it, so machines still updating the old name get the same release. This
 # repository is the package's one home (moved out of the catalyst-cloud monorepo's
 # packages/skill-bundle, which is the same source this workflow ran against there). The whole test
 # suite runs FIRST, and it carries the pack-and-install smoke (pack the real tarball, install into a
@@ -83,17 +85,37 @@ jobs:
             exit 1
           fi
 
+      # CTC-3479 — both packages ship at one version, and the forwarder pins exactly that version of
+      # @catalyst-cloud/cli. `npm run version:sync` keeps them equal; this refuses a release that drifted.
+      - name: Both packages carry one version
+        run: node scripts/sync-plugin-version.mjs --check
+
       - uses: actions/setup-node@v6
         with:
           node-version-file: package.json
           registry-url: https://registry.npmjs.org
 
-      - name: npm publish (prepack builds dist; files gate ships bin/dist/skills/README/CHANGELOG/LICENSE)
+      # CTC-3479 — two packages, one version. @catalyst-cloud/cli (this directory) goes first, because
+      # the forwarder @catalyst-cloud/catalyst-skills (packages/catalyst-skills) depends on exactly its
+      # version, and the CLI's `ready` compares against the forwarder's `latest`. A version that is
+      # already on npm is skipped, so re-running a release whose second publish failed finishes it
+      # instead of failing on the first.
+      - name: npm publish @catalyst-cloud/cli, then the @catalyst-cloud/catalyst-skills forwarder
         run: |
+          set -euo pipefail
+          dry=""
           if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.dry_run }}" = "true" ]; then
-            npm publish --access public --dry-run
-          else
-            npm publish --access public
+            dry="--dry-run"
           fi
+          for dir in . packages/catalyst-skills; do
+            name="$(node -p "require('./$dir/package.json').name")"
+            version="$(node -p "require('./$dir/package.json').version")"
+            if [ -z "$dry" ] && [ "$(npm view "$name@$version" version 2>/dev/null || true)" = "$version" ]; then
+              echo "$name@$version is already on npm; skipping"
+              continue
+            fi
+            # prepack builds dist for the CLI; the files gate ships bin/dist/skills/README/CHANGELOG/LICENSE.
+            (cd "$dir" && npm publish --access public $dry)
+          done
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_PUBLISH_TOKEN }}

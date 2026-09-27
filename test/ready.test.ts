@@ -108,7 +108,7 @@ describe("ready", () => {
     expect(text).toMatch(/^FAIL {2}contract: version 3\.0\.0 is outside/m);
     // The out-of-range fix must pin @latest (`npm update -g` never crosses a caret below 1.0.0) AND
     // re-login so the new global bin rewrites customer.json.cliPath.
-    expect(text).toContain("fix: npm install -g @catalyst-cloud/catalyst-skills@latest && catalyst-skills login");
+    expect(text).toContain("fix: npm install -g @catalyst-cloud/cli@latest && catalyst-skills login");
     expect(text).not.toContain("npm update");
     writeFileSync(`${home}/.config/catalyst-cloud/customer.json`, "{corrupt");
     const c2 = makeCtx(home);
@@ -323,7 +323,7 @@ describe("more ready branches", () => {
     const note = j.checks.find((c) => c.id === "bundle");
     expect(note).toMatchObject({ note: true });
     expect(note!.line).toContain("9.9.9");
-    expect(note!.line).toContain("npm install -g @catalyst-cloud/catalyst-skills@latest && catalyst-skills login");
+    expect(note!.line).toContain("npm install -g @catalyst-cloud/cli@latest && catalyst-skills login");
     expect(note!.line).not.toContain("npm update");
   });
   test("no bundle note when the installed bundle meets the contract's minimum", async () => {
@@ -391,7 +391,9 @@ describe("ready never recommends starting the replica (CTC-2499)", () => {
     expect(text).toMatch(/^note {2}replica: absent/m); // the existing pin, unchanged
     expect(text).toContain("optional");
     expect(text).toContain("off by default for large tenants");
-    expect(text).not.toMatch(/\bC[TL]C-\d+\b/);
+    const replicaNote = text.split("\n").find((line) => /^note {2}replica: absent/.test(line));
+    expect(replicaNote).toBeDefined();
+    expect(replicaNote).not.toMatch(/\bC[TL]C-\d+\b/);
   });
   test("ready --json exposes the writer's stopped state and failure count", async () => {
     await seedJoined(home, server);
@@ -621,7 +623,7 @@ describe("ready reports when the installed skill bundle or CLI is behind the pub
     expect(note).toMatchObject({ ok: false, note: true });
     expect(note.line).toContain(readManifest().version);
     expect(note.line).toContain("9.9.9");
-    expect(note.line).toContain("npm install -g @catalyst-cloud/catalyst-skills@latest && catalyst-skills login");
+    expect(note.line).toContain("npm install -g @catalyst-cloud/cli@latest && catalyst-skills login");
     expect(note.line).not.toContain("npm update");
   });
 

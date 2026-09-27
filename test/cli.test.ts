@@ -30,7 +30,7 @@ beforeEach(() => {
 describe("dispatcher", () => {
   test("--version and bare usage", async () => {
     expect(await main(["--version"], ctx)).toBe(0);
-    expect(ctx.out[0]).toMatch(/^@catalyst-cloud\/catalyst-skills \d+\.\d+\.\d+ \(tenant contract range: /);
+    expect(ctx.out[0]).toMatch(/^@catalyst-cloud\/cli \d+\.\d+\.\d+ \(tenant contract range: /);
     const c2 = makeCtx(home);
     expect(await main([], c2)).toBe(0);
     expect(c2.out.join("\n")).toContain("Usage:");
@@ -81,7 +81,7 @@ describe("dispatcher", () => {
     await seedJoined(home, server);
     expect(await main(["status"], ctx)).toBe(0);
     const text = ctx.out.join("\n");
-    expect(text).toMatch(/^CLI: .*bin\/catalyst-skills\.js$/m);
+    expect(text).toMatch(/^CLI: .*bin\/catalyst\.js$/m);
     expect(text).toContain(`Contract: ${contractPathFor(home)}`);
     const home2 = tempHome();
     await seedJoined(home2, server, { contract: false, config: { cliPath: `${home2}/gone.js` } });
@@ -113,7 +113,7 @@ describe("dispatcher", () => {
     });
     expect(code).toBe(0);
     expect(spawned).toHaveLength(1);
-    expect(spawned[0]![0]).toMatch(/bin\/catalyst-skills\.js$/);
+    expect(spawned[0]![0]).toMatch(/bin\/catalyst\.js$/);
     expect(spawned[0]!.slice(1)).toEqual(["replica", "start"]);
     expect(existsSync(`${defaultReplicaDbFor(home)}.pid`)).toBe(true);
     expect(ctx.out.join("\n")).toContain("replica writer started in the background");
