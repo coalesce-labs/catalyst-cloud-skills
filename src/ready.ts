@@ -83,16 +83,55 @@ export interface ReadyDeps {
   offline?: boolean;
 }
 
+function nameList(v: unknown): string[] {
+  return Array.isArray(v) ? v.filter((n): n is string => typeof n === "string" && n.length > 0) : [];
+}
+
+/** Entries whose name and references are both present; anything malformed is dropped, not guessed. */
+function unresolvedList(v: unknown): { name: string; references: string[] }[] {
+  if (!Array.isArray(v)) return [];
+  return v.flatMap((u) => {
+    if (typeof u !== "object" || u === null) return [];
+    const { name, references } = u as { name?: unknown; references?: unknown };
+    const refs = nameList(references);
+    return typeof name === "string" && name.length > 0 && refs.length > 0 ? [{ name, references: refs }] : [];
+  });
+}
+
+function unresolvedLine(u: { name: string; references: string[] }): string {
+  const which = u.references.length === 1 ? "which has" : "which have";
+  return `${u.name} references ${u.references.join(", ")}, ${which} no value; the checkout refuses it before work starts`;
+}
+
 /** A team check's fix line. A check that carries `names` (CTC-3561: `required_values`, contract
- *  1.24.0) names them and where to set them; the names are declared identifiers, never values, and
- *  nothing here reads a value. Any other check keeps the generic line. */
+ *  1.24.0) names them and where to set them. CTC-3606: it also names each `unresolved` variable and
+ *  the reference with no value, and each other repository's missing names from `repos[]`. `unresolved`
+ *  is a subset of `names` (the variable exists; its reference does not), so those are not told to be
+ *  "set". Every field is optional so an older cloud still works. Everything printed is a declared
+ *  identifier or a repository name, never a value, and nothing here reads a value. Any other check
+ *  keeps the generic line. */
 function teamCheckFix(label: string, c: ContractReadinessCheck): string {
-  const names = Array.isArray(c.names) ? c.names.filter((n): n is string => typeof n === "string" && n.length > 0) : [];
-  if (names.length === 0) return `open settings for team ${label} and resolve ${c.id}`;
-  return (
-    `set ${names.join(", ")} on the repository's Environment page under Settings → Repositories ` +
-    `(team ${label}; ${names.length === 1 ? "it has" : "they have"} no value at repository or account scope)`
-  );
+  const unresolved = unresolvedList(c.unresolved);
+  const unresolvedNames = new Set(unresolved.map((u) => u.name));
+  const names = nameList(c.names).filter((n) => !unresolvedNames.has(n));
+  const parts: string[] = [];
+  if (names.length > 0) {
+    parts.push(
+      `set ${names.join(", ")} on the repository's Environment page under Settings → Repositories ` +
+        `(team ${label}; ${names.length === 1 ? "it has" : "they have"} no value at repository or account scope)`,
+    );
+  }
+  for (const u of unresolved) parts.push(unresolvedLine(u));
+  for (const note of Array.isArray(c.repos) ? c.repos : []) {
+    if (typeof note !== "object" || note === null || typeof note.repo !== "string" || note.repo.length === 0) continue;
+    const repoUnresolved = unresolvedList(note.unresolved);
+    const skip = new Set(repoUnresolved.map((u) => u.name));
+    const missing = nameList(note.names).filter((n) => !skip.has(n));
+    if (missing.length > 0) parts.push(`${note.repo} is missing ${missing.join(", ")}`);
+    for (const u of repoUnresolved) parts.push(`in ${note.repo}, ${unresolvedLine(u)}`);
+  }
+  if (parts.length === 0) return `open settings for team ${label} and resolve ${c.id}`;
+  return parts.join(". ");
 }
 
 function whoCanAnswer(doc: TenantContract): string {
