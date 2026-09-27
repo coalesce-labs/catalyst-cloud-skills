@@ -2,12 +2,25 @@
 
 Catalyst has two supported skill packs. They have separate purposes and versions.
 
-| Pack | Purpose | Default workstation install | Optional Claude Code plugin |
+The installer the person ran first, at their cloud's `/install.sh` (the app's setup page shows the command), installs both packs in one pass. It stages them with a pinned skills CLI, installs exact commits, and stops on any same-named skill it does not recognise, naming the path. A home install schedules a daily refresh that also picks up new skills. Re-run it to refresh or repair either pack. The commands in the table are the by-hand equivalent.
+
+| Pack | Purpose | By hand | Optional Claude Code plugin |
 | -- | -- | -- | -- |
 | `coalesce-labs/catalyst-cloud-skills` | Tenant setup and operation | `npx skills@latest add coalesce-labs/catalyst-cloud-skills --all -g` | `catalyst@catalyst-cloud` |
 | `coalesce-labs/catalyst-dev-skills` | Coding workflows | `npx skills@latest add coalesce-labs/catalyst-dev-skills --all -g` | `catalyst-dev@catalyst-dev-skills` |
 
 Install both packs on a workstation used for coding and tenant operations. Each Claude plugin is an alternative to `npx skills` for that same pack. Do not install a pack through both methods.
+
+## Where each install lands
+
+- Global (`-g`): the skills go in `~/.agents/skills/`, and `~/.claude/skills/` holds links into it. Codex, Cursor and OpenCode read `~/.agents/skills/`; nothing fills `~/.codex/skills/` or `~/.cursor/skills/`.
+- Project (no `-g`): `.agents/skills/`, `.claude/skills/` and `skills-lock.json` at the project root. Nothing lands in the home directory.
+- The global lock is `$XDG_STATE_HOME/skills/.skill-lock.json` when `XDG_STATE_HOME` is set, else `~/.agents/.skill-lock.json`. A project uses its own `skills-lock.json`.
+- The installer writes relative links. Resolve each with `readlink -f` before you compare paths.
+
+## Is each pack there
+
+`catalyst-skills ready` checks the Cloud pack only. Check `catalyst-onboard/SKILL.md` (Cloud pack) and `research-codebase/SKILL.md` (development pack) in the intended directory. If both are there, have the person type `/catalyst-onboard` (`$catalyst-onboard` in Codex).
 
 ## Migrate an existing installation
 
@@ -15,7 +28,7 @@ Inventory source and scope before removing anything:
 
 1. Run `claude plugin list` and record whether `catalyst-dev@catalyst` is installed and at which scope.
 2. Inspect the selected agent's home skill directory and the current project's skill directory separately. Read any `skills-lock.json` files and source/provenance markers. A folder name alone does not prove which repository supplied it. Check whether `.claude/skills` is a symlink to another skills directory before changing either path.
-3. If the old plugin is active, remove only `catalyst-dev@catalyst` through Claude Code's plugin manager. If old skill copies are present, remove only copies whose recorded source is the deprecated local runtime. Keep unrelated skills and plugin installs.
+3. If the old plugin is active, remove only `catalyst-dev@catalyst`: `claude plugin uninstall catalyst-dev@catalyst --scope user --keep-data --yes`. Keep `catalyst-dev@catalyst-dev-skills` and `catalyst@catalyst-cloud`. If old skill copies are present, remove only copies whose recorded source is the deprecated local runtime. Keep unrelated skills and plugin installs.
 4. Install the replacement pack or packs in the intended scope with the commands above. For the Cloud pack, omit `-g` only when a project-scoped install is intended. Do not use a blanket `npx skills remove --all` during migration.
 5. Read back the plugin list or skill lock and the destination skill folders. Start a new agent session after changing Claude plugins.
 

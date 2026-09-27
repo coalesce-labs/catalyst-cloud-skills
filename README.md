@@ -4,13 +4,13 @@
 
 ## Install
 
-Start by pasting one sentence into the coding agent you already use:
+Run the installer, then type `/catalyst-onboard` in your coding agent:
 
-```
-Help me understand and set up Catalyst Cloud. Read https://staging.catalystcloud.dev/agent-guide.md first, then walk me through it step by step.
+```sh
+curl -fsSL https://staging.catalystcloud.dev/install.sh | sh
 ```
 
-Your agent reads the guide, explains Catalyst Cloud in terms of your own repositories and tickets, finds out where it is running and what is already installed, and does the setup below itself — asking once before it writes to your machine. Everything else on this page is the reference it follows.
+The installer puts the CLI and both skill packs on this machine and connects it with one browser approval. It ends by printing the next step. Then open a new session of your coding agent in any directory and type `/catalyst-onboard` (`$catalyst-onboard` in Codex). The onboarding skill reads where this machine stands and walks you through the rest one step at a time. It asks before it writes anything to your machine. Everything else on this page is the reference it follows.
 
 This repository supplies skills for setting up and operating a Catalyst Cloud tenant. A coding workstation also uses [`coalesce-labs/catalyst-dev-skills`](https://github.com/coalesce-labs/catalyst-dev-skills) for research, planning, implementation, review, and shipping.
 
@@ -102,7 +102,7 @@ The setup skill Catalyst seeds into your repository ends by pointing at this sam
 
 ## Requirements
 
-- Node 22.15 or newer, or bun 1.4 or newer. The bundle uses Node's built-in SQLite module (and, on bun, bun's own `node:sqlite`) for the optional local replica, so there is no native dependency to build; if `better-sqlite3` resolves on the machine it is used instead. `catalyst-skills ready` names the exact reason when the runtime is too old, and `catalyst-skills runtime install` installs a pinned Node under this CLI's own cache — without touching your machine's default Node — if you would rather not upgrade it.
+- Node 22.15 or newer (Node 26 works), or bun 1.4 or newer. The bundle uses Node's built-in SQLite module (and, on bun, bun's own `node:sqlite`) for the optional local replica, so there is no native dependency to build; if `better-sqlite3` resolves on the machine it is used instead. `catalyst-skills ready` names the exact reason when the runtime is too old, and `catalyst-skills runtime install` installs a pinned Node under this CLI's own cache — without touching your machine's default Node — if you would rather not upgrade it.
 - Your personal key, minted by you at Settings → API keys. The key is the only tenant selector: you never type a tenant or account id. If your Linear identity is not matched yet, `login` says so; an admin matches it in Settings → Members, and until then "what needs me" shows everyone's asks.
 - An agent that discovers skills. Claude Code loads the plugin; Codex, Cursor, OpenCode and the rest read the `skills/<name>/SKILL.md` files the `npx skills` installer writes.
 - Bun is optional, only if you prefer `bunx` over `npx` — bun 1.4 or newer, which is when `node:sqlite` arrives; older bun cannot run this CLI at all.

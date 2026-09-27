@@ -32,4 +32,5 @@ This readiness skill is part of `catalyst-cloud-skills` and checks tenant setup 
 - Not connected (exit 2) means the connect step, not a retry: `npx @catalyst-cloud/catalyst-skills login`, which logs the person in keyless in their browser; with a personal key from Settings → API keys instead, prefix it with `CATALYST_CLOUD_TOKEN=<your personal key>`. Never guess a tenant; the login (or the key) is the only selector.
 - Waiting is not failing. "No write observed", "no delivery observed" and "no host connected" clear themselves the first time the thing happens; say that instead of raising them.
 - Unknown is not a pass. A check the engine could not run is reported as such, never rounded up.
+- **Give numbers and a time.** Say how many are `pass`, `fail` and `unknown`, and when the team verdicts were computed: `readiness.checkedAt` per team on the contract, null when no pass has run.
 - Never run a check in a loop. If the person wants to know when a waiting check clears, that is the project-running skill's watch.

@@ -46,7 +46,7 @@ Some checks degrade a team without ever blocking it, and one is informational on
 | `contract` | the tenant contract is cached and its major version is one this bundle accepts | `catalyst-skills contract --refresh`; a version outside the range means update the bundle. A 403 naming an older cloud means the cloud has not yet deployed personal-key access |
 | `bundle` | the installed CLI is at least the version this tenant requires | `npm install -g @catalyst-cloud/catalyst-skills@latest && catalyst-skills login`; a note, never a failure |
 | `cliPath` | the CLI path recorded at login still exists, so skill scripts can spawn it | re-run login |
-| `skills` | every skill in the Cloud setup and operations pack is present in its install scope; this check does not cover coding workflow skills | read `catalyst-onboard`'s `references/skill-sources.md` and install `coalesce-labs/catalyst-cloud-skills` in the intended scope |
+| `skills` | every skill in the Cloud setup and operations pack is present in its install scope; this check does not cover coding workflow skills | read `catalyst-onboard`'s `references/skill-sources.md` and install `coalesce-labs/catalyst-cloud-skills` in the intended scope. A count lower than what you just installed means the CLI is older than the skills: `ready` counts its own roster, not the folders on disk. Update the CLI (the `bundle` row). Nothing else is affected meanwhile. |
 | `cliRelease` | the installed CLI is not behind the newest published release | the same upgrade command as `bundle`; a note, never a failure |
 | `skillsRelease` | the installed skill files are not behind the newest published bundle | check the active lock and every same-named agent path as described in this pack's README, then re-run `npx skills@latest add coalesce-labs/catalyst-cloud-skills --all -g` for a verified global install or omit `-g` inside a project; stop on independent, changed, or uncertain copies. Re-adding picks up new skills. A line saying the check could not run means the registry was unreachable, not that anything is wrong |
 | `sdk` | the SDK loads, so the replica and the watch are available | the same one command (`npx -y @catalyst-cloud/catalyst-skills runtime install`); every read still works through the API meanwhile |
@@ -76,3 +76,13 @@ The last block `check.mjs` prints groups every failure by the person it needs. M
 ## Setting up one team at a time
 
 A team starts receiving work only once its stages are saved, and that is done one team at a time: a tenant owner or admin opens Settings → Linear teams, picks the team and presses Map my stages (or Adopt the Catalyst workflow). No other team's stages or tickets change; only the labels Adopt creates are shared across the workspace. Before saving, the screen lists which of that team's tickets would start and which stay where they are. Once saved, the tickets in the team's dispatch stage start; tickets in other stages that Catalyst never worked on stay where they are. To pilot safely, pick a low-stakes team, move anything in its dispatch stage that should not start back to Backlog, and leave the other teams unmapped. `gitAutomation` in the contract plays no part: nothing reads it.
+
+Explain every button on a team before you recommend one.
+
+- **Re-check** reads the team's Linear setup again and saves the new verdict. It changes no ticket and no mapping, so an unmapped team stays unmapped. If something is still missing, it files one setup ticket in that team for an admin. Only an owner or admin can press it.
+- **Map my stages** saves a mapping from the team's existing Linear stages onto Catalyst's slots. It needs no write access to Linear and creates nothing.
+- **Adopt the Catalyst workflow** creates the stages the team lacks, plus Catalyst's standard labels. It needs that admin's own Linear authorisation, so the page offers it only when it can run.
+
+Recommend Map my stages when the team's stages already cover the work, and Adopt when they do not. Say which and why.
+
+Adopt creates the hold label a failed phase uses when the team has no remediate stage (`teams[].labels.hold`). Creating a label puts it on no ticket. Seeing it right after Adopt means the label exists, not that anything failed.

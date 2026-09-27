@@ -24,7 +24,7 @@ These are settings pages today because the routes behind them take a browser ses
 | checking a project's readiness, or re-checking it | the same page | "I can read the verdict your tenant last stored, from the contract. Asking for a fresh check is on that page." |
 | mapping stages, or adopting the workflow | the same page, per project | "Pick one project, then **Map my stages** — or **Adopt the Catalyst workflow** if you want Catalyst's stages created for you." |
 | registering a repository | `<their cloud>/settings/repositories` | "Add the repository here, and attach it to the project you just mapped, in the same form." |
-| declaring the environment **for one repository** | that repository's environment section under `<their cloud>/settings/repositories` | "The names only this repository needs go here. Values are entered once, by you — nothing I run ever sees them." (Account-wide names are **not** on this list: `catalyst-skills environment` does those.) |
+| approving the environment **for one repository**, and entering its values | that repository's environment section under `<their cloud>/settings/repositories` | "The names come from `catalyst.env.json` in the repository, which I can write with you. Approving it and entering the values happen here, once, by you. Nothing I run ever sees a value." (Account-wide names are **not** on this list: `catalyst-skills environment` does those.) |
 
 ⛔ **Do not compose a request for any of these.** A skill script never makes a request of its own; only the CLI does, and the CLI has no verb for them. If you find yourself constructing a URL, stop.
 
