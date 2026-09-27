@@ -39,6 +39,27 @@ export interface ContractReadinessCheck {
   /** OPTIONAL (contract 1.24.0, CTC-3547): the declared variable NAMES a `required_values` fail found
    *  with no value. Names only, never a value. An older cloud omits it. */
   names?: readonly string[];
+  /** OPTIONAL (contract 1.24.0, CTC-3547): the subset of `names` that exist as plain variables but
+   *  whose `$NAME` references name a secret with no value. Names only. An older cloud omits it. */
+  unresolved?: readonly ContractUnresolvedValue[];
+  /** OPTIONAL (CTC-2539; `names` / `unresolved` since 1.24.0): the check's findings for the team's
+   *  OTHER registered repositories. An older cloud omits it, or omits the per-repo names. */
+  repos?: readonly ContractReadinessRepoNote[];
+}
+
+/** CTC-3547 — a required variable whose references do not resolve. Both sides are names. */
+export interface ContractUnresolvedValue {
+  name: string;
+  references: readonly string[];
+}
+
+/** CTC-2539 / CTC-3547 — one non-default repository's findings for a team check. */
+export interface ContractReadinessRepoNote {
+  /** `owner/name`. */
+  repo: string;
+  reason?: string;
+  names?: readonly string[];
+  unresolved?: readonly ContractUnresolvedValue[];
 }
 
 /**

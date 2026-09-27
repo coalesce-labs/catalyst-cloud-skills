@@ -168,6 +168,75 @@ describe("ready", () => {
     expect(r.checks.find((c) => c.id === "team:ENG:oauth_scope")!.fix).toBe("open settings for team ENG and resolve oauth_scope");
     expect(r.checks.find((c) => c.id === "team:ENG:required_values")!.fix).toBe("open settings for team ENG and resolve required_values");
   });
+  test("CTC-3606: an unresolved reference names the variable and the reference, and says the checkout refuses it", async () => {
+    await seedJoined(home, server);
+    installSkills(defaultSkillsDirFor(home), {});
+    const cache = JSON.parse(readFileSync(contractPathFor(home), "utf8")) as { doc: { teams: { readiness: { status: string; checks: Record<string, unknown>[] } }[] } };
+    const eng = cache.doc.teams[0]!;
+    eng.readiness.status = "degraded";
+    // DATABASE_URL is `$DB_SECRET` and DB_SECRET has no value. A value-shaped key rides along to prove only names are read.
+    eng.readiness.checks.push({
+      id: "required_values",
+      state: "fail",
+      names: ["DATABASE_URL"],
+      unresolved: [{ name: "DATABASE_URL", references: ["DB_SECRET"], value: "postgres://never_printed" }],
+    });
+    writeFileSync(contractPathFor(home), JSON.stringify(cache));
+    expect(await main(["ready"], ctx)).toBe(1);
+    const text = ctx.out.join("\n");
+    expect(text).toContain("fix: DATABASE_URL references DB_SECRET, which has no value; the checkout refuses it before work starts");
+    // An unresolved variable exists; it is not told to be set.
+    expect(text).not.toContain("set DATABASE_URL");
+    expect(text).not.toContain("never_printed");
+  });
+  test("CTC-3606: missing names, unresolved references and other repositories' missing names share one fix line", async () => {
+    await seedJoined(home, server);
+    const cache = JSON.parse(readFileSync(contractPathFor(home), "utf8")) as { doc: { teams: { readiness: { checks: Record<string, unknown>[] } }[] } };
+    cache.doc.teams[0]!.readiness.checks.push({
+      id: "required_values",
+      state: "fail",
+      names: ["API_URL", "DATABASE_URL"],
+      unresolved: [{ name: "DATABASE_URL", references: ["DB_SECRET", "DB_HOST"] }],
+      repos: [
+        { repo: "acme/billing", reason: "required_value_missing", names: ["STRIPE_KEY"] },
+        { repo: "acme/web", reason: "required_value_missing", names: ["SENTRY_DSN"], unresolved: [{ name: "SENTRY_DSN", references: ["SENTRY_TOKEN"] }] },
+        { repo: "acme/docs", reason: "required_value_missing" },
+      ],
+    });
+    writeFileSync(contractPathFor(home), JSON.stringify(cache));
+    const r = await readyReport(ctx, { skillNames: CUSTOMER_SKILLS, offline: true });
+    expect(r.checks.find((c) => c.id === "team:ENG:required_values")!.fix).toBe(
+      "set API_URL on the repository's Environment page under Settings → Repositories (team ENG; it has no value at repository or account scope). " +
+        "DATABASE_URL references DB_SECRET, DB_HOST, which have no value; the checkout refuses it before work starts. " +
+        "acme/billing is missing STRIPE_KEY. " +
+        "in acme/web, SENTRY_DSN references SENTRY_TOKEN, which has no value; the checkout refuses it before work starts",
+    );
+  });
+  test("CTC-3606: a check whose only finding is another repository's missing names names that repository", async () => {
+    await seedJoined(home, server);
+    const cache = JSON.parse(readFileSync(contractPathFor(home), "utf8")) as { doc: { teams: { readiness: { checks: Record<string, unknown>[] } }[] } };
+    cache.doc.teams[0]!.readiness.checks.push({
+      id: "required_values",
+      state: "fail",
+      repos: [{ repo: "owner/repo", reason: "required_value_missing", names: ["STRIPE_KEY"] }],
+    });
+    writeFileSync(contractPathFor(home), JSON.stringify(cache));
+    const r = await readyReport(ctx, { skillNames: CUSTOMER_SKILLS, offline: true });
+    expect(r.checks.find((c) => c.id === "team:ENG:required_values")!.fix).toBe("owner/repo is missing STRIPE_KEY");
+  });
+  test("CTC-3606: malformed unresolved and repos entries are dropped, and a check left with nothing keeps the generic line", async () => {
+    await seedJoined(home, server);
+    const cache = JSON.parse(readFileSync(contractPathFor(home), "utf8")) as { doc: { teams: { readiness: { checks: Record<string, unknown>[] } }[] } };
+    cache.doc.teams[0]!.readiness.checks.push({
+      id: "required_values",
+      state: "fail",
+      unresolved: [{ name: "DATABASE_URL", references: [] }, { references: ["X"] }, null, "junk"],
+      repos: [{ names: ["STRIPE_KEY"] }, { repo: "owner/repo", names: [] }, null],
+    });
+    writeFileSync(contractPathFor(home), JSON.stringify(cache));
+    const r = await readyReport(ctx, { skillNames: CUSTOMER_SKILLS, offline: true });
+    expect(r.checks.find((c) => c.id === "team:ENG:required_values")!.fix).toBe("open settings for team ENG and resolve required_values");
+  });
   test("CTC-3561: the bundle's contract range accepts 1.24.0, the version that ships names", async () => {
     const { contractVersionInRange } = await import("../src/contract");
     expect(contractVersionInRange("1.24.0", readManifest().tenantContractRange)).toBe(true);
