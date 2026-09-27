@@ -1,6 +1,6 @@
 # The one path
 
-Eight steps, in this order. The order is the product's own: the tenant-side steps run Linear, then the project, then GitHub, then the repository, because each one is the cheapest place to catch the failure the next one would otherwise hide.
+Nine steps, in this order. The order is the product's own: the tenant-side steps run Linear, then the project, then GitHub, then the repository, because each one is the cheapest place to catch the failure the next one would otherwise hide.
 
 Walk them **one at a time**. Before each step say what you are about to do and why; after it, show what actually came back. `node scripts/where-am-i.mjs --next` decides which step you are on — never your memory of the last turn.
 
@@ -116,19 +116,25 @@ Add `--approve` to approve exactly the revision that propose just returned, whic
 
 **Owner:** you can read it from any active seat; proposing and approving need an admin or owner seat, and the cloud refuses with that sentence if the person does not have one — read the refusal to them rather than retrying.
 
-⛔ **Values never pass through you.** The declaration carries the *names* a build needs. The values are entered by the person, once, in the app, and nothing you run ever sees them. Say that plainly; a person asked for a secret by an agent is right to be suspicious.
-
-**Repository scope is a committed file.** The names one repository needs go in `catalyst.env.json` at its root, through a pull request. An owner or admin approves it, and the person enters its values, in that repository's environment section under `<their cloud>/settings/repositories`. See `references/declaring-a-repository.md`.
+⛔ **Values never pass through you.** The declaration carries the *names* a build needs. The values are entered by the person, once, in the app, and nothing you run ever sees them. Say that plainly; a person asked for a secret by an agent is right to be suspicious. The names one repository needs go in its own committed `catalyst.env.json`. See `references/declaring-a-repository.md`.
 
 If they do not know what their build needs yet, skip this step. It blocks nothing until a phase needs a secret.
 
 ---
 
-## 8 — Verify, then run the first ticket
+## 8 — A coding account, and a host
+
+**For:** what a phase runs on. Without an enrolled coding account and a passing host check, every step above can be done and nothing starts.
+
+**You run:** it is already in the script, as the `coding accounts` and `host` parts. What each reading means, who owns it, and what to hand over are in `references/what-a-phase-needs.md`. A tenant owner or admin enrols the account; the host belongs to the owner the contract names.
+
+---
+
+## 9 — Verify, then run the first ticket
 
 **For:** the only thing that proves setup worked.
 
-**You run:** `catalyst-skills ready`. Read them the verdict and every failing line, each with its own fix and owner. If it says NOT READY, go to `references/who-fixes-what.md` before you touch anything — a project check failing is not something re-running anything on this machine can fix.
+**You run:** `catalyst-skills ready`. Its READY does not cover step 8; the script does. Read them the verdict and every failing line, each with its own fix and owner. If it says NOT READY, go to `references/who-fixes-what.md` before you touch anything — a project check failing is not something re-running anything on this machine can fix.
 
 **Then:** have them move one card into the project's dispatch stage, and watch. `catalyst-skills explain <ticket>` says why it is or is not about to run.
 
@@ -140,4 +146,4 @@ If they do not know what their build needs yet, skip this step. It blocks nothin
 
 ## When you are done
 
-Say what is set up, name anything still unfinished with its owner, and tell them the standing question "am I set up?" now belongs to the `catalyst-setup` skill, and "what's happening?" to `whats-happening`. You do not need to be invoked again.
+Say what is set up, name anything still unfinished with its owner, and never say work can run while the `coding accounts` or `host` part is unfinished, and tell them the standing question "am I set up?" now belongs to the `catalyst-setup` skill, and "what's happening?" to `whats-happening`. You do not need to be invoked again.

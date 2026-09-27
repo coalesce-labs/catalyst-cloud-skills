@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// where-am-i.mjs — how far has setup got? FIVE PARTS, EACH READ BY THE INSTRUMENT THAT OWNS IT, and
+// where-am-i.mjs — how far has setup got? SEVEN PARTS, EACH READ BY THE INSTRUMENT THAT OWNS IT, and
 // each finding labelled with the part it belongs to. The whole point of this script is that no part
 // answers for another: a project that is not ready is reported as a project finding with a tenant
 // owner's name on it, never as something the person at this keyboard can fix by running anything.
@@ -13,7 +13,8 @@ const SPEC = {
 };
 const NOTES = [
   "Reads, in this order: `status` (machine), `ready --json` (machine checks and project checks, kept apart),",
-  "`me --json` (person), and `contract --path …` for the account, the projects and the repositories.",
+  "`me --json` (person), `contract --path …` for the account, the projects and the repositories,",
+  "`accounts --json` (coding accounts), and each project's hosts_current check (host).",
   "Writes nothing and changes nothing. Runs before this machine is connected — that is one of the states it reports.",
 ];
 
@@ -162,6 +163,8 @@ if (!connected) {
   }
 }
 
+// The host part reads the same rows, so they are kept rather than read twice.
+let teamRows = null;
 // ── projects (a project is one Linear team) ───────────────────────────────────────────────────────
 if (!connected) {
   add("projects", "catalyst-skills contract --path teams", "unreadable", ["not readable until this machine is connected"], null, null);
@@ -169,6 +172,7 @@ if (!connected) {
   const teams = runCli(["contract", "--path", "teams", "--json"]);
   const doc = tryJson(teams.stdout);
   const rows = Array.isArray(doc) ? doc : null;
+  teamRows = rows;
   if (rows === null) {
     add("projects", "catalyst-skills contract --path teams", "unreadable", ["the project list could not be read — try: catalyst-skills contract --refresh"], null, null);
   } else {
@@ -212,6 +216,56 @@ if (!connected) {
   }
 }
 
+// ── coding accounts ───────────────────────────────────────────────────────────────────────────────
+// A phase runs on one of the tenant's enrolled coding accounts. With none, every step above can be
+// finished and nothing will ever start, so this part blocks the "ready" line like any other.
+if (!connected) {
+  add("coding accounts", "catalyst-skills accounts", "unreadable", ["not readable until this machine is connected"], null, null);
+} else {
+  const res = runCli(["accounts", "--json"]);
+  const doc = tryJson(res.stdout);
+  const rows = Array.isArray(doc) ? doc : Array.isArray(doc?.accounts) ? doc.accounts : null;
+  if (rows === null) {
+    add("coding accounts", "catalyst-skills accounts", "unreadable", [`coding accounts could not be read (${(res.stderr || res.stdout).trim().split("\n")[0] || "no output"})`], null, null);
+  } else {
+    // An expired or revoked slot, or a quarantined one, cannot take work until an admin acts on it.
+    const usable = rows.filter((a) => a?.status !== "expired-or-revoked" && a?.quarantined !== true);
+    const lines = [`${rows.length} enrolled, ${usable.length} able to take work`];
+    for (const a of rows) lines.push(`${a.accountSlot ?? "?"}: ${a.provider ?? "?"}, ${a.status ?? "status unknown"}${a.quarantined ? ", quarantined" : ""}`);
+    if (usable.length === 0) lines.push("no phase can start until one is enrolled and able to take work");
+    add("coding accounts", "catalyst-skills accounts", usable.length > 0 ? "ok" : "unfinished", lines, "a tenant owner or admin", link("/settings/coding-accounts"));
+  }
+}
+
+// ── host ──────────────────────────────────────────────────────────────────────────────────────────
+// Read off the contract, never assumed: each checked project carries a hosts_current check, and the
+// contract says who owns it. The check is account-wide, so any one project's reading is the answer.
+// A tenant that runs no host of its own reads `pass` here, and then nothing is asked of anyone.
+if (!connected) {
+  add("host", "hosts_current in catalyst-skills contract --path teams", "unreadable", ["not readable until this machine is connected"], null, null);
+} else {
+  const checks = (teamRows ?? []).flatMap((t) => (Array.isArray(t.readiness?.checks) ? t.readiness.checks : []).filter((c) => c.id === "hosts_current").map((c) => ({ ...c, team: t.key ?? t.id ?? "(unkeyed)" })));
+  const meta = tryJson(runCli(["contract", "--path", "readinessChecks", "--json"]).stdout);
+  const row = Array.isArray(meta) ? meta.find((r) => r.id === "hosts_current") : null;
+  const hc = checks.find((c) => c.state === "fail") ?? checks.find((c) => c.state === "unknown") ?? checks[0] ?? null;
+  // The contract's printed line for this owner is written for a host that is behind. When no host is
+  // connected there is nothing behind, so the owner is named by its id instead of by that sentence.
+  const owner = row?.fixedBy === undefined
+    ? "the contract names no owner for hosts_current"
+    : hc?.state === "fail" && typeof row.fixedByLine === "string"
+      ? row.fixedByLine
+      : `the host operator (the contract's owner for hosts_current: ${row.fixedBy})`;
+  const how = "connect a Catalyst host to this account; the contract names no page for it, so ask the owner above";
+  if (hc === null) {
+    add("host", "hosts_current in catalyst-skills contract --path teams", "unreadable", [teamRows === null ? "the project list could not be read, so the host check cannot be either" : "no project has a readiness check yet, so whether a host is connected cannot be read. Press Re-check on the projects page."], "a tenant owner or admin", link("/settings/linear-teams"));
+  } else if (hc.state === "pass") {
+    add("host", "hosts_current in catalyst-skills contract --path teams", "ok", [`hosts_current pass (read on ${hc.team})`]);
+  } else {
+    const detail = hc.reason === "no_host_connected" ? "no Catalyst host is connected" : hc.reason === "hosts_behind" ? "a connected host runs an older mapping" : hc.reason === "hosts_unreported" ? "a host is connected but has not reported what it loaded" : `state ${hc.state}`;
+    add("host", "hosts_current in catalyst-skills contract --path teams", "unfinished", [`hosts_current ${hc.state}${hc.reason ? ` (${hc.reason})` : ""} on ${hc.team}: ${detail}`], owner, how);
+  }
+}
+
 // ── the single next step ──────────────────────────────────────────────────────────────────────────
 // The machine's next action is not one sentence: an unconnected machine needs the login, and a
 // connected one needs whatever check failed — and `ready` already printed that check's own fix, so
@@ -225,6 +279,8 @@ const NEXT = {
   account: "connect Linear, and install the GitHub App",
   projects: "pick ONE project and map its stages (or adopt the Catalyst workflow)",
   repositories: "register the repository, attaching it to the project you mapped",
+  "coding accounts": "enrol a coding account a phase can run on",
+  host: "connect a Catalyst host",
 };
 const blocked = parts.filter((p) => p.verdict !== "ok" && p.blocking);
 const stuck = blocked[0] ?? parts.find((p) => p.verdict !== "ok") ?? null;
@@ -237,7 +293,7 @@ const finished = parts.every((p) => p.verdict === "ok");
 if (flags.json) {
   console.log(JSON.stringify({ cli: via, connected, cloud, parts, next, finished }));
 } else if (flags.next) {
-  if (next === null) console.log("nothing left: every part this machine can read is finished. Move one card into the project's dispatch stage.");
+  if (next === null) console.log("nothing left: every part is finished, a coding account is enrolled and the host check passes. Move one card into the project's dispatch stage.");
   else console.log(`${next.part}: ${next.action}${next.blocking ? "" : " (does not block the steps below)"}${next.owner ? ` — who: ${next.owner}` : ""}${next.where ? ` — ${next.where.startsWith("http") ? "where" : "do"}: ${next.where}` : ""}`);
 } else {
   for (const p of parts) {
