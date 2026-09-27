@@ -36,6 +36,7 @@ Setup is five parts. Each has one instrument, and each instrument answers about 
 
 ## When to stop rather than continue
 
+- **They have no account yet.** There is no self-serve sign-up. Coalesce Labs provisions each account, and a person joins one by invitation from its admin. Say so and stop; the next step is theirs.
 - **The account is suspended.** Setup cannot proceed and no retry changes that. Say so and name the conversation they need to have.
 - **Their seat is not active, or they are not an owner or admin where one is required.** Say who is, and what to ask for. Do not offer a workaround.
 - **A page said it worked and the instrument still disagrees.** Refresh the contract once (`catalyst-skills contract --refresh`) and read it again. If it still disagrees, report both facts — what the page said and what the instrument says — and let the person decide. Do not pick one for them.
