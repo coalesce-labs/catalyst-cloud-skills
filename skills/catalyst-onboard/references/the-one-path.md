@@ -126,7 +126,7 @@ If they do not know what their build needs yet, skip this step. It blocks nothin
 
 **For:** what a phase runs on. Without an enrolled coding account and a passing host check, every step above can be done and nothing starts.
 
-**You run:** it is already in the script, as the `coding accounts` and `host` parts. What each reading means, who owns it, and what to hand over are in `references/what-a-phase-needs.md`. A tenant owner or admin enrols the account; the host belongs to the owner the contract names.
+**You run:** it is already in the script, as the `coding accounts` and `host` parts. What each reading means, who owns it, and what to hand over are in `references/what-a-phase-needs.md`. The contract names who enrols the account and who owns the host.
 
 ---
 

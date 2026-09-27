@@ -14,7 +14,8 @@ const SPEC = {
 const NOTES = [
   "Reads, in this order: `status` (machine), `ready --json` (machine checks and project checks, kept apart),",
   "`me --json` (person), `contract --path …` for the account, the projects and the repositories,",
-  "`accounts --json` (coding accounts), and each project's hosts_current check (host).",
+  "`contract --path codingAccounts` (coding accounts; `accounts --json` on an older cloud), and each",
+  "project's hosts_current check with its fixedWhere (host).",
   "Writes nothing and changes nothing. Runs before this machine is connected — that is one of the states it reports.",
 ];
 
@@ -219,21 +220,50 @@ if (!connected) {
 // ── coding accounts ───────────────────────────────────────────────────────────────────────────────
 // A phase runs on one of the tenant's enrolled coding accounts. With none, every step above can be
 // finished and nothing will ever start, so this part blocks the "ready" line like any other.
+// The contract says the state, its sentence, who enrolls one and on which page. An older cloud's
+// contract has no `codingAccounts`, and only then is the account list read and the owner assumed.
+let accountsNext = "enrol a coding account a phase can run on";
 if (!connected) {
-  add("coding accounts", "catalyst-skills accounts", "unreadable", ["not readable until this machine is connected"], null, null);
+  add("coding accounts", "codingAccounts in catalyst-skills contract", "unreadable", ["not readable until this machine is connected"], null, null);
 } else {
-  const res = runCli(["accounts", "--json"]);
-  const doc = tryJson(res.stdout);
-  const rows = Array.isArray(doc) ? doc : Array.isArray(doc?.accounts) ? doc.accounts : null;
-  if (rows === null) {
-    add("coding accounts", "catalyst-skills accounts", "unreadable", [`coding accounts could not be read (${(res.stderr || res.stdout).trim().split("\n")[0] || "no output"})`], null, null);
+  const res = runCli(["contract", "--path", "codingAccounts", "--json"]);
+  const ca = tryJson(res.stdout);
+  const older = ca === null && /has nothing at/.test(res.stderr ?? "");
+  const INSTRUMENT = "codingAccounts in catalyst-skills contract";
+  if (ca !== null && typeof ca === "object" && typeof ca.state === "string") {
+    const line = typeof ca.line === "string" ? ca.line : `state ${ca.state}`;
+    const owner = typeof ca.enrolledByLine === "string" ? ca.enrolledByLine : null;
+    const where = typeof ca.page === "string" ? link(ca.page) : null;
+    if (ca.state === "enrolled") {
+      add("coding accounts", INSTRUMENT, "ok", [line, `${ca.activeCount ?? "?"} active`]);
+    } else if (ca.state === "inactive") {
+      accountsNext = "reactivate a coding account that is out of rotation; do not enroll another one";
+      add("coding accounts", INSTRUMENT, "unfinished", [line, "Every account is out of rotation. Reactivate one. Do not enroll another account."], owner, where);
+    } else if (ca.state === "none_enrolled") {
+      add("coding accounts", INSTRUMENT, "unfinished", [line, "no phase can start until one is enrolled"], owner, where);
+    } else {
+      // `unread`, or a state this bundle does not know: could not look is not the same as none there.
+      accountsNext = "read the coding accounts again; the cloud could not read them this time";
+      add("coding accounts", INSTRUMENT, "unreadable", [line, "This is not a missing account. Do not enroll one on this reading. Run this again later."], null, null);
+    }
+  } else if (older) {
+    const acc = runCli(["accounts", "--json"]);
+    const doc = tryJson(acc.stdout);
+    const rows = Array.isArray(doc) ? doc : Array.isArray(doc?.accounts) ? doc.accounts : null;
+    const olderLine = "this cloud is older than the bundle: its contract does not say whether a coding account is enrolled, so the account list is read instead";
+    if (rows === null) {
+      add("coding accounts", "catalyst-skills accounts", "unreadable", [olderLine, `coding accounts could not be read (${(acc.stderr || acc.stdout).trim().split("\n")[0] || "no output"})`], null, null);
+    } else {
+      // An expired or revoked slot, or a quarantined one, cannot take work until an admin acts on it.
+      const usable = rows.filter((a) => a?.status !== "expired-or-revoked" && a?.quarantined !== true);
+      const lines = [olderLine, `${rows.length} enrolled, ${usable.length} able to take work`];
+      for (const a of rows) lines.push(`${a.accountSlot ?? "?"}: ${a.provider ?? "?"}, ${a.status ?? "status unknown"}${a.quarantined ? ", quarantined" : ""}`);
+      if (usable.length === 0) lines.push("no phase can start until one is enrolled and able to take work");
+      add("coding accounts", "catalyst-skills accounts", usable.length > 0 ? "ok" : "unfinished", lines, "a tenant owner or admin", link("/settings/coding-accounts"));
+    }
   } else {
-    // An expired or revoked slot, or a quarantined one, cannot take work until an admin acts on it.
-    const usable = rows.filter((a) => a?.status !== "expired-or-revoked" && a?.quarantined !== true);
-    const lines = [`${rows.length} enrolled, ${usable.length} able to take work`];
-    for (const a of rows) lines.push(`${a.accountSlot ?? "?"}: ${a.provider ?? "?"}, ${a.status ?? "status unknown"}${a.quarantined ? ", quarantined" : ""}`);
-    if (usable.length === 0) lines.push("no phase can start until one is enrolled and able to take work");
-    add("coding accounts", "catalyst-skills accounts", usable.length > 0 ? "ok" : "unfinished", lines, "a tenant owner or admin", link("/settings/coding-accounts"));
+    accountsNext = "read the coding accounts again; the contract could not be read";
+    add("coding accounts", INSTRUMENT, "unreadable", [`the contract could not be read (${(res.stderr || res.stdout).trim().split("\n").pop() || "no output"}); try: catalyst-skills contract --refresh`], null, null);
   }
 }
 
@@ -255,14 +285,18 @@ if (!connected) {
     : hc?.state === "fail" && typeof row.fixedByLine === "string"
       ? row.fixedByLine
       : `the host operator (the contract's owner for hosts_current: ${row.fixedBy})`;
-  const how = "connect a Catalyst host to this account; the contract names no page for it, so ask the owner above";
+  // Where the owner acts comes from the contract's `fixedWhere`. Null (every fixer today, and absent on
+  // an older cloud) means no page exists, so the owner sentence is printed alone and no page is made up.
+  const fw = row?.fixedWhere && typeof row.fixedWhere.page === "string" ? row.fixedWhere : null;
+  const how = fw === null ? null : link(fw.page);
+  const howLines = fw?.command ? [`the owner runs: ${fw.command}`] : [];
   if (hc === null) {
     add("host", "hosts_current in catalyst-skills contract --path teams", "unreadable", [teamRows === null ? "the project list could not be read, so the host check cannot be either" : "no project has a readiness check yet, so whether a host is connected cannot be read. Press Re-check on the projects page."], "a tenant owner or admin", link("/settings/linear-teams"));
   } else if (hc.state === "pass") {
     add("host", "hosts_current in catalyst-skills contract --path teams", "ok", [`hosts_current pass (read on ${hc.team})`]);
   } else {
     const detail = hc.reason === "no_host_connected" ? "no Catalyst host is connected" : hc.reason === "hosts_behind" ? "a connected host runs an older mapping" : hc.reason === "hosts_unreported" ? "a host is connected but has not reported what it loaded" : `state ${hc.state}`;
-    add("host", "hosts_current in catalyst-skills contract --path teams", "unfinished", [`hosts_current ${hc.state}${hc.reason ? ` (${hc.reason})` : ""} on ${hc.team}: ${detail}`], owner, how);
+    add("host", "hosts_current in catalyst-skills contract --path teams", "unfinished", [`hosts_current ${hc.state}${hc.reason ? ` (${hc.reason})` : ""} on ${hc.team}: ${detail}`, ...howLines], owner, how);
   }
 }
 
@@ -279,7 +313,7 @@ const NEXT = {
   account: "connect Linear, and install the GitHub App",
   projects: "pick ONE project and map its stages (or adopt the Catalyst workflow)",
   repositories: "register the repository, attaching it to the project you mapped",
-  "coding accounts": "enrol a coding account a phase can run on",
+  "coding accounts": accountsNext,
   host: "connect a Catalyst host",
 };
 const blocked = parts.filter((p) => p.verdict !== "ok" && p.blocking);
