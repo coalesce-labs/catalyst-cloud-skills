@@ -4,17 +4,22 @@ A person can finish every other step and still see nothing run. A phase needs tw
 
 ## Coding accounts
 
-**For:** a phase runs on one of the tenant's own enrolled coding accounts. With none, no phase can start.
+**For:** a phase runs on one of the tenant's own enrolled coding accounts. With none active, no phase can start.
 
-**Instrument:** `catalyst-skills accounts`. It lists each enrolled account with its provider and status. It never shows a credential or an email.
+**Instrument:** `codingAccounts` in `catalyst-skills contract`. It carries a `state`, a printable `line`, who enrolls an account (`enrolledByLine`) and the `page`. The script prints all of them. It never shows a credential or an email.
 
-**You hand over:** `<their cloud>/settings/coding-accounts`, and say: enrol one coding account. The script prints the exact link.
+**What each state means:**
 
-**Read back:** re-run the script and read the `coding accounts` part. It counts the accounts enrolled and the ones able to take work. An account that is expired, revoked or quarantined does not count. Say which it is.
+| state | what it says | what to do |
+| -- | -- | -- |
+| `enrolled` | at least one account is active | nothing |
+| `none_enrolled` | no account is enrolled | hand over the page; the enroller the contract names enrols one |
+| `inactive` | accounts exist, but every one is out of rotation | reactivate one on the page. Never tell them to enrol another |
+| `unread` | the cloud could not read the accounts | say it could not be read. It is not "no accounts". Do not tell them to enrol one; read it again later |
 
-**Owner:** a tenant owner or admin, in the browser. The person enrols the credential there. Never ask for it, and never handle it. A key cannot enrol one.
+**Owner:** the one the contract names. The person does it in the browser. Never ask for the credential, and never handle it. A key cannot enrol one.
 
-If the command says the cloud is older than the bundle, the tenant's cloud cannot report accounts yet. Say so. Do not read that as "no accounts".
+**Older cloud:** if the contract has no `codingAccounts`, the script says the cloud is older and reads `catalyst-skills accounts` instead. That list counts the accounts enrolled and the ones able to take work. An expired, revoked or quarantined account does not count. The owner is then a tenant owner or admin, at `<their cloud>/settings/coding-accounts`.
 
 ## Host
 
@@ -32,7 +37,7 @@ If the command says the cloud is older than the bundle, the tenant's cloud canno
 | `fail`, `hosts_behind` | a connected host runs an older mapping | name the owner |
 | the part reads `unreadable` | no project has been checked yet | press Re-check on the projects page, then read it again |
 
-**Owner:** the contract names the host operator. The script prints the owner the contract gives. The contract names no page for connecting a host, so do not invent one. Say who owns it and that they connect it.
+**Owner:** the contract names the owner of `hosts_current`, and where they act in its `fixedWhere`. When `fixedWhere` has a page, the script prints it, and the command too when there is one. When it is null, which it is today, the script prints the owner sentence alone. Then there is no page, so do not invent one. Say who owns it and that they connect it.
 
 ⛔ `catalyst-skills ready` treats this check as a note, so it can print READY while no host is connected. READY there is not proof a phase can run. The `host` part is.
 
