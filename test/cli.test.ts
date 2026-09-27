@@ -156,6 +156,9 @@ describe("sdk loader", () => {
       throw new Error("ERR_SOMETHING: nope\nsecond line");
     }).catch((e: unknown) => e)) as Error;
     expect(err.message).toMatch(/could not be loaded on Node .*: ERR_SOMETHING: nope — this verb needs the SDK/);
+    expect(err.message).toContain("22.15");
+    expect(err.message).toContain("npx -y @catalyst-cloud/catalyst-skills runtime install");
+    expect(err.message).not.toMatch(/or under bun/);
     resetSdkCache();
     expect(typeof (await loadSdk()).nodeSqliteEngine).toBe("function");
     expect(await loadSdk()).toBe(await loadSdk());
