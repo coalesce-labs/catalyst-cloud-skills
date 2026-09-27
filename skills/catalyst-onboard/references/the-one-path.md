@@ -118,7 +118,7 @@ Add `--approve` to approve exactly the revision that propose just returned, whic
 
 ⛔ **Values never pass through you.** The declaration carries the *names* a build needs. The values are entered by the person, once, in the app, and nothing you run ever sees them. Say that plainly; a person asked for a secret by an agent is right to be suspicious.
 
-⛔ **Repository scope is still a page.** Anything only one repository needs lives in that repository's environment section under `<their cloud>/settings/repositories`, and the route behind it takes a browser session, not a key. Account scope is the half that is a command.
+**Repository scope is a committed file.** The names one repository needs go in `catalyst.env.json` at its root, through a pull request. An owner or admin approves it, and the person enters its values, in that repository's environment section under `<their cloud>/settings/repositories`. See `references/declaring-a-repository.md`.
 
 If they do not know what their build needs yet, skip this step. It blocks nothing until a phase needs a secret.
 

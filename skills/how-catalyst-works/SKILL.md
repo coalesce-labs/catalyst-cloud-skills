@@ -26,6 +26,7 @@ Exit codes: 0 answered, 1 not found or a usage error, 2 this machine is not conn
 
 | when | read |
 | -- | -- |
+| "what is Catalyst Cloud?", "what changes for me?" | `references/what-catalyst-is.md` |
 | "what are the phases, what does each produce, when is a ticket Done?" | `references/the-ladder.md` |
 | "which column is which, why does nothing dispatch, what is a slot?" | `references/stages-and-mapping.md` |
 | a phase FAILED, a card went to Remediate, a ticket is parked or on hold | `references/when-a-phase-fails.md` |

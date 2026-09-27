@@ -33,6 +33,7 @@ Start every session with it, and run it again after every step the person comple
 | the person asks what Catalyst actually is, or how a ticket gets worked | the `how-catalyst-works` skill |
 | the machine will not connect, or a login expired | the `connect-me` skill |
 | the person asks how to install, update, or migrate Catalyst skills | `references/skill-sources.md` |
+| the person's repository needs environment names declared | `references/declaring-a-repository.md` |
 | setup is finished and they want the standing readiness verdict | the `catalyst-setup` skill |
 | the first ticket did not start and you need the reason | the `how-catalyst-works` skill, then `unstick` |
 
@@ -44,8 +45,12 @@ Start every session with it, and run it again after every step the person comple
 - **Not ready is a question about who, not a reason to retry.** When something reports not ready, name which check, who can fix it, and where. If the owner is not the person in front of you, say so and stop — re-running a local command cannot move a check that belongs to a tenant owner, an admin, or a browser page.
 - **Never invent a count or a list.** Every number and every name comes from what a command printed. If you want to tell them how many projects are mapped, read it off the script's output; do not carry one over from an earlier turn.
 - **Three steps belong to a browser and always will**: approving the login, connecting Linear, and installing the GitHub App. Hand over the page and say what you need back. Do not claim you did them.
-- **Some steps a key cannot do yet.** Listing every project, saving a stage mapping, adopting the workflow, registering a repository and declaring one repository's environment are settings-page work today; a key-callable path for them is being built. Route those through the browser and say plainly that it is a gap, not the design. Never guess at a route for them.
+- **Some steps a key cannot do yet.** Listing every project, saving a stage mapping, adopting the workflow, registering a repository and approving one repository's environment are settings-page work today; a key-callable path for them is being built. Route those through the browser and say plainly that it is a gap, not the design. Never guess at a route for them.
 - **The account-wide environment declaration is the exception, and the one setup write you can perform.** `catalyst-skills environment` reads it, proposes it and approves it. Use the verb; do not send them to a page for it.
 - **Their tenant, as them.** Everything goes through the CLI and the person's own login. You never name another tenant, and you never ask for a key you could avoid — the keyless login needs nothing pasted.
 - **Use the right skill source.** This tenant onboarding skill comes from `catalyst-cloud-skills`. Coding workflows come from `catalyst-dev-skills`. Never direct a person to install skills from the deprecated local runtime or its `catalyst-dev@catalyst` plugin.
+- **Write like a capable colleague.** Plain words, short sentences, one idea each, active voice. Say what a thing does with a fact or a number. No em dashes, no emoji, no chatbot openers or flattery, and bold only the rare thing. Reread each message before you send it and fix what sounds machine-written.
+- **Ask once before you write to their machine.** Say what you found, what you will write and where, then wait for a yes. A skill migration asks again before each removal.
+- **A blocked command is the person's call.** If the harness blocks `npx`, a global `npm install -g`, or a tool permission, ask for approval or hand them the command. Never skip it silently, never edit your own permission settings, and never report a step you did not see succeed.
+- **An older cloud is not a broken command.** When the CLI says the cloud is older than the bundle, say so and move on. The command exists; this tenant's cloud has not deployed it yet.
 - **Stop at a wall you cannot pass.** A suspended account, a seat that is not active, a person who is not an owner or admin where one is required: say what you found, name who can act, and stop. Do not loop.
