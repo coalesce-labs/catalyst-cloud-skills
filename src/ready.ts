@@ -6,7 +6,7 @@ import { join } from "node:path";
 import type { ParsedArgs } from "./args.js";
 import { defaultSkillsDirFor, loadConfig, readManifest, type Ctx, type CustomerConfig } from "./config.js";
 import { contractVersionInRange, readContractCache } from "./contract.js";
-import type { TenantContract } from "./contract-types.js";
+import type { ContractReadinessCheck, TenantContract } from "./contract-types.js";
 import { CliError } from "./errors.js";
 import { latestPublishedVersion, type PublishedLookup } from "./published.js";
 import { replicaStatus, writerIsRunning, type ReplicaStatus } from "./replica.js";
@@ -81,6 +81,18 @@ export interface ReadyDeps {
   fetchLatestRelease?: () => Promise<PublishedLookup>;
   /** Skip the published-release lookup entirely (--offline / CATALYST_SKILLS_OFFLINE=1). */
   offline?: boolean;
+}
+
+/** A team check's fix line. A check that carries `names` (CTC-3561: `required_values`, contract
+ *  1.24.0) names them and where to set them; the names are declared identifiers, never values, and
+ *  nothing here reads a value. Any other check keeps the generic line. */
+function teamCheckFix(label: string, c: ContractReadinessCheck): string {
+  const names = Array.isArray(c.names) ? c.names.filter((n): n is string => typeof n === "string" && n.length > 0) : [];
+  if (names.length === 0) return `open settings for team ${label} and resolve ${c.id}`;
+  return (
+    `set ${names.join(", ")} on the repository's Environment page under Settings → Repositories ` +
+    `(team ${label}; ${names.length === 1 ? "it has" : "they have"} no value at repository or account scope)`
+  );
 }
 
 function whoCanAnswer(doc: TenantContract): string {
@@ -281,7 +293,7 @@ export async function readyReport(ctx: Ctx, deps: ReadyDeps): Promise<ReadyRepor
           ok: !needsAnswer && c.state !== "fail",
           note: !needsAnswer,
           line: `team ${label}: ${c.id} is ${c.state}${c.reason ? ` (${c.reason}${c.count !== undefined ? ` ×${c.count}` : ""})` : ""}${meta ? `, ${meta.severity}` : ""}`,
-          fix: `open settings for team ${label} and resolve ${c.id}`,
+          fix: teamCheckFix(label, c),
           who: needsAnswer ? who : "nobody yet; it is informational",
         });
       }
