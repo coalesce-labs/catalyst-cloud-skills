@@ -11,6 +11,8 @@ These will never be a command, on any release. Each is an authorization a person
 | approving the login | the URL and short code that `catalyst-skills login` printed | "I have started the login. It printed this code and this URL — approve it in your browser, or on your phone, and tell me when it is done." |
 | connecting Linear | `<their cloud>/settings/connections` | "Open this page and connect Linear. It will send you to Linear to authorize it and bring you back." |
 | installing the GitHub App | `<their cloud>/settings/connections` | "Open the same page and install the GitHub App, granting it the repository you want worked." |
+| connecting personal Linear | the URL printed by `catalyst-skills connections personal linear start` | "Approve your own Linear account in this browser. I will check the grant status afterward." |
+| connecting personal GitHub, after the tenant GitHub App is installed and its repository is registered | the URL printed by `catalyst-skills connections personal github start` | "Approve your own GitHub account in this browser. I will check the grant status afterward." |
 
 Say **by construction**, not "not supported yet". A person who thinks it is a missing feature will wait for it.
 
