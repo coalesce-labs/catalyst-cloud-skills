@@ -30,7 +30,7 @@ The contract's `teams[].workflowMode` reports which one a team is in:
 
 `teams[].gitAutomation` is a stored consent for a feature that is not built yet (Catalyst managing a team's Linear git automations); nothing reads it, so `off` never stops work and turning it on would start none. What decides whether a team's tickets start is the mapping above: until dispatch, pr, done and canceled each point at a live stage, Catalyst starts nothing in that team, and `explain` says so by name.
 
-Stage mappings live in the app, at Settings → Linear teams. The cloud does not read `.catalyst/catalyst.toml` yet, so a mapping written there changes nothing today. An older `.catalyst/config.json` is not imported.
+Stage mappings live in the app, at Settings → Linear teams. The cloud reads each repository's `.catalyst/catalyst.toml`, but that file has no stage-mapping section, so a mapping written there changes nothing. An older `.catalyst/config.json` is not imported.
 
 ## The state id is the authority; names are display
 
