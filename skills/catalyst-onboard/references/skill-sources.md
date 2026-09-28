@@ -18,6 +18,9 @@ Install both packs on a workstation used for coding and tenant operations. Each 
 - The global lock is `$XDG_STATE_HOME/skills/.skill-lock.json` when `XDG_STATE_HOME` is set, else `~/.agents/.skill-lock.json`. A project uses its own `skills-lock.json`.
 - The installer writes relative links. Resolve each with `readlink -f` before you compare paths.
 
+
+The `npx skills add --all` command replaces existing same-named directories and links. Before a first install or refresh on an existing machine, read the lock above. Inspect every same-named agent destination. Proceed only when each destination is absent or a verified, unmodified copy of the intended pack or its symlink. A lock entry alone does not verify every destination. Keep independent, changed, or uncertain copies in place and resolve the conflict before adding either pack. Do not schedule raw add commands as an unattended refresh.
+
 ## Is each pack there
 
 `catalyst-skills ready` checks the Cloud pack only. Check `catalyst-onboard/SKILL.md` (Cloud pack) and `research-codebase/SKILL.md` (development pack) in the intended directory. If both are there, have the person type `/catalyst-onboard` (`$catalyst-onboard` in Codex).
@@ -28,8 +31,8 @@ Inventory source and scope before removing anything:
 
 1. Run `claude plugin list` and record whether `catalyst-dev@catalyst` is installed and at which scope.
 2. Inspect the selected agent's home skill directory and the current project's skill directory separately. Read any `skills-lock.json` files and source/provenance markers. A folder name alone does not prove which repository supplied it. Check whether `.claude/skills` is a symlink to another skills directory before changing either path.
-3. If the old plugin is active, remove only `catalyst-dev@catalyst`: `claude plugin uninstall catalyst-dev@catalyst --scope user --keep-data --yes`. Keep `catalyst-dev@catalyst-dev-skills` and `catalyst@catalyst-cloud`. If old skill copies are present, remove only copies whose recorded source is the deprecated local runtime. Keep unrelated skills and plugin installs.
+3. If the old plugin is active, remove only `catalyst-dev@catalyst`: `claude plugin uninstall catalyst-dev@catalyst --scope user --keep-data --yes`. Keep `catalyst-dev@catalyst-dev-skills` and `catalyst@catalyst-cloud`. For a copied skill whose lock source names the deprecated Catalyst runtime repository, use `npx skills remove <name> -g -y` only when every existing global agent path is that canonical copy or a symlink to it. Omit `-g` for a proven project install and inspect every same-named project agent path first. The command removes that name across agent directories. Leave independent or uncertain copies in place and report the conflict.
 4. Install the replacement pack or packs in the intended scope with the commands above. For the Cloud pack, omit `-g` only when a project-scoped install is intended. Do not use a blanket `npx skills remove --all` during migration.
-5. Read back the plugin list or skill lock and the destination skill folders. Start a new agent session after changing Claude plugins.
+5. Read back the plugin list, the lock for each changed scope, and the destination skill folders. Start a new agent session after changing Claude plugins.
 
 Do not delete a Catalyst checkout, local project data, or a same-named skill whose source is not known. If the source or scope is ambiguous, stop and report what is unclear before removing anything.
