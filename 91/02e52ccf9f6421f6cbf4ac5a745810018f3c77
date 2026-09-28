@@ -1,0 +1,6 @@
+Revision history for #114:
+
+rev 2 (content) 2026-09-28 22:35 UTC — Adds Ryan's text-view line: renderAccount shows 'subscription canceled — retire on the AI accounts page' for renewalStatus canceled.
+rev 1 (initial) 2026-09-28 22:35 UTC
+
+<!-- mergify-revision-data: {"schema_version":1,"pull_number":114,"entries":[{"number":1,"change_type":"initial","old_sha":null,"new_sha":"9b069355ad2c346056240039f8cc94a72734c145","timestamp_iso":"2026-09-28T22:35:48Z","reason":"","replay_sha":null,"compare_url":null},{"number":2,"change_type":"content","old_sha":"9b069355ad2c346056240039f8cc94a72734c145","new_sha":"7b6206cb31476fab50bc5b131b3cbe7259573e38","timestamp_iso":"2026-09-28T22:35:48Z","reason":"Adds Ryan's text-view line: renderAccount shows 'subscription canceled — retire on the AI accounts page' for renewalStatus canceled.","replay_sha":null,"compare_url":"https://github.com/coalesce-labs/catalyst-cloud-skills/compare/9b069355ad2c346056240039f8cc94a72734c145...7b6206cb31476fab50bc5b131b3cbe7259573e38"}]} -->
