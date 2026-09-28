@@ -97,14 +97,15 @@ describe("ready", () => {
     expect(ctx.out.join("\n")).toMatch(/NOT READY$/);
     expect(ctx.out.join("\n")).toMatch(/fix: npx @catalyst-cloud\/catalyst-skills login/);
   });
-  test("a missing cliPath, an out-of-range contract, and a corrupt config each fail by name", async () => {
+  test("a missing cliPath heals to the running launcher; an out-of-range contract and a corrupt config each fail by name", async () => {
     await seedJoined(home, server, { config: { cliPath: `${home}/nope.js` } });
     installSkills(defaultSkillsDirFor(home), {});
     const cache = JSON.parse(readFileSync(contractPathFor(home), "utf8")) as { contractVersion: string };
     writeFileSync(contractPathFor(home), JSON.stringify({ ...cache, contractVersion: "3.0.0" }));
     expect(await main(["ready"], ctx)).toBe(1);
     const text = ctx.out.join("\n");
-    expect(text).toMatch(/^FAIL {2}cliPath: .*does not exist/m);
+    // 0.9.3: a recorded launcher that no longer exists is rewritten to the running one before ready reads it.
+    expect(text).toMatch(/^ok {3}cliPath: /m);
     expect(text).toMatch(/^FAIL {2}contract: version 3\.0\.0 is outside/m);
     // The out-of-range fix must pin @latest (`npm update -g` never crosses a caret below 1.0.0) AND
     // re-login so the new global bin rewrites customer.json.cliPath.
