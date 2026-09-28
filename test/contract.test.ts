@@ -80,12 +80,18 @@ describe("loadContract", () => {
     expect(loaded.ageSeconds).toBe(1000);
   });
 
-  test("contractVersion 2.0.0 against range 1.x exits 2 naming both", async () => {
+  test("contractVersion 3.0.0 against range 1.x || 2.x exits 2 naming both", async () => {
     await seedJoined(home, server, { contract: false });
-    server.contractVersion = "2.0.0";
+    server.contractVersion = "3.0.0";
     const code = await main(["contract"], ctx);
     expect(code).toBe(2);
-    expect(ctx.err.join("\n")).toMatch(/2\.0\.0.*1\.x/);
+    expect(ctx.err.join("\n")).toMatch(/3\.0\.0.*1\.x \|\| 2\.x/);
+  });
+
+  test("CTC-1999: a 2.x contract (the removed cloudRemediateRequiredChecks) is accepted", async () => {
+    await seedJoined(home, server, { contract: false });
+    server.contractVersion = "2.2.0";
+    expect(await main(["contract"], ctx)).toBe(0);
   });
 
   test("--path teams.0.stages prints the sub-document; an absent path is exit 2", async () => {
@@ -134,6 +140,10 @@ describe("helpers", () => {
   test("version ranges", () => {
     expect(contractVersionInRange("1.4.2", "1.x")).toBe(true);
     expect(contractVersionInRange("2.0.0", "1.x")).toBe(false);
+    expect(contractVersionInRange("2.2.0", "1.x || 2.x")).toBe(true);
+    expect(contractVersionInRange("1.27.0", "1.x || 2.x")).toBe(true);
+    expect(contractVersionInRange("3.0.0", "1.x || 2.x")).toBe(false);
+    expect(contractVersionInRange("2.2.0", "1.x || nonsense")).toBeNull();
     expect(contractVersionInRange("1.0.0", "1.0.0")).toBe(true);
     expect(contractVersionInRange("1.0.0", "unpinned")).toBe(true);
     expect(contractVersionInRange("1.0.0", "banana")).toBeNull();

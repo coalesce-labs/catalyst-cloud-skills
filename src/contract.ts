@@ -45,8 +45,14 @@ export function writeContractCache(home: string, cache: ContractCache): string {
   return path;
 }
 
-/** `1.x` → major 1; `1.2.3` → exact; `unpinned` → anything. Returns null when the range is unparseable. */
+/** `1.x` → major 1; `1.2.3` → exact; `unpinned` → anything; `1.x || 2.x` → any alternative matches.
+ *  Returns null when the range (or any alternative) is unparseable. */
 export function contractVersionInRange(version: string, range: string): boolean | null {
+  if (range.includes("||")) {
+    const results = range.split("||").map((part) => contractVersionInRange(version, part.trim()));
+    if (results.some((r) => r === null)) return null;
+    return results.some((r) => r === true);
+  }
   if (range === "unpinned") return true;
   const major = /^(\d+)\.x$/.exec(range);
   if (major) return version.split(".")[0] === major[1];

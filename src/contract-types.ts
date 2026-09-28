@@ -171,7 +171,8 @@ export interface TenantContract {
     }[];
     reviewerLogin: string;
     cleanPassShapes: readonly { kind: string; description: string; honoured: boolean; ticket: string | null }[];
-    cloudRemediateRequiredChecks: readonly string[];
+    /** Served by 1.x contracts only; 2.0.0 (CTC-1999) removed it. Readers treat absence as []. */
+    cloudRemediateRequiredChecks?: readonly string[];
     prLabels: { queueReady: string; handStepsHold: string; hold: string; preview: string };
   };
   /** The customer skill bundle the cloud expects, when it publishes one (catalyst-cloud#3746). OPTIONAL:

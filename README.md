@@ -169,7 +169,7 @@ Your personal key reads everything the skills need — tickets, pull requests, t
 
 ## Versions and origins
 
-The package pins the tenant contract range `1.x`, recorded in `package.json` under `catalystCloud.tenantContractRange`, and reports it in `--version`, `status` and `login`. A tenant whose contract version falls outside that range is refused with one line naming both versions; update the bundle. Every skill carries a `vendored-from:` line naming this package as its origin, and that line now also carries the version it was vendored at; all of them are written in this repository for customer tenants.
+The package pins the tenant contract range `1.x || 2.x`, recorded in `package.json` under `catalystCloud.tenantContractRange`, and reports it in `--version`, `status` and `login`. A tenant whose contract version falls outside that range is refused with one line naming both versions; update the bundle. Every skill carries a `vendored-from:` line naming this package as its origin, and that line now also carries the version it was vendored at; all of them are written in this repository for customer tenants.
 
 ## What it writes on your machine
 
@@ -209,7 +209,7 @@ npm uninstall -g @catalyst-cloud/catalyst-skills
 - `catalyst-skills: GET /me failed (401): credential not accepted — mint a personal key at Settings → API keys and log in again` — the key is stale, mistyped or revoked. Mint a new one, then run `login` again.
 - `catalyst-skills: GET /me failed (403): account-not-operational` — the tenant is suspended. This is an admin conversation on the tenant, not a local fix.
 - `catalyst-skills: could not reach <url>: <detail>` — the machine cannot reach the cloud. The URL is named in the message; check `CATALYST_CLOUD_BASE_URL` or `--base-url`.
-- A line naming two contract versions after `Connected to` — the tenant serves a contract outside this bundle's `1.x` range. The config is written; update the bundle before using the other skills.
+- A line naming two contract versions after `Connected to` — the tenant serves a contract outside this bundle's `1.x || 2.x` range. The config is written; update the bundle before using the other skills.
 - `[catalyst-skills] GET /api/v1/agent/contract refused (403): this cloud is older than the bundle …` on stderr — the cloud has not yet deployed personal-key access to the contract. Update the cloud, or connect with the tenant's account key until it has.
 
 ## License
