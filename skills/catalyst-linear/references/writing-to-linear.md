@@ -9,7 +9,7 @@ This reference restates the write mechanism. The live values it depends on — t
 | a comment, threaded or top-level | `node scripts/comment.mjs <ticket> --body <text> [--parent <commentId>] [--bookkeeping]` |
 | a card move | `node scripts/move.mjs <ticket> --slot <slot>` or `--state-type backlog` |
 | a label on or off | `node scripts/label.mjs <ticket> --add <name> --remove <name>` |
-| a new ticket | `node scripts/create-ticket.mjs --team <key> --title <text>` |
+| a new ticket | `node scripts/create-ticket.mjs --team <key> --title <text> [--description <text> \| --stdin]` |
 | a decision for a human | not here: the `what-needs-me` skill raises an ask with options, a default and what it blocks |
 
 Each script wraps one `catalyst-skills write` verb, which posts to the route the contract names, as the tenant's app actor, with the personal key this machine connected with — so the write carries the person's identity for attribution, and an ask names them. No script composes a URL, and none needs a Linear credential of its own.
@@ -36,7 +36,7 @@ Two labels are a human's, not yours: the release label (which frees a ticket the
 
 ## A new ticket takes the team key
 
-`create-ticket.mjs --team <key>` names the team by the prefix its identifiers carry; the CLI resolves the team id from the contract and the cloud fences the write to your tenant on the team, not only on the credential. Cite the identifier only after the script prints it; a guessed number is usually a real, unrelated ticket. Do not file a question for a human this way: a ticket whose text reads as a decision request is held out of dispatch by shape until someone releases it, and it would never reach the human's inbox with what it blocks.
+`create-ticket.mjs --team <key>` names the team by the prefix its identifiers carry; the CLI resolves the team id from the contract and the cloud fences the write to your tenant on the team, not only on the credential. A ticket's body goes in `--description`, or on stdin with `--stdin` when it runs to several lines; a title with no body gives whoever picks the ticket up nothing to act on. Cite the identifier only after the script prints it; a guessed number is usually a real, unrelated ticket. Do not file a question for a human this way: a ticket whose text reads as a decision request is held out of dispatch by shape until someone releases it, and it would never reach the human's inbox with what it blocks.
 
 ## What is never offered
 

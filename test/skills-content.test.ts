@@ -194,7 +194,7 @@ describe("no internal name reaches a customer", () => {
     const planted = join(dir, "planted.md");
     writeFileSync(
       planted,
-      ["tenant-0", "coalesce-labs/catalyst", "thoughts/shared", "CTC-1", "CTL-22", "Linearis", "catalyst-replica"].join("\n"),
+      ["tenant-0", "coalesce-labs/catalyst", "thoughts/shared", "CTC-1", "CTL-22", "Linearis", "catalyst-replica", "LINEAR_API_TOKEN", "https://api.linear.app/graphql"].join("\n"),
     );
     const text = readFileSync(planted, "utf8");
     const hits = FORBIDDEN_CONTENT.filter((f) => f.re.test(text)).map((f) => f.name);
