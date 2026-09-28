@@ -119,3 +119,16 @@ jobs:
           done
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_PUBLISH_TOKEN }}
+
+      # CTC-3484 — @catalyst-cloud/catalyst-skills is the old name. `npm deprecate …@*` covers only the
+      # versions that existed when it ran, so each new forwarder version is deprecated as it ships.
+      # Runs on a re-run too (deprecating twice is harmless), and never on a dry run.
+      - name: Deprecate this version of the @catalyst-cloud/catalyst-skills forwarder
+        if: github.event_name == 'push' || inputs.dry_run == false
+        run: |
+          set -euo pipefail
+          name="$(node -p "require('./packages/catalyst-skills/package.json').name")"
+          version="$(node -p "require('./packages/catalyst-skills/package.json').version")"
+          npm deprecate "$name@$version" "Renamed to @catalyst-cloud/cli. Install @catalyst-cloud/cli instead; it provides the same catalyst command."
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_PUBLISH_TOKEN }}

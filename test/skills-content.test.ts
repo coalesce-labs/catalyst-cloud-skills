@@ -547,11 +547,11 @@ describe("CTC-2158: CI derives its Node matrix and exercises bun in both directi
     expect(md).toContain("--all");
   });
 
-  test("the version matches the CHANGELOG's top entry, which is 0.8.0", () => {
+  test("the version matches the CHANGELOG's top entry, which is 0.9.0", () => {
     const changelog = readFileSync(join(pkgRoot, "CHANGELOG.md"), "utf8");
     expect(changelog).toContain(`## ${manifest.version}\n`);
-    expect(changelog.indexOf("## 0.8.0")).toBe(changelog.indexOf("## "));
-    expect(manifest.version).toBe("0.8.0");
+    expect(changelog.indexOf("## 0.9.0")).toBe(changelog.indexOf("## "));
+    expect(manifest.version).toBe("0.9.0");
   });
 
   test("every shipped skill stamps the package version on its provenance line", () => {
@@ -590,9 +590,9 @@ describe("CTC-2158: CI derives its Node matrix and exercises bun in both directi
     expect(r.stderr).not.toContain("ENOENT");
   });
 
-  test("CTC-2158: the changelog's top entry records the Node 26 fix and the runtime contract", () => {
+  test("CTC-2158: the 0.8.0 changelog entry records the Node 26 fix and the runtime contract", () => {
     const changelog = readFileSync(join(pkgRoot, "CHANGELOG.md"), "utf8");
-    const top = changelog.split(/^## /m)[1]!;
+    const top = changelog.split(/^## /m).find((entry) => entry.startsWith("0.8.0\n"))!;
     expect(top).toMatch(/^0\.8\.0/);
     expect(top).toMatch(/Node 26/);
     expect(top).toMatch(/22\.15/);
