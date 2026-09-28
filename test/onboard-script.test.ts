@@ -301,6 +301,28 @@ describe("where-am-i.mjs: an enrolled contract still checks each account's crede
   const ENROL_ONE = /enrol+ (a|an|one|another)\b/i;
   const withoutNegations = (t: string) => t.replaceAll("Do not enroll another account.", "").replaceAll("Do not enroll one on this reading.", "");
 
+  test("a quarantined but CANCELLED Claude account is retired, never re-credentialed, and does not make setup unfinished", () => {
+    const cancelled = { accountSlot: "claude-465ad266", provider: "claude", status: "ended", observedStatus: "dead", renewalStatus: "canceled", quarantined: true, quarantineReason: "credential conflict" };
+    const home = connectedHome({ codingAccounts: CA_ENROLLED, accounts: { accounts: [CLAUDE_OK, cancelled] }, hostsCurrent: PASS });
+    const out = run(home, ["--json"]);
+    const doc = JSON.parse(out.stdout) as Doc;
+    const accounts = part(doc, "coding accounts");
+    expect(accounts.verdict).toBe("ok");
+    expect(accounts.lines.join("\n")).not.toMatch(/claude-465ad266 needs a new credential/);
+    expect(accounts.lines.join("\n")).toMatch(/claude claude-465ad266\): retire them on the AI accounts page\. Do not replace their credential/);
+    expect(doc.next?.part).not.toBe("coding accounts");
+  });
+
+  test("a live quarantined account names its own login and says to mint from THAT account", () => {
+    const stuck = { accountSlot: "claude-9", provider: "claude", status: "active", renewalStatus: "active", email: "ops@example.com", quarantined: true, quarantineReason: "auth mismatch" };
+    const home = connectedHome({ codingAccounts: CA_ENROLLED, accounts: { accounts: [stuck] }, hostsCurrent: PASS });
+    const doc = JSON.parse(run(home, ["--json"]).stdout) as Doc;
+    const accounts = part(doc, "coding accounts");
+    expect(accounts.verdict).toBe("unfinished");
+    expect(accounts.lines).toContain("claude account claude-9 (ops@example.com) needs a new credential: quarantined: auth mismatch");
+    expect(accounts.lines.join("\n")).toContain("minted from THAT account");
+  });
+
   test("a healthy Claude account and a Codex account failing with no_access_token: the Codex account is the next step", () => {
     const home = connectedHome({ codingAccounts: CA_ENROLLED, accounts: { accounts: [CLAUDE_OK, codexFailing(7)] }, hostsCurrent: PASS });
     const out = run(home, ["--json"]);
