@@ -13,7 +13,7 @@ import { describe, expect, test } from "vitest";
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { delimiter, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { CUSTOMER_SKILLS } from "../src/cli";
 
@@ -62,6 +62,7 @@ function connectedHome(credential: Record<string, unknown>): { home: string; cal
       'else if (args[0] === "contract" && args[2] === "teams") out = JSON.stringify([{ key: "ENG", dispatchGate: { status: "open" }, readiness: { status: "ready", checks: [{ id: "hosts_current", state: "pass" }] } }]) + "\\n";',
       'else if (args[0] === "contract" && args[2] === "codingAccounts") out = JSON.stringify({ state: "enrolled", activeCount: 1, line: "At least one coding account is enrolled and active for this tenant." }) + "\\n";',
       'else if (args[0] === "contract" && args[2] === "readinessChecks") out = "[]\\n";',
+      'else if (args[0] === "accounts") out = JSON.stringify({ accounts: [{ accountSlot: "claude-1", provider: "claude", status: "active", quarantined: false }] }) + "\\n";',
       'else if (args[0] === "contract" && args[2] === "merge.repositories") out = JSON.stringify([{ owner: "coalesce-labs", name: "fixture" }]) + "\\n";',
       'else if (args[0] === "environment") out = JSON.stringify({ current: { revision: 1, canonicalHash: "fixture" }, isApproved: true, delivered: { revision: 1 }, unresolvedReferences: [] }) + "\\n";',
       'else if (args[0] === "replica" && args[1] === "status") out = JSON.stringify({ verdict: "absent", exitCode: 3, dbPath: "/tmp/replica.db", writerAlive: false }) + "\\n";',
@@ -69,6 +70,9 @@ function connectedHome(credential: Record<string, unknown>): { home: string; cal
       'process.stdout.write(out);',
     ].join("\n"),
   );
+  // A stand-in `gh` first on PATH, so the onboarding report's thoughts note never reaches the real GitHub.
+  mkdirSync(join(home, "bin"));
+  writeFileSync(join(home, "bin", "gh"), "#!/bin/sh\necho 'not found' >&2\nexit 1\n", { mode: 0o755 });
   mkdirSync(join(home, ".config", "catalyst-cloud"), { recursive: true });
   writeFileSync(
     join(home, ".config", "catalyst-cloud", "customer.json"),
@@ -88,7 +92,7 @@ function runScript(skill: keyof typeof CASES, home: string) {
   return spawnSync(process.execPath, [join(skillsRoot, skill, "scripts", script), ...args], {
     encoding: "utf8",
     timeout: 20_000,
-    env: { ...process.env, CATALYST_SKILLS_HOME: home, HOME: home },
+    env: { ...process.env, CATALYST_SKILLS_HOME: home, HOME: home, PATH: `${join(home, "bin")}${delimiter}${process.env.PATH ?? ""}` },
   });
 }
 
@@ -121,7 +125,7 @@ describe("every skill's scripts run for either credential", () => {
     const r = spawnSync(process.execPath, [script, "--json"], {
       encoding: "utf8",
       timeout: 20_000,
-      env: { ...process.env, CATALYST_SKILLS_HOME: home, HOME: home },
+      env: { ...process.env, CATALYST_SKILLS_HOME: home, HOME: home, PATH: `${join(home, "bin")}${delimiter}${process.env.PATH ?? ""}` },
     });
     expect(r.status, r.stderr).toBe(0);
     const report = JSON.parse(r.stdout) as {

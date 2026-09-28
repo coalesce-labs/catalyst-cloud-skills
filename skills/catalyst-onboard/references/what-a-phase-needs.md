@@ -6,13 +6,13 @@ A person can finish every other step and still see nothing run. A phase needs tw
 
 **For:** a phase runs on one of the tenant's own enrolled coding accounts. With none active, no phase can start.
 
-**Instrument:** `codingAccounts` in `catalyst-skills contract`. It carries a `state`, a printable `line`, who enrolls an account (`enrolledByLine`) and the `page`. The script prints all of them. It never shows a credential or an email.
+**Instrument:** `codingAccounts` in `catalyst-skills contract`. It carries a `state`, a printable `line`, who enrolls an account (`enrolledByLine`) and the `page`. The script prints all of them. It never shows a credential or an email. When the state is `enrolled`, the script also reads `catalyst-skills accounts` to check each account's credential.
 
 **What each state means:**
 
 | state | what it says | what to do |
 | -- | -- | -- |
-| `enrolled` | at least one account is active | nothing |
+| `enrolled` | at least one account is active. Another account can still have a dead credential | read the account lines. If one says "<provider> account <slot> needs a new credential", that is the next step: follow `references/replacing-a-credential.md`. If the part reads `unreadable`, the accounts could not be checked in detail; say so and read it again later. Otherwise nothing |
 | `none_enrolled` | no account is enrolled | hand over the page; the enroller the contract names enrols one |
 | `inactive` | accounts exist, but every one is out of rotation | reactivate one on the page. Never tell them to enrol another |
 | `unread` | the cloud could not read the accounts | say it could not be read. It is not "no accounts". Do not tell them to enrol one; read it again later |

@@ -1,11 +1,10 @@
 # The one path
 
-Eleven steps, in this order. The order is the product's own: the tenant-side steps run Linear, then the project, then GitHub, then the repository, because each one is the cheapest place to catch the failure the next one would otherwise hide. Connect the tenant's Linear workspace before starting personal Linear consent (3a). Install the tenant's GitHub App and register its repository before starting personal GitHub consent (6a).
+The steps run in this order. The order is the product's own: the tenant-side steps run Linear, then the project, then GitHub, then the repository, because each one is the cheapest place to catch the failure the next one would otherwise hide. Connect the tenant's Linear workspace before starting personal Linear consent (3a). Install the tenant's GitHub App and register its repository before starting personal GitHub consent (6a).
 
 Walk them **one at a time**. Before each step say what you are about to do and why; after it, show what actually came back. `node scripts/where-am-i.mjs --next` decides which step you are on — never your memory of the last turn.
 
 Each step below states: what it is for, what you run or hand over, **what you read back to prove it landed**, and **who owns it**.
-
 
 ## 0 — Where are we
 
@@ -71,17 +70,19 @@ If it refuses, stop here and use the `connect-me` skill; it owns every failure m
 
 ⭐ **One project at a time is safe, and lead with this.** Mapping one project changes no other project's stages and moves no other project's tickets. Encourage a pilot: pick the project they care least about breaking.
 
-
 ## 5 — Install the GitHub App
 
 **For:** the account grain again. Without it Catalyst can read tickets but cannot touch code.
 
-**You hand over:** `<their cloud>/settings/connections`, and say: install the GitHub App, and grant it the repository they want worked.
+**You hand over:** `<their cloud>/settings/connections`, and say: install the GitHub App, and grant it the repository they want worked and `<org>/thoughts` (step 5a).
 
 **Read back:** it is confirmed by step 6 succeeding — a repository cannot be registered through an app that is not installed. Say that is what you are waiting for rather than claiming you verified it here.
 
 **Owner:** a tenant owner or admin, in a browser. **Browser by construction**, same reason as step 3.
 
+## 5a — The thoughts repository
+
+**For:** Catalyst's cloud phases write their notes to `<org>/thoughts`, where `<org>` is the GitHub org that owns the code repository. If the App cannot reach it, phases run without those notes and nothing says so. **You hand over:** GitHub. Confirm `<org>/thoughts` exists; if not, create a private repository named `thoughts`, initialized with a README. Then, on the GitHub App's installation page for that org, choose All repositories, or add `thoughts` to the selected repositories. **Read back:** once a repository is registered, the script's `repositories` part carries a note from `gh repo view <org>/thoughts`. It shows the repository exists, never that the App can reach it. Say that plainly; never claim App access is verified. **Owner:** an org admin on GitHub, in a browser.
 
 ## 6 — Register the repository
 
@@ -92,7 +93,6 @@ If it refuses, stop here and use the `connect-me` skill; it owns every failure m
 **Read back:** re-run the script and read the `repositories` line. The repository appearing there is proof it was registered — and **only that**. It is not proof it can be dispatched to; see `references/who-fixes-what.md` for what registration does and does not prove.
 
 **Owner:** a tenant owner or admin. ⛔ **Registering is settings-page work today**; a key-callable path is being built. ⛔ A repository registered without a project attached is the trap here: the call succeeds, the repository is listed, and nothing can ever dispatch into it. Make sure they attach the project in the same form, and say why.
-
 
 ## 6a — Connect your personal GitHub account
 
@@ -122,12 +122,11 @@ Add `--approve` to approve exactly the revision that propose just returned, whic
 
 If they do not know what their build needs yet, skip this step. It blocks nothing until a phase needs a secret.
 
-
 ## 8 — A coding account, and a host
 
 **For:** what a phase runs on. Without an enrolled coding account and a passing host check, every step above can be done and nothing starts.
 
-**You run:** it is already in the script, as the `coding accounts` and `host` parts. What each reading means, who owns it, and what to hand over are in `references/what-a-phase-needs.md`. The contract names who enrols the account and who owns the host.
+**You run:** it is already in the script, as the `coding accounts` and `host` parts. What each reading means, who owns it, and what to hand over are in `references/what-a-phase-needs.md`. The contract names who enrols the account and who owns the host. If the script says an account needs a new credential, the steps are in `references/replacing-a-credential.md`.
 
 ---
 
@@ -142,7 +141,6 @@ If they do not know what their build needs yet, skip this step. It blocks nothin
 **Read back:** what `explain` actually said. If it says the ticket cannot start, the reason it names is the answer — read it to them and use the `how-catalyst-works` skill for what the reason means, then `unstick` if something is holding it.
 
 **Owner:** the card move is theirs. The verdict is the tenant's.
-
 
 ## When you are done
 
