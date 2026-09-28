@@ -6,6 +6,7 @@
 //
 // Every count and every name below is read off what a verb printed. Nothing here is written down.
 import { cliTarget, CONNECT_LINE, parseFlags, printHelp, runCli, tryJson, tryLoadConfig } from "./lib/cli.mjs";
+import { spawnSync } from "node:child_process";
 import { runLocalSync } from "./local-sync.mjs";
 
 const SPEC = {
@@ -16,8 +17,9 @@ const NOTES = [
   "Reads, in this order: `status` (machine), `ready --json` (machine checks and project checks, kept apart),",
   "`replica status --probe --json` and `events status --probe --json` (optional local freshness),",
   "`me --json` and personal connection statuses (person), `contract --path …` for the account, the projects and the repositories,",
-  "`contract --path codingAccounts` (coding accounts; `accounts --json` on an older cloud), and each",
+  "`contract --path codingAccounts` and `accounts --json` (coding accounts, and which one needs a new credential), and each",
   "project's hosts_current check with its fixedWhere (host).",
+  "Also runs `gh repo view <owner>/thoughts` for each registered repository's owner, as a note: it shows the repository exists, never that the GitHub App can reach it.",
   "Writes nothing and changes nothing. Runs before this machine is connected — that is one of the states it reports.",
 ];
 
@@ -246,6 +248,17 @@ if (!connected) {
 }
 
 // ── repositories ──────────────────────────────────────────────────────────────────────────────────
+// Cloud phases write their notes to <owner>/thoughts, where <owner> owns the code repository. The
+// person's own `gh` can say whether that repository exists. It cannot say whether the GitHub App can
+// reach it, so this note never claims that, and it never changes a verdict.
+function thoughtsNote(owner) {
+  const repo = `${owner}/thoughts`;
+  const res = spawnSync("gh", ["repo", "view", repo, "--json", "name"], { encoding: "utf8", timeout: 15_000, env: { ...process.env, GH_PROMPT_DISABLED: "1" } });
+  if (res.error) return `note ${repo}: not checked (the gh command could not run here). Confirm it exists on GitHub (step 5a).`;
+  if (res.status === 0) return `note ${repo}: exists; App access not verifiable from here. Confirm the GitHub App installation includes it (step 5a).`;
+  const why = (res.stderr || res.stdout).trim().split("\n")[0] || `gh exited ${res.status}`;
+  return `note ${repo}: gh could not see it (${why}). It does not exist, or this GitHub login cannot see it. Create or confirm it (step 5a).`;
+}
 if (!connected) {
   add("repositories", "catalyst-skills contract --path merge.repositories", "unreadable", ["not readable until this machine is connected"], null, null);
 } else {
@@ -258,6 +271,7 @@ if (!connected) {
     const lines = [`${rows.length} registered`, ...rows.map((r) => `${r.owner ?? "?"}/${r.name ?? "?"}`)];
     repositoryRegistered = rows.length > 0;
     lines.push("⛔ REGISTRATION only. This carries no status and no project attachment, so it never proves a repository can be dispatched into.");
+    for (const owner of [...new Set(rows.map((r) => r.owner).filter((o) => typeof o === "string" && o !== ""))]) lines.push(thoughtsNote(owner));
     add("repositories", "catalyst-skills contract --path merge.repositories", rows.length > 0 ? "ok" : "unfinished", lines, "a tenant owner or admin", link("/settings/repositories"));
   }
 }
@@ -266,8 +280,28 @@ if (!connected) {
 // A phase runs on one of the tenant's enrolled coding accounts. With none, every step above can be
 // finished and nothing will ever start, so this part blocks the "ready" line like any other.
 // The contract says the state, its sentence, who enrolls one and on which page. An older cloud's
-// contract has no `codingAccounts`, and only then is the account list read and the owner assumed.
+// contract has no `codingAccounts`, and only then is the owner assumed.
 let accountsNext = "enrol a coding account a phase can run on";
+// The contract counts accounts by declared rotation, so one healthy account can hide another whose
+// credential is dead. When it says `enrolled`, each account is read as well. An account needs a new
+// credential when it is quarantined, expired or revoked, or when its last polls failed on the
+// credential itself. The poll fields are read only when the cloud sends them.
+const CREDENTIAL_ERROR_CODES = new Set(["no_access_token", "no_credential", "http_401", "http_403", "usage_unauthorized", "usage_forbidden"]);
+const CREDENTIAL_FAILURE_STREAK = 3;
+const credentialProblem = (a) => {
+  if (a?.quarantined === true) return `quarantined${typeof a.quarantineReason === "string" && a.quarantineReason !== "" ? `: ${a.quarantineReason}` : ""}`;
+  if (a?.status === "expired-or-revoked") return "expired or revoked";
+  if (CREDENTIAL_ERROR_CODES.has(a?.lastPollErrorCode) && typeof a?.pollFailureCount === "number" && a.pollFailureCount >= CREDENTIAL_FAILURE_STREAK) {
+    return `its last ${a.pollFailureCount} polls failed with ${a.lastPollErrorCode}`;
+  }
+  return null;
+};
+const readAccountRows = () => {
+  const acc = runCli(["accounts", "--json"]);
+  const doc = tryJson(acc.stdout);
+  const rows = Array.isArray(doc) ? doc : Array.isArray(doc?.accounts) ? doc.accounts : null;
+  return { rows, error: rows === null ? (acc.stderr || acc.stdout).trim().split("\n")[0] || "no output" : null };
+};
 if (!connected) {
   add("coding accounts", "codingAccounts in catalyst-skills contract", "unreadable", ["not readable until this machine is connected"], null, null);
 } else {
@@ -279,8 +313,32 @@ if (!connected) {
     const line = typeof ca.line === "string" ? ca.line : `state ${ca.state}`;
     const owner = typeof ca.enrolledByLine === "string" ? ca.enrolledByLine : null;
     const where = typeof ca.page === "string" ? link(ca.page) : null;
-    if (ca.state === "enrolled") {
-      add("coding accounts", INSTRUMENT, "ok", [line, `${ca.activeCount ?? "?"} active`]);
+    if (ca.state === "enrolled" || ca.state === "needs_credential") {
+      const DETAIL = `${INSTRUMENT}, and catalyst-skills accounts`;
+      const head = [line, `${ca.activeCount ?? "?"} active`];
+      const { rows, error } = readAccountRows();
+      const dead = rows === null ? [] : rows.filter((a) => credentialProblem(a) !== null);
+      if (rows === null) {
+        accountsNext = "read the coding accounts again; each account's credential could not be checked";
+        add("coding accounts", DETAIL, "unreadable", [...head, `coding accounts could not be checked in detail (${error}). Whether each one still has a working credential is unknown. Do not enroll one on this reading.`], null, null);
+      } else if (dead.length > 0) {
+        const name = (a) => `${a.provider ?? "unknown provider"} account ${a.accountSlot ?? "?"}`;
+        const more = dead.length > 1 ? ` (and ${dead.length - 1} more)` : "";
+        accountsNext = `${name(dead[0])} needs a new credential${more}. Replace it on the AI accounts page (Settings → AI accounts → the account → Replace credential). Do not enroll another account.`;
+        add(
+          "coding accounts",
+          DETAIL,
+          "unfinished",
+          [...head, ...dead.map((a) => `${name(a)} needs a new credential: ${credentialProblem(a)}`), "Replace its credential on its own page. Do not enroll another account. The steps are in references/replacing-a-credential.md."],
+          owner,
+          where,
+        );
+      } else if (ca.state === "needs_credential") {
+        accountsNext = "replace the credential of the coding account the page marks; do not enroll another account";
+        add("coding accounts", DETAIL, "unfinished", [...head, "The contract says an account needs a new credential, and the account list does not say which. Open the page and look for it."], owner, where);
+      } else {
+        add("coding accounts", DETAIL, "ok", [...head, `${rows.length} checked, none needs a new credential`]);
+      }
     } else if (ca.state === "inactive") {
       accountsNext = "reactivate a coding account that is out of rotation; do not enroll another one";
       add("coding accounts", INSTRUMENT, "unfinished", [line, "Every account is out of rotation. Reactivate one. Do not enroll another account."], owner, where);
@@ -292,12 +350,10 @@ if (!connected) {
       add("coding accounts", INSTRUMENT, "unreadable", [line, "This is not a missing account. Do not enroll one on this reading. Run this again later."], null, null);
     }
   } else if (older) {
-    const acc = runCli(["accounts", "--json"]);
-    const doc = tryJson(acc.stdout);
-    const rows = Array.isArray(doc) ? doc : Array.isArray(doc?.accounts) ? doc.accounts : null;
+    const { rows, error } = readAccountRows();
     const olderLine = "this cloud is older than the bundle: its contract does not say whether a coding account is enrolled, so the account list is read instead";
     if (rows === null) {
-      add("coding accounts", "catalyst-skills accounts", "unreadable", [olderLine, `coding accounts could not be read (${(acc.stderr || acc.stdout).trim().split("\n")[0] || "no output"})`], null, null);
+      add("coding accounts", "catalyst-skills accounts", "unreadable", [olderLine, `coding accounts could not be read (${error})`], null, null);
     } else {
       // An expired or revoked slot, or a quarantined one, cannot take work until an admin acts on it.
       const usable = rows.filter((a) => a?.status !== "expired-or-revoked" && a?.quarantined !== true);
