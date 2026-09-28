@@ -422,12 +422,16 @@ describe("running / queue / accounts", () => {
     expect(server.requests.map((r) => r.path.split("?")[0])).toContain("/api/v1/coding-accounts");
     const text = ctx.out.join("\n");
     expect(text).not.toContain("not visible to an account key yet");
-    expect(text).toContain("slot-a (primary)  claude/claude-code  active — observed working");
+    expect(text).toContain("primary (slot-a)  claude/claude-code  active — observed working");
     expect(text).toContain("holding ENG-2/implement");
     expect(text).toContain("walled — the provider's usage limit is spent for now");
     const c2 = makeCtx(home);
     expect(await main(["accounts", "--json"], c2)).toBe(0);
-    expect((JSON.parse(c2.out.join("\n")) as { accounts: unknown[] }).accounts).toHaveLength(2);
+    const json = JSON.parse(c2.out.join("\n")) as { accounts: { accountSlot: string; displayName: string }[] };
+    expect(json.accounts).toHaveLength(2);
+    // Every account carries a displayName: its label, else its email, else its slot id.
+    expect(json.accounts.find((a) => a.accountSlot === "slot-a")?.displayName).toBe("primary");
+    expect(json.accounts.every((a) => typeof a.displayName === "string" && a.displayName !== "")).toBe(true);
     expect(await main(["accounts"], makeCtx(tempHome()))).toBe(2);
   });
   test("history renders the ticket's phases, failure, rounds and lease", async () => {

@@ -374,6 +374,8 @@ export interface CodingAccount {
   quarantined?: boolean;
   quarantineReason?: string | null;
   renewalStatus?: string | null;
+  email?: string | null;
+  displayName?: string;
   bindingWindow?: string | null;
   bindingUsedPercent?: number | null;
   bindingResetsAtMs?: number | null;
@@ -382,9 +384,16 @@ export interface CodingAccount {
   [k: string]: unknown;
 }
 
+/** The name a person or agent calls an account by: its label, else its email, else its slot id. */
+export function accountDisplayName(a: CodingAccount): string {
+  for (const v of [a.label, a.email]) if (typeof v === "string" && v.trim() !== "") return v.trim();
+  return a.accountSlot ?? "?";
+}
+
 /** One slot as a line a human reads: who it is, what state it is in, and what it is spending on. */
 export function renderAccount(a: CodingAccount): string {
-  const name = a.label ? `${a.accountSlot ?? "?"} (${a.label})` : (a.accountSlot ?? "?");
+  const display = accountDisplayName(a);
+  const name = display === (a.accountSlot ?? "?") ? display : `${display} (${a.accountSlot ?? "?"})`;
   const harness = a.harness ? `/${a.harness}` : "";
   const status = a.status ? (ACCOUNT_STATUS[a.status] ?? a.status) : "status unknown";
   const bits = [`${name}  ${a.provider ?? "?"}${harness}  ${status}`];
@@ -425,7 +434,8 @@ export async function cmdAccounts(args: ParsedArgs, ctx: Ctx): Promise<number> {
   if (res.status === 404) throw needsNewerCloud("coding-account status", cfg);
   const accounts = Array.isArray(res.body) ? res.body : (res.body?.accounts ?? []);
   if (args.json) {
-    ctx.stdout(JSON.stringify(res.body));
+    const named = accounts.map((a) => ({ ...a, displayName: accountDisplayName(a) }));
+    ctx.stdout(JSON.stringify(Array.isArray(res.body) ? named : { ...res.body, accounts: named }));
     return 0;
   }
   if (accounts.length === 0) {
