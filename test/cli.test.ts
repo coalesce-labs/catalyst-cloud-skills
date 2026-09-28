@@ -119,9 +119,9 @@ describe("dispatcher", () => {
     expect(ctx.out.join("\n")).toContain("replica writer started in the background");
   });
   test("login against a contract outside the range still connects and says so on stderr", async () => {
-    server.contractVersion = "2.0.0";
+    server.contractVersion = "3.0.0";
     expect(await main(["login", "--key", "fixture-key", "--base-url", server.url], ctx)).toBe(0);
-    expect(ctx.err.join("\n")).toMatch(/2\.0\.0 but this bundle accepts 1\.x/);
+    expect(ctx.err.join("\n")).toMatch(/3\.0\.0 but this bundle accepts 1\.x \|\| 2\.x/);
     expect(existsSync(contractPathFor(home))).toBe(false);
     // The config is still written, so the customer can update the bundle and re-read the contract.
     expect(existsSync(configPathFor(home))).toBe(true);

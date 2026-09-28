@@ -32,7 +32,7 @@
     "vendor"
   ],
   "catalystCloud": {
-    "tenantContractRange": "1.x",
+    "tenantContractRange": "1.x || 2.x",
     "pinnedNode": "24.21.0"
   },
   "scripts": {

@@ -387,7 +387,7 @@ describe("the install page (README) states what a customer needs, in the order t
   });
 
   test("states the pinned tenant contract range in present tense, with no internal ticket ids anywhere", () => {
-    expect(readme).toContain("`1.x`");
+    expect(readme).toContain("`1.x || 2.x`");
     expect(readme).not.toContain("`0.x`");
     expect(readme).toContain("tenantContractRange");
     expect(readme, "a customer README names no internal ticket").not.toMatch(/\bC[TL]C-\d+\b/);
@@ -475,7 +475,7 @@ describe("the package manifest", () => {
     // so `ready` reported `ok node: 22` on a runtime where `sdk` could not load. `>=22` was a promise
     // this package does not keep.
     expect(manifest.engines.node).toBe(">=22.15");
-    expect(manifest.catalystCloud?.tenantContractRange).toBe("1.x");
+    expect(manifest.catalystCloud?.tenantContractRange).toBe("1.x || 2.x");
     expect(manifest.catalystCloud?.pinnedNode).toMatch(/^\d+\.\d+\.\d+$/);
   });
 

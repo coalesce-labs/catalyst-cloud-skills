@@ -1,6 +1,6 @@
 # What a pull request accumulates as Catalyst moves a ticket
 
-Most of this page restates invariants: how Catalyst names branches, opens and rewrites pull requests, and what it pushes when. The parts that vary per tenant are read live from the contract's `merge` block and never restated here: the reviewer's login (`merge.reviewerLogin`), which clean-pass shapes are honoured (`merge.cleanPassShapes[]`), the four PR label names (`merge.prLabels`), the checks the cloud waits on (`merge.cloudRemediateRequiredChecks`), and the policy per repository (`merge.repositories[]`, else `merge.defaultPolicy`). `catalyst-skills contract --path merge` prints them.
+Most of this page restates invariants: how Catalyst names branches, opens and rewrites pull requests, and what it pushes when. The parts that vary per tenant are read live from the contract's `merge` block and never restated here: the reviewer's login (`merge.reviewerLogin`), which clean-pass shapes are honoured (`merge.cleanPassShapes[]`), the four PR label names (`merge.prLabels`), the checks the cloud waits on (`merge.cloudRemediateRequiredChecks`, on a 1.x contract only), and the policy per repository (`merge.repositories[]`, else `merge.defaultPolicy`). `catalyst-skills contract --path merge` prints them.
 
 ## The branch
 
