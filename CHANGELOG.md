@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.9.1
+
+Onboarding now teaches `.catalyst/catalyst.toml`, the only file the cloud reads a repository's settings from. The skills still described `catalyst.env.json`, which the cloud has ignored since 2026-09-27, so a declaration written from them was silently dropped. The repository reference shows the file's shape (`[project]` with `linear_team`, then `[[environment.variables]]` and `[[environment.setup]]`) and the approval step: an owner or admin opens the repository's Environment page, goes to the Setup declaration tab, and clicks Approve this revision.
+
+A ticket filed through the catalyst-linear skill now carries a description: `catalyst write create` takes `--description <text>` or `--stdin`, where before it could file only a title. The skill content never asks for a personal Linear token or a direct Linear API call.
+
 ## 0.9.0
 
 Onboarding now guides your own Linear and GitHub consent. `catalyst connections personal <linear|github> start` opens the provider's consent page in your browser and `status` confirms the grant landed; the tenant's own Linear connection and GitHub App install stay separate, and personal GitHub waits until the App is installed and a repository is registered.
