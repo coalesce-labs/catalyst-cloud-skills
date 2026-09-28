@@ -32,6 +32,10 @@ export const FORBIDDEN_CONTENT: { name: string; re: RegExp }[] = [
   { name: "an internal ticket id", re: /\bC[TL]C-\d+\b/ },
   { name: "a Linear CLI name (linearis)", re: /linearis/i },
   { name: "the internal replica tool name (catalyst-replica)", re: /catalyst-replica/ },
+  // A tenant workflow writes through the tenant's agent proxy as the app actor. A personal Linear
+  // token, or a call straight to Linear's API, is the path these skills exist to replace.
+  { name: "a personal Linear API token (LINEAR_API_TOKEN / LINEAR_API_KEY)", re: /LINEAR_API_(?:TOKEN|KEY)/ },
+  { name: "Linear's API host (api.linear.app)", re: /api\.linear\.app/ },
 ];
 
 function walk(dir: string): string[] {
