@@ -1,0 +1,1 @@
+CHANGELOG 0.9.1 also records #54 (CTC-3202: write create --description/--stdin), which merged to main before #93 and asked the next release PR to write its entry. Ryan approved publishing 0.9.1 (relayed by Lantern, ~18:40Z).
