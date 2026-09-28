@@ -1,0 +1,1 @@
+cli.test.ts: the out-of-range login case moves from 2.0.0 to 3.0.0 (2.x is now accepted).
