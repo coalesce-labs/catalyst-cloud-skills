@@ -2,6 +2,7 @@ import { flagInt, flagString, positionals, type ParsedArgs } from "./args.js";
 import { apiBase, requireConfig, type Ctx } from "./config.js";
 import { CliError, UsageError } from "./errors.js";
 import { authStrategyFor } from "./oauth.js";
+import { eventCacheStatus } from "./event-status.js";
 
 export interface CachedEvent {
   tenantId: string;
@@ -76,14 +77,19 @@ export async function cmdEvents(
 ): Promise<number> {
   const [sub] = positionals(args);
   if (!sub)
-    throw new UsageError("events needs a subcommand: tail | wait-for | query");
-  if (!(["tail", "wait-for", "query"] as string[]).includes(sub))
+    throw new UsageError("events needs a subcommand: tail | wait-for | query | status");
+  if (!(["tail", "wait-for", "query", "status"] as string[]).includes(sub))
     throw new UsageError(`unknown events subcommand: ${sub}`);
   const cfg = requireConfig(ctx);
   const sdk = await (deps.loadSdk ?? loadEventsSdk)();
   const directory =
     flagString(args, "directory") ??
     sdk.defaultEventCacheDirectory(cfg.account);
+  if (sub === "status") {
+    const status = await eventCacheStatus(ctx, directory, args.flags.probe === true);
+    ctx.stdout(args.json ? JSON.stringify(status) : `events: ${status.verdict} at ${directory}${status.reasons.length ? ` (${status.reasons.join("; ")})` : ` (cursor ${status.cursor}, cloud head ${status.head})`}`);
+    return status.verdict === "current" ? 0 : status.verdict === "stale" ? 1 : status.verdict === "absent" ? 3 : 2;
+  }
   const after = startingCursor(args, sub === "query");
   const matches = matcher(args);
 
