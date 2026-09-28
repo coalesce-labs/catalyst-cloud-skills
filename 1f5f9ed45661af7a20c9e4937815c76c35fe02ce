@@ -1,0 +1,6 @@
+Revision history for #93:
+
+rev 2 (content) 2026-09-28 16:29 UTC — Approval path names the Setup declaration tab and its Approve this revision button (catalyst-cloud-84, verified against apps/web environment-sections.tsx:32 and repo-environment-view.tsx:788).
+rev 1 (initial) 2026-09-28 16:29 UTC
+
+<!-- mergify-revision-data: {"schema_version":1,"pull_number":93,"entries":[{"number":1,"change_type":"initial","old_sha":null,"new_sha":"f18b238b752b082080d7edb309badb7fb33eba2a","timestamp_iso":"2026-09-28T16:29:47Z","reason":"","replay_sha":null,"compare_url":null},{"number":2,"change_type":"content","old_sha":"f18b238b752b082080d7edb309badb7fb33eba2a","new_sha":"802c858f8886ed25f580944abef44235436d6963","timestamp_iso":"2026-09-28T16:29:47Z","reason":"Approval path names the Setup declaration tab and its Approve this revision button (catalyst-cloud-84, verified against apps/web environment-sections.tsx:32 and repo-environment-view.tsx:788).","replay_sha":null,"compare_url":"https://github.com/coalesce-labs/catalyst-cloud-skills/compare/f18b238b752b082080d7edb309badb7fb33eba2a...802c858f8886ed25f580944abef44235436d6963"}]} -->
