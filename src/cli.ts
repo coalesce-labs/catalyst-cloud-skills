@@ -51,6 +51,7 @@ import {
 import { cmdWatch, type WatchDeps } from "./watch.js";
 import { cmdWrite, type WriteDeps } from "./write.js";
 import { cmdAsk } from "./ask.js";
+import { cmdMcp } from "./mcp.js";
 import { cmdRelease } from "./release.js";
 import { cmdEnvironment, type EnvironmentDeps } from "./environment.js";
 import { cmdSecret, type SecretDeps } from "./secret.js";
@@ -122,6 +123,7 @@ export function usageText(): string {
     "  catalyst-skills join ...   (deprecated alias of login; removed in the next minor version)",
     "  catalyst-skills install [--skills-dir <dir>] [--force]   (repair path; your agent's own command installs the skills)",
     "  catalyst-skills status | notice | me | ready | accounts",
+    "  catalyst-skills mcp add|list|remove (vault references only)",
     "  catalyst-skills contract [--refresh] [--path <a.b.c>]",
     "  catalyst-skills query <issues|issue <id>|pulls|pull <id>|projects|cycles|search <terms>|changes --since <cursor|head>>",
     "  catalyst-skills replica <start [--detach]|stop|status [--probe]|sql \"<select>\"|schema [table]>",
@@ -297,6 +299,8 @@ export async function main(argv: string[], ctx: Ctx = defaultCtx(), deps: MainDe
         return await cmdAsk(args, ctx);
       case "ready":
         return await cmdReady(args, ctx, { skillNames: CUSTOMER_SKILLS, loadSdk: deps.loadSdk, offline: args.flags.offline === true });
+      case "mcp":
+        return await cmdMcp(args, ctx);
       case "accounts":
         return await cmdAccounts(args, ctx);
       case "release":
@@ -333,7 +337,7 @@ export async function main(argv: string[], ctx: Ctx = defaultCtx(), deps: MainDe
 }
 
 const VERB_HELP_KNOWN: Record<string, true> = Object.fromEntries(
-  ["login", "join", "install", "status", "notice", "me", "contract", "query", "replica", "runtime", "events", "explain", "running", "queue", "watch", "write", "ask", "ready", "accounts", "release", "secret", "environment", "connections", "identity"].map((v) => [v, true]),
+  ["login", "join", "install", "status", "notice", "me", "contract", "query", "replica", "runtime", "events", "explain", "running", "queue", "watch", "write", "ask", "ready", "accounts", "release", "secret", "environment", "connections", "identity", "mcp"].map((v) => [v, true]),
 );
 
 async function cmdLogin(args: ParsedArgs, ctx: Ctx, deps: MainDeps): Promise<number> {
