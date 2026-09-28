@@ -601,7 +601,7 @@ describe("main — Codex P2: an update refreshes the copied skills before record
     const code = await main(["notice"], ctx());
     expect(code).toBe(0);
     expect(readConfig().lastSkillBundleVersion).toBe("0.0.9");
-    expect(err.join("\n")).toContain("catalyst-skills install");
+    expect(err.join("\n")).toContain("re-run the install command: curl -fsSL https://staging.catalystcloud.dev/install.sh | sh");
     expect(out.filter((l) => l.startsWith("[catalyst-skills] refreshed"))).toHaveLength(0);
   });
 

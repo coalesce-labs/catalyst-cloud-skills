@@ -165,6 +165,9 @@ export function updatePackageName(root: string = packageRoot()): string {
   return PACKAGE_NAME;
 }
 
+/** The Catalyst installer, which owns skill placement and switches a machine between packages. */
+export const INSTALL_COMMAND = "curl -fsSL https://staging.catalystcloud.dev/install.sh | sh";
+
 /** The one upgrade command every hint prints: update the installed package, then log in again so
  *  customer.json records the new launcher path. */
 export function upgradeCommand(root?: string): string {
@@ -190,6 +193,19 @@ export function normalizeBaseUrl(url: string): string {
 /** The origin WITH the versioned prefix — what the SDK and every API read/write take. */
 export function apiBase(cfg: Pick<CustomerConfig, "baseUrl">): string {
   return `${normalizeBaseUrl(cfg.baseUrl)}/api/v1`;
+}
+
+/** True when the Catalyst installer owns skill placement on this machine: it exports
+ *  CATALYST_SKILLS_DIR, or it wrote the machine paths file (every v1 record carries a skills role).
+ *  The CLI then never refreshes skill folders itself; the installer's own refresh does. */
+export function installerOwnsSkills(home: string, env: NodeJS.ProcessEnv = {}): boolean {
+  if (env.CATALYST_SKILLS_DIR !== undefined && env.CATALYST_SKILLS_DIR !== "") return true;
+  try {
+    const file = machinePathsFile({ env: { ...env, HOME: home } });
+    return Boolean(file && machineFilePresent(file));
+  } catch {
+    return false;
+  }
 }
 
 function machineFilePresent(file: string): boolean {

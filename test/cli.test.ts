@@ -87,7 +87,9 @@ describe("dispatcher", () => {
     await seedJoined(home2, server, { contract: false, config: { cliPath: `${home2}/gone.js` } });
     const c2 = makeCtx(home2);
     expect(await main(["status"], c2)).toBe(0);
-    expect(c2.out.join("\n")).toContain("(missing — re-run login)");
+    // 0.9.3: a recorded launcher that no longer exists heals to the running one, so status shows it.
+    expect(c2.out.join("\n")).not.toContain("(missing — re-run login)");
+    expect(c2.out.join("\n")).toMatch(/^CLI: .*bin\/catalyst\.js$/m);
     expect(c2.out.join("\n")).toContain("not cached");
   });
   test("install places the skills and names a skipped foreign dir", async () => {

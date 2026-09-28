@@ -11,8 +11,9 @@ import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 
 import { main } from "../src/cli";
-import { LEGACY_PACKAGE_NAME, PACKAGE_NAME, configPathFor, modernCliPath, packageRoot, updatePackageName, upgradeCommand } from "../src/config";
+import { LEGACY_PACKAGE_NAME, PACKAGE_NAME, cliPath, configPathFor, installerOwnsSkills, modernCliPath, packageRoot, updatePackageName, upgradeCommand } from "../src/config";
 import { catalystCommandCheck } from "../src/ready";
+import { installSkills } from "../src/skills";
 import { startMeFixture, type FixtureServer } from "./fixture";
 import { makeCtx, seedJoined, tempHome } from "./helpers";
 
@@ -109,6 +110,48 @@ describe("a cliPath recorded before the rename moves onto the catalyst launcher"
     await seedJoined(home, server, { contract: false, config: { cliPath: join(bin, "catalyst-skills.js") } });
     expect(await main(["status"], makeCtx(home))).toBe(0);
     expect(recordedCliPath(home)).toBe(join(bin, "catalyst-skills.js"));
+  });
+  test("a cliPath whose file is gone (the old package was uninstalled) heals to the running launcher", async () => {
+    const home = tempHome();
+    const gone = join(scratch(), "node_modules", "@catalyst-cloud", "catalyst-skills", "bin", "catalyst.js");
+    await seedJoined(home, server, { contract: false, config: { cliPath: gone } });
+    expect(await main(["status"], makeCtx(home))).toBe(0);
+    expect(recordedCliPath(home)).toBe(cliPath());
+  });
+
+  test("a cliPath whose file exists is never replaced (the positive control)", async () => {
+    const home = tempHome();
+    const bin = join(scratch(), "bin");
+    mkdirSync(bin);
+    writeFileSync(join(bin, "catalyst.js"), "");
+    await seedJoined(home, server, { contract: false, config: { cliPath: join(bin, "catalyst.js") } });
+    expect(await main(["status"], makeCtx(home))).toBe(0);
+    expect(recordedCliPath(home)).toBe(join(bin, "catalyst.js"));
+  });
+});
+
+describe("the skills refresh leaves the installer's skills alone", () => {
+  test("a symlinked skill entry is never written through, and is not reported", () => {
+    const target = scratch();
+    const elsewhere = join(scratch(), "catalyst-github");
+    mkdirSync(elsewhere);
+    writeFileSync(join(elsewhere, "SKILL.md"), "installer-owned copy\n");
+    symlinkSync(elsewhere, join(target, "catalyst-github"));
+    const result = installSkills(target, { onlyExisting: false });
+    expect(result.installed).not.toContain("catalyst-github");
+    expect(result.skipped.map((s) => s.name)).not.toContain("catalyst-github");
+    expect(readFileSync(join(elsewhere, "SKILL.md"), "utf8")).toBe("installer-owned copy\n");
+    // positive control: a real directory beside it is installed
+    expect(result.installed.length).toBeGreaterThan(0);
+  });
+
+  test("the installer owns skills when it exports CATALYST_SKILLS_DIR or wrote the machine paths file", () => {
+    const home = scratch();
+    expect(installerOwnsSkills(home, {})).toBe(false);
+    expect(installerOwnsSkills(home, { CATALYST_SKILLS_DIR: "/x/skills" })).toBe(true);
+    mkdirSync(join(home, ".config", "catalyst"), { recursive: true });
+    writeFileSync(join(home, ".config", "catalyst", "paths.json"), "{}");
+    expect(installerOwnsSkills(home, {})).toBe(true);
   });
 });
 

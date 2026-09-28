@@ -14,6 +14,8 @@ import {
   defaultReplicaDbFor,
   defaultSkillsDirFor,
   formatMode,
+  installerOwnsSkills,
+  INSTALL_COMMAND,
   loadConfig,
   modernCliPath,
   normalizeBaseUrl,
@@ -187,8 +189,14 @@ function migrateLegacyCliPath(ctx: Ctx): void {
     return;
   }
   if (!cfg) return;
-  const next = modernCliPath(cfg.cliPath);
-  if (next === null) return;
+  let next = modernCliPath(cfg.cliPath);
+  // An upgrade from @catalyst-cloud/catalyst-skills to @catalyst-cloud/cli removes the old package
+  // folder, so the recorded launcher no longer exists and has no sibling. Point it at the launcher
+  // that is running now, so `ready` and every skill script work without another login.
+  if (next === null && typeof cfg.cliPath === "string" && cfg.cliPath !== "" && !existsSync(cfg.cliPath)) {
+    next = cliPath();
+  }
+  if (next === null || next === cfg.cliPath) return;
   cfg.cliPath = next;
   try {
     saveConfig(ctx.home, cfg);
@@ -217,13 +225,22 @@ function maybePrintUpdateNotice(args: ParsedArgs, ctx: Ctx): void {
     const entry = parseChangelogEntry(readChangelog(), manifest.version);
     say(updateNoticeLine(previous, manifest.version, entry));
   }
+  if (installerOwnsSkills(ctx.home, ctx.env)) {
+    cfg.lastSkillBundleVersion = manifest.version;
+    try {
+      saveConfig(ctx.home, cfg);
+    } catch {
+      // Best effort: the notice prints again next time, and nothing else depends on it.
+    }
+    return;
+  }
   const skillsDir = resolveSkillsDir(args, ctx, cfg);
   let refreshed: SkillsInstallResult;
   try {
     refreshed = installSkills(skillsDir, { force: false, onlyExisting: true });
   } catch (err) {
     ctx.stderr(
-      `[catalyst-skills] could not refresh the skills at ${skillsDir} (${err instanceof Error ? err.message : String(err)}) — the ${manifest.version} skills are not installed yet; run: catalyst-skills install`,
+      `[catalyst-skills] could not refresh the skills at ${skillsDir} (${err instanceof Error ? err.message : String(err)}) — the ${manifest.version} skills are not installed yet; re-run the install command: ${INSTALL_COMMAND}`,
     );
     return;
   }
