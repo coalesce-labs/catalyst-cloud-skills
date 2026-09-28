@@ -20,6 +20,7 @@ Scripts are run, never read. Each prints `--help`.
 - `node scripts/where-am-i.mjs` — every part, each with the instrument that read it, its verdict, and for anything unfinished who can fix it and the page it is on. Works before the machine is connected; that is one of the states it reports.
 - `node scripts/where-am-i.mjs --next` — the same reading, reduced to the single next step.
 - `node scripts/where-am-i.mjs --json` — the same document for you to branch on.
+- `node scripts/local-sync.mjs` — optional local replica and event sync status. Run `node scripts/local-sync.mjs --start` only after the person chooses local sync; the script starts the supported writer and waits for a live heartbeat at the cloud cursor.
 
 Start every session with it, and run it again after every step the person completes. It is the only thing that decides where you are.
 
@@ -28,6 +29,7 @@ Start every session with it, and run it again after every step the person comple
 | when | read |
 | -- | -- |
 | walking the steps — what each one does, what to read back, when it is done | `references/the-one-path.md` |
+| the person chooses an optional local event and replica cache | `references/local-sync.md` |
 | anything reports not ready, or you are about to say who should fix something | `references/who-fixes-what.md` |
 | the next step is a browser page, or a page said it worked and you have to confirm it | `references/what-the-browser-owns.md` |
 | the person asks what Catalyst actually is, or how a ticket gets worked | the `how-catalyst-works` skill |
@@ -41,11 +43,12 @@ Start every session with it, and run it again after every step the person comple
 ## Rules
 
 - **One step, then stop.** Say what you are about to do, do it, show the real output, say what it means and what comes next. Never queue several steps into one message, and never move on from a step you did not watch finish.
+- **Local sync is opt-in.** API-backed skills work without it. Ask whether the person wants a local event and replica cache before running `local-sync.mjs --start`. A detached process starting is not evidence of freshness; only the script's verified current verdict is.
 - **Report what you observed, not what you expected.** Print the lines the command actually produced. "That worked" without the output it produced is the single easiest thing to get wrong here, and a person who later finds it did not work stops trusting every other step you reported.
 - **Each part by its own instrument.** Read the machine with the machine's instrument and the project with the project's, and label every finding with the part it belongs to. The script does this for you; keep it that way when you summarize.
 - **Not ready is a question about who, not a reason to retry.** When something reports not ready, name which check, who can fix it, and where. If the owner is not the person in front of you, say so and stop — re-running a local command cannot move a check that belongs to a tenant owner, an admin, or a browser page.
 - **Never invent a count or a list.** Every number and every name comes from what a command printed. If you want to tell them how many projects are mapped, read it off the script's output; do not carry one over from an earlier turn.
-- **Three steps belong to a browser and always will**: approving the login, connecting Linear, and installing the GitHub App. Hand over the page and say what you need back. Do not claim you did them.
+- **Provider consent belongs to the person in a browser.** This includes approving login, the tenant's Linear connection and GitHub App install, and the member's personal Linear and GitHub connections. Start personal Linear consent after tenant Linear is connected; start personal GitHub consent only after the tenant GitHub App is installed and its repository is registered. Give the person the printed URL, then check `status`. Never claim a grant succeeded because a browser opened.
 - **Some steps a key cannot do yet.** Listing every project, saving a stage mapping, adopting the workflow, registering a repository and approving one repository's environment are settings-page work today; a key-callable path for them is being built. Route those through the browser and say plainly that it is a gap, not the design. Never guess at a route for them.
 - **The account-wide environment declaration is the exception, and the one setup write you can perform.** `catalyst-skills environment` reads it, proposes it and approves it. Use the verb; do not send them to a page for it.
 - **Their tenant, as them.** Everything goes through the CLI and the person's own login. You never name another tenant, and you never ask for a key you could avoid — the keyless login needs nothing pasted.
