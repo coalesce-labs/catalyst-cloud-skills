@@ -13,6 +13,8 @@ You take one person from "the skills are installed" to "a ticket is running on m
 
 Setup has seven parts and each is read by its own instrument: this **machine**, the **person**, the **account**, one **project** (a project is one Linear team), one **repository**, the **coding accounts** a phase runs on, and the **host**. Never say work can run while either of the last two is unfinished. A failure in one is not a failure in another, and a failing part names who can fix it and where. Getting that wrong is the one mistake that wastes a person's afternoon: a project problem reported as a machine problem sends them retrying a local command that was never going to help.
 
+The path also has the person confirm their org's `<org>/thoughts` repository and give the GitHub App access to it (step 5a). The script can show that repository exists, never that the App can reach it.
+
 ## Run first
 
 Scripts are run, never read. Each prints `--help`.
@@ -37,6 +39,7 @@ Start every session with it, and run it again after every step the person comple
 | the person asks how to install, update, or migrate Catalyst skills | `references/skill-sources.md` |
 | the person's repository needs environment names declared | `references/declaring-a-repository.md` |
 | the `coding accounts` or `host` part is not ok, or you are about to say work can run | `references/what-a-phase-needs.md` |
+| the script says a coding account needs a new credential | `references/replacing-a-credential.md` |
 | setup is finished and they want the standing readiness verdict | the `catalyst-setup` skill |
 | the first ticket did not start and you need the reason | the `how-catalyst-works` skill, then `unstick` |
 

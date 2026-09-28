@@ -357,7 +357,7 @@ export async function cmdQueue(args: ParsedArgs, ctx: Ctx): Promise<number> {
 
 /** The five status words `/api/v1/coding-accounts` reports, in the words a customer reads. */
 export const ACCOUNT_STATUS: Record<string, string> = {
-  "expired-or-revoked": "expired or revoked — re-enrol it before it can take work",
+  "expired-or-revoked": "expired or revoked — replace its credential on the AI accounts page (Settings → AI accounts → the account → Replace credential) before it can take work",
   walled: "walled — the provider's usage limit is spent for now",
   active: "active — observed working",
   attested: "attested — healthy at last check, no work observed since",

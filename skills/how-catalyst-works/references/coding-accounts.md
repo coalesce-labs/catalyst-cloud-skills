@@ -24,7 +24,7 @@ The harness is a property of the catalog entry, never a routing input. Which pro
 - **Declared**: `active` or `disabled`. The operator sets it.
 - **Observed**: `healthy`, `degraded` or `unknown`. The poller sets it from what the provider reports.
 
-Two more lifecycle facts sit beside them: **quarantined** (system-set, on a credential conflict or an authentication mismatch; sticky, only an operator clears it) and **revoked** (operator-set).
+Two more lifecycle facts sit beside them: **quarantined** (system-set, on a credential conflict or an authentication mismatch; Replace credential on the account's page clears it, and a tenant owner or admin can do that, so an operator is not required) and **revoked** (operator-set).
 
 ## Windows, walls, headroom
 

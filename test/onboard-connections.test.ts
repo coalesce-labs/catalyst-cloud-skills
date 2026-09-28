@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdtempSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -22,14 +22,20 @@ else if (verb === "contract" && args[1] === "codingAccounts") output({state:"enr
 else if (verb === "contract" && args[1] === "readinessChecks") output([]);
 else if (verb === "contract") output(process.env.TEST_REPOSITORY_REGISTERED === "true" ? [{owner:"acme",name:"app"}] : []);
 else if (verb === "environment") output({current:null});
+else if (verb === "accounts") output({accounts:[{accountSlot:"claude-1", provider:"claude", status:"active", quarantined:false}]});
 else process.exit(3);
 `);
+  // A stand-in `gh` that sees no thoughts repository, so no test reaches the real GitHub.
+  const bin = join(home, "bin");
+  mkdirSync(bin);
+  writeFileSync(join(bin, "gh"), "#!/bin/sh\necho 'not found' >&2\nexit 1\n");
+  chmodSync(join(bin, "gh"), 0o755);
   const configDir = join(home, ".config", "catalyst-cloud");
   mkdirSync(configDir, { recursive: true });
   writeFileSync(join(configDir, "customer.json"), JSON.stringify({ key: "member-fixture", cliPath: cli }));
   const result = spawnSync(process.execPath, [script, "--json"], {
     encoding: "utf8",
-    env: { ...process.env, CATALYST_SKILLS_HOME: home, TEST_LINEAR: linear, TEST_GITHUB: github, TEST_REPOSITORY_REGISTERED: String(repoRegistered) },
+    env: { ...process.env, PATH: bin, CATALYST_SKILLS_HOME: home, TEST_LINEAR: linear, TEST_GITHUB: github, TEST_REPOSITORY_REGISTERED: String(repoRegistered) },
   });
   return { exit: result.status, doc: JSON.parse(result.stdout) as {
     personalConnections: Record<string, string>;
