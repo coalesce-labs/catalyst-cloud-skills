@@ -108,7 +108,8 @@ interface DeviceAuthorization {
   device_code: string;
   user_code: string;
   verification_uri: string;
-  verification_uri_complete: string;
+  /** Only when the server sent one: the link that carries the code, so nothing is typed. */
+  verification_uri_complete?: string;
   expires_in: number;
   interval: number;
 }
@@ -119,44 +120,65 @@ interface TokenPair {
 }
 
 /**
+ * CTC-2136: how many device codes one login mints before it gives up. A code lives `expires_in`
+ * (300 s at WorkOS), which a first sign-in from a phone can outlast, so an expired code is replaced
+ * in the same process rather than ending the login. Ryan's call (2026-09-28): up to 3 codes.
+ */
+export const MAX_DEVICE_CODES = 3;
+
+/**
  * Run the device-authorization grant to completion and return the stored session block. Prints the
- * user code and where to enter it; on a TTY it also opens the completion URL. Polls at the server's
- * `interval`, honours `slow_down`, and is bounded by `AbortSignal.timeout(expires_in)` so it can
- * never poll past the device code's own lifetime.
+ * user code, where to enter it, and the one-click link when the server sends one; on a TTY it also
+ * opens the browser. Each code is polled at the server's `interval`, honouring `slow_down`, and is
+ * bounded by `AbortSignal.timeout(expires_in)` so it can never poll past its own lifetime. When a code
+ * expires, a fresh one is minted and printed, up to MAX_DEVICE_CODES in all.
  */
 export async function deviceFlowLogin(ctx: Ctx, baseUrl: string, deps: DeviceFlowDeps = {}): Promise<OauthAuth> {
   const sleep = deps.sleep ?? defaultSleep;
   const discovery = await fetchDiscovery(ctx, baseUrl);
-  const auth = await deviceAuthorize(ctx, discovery);
-
-  ctx.stdout("");
-  ctx.stdout(`To connect this machine, visit:  ${auth.verification_uri}`);
-  ctx.stdout(`and enter the code:              ${auth.user_code}`);
-  if ((deps.isTty ?? (() => false))()) {
-    try {
-      (deps.openBrowser ?? (() => {}))(auth.verification_uri_complete);
-      ctx.stdout("Opened your browser to that page — approve there, or use the code above.");
-    } catch {
-      // a browser that will not open is not a failure; the code and URL still work
+  // The browser rule is decided on the first code; a later code re-opens it only when the first did.
+  let browserOpened = false;
+  for (let round = 1; round <= MAX_DEVICE_CODES; round++) {
+    const auth = await deviceAuthorize(ctx, discovery);
+    if (round > 1) ctx.stdout(`That code expired. Here is a new one (${round} of ${MAX_DEVICE_CODES}):`);
+    ctx.stdout("");
+    ctx.stdout(`To connect this machine, visit:  ${auth.verification_uri}`);
+    ctx.stdout(`and enter the code:              ${auth.user_code}`);
+    if (auth.verification_uri_complete) ctx.stdout(`Or open this link, which fills the code in: ${auth.verification_uri_complete}`);
+    if (round === 1 ? (deps.isTty ?? (() => false))() : browserOpened) {
+      try {
+        (deps.openBrowser ?? (() => {}))(auth.verification_uri_complete ?? auth.verification_uri);
+        browserOpened = true;
+        ctx.stdout("Opened your browser to that page — approve there, or use the code above.");
+      } catch {
+        // a browser that will not open is not a failure; the code and URL still work
+      }
     }
+    ctx.stdout("Waiting for you to approve… (Ctrl-C to cancel)");
+    const tokens = await pollDeviceCode(ctx, discovery, auth, sleep);
+    if (tokens !== "expired") return tokensToAuth(ctx, tokens.access_token, tokens.refresh_token);
   }
-  ctx.stdout("Waiting for you to approve… (Ctrl-C to cancel)");
+  // Every code lapsed unapproved. The exit code (2, CliError's default) and the `login-expired` code are
+  // unchanged from before CTC-2136; only the line is new, and its wording is Ryan's.
+  throw new CliError(
+    `The sign-in code expired ${MAX_DEVICE_CODES} times. Run the same command again when you are ready to approve.`,
+    "login-expired",
+  );
+}
 
-  // Terminal states print ONE clear, actionable line and exit 2 (CliError's default). The duration
-  // comes from the device code's own `expires_in`, so it is right whatever the server set.
-  const mins = Math.round(auth.expires_in / 60);
-  const expired = () =>
-    new CliError(
-      `the login code expired${mins >= 1 ? ` after ${mins} minute${mins === 1 ? "" : "s"}` : ""} — run: catalyst-skills login again`,
-      "login-expired",
-    );
+/**
+ * Poll one device code until it yields a token pair or expires. Terminal refusals (`access_denied`,
+ * a non-transient error) throw; expiry, by the server's `expired_token` or the code's own
+ * `expires_in` lapsing, returns "expired" so the caller can mint the next code.
+ */
+async function pollDeviceCode(ctx: Ctx, discovery: CliDiscovery, auth: DeviceAuthorization, sleep: (ms: number) => Promise<void>): Promise<TokenPair | "expired"> {
   const deadline = AbortSignal.timeout(auth.expires_in * 1_000);
   let intervalMs = Math.max(1, auth.interval) * 1_000;
   for (;;) {
     await sleep(intervalMs);
-    // The device code's own lifetime bounds the loop: once it lapses, say so plainly rather than
+    // The device code's own lifetime bounds the loop: once it lapses, treat it as expired rather than
     // letting the next fetch's aborted signal surface as a generic network error (Codex P2).
-    if (deadline.aborted) throw expired();
+    if (deadline.aborted) return "expired";
     let res: Response;
     try {
       res = await safeFetch(
@@ -168,7 +190,7 @@ export async function deviceFlowLogin(ctx: Ctx, baseUrl: string, deps: DeviceFlo
     } catch (err) {
       // The deadline firing mid-fetch is an expiry, not a failure; anything else is a transient
       // network blip — retry with backoff until the deadline, never abandon the login (CTC-2112 P1).
-      if (deadline.aborted) throw expired();
+      if (deadline.aborted) return "expired";
       intervalMs = backoff(intervalMs);
       continue;
     }
@@ -177,7 +199,7 @@ export async function deviceFlowLogin(ctx: Ctx, baseUrl: string, deps: DeviceFlo
       if (typeof pair.access_token !== "string" || typeof pair.refresh_token !== "string") {
         throw new CliError("the login token response was missing a token", "login-shape");
       }
-      return tokensToAuth(ctx, pair.access_token, pair.refresh_token);
+      return { access_token: pair.access_token, refresh_token: pair.refresh_token };
     }
     const err = await oauthError(res, discovery.tokenUrl);
     if (err === "authorization_pending") continue;
@@ -186,7 +208,7 @@ export async function deviceFlowLogin(ctx: Ctx, baseUrl: string, deps: DeviceFlo
       continue;
     }
     if (err === "access_denied") throw new CliError("login was denied — run: catalyst-skills login to try again", "login-denied");
-    if (err === "expired_token") throw expired();
+    if (err === "expired_token") return "expired";
     // A transient HTTP failure (request timeout, rate limit, server error) is retried, honouring
     // Retry-After for a 429; only a genuine, non-transient refusal ends the loop.
     if (res.status === 408 || res.status === 429 || res.status >= 500) {
@@ -235,7 +257,7 @@ async function deviceAuthorize(ctx: Ctx, discovery: CliDiscovery): Promise<Devic
     device_code: d.device_code,
     user_code: d.user_code,
     verification_uri: d.verification_uri,
-    verification_uri_complete: d.verification_uri_complete ?? d.verification_uri,
+    ...(typeof d.verification_uri_complete === "string" && d.verification_uri_complete !== "" ? { verification_uri_complete: d.verification_uri_complete } : {}),
     expires_in: typeof d.expires_in === "number" ? d.expires_in : 300,
     interval: typeof d.interval === "number" ? d.interval : 5,
   };
