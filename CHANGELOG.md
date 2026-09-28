@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.9.0
+
+Onboarding now guides your own Linear and GitHub consent. `catalyst connections personal <linear|github> start` opens the provider's consent page in your browser and `status` confirms the grant landed; the tenant's own Linear connection and GitHub App install stay separate, and personal GitHub waits until the App is installed and a repository is registered.
+
+An unmatched Linear identity can be fixed from the terminal: `catalyst identity linear status`, `options` and `set <linearUserId>` choose your Linear user from the roster and read the choice back. An existing match is never replaced.
+
+The local replica and event cache report whether they are current. `catalyst replica status --probe` and `catalyst events status --probe` compare each local feed with its cloud head and require a live writer; onboarding starts the writer only when you opt in, and a missing local cache never blocks setup.
+
+Register, list and remove MCP servers with `catalyst mcp`, using vault-secret names for authentication. Custom HTTPS servers wait for account-admin approval; query strings, userinfo and fragments are refused. The cloud side shipped on 2026-09-28; registration does not yet make a server callable through the portal.
+
+This release needs `@catalyst-cloud/sdk` 0.12. `@catalyst-cloud/catalyst-skills` is deprecated in favour of `@catalyst-cloud/cli`; it still installs and forwards to this version.
+
 ## 0.8.0
 
 `catalyst-skills ready` loads the SDK on Node 26, the current Homebrew default, and has since 0.7.0: the type-stripping loader tries Node's `strip` mode before `transform`, because Node 26 accepts only `strip`. The 0.7.0 entry did not say so. If you saw `sdk: could not load` on Node 26 on 0.5.0 or earlier, updating is the fix.
