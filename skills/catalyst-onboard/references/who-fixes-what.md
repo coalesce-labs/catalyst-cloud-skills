@@ -7,7 +7,7 @@ Setup is seven parts. Each has one instrument, and each instrument answers about
 | part | instrument | what a pass proves | what it does **not** prove | who fixes a failure, and where |
 | -- | -- | -- | -- | -- |
 | **machine** | `catalyst-skills status`, and the non-team checks of `catalyst-skills ready` | Node is new enough, this machine holds a credential, the CLI is where the config says, the contract is cached, the skills are on disk | anything at all about the tenant | the person at this keyboard, here |
-| **person** | `catalyst-skills me` | the credential resolves to this person, with a role, and whether their Linear identity is matched | that their seat is active, or that they may change tenant settings | a tenant owner or admin, Settings → Members |
+| **person** | `catalyst-skills me`, and `catalyst-skills connections personal <linear|github> status` | the credential resolves to this person, shows their role and Linear identity match, and reports each personal grant's state | that their seat is active, or that they may change tenant settings | the member approves missing or expired personal grants in a browser; an owner or admin handles seat or identity conflicts in Settings → Members |
 | **account** | `catalyst-skills contract --path account` | a resolved Linear workspace means the tenant's Linear grant landed | that the GitHub App is installed — the contract does not carry it | a tenant owner or admin, `<their cloud>/settings/connections` |
 | **project** | `catalyst-skills contract --path teams`, and the `team:` checks of `ready` | for each project **that has been mapped**: its readiness verdict and each failing check by name | that this is every project they have — see below | a tenant owner or admin, `<their cloud>/settings/linear-teams` |
 | **repository** | `catalyst-skills contract --path merge.repositories` | the repository is registered to the account | that it is active, that a project can dispatch into it, or that its environment is declared | a tenant owner or admin, `<their cloud>/settings/repositories` |
@@ -34,7 +34,7 @@ Setup is seven parts. Each has one instrument, and each instrument answers about
 
 - **A machine check failed.** This is the person's, here, now. Each failing check carries its own `fix` line; read it and do it. A missing or partial skill set is `catalyst-skills install`; a stale contract is `catalyst-skills contract --refresh`; a missing CLI path is one more `catalyst-skills login`.
 - **A project check failed.** ⛔ **Nothing you run on this machine can move it.** Name the check, name the project, and name the owner — the `who` field carries the tenant's own owners and admins. Point at `<their cloud>/settings/linear-teams`. Then stop. Re-running `ready` in a loop is the failure this section exists to prevent: it will keep saying NOT READY for a reason that lives somewhere else entirely.
-- **A check is a note.** Notes never move the verdict. A stale or absent replica is optional; a check that has never been run is waiting, not failing; a check the engine could not run is unknown, which is not a pass and not a failure. Say which of the three it is.
+- **A check is a note.** Notes never move the verdict. A stale or absent replica or event cache is optional; an unknown freshness probe means the cloud comparison could not be proved. The API-backed skills still work. Say whether the local cache is absent, stale or unknown, and ask before starting the optional writer.
 
 ## When to stop rather than continue
 

@@ -84,7 +84,19 @@ CATALYST_CLOUD_TOKEN=<your-personal-key> catalyst-skills login
 
 `--key <your-personal-key>` is the third form, for a script.
 
-That is the whole setup. Everything below explains what you just installed.
+After a tenant owner connects the tenant's Linear workspace, connect your personal Linear account. Connect your personal GitHub account only after the tenant's GitHub App is installed and its repository is registered. These personal grants are separate from the tenant's Linear connection and GitHub App installation. Your agent can start each connection and check whether it landed, but you approve each one in your browser:
+
+```sh
+catalyst-skills connections personal linear start
+catalyst-skills connections personal linear status
+# First install the tenant's GitHub App and register its repository in Settings.
+catalyst-skills connections personal github start
+catalyst-skills connections personal github status
+```
+
+Each `start` prints a short-lived URL and attempts to open your browser. On a remote machine, open the printed URL on your own device. `status --json` gives the same result to an agent; `start --wait 60` waits up to one minute for approval. A connected result is the proof that the grant landed. If a provider reports unavailable, retry status later rather than starting a second approval.
+
+The `catalyst-onboard` skill checks both grants before taking you through the rest of tenant setup and the first ticket.
 
 ## What this is
 
@@ -128,7 +140,7 @@ Nothing, by default. After `login`, every read, write, ask and explanation goes 
 
 The check every skill runs first is `catalyst-skills replica status`, which needs no network: is the pidfile's process alive, is the writer-lock heartbeat younger than the staleness threshold, and is the cursor non-empty. It exits `0` for fresh, `1` for present but stale, `2` for not connected, `3` for absent, and prints one line either way (`--json` for scripts). A fresh replica is used; anything else falls back to the API and the skill says so in its answer. A skill never refuses to work because the replica is down and never silently reads a stale one. `replica status --probe` compares the local cursor against the cloud's head for the honest "how far behind" number; that is the only form that touches the network. `catalyst-skills replica stop` stops a detached writer.
 
-`catalyst-skills events tail` follows new cached events, `events wait-for --type ... --ticket ... --timeout ...` performs a bounded wait, and `events query` reads retained history. These commands never write the cache or contact the cloud. The replica process is the single writer and reports an event-sync failure without terminating a healthy entity replica. The event cache keeps closed daily segments for at most seven days or 256 MiB per tenant and reports an explicit gap when a requested sequence has retired.
+`catalyst-skills events status --probe` checks the event cache's own cursor and compares it with the cloud head; `replica status --probe` checks the separate entity-replica cursor. A fresh replica does not prove event freshness. `events tail` follows new cached events, `events wait-for --ticket ... --timeout ...` performs a bounded wait, and `events query` reads retained history. Those three commands only read the cache; `events status --probe` makes the cloud comparison. The replica process is the single writer and reports an event-sync failure without terminating a healthy entity replica. The event cache keeps closed daily segments for at most seven days or 256 MiB per tenant and reports an explicit gap when a requested sequence has retired.
 
 The replica is a Node process, not a service: the supported path is the plain command, and `skills/connect-me/references/keeping-the-replica-running.md` gives launchd and systemd examples for people who want the writer to survive a reboot.
 
@@ -136,7 +148,7 @@ The replica is a Node process, not a service: the supported path is the plain co
 
 | skill | what the person says | what it does | file |
 | --- | --- | --- | --- |
-| `catalyst-onboard` | "Set me up. Onboard me. I just signed up — what do I do first?" | Walks you from nothing to your first ticket running, one step at a time: connect this machine, connect Linear, map one project, register one repository, then watch a card move. Reads each part of setup with the instrument that owns it and says who can fix anything unfinished and where. Hands over the steps only a browser can do instead of pretending to have done them. | [`SKILL.md`](skills/catalyst-onboard/SKILL.md) |
+| `catalyst-onboard` | "Set me up. Onboard me. I just signed up — what do I do first?" | Walks you from nothing to your first ticket running, one step at a time: connect this machine, connect the tenant and your personal provider accounts, map one project, register one repository, then watch a card move. Reads each part of setup with the instrument that owns it and says who can fix anything unfinished and where. Hands over browser consent and settings steps without claiming they happened until a status check confirms them. | [`SKILL.md`](skills/catalyst-onboard/SKILL.md) |
 | `whats-happening` | "What's happening? Where are we? Why is that stuck? What's next?" | The desk for a tenant: reads the contract, what is running and queued, the eligibility explainer and the open asks, and answers in one reply with ticket ids. Routes work to a project owner and decisions to `what-needs-me`. | [`SKILL.md`](skills/whats-happening/SKILL.md) |
 | `what-needs-me` | "What needs me? What am I blocking?" | The human's decision inbox, ranked by what each answer releases, and the one way an agent raises a decision on their behalf: files an ask through the cloud's ask route with the tenant's own template and records the answer so the held work releases. | [`SKILL.md`](skills/what-needs-me/SKILL.md) |
 | `run-this-project` | "Run this project for me. Own it until it closes." | Single-threaded owner of one project: subscribes to the tenant stream for its scope, reacts to each change in the same turn, makes tickets ready and moves them to dispatch, parks what should stop, chases stalls, escalates inward, and keeps one status summary current. Never polls. | [`SKILL.md`](skills/run-this-project/SKILL.md) |

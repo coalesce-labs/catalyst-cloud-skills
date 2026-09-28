@@ -68,6 +68,7 @@ export const FLAG_TABLES: Record<string, FlagTable> = {
     "stale-ms": { value: true, help: "status: heartbeat age that counts as stale (default 15000)" },
   },
   events: {
+    probe: { value: false, help: "status: compare the local event cursor with the cloud event head" },
     type: { value: true, help: "exact event type" },
     ticket: { value: true, help: "ticket identifier found in the event payload" },
     after: { value: true, help: "event sequence to read after (tail/wait default to local head)" },
@@ -145,6 +146,9 @@ export const FLAG_TABLES: Record<string, FlagTable> = {
     command: { value: true, help: "set: run this command on this machine and store its output (e.g. 'op read op://Vault/item/field'); the command text is audited, so never put a value in it" },
     rotate: { value: true, repeat: true, help: "import: replace this name if it is already set (repeatable)" },
   },
+  connections: {
+    wait: { value: true, help: "start: wait up to this many seconds for browser approval (0-600)" },
+  },
   release: {
     because: { value: true, help: "what changed since the ticket was held (required unless --dry-run)" },
     "retry-unchanged": { value: false, help: "release even though nothing the mirror can see changed (say what did in --because)" },
@@ -168,7 +172,7 @@ export const VERB_USAGE: Record<string, string> = {
     "replica <start [--detach]|stop|status [--probe] [--json]|sql \"<select>\"|schema [table]> [--db <path>]",
   runtime: "runtime <status [--json]|install|path|uninstall>",
   events:
-    "events <tail|wait-for|query> [--type NAME] [--ticket CTC-N] [--after SEQUENCE] [--limit N] [--timeout SECONDS] [--directory PATH]",
+    "events <tail|wait-for|query|status [--probe] [--json]> [--type NAME] [--ticket CTC-N] [--after SEQUENCE] [--limit N] [--timeout SECONDS] [--directory PATH]",
   explain: "explain <ticket> [--history] [--json]",
   history: "history <ticket> [--json]",
   running: "running [--ticket T --phase P] [--json]",
@@ -183,6 +187,7 @@ export const VERB_USAGE: Record<string, string> = {
     "environment [read] [--json] | environment propose --file <path>|--stdin [--expect-revision N] [--approve] [--json] | environment approve [--revision N --hash H] [--json]",
   secret:
     "secret set <NAME> --repo <owner/name> [--command '<cmd>'] [--json]   (value from --command, stdin, or a hidden prompt) | secret import <file> --repo <owner/name> [--rotate NAME]... [--json]",
+  connections: "connections personal <linear|github> <start|status> [--wait <seconds>] [--json]",
   release:
     "release <ticket> --because <what changed> [--retry-unchanged] [--dry-run] [--json] | release --class <failure-class> --team <K> --because <what changed> [--retry-unchanged] [--dry-run] [--limit N] [--json]",
 };
