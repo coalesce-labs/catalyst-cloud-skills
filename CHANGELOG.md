@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.9.2
+
+The CLI works against a tenant serving contract 2.x. Catalyst Cloud's tenant contract moved to 2.0.0 when it removed `merge.cloudRemediateRequiredChecks`, and every earlier bundle accepted only 1.x, so `ready`, onboarding and most commands stopped with "the tenant serves contract version 2.2.0 but this bundle accepts 1.x". This bundle accepts `1.x || 2.x`. The one place that read the removed field already treated it as absent.
+
 ## 0.9.1
 
 Onboarding now teaches `.catalyst/catalyst.toml`, the only file the cloud reads a repository's settings from. The skills still described `catalyst.env.json`, which the cloud has ignored since 2026-09-27, so a declaration written from them was silently dropped. The repository reference shows the file's shape (`[project]` with `linear_team`, then `[[environment.variables]]` and `[[environment.setup]]`) and the approval step: an owner or admin opens the repository's Environment page, goes to the Setup declaration tab, and clicks Approve this revision.
