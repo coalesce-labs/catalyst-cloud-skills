@@ -109,6 +109,11 @@ export interface OauthFixture {
   expired: boolean;
   /** `expires_in` the device-authorize response advertises (the poll's own deadline). Default 300. */
   deviceExpiresIn: number;
+  /** CTC-2136: the next N device codes minted answer `expired_token` (counts down per mint); a later
+   *  one proceeds normally. Safe on a server shared across tests. */
+  expireNextCodes: number;
+  /** CTC-2136: leave `verification_uri_complete` out of the device-authorize response. */
+  omitVerificationUriComplete: boolean;
   /** Answer the first N device-code polls with this transient status (408/429/5xx) — retried, not fatal. */
   pollTransientStatus: number | null;
   pollTransientTimes: number;
@@ -135,6 +140,11 @@ export interface OauthFixture {
   /** Every access token the fixture has minted; any of them authenticates as the person. */
   issuedAccessTokens: Set<string>;
   lastRefreshToken: string | null;
+  // ── CTC-2136 bookkeeping: which minted codes expire, and how far into a chain of expiries we are ──
+  expiringDeviceCodes: Set<string>;
+  /** 0 for a fresh login's first code; +1 for each code minted right after one that expired. */
+  mintChain: number;
+  lastMintExpired: boolean;
 }
 
 // ── the tenant's data ─────────────────────────────────────────────────────────────────────────────
@@ -515,6 +525,8 @@ export async function startMeFixture(
       denied: false,
       expired: false,
       deviceExpiresIn: 300,
+      expireNextCodes: 0,
+      omitVerificationUriComplete: false,
       pollTransientStatus: null,
       pollTransientTimes: 0,
       refreshInvalidGrant: false,
@@ -529,6 +541,9 @@ export async function startMeFixture(
       refreshCount: 0,
       issuedAccessTokens: new Set<string>(),
       lastRefreshToken: null,
+      expiringDeviceCodes: new Set<string>(),
+      mintChain: 0,
+      lastMintExpired: false,
     },
   };
   const postRoutes = () => new Set(state.contract.routes.filter((r) => r.method === "POST").map((r) => r.path));
@@ -600,11 +615,21 @@ export async function startMeFixture(
     }
     if (path === "/oauth/device") {
       o.deviceAuthorizeCount += 1;
+      // CTC-2136: a code minted right after one that expired is the next in its chain, so a re-minted
+      // login shows WXYZ-1235, WXYZ-1236…; a fresh login's first code is always WXYZ-1234.
+      o.mintChain = o.lastMintExpired ? o.mintChain + 1 : 0;
+      const deviceCode = `device-code-fixture-${o.deviceAuthorizeCount}`;
+      o.lastMintExpired = o.expired || o.expireNextCodes > 0;
+      if (o.expireNextCodes > 0) {
+        o.expireNextCodes -= 1;
+        o.expiringDeviceCodes.add(deviceCode);
+      }
+      const userCode = `WXYZ-${1234 + o.mintChain}`;
       return send(200, {
-        device_code: "device-code-fixture",
-        user_code: "WXYZ-1234",
+        device_code: deviceCode,
+        user_code: userCode,
         verification_uri: `${state.url}/activate`,
-        verification_uri_complete: `${state.url}/activate?user_code=WXYZ-1234`,
+        ...(o.omitVerificationUriComplete ? {} : { verification_uri_complete: `${state.url}/activate?user_code=${userCode}` }),
         expires_in: o.deviceExpiresIn,
         interval: 5,
       });
@@ -633,6 +658,9 @@ export async function startMeFixture(
       o.tokenPollCount += 1;
       if (o.denied) return send(400, { error: "access_denied", error_description: "the request was denied" });
       if (o.expired) return send(400, { error: "expired_token", error_description: "the device code expired" });
+      if (o.expiringDeviceCodes.has(String((body as { device_code?: string } | undefined)?.device_code))) {
+        return send(400, { error: "expired_token", error_description: "the device code expired" });
+      }
       if (o.slowDownOnce && o.tokenPollCount === 1) return send(400, { error: "slow_down" });
       const pendingAnswered = o.slowDownOnce ? o.tokenPollCount - 1 : o.tokenPollCount;
       if (pendingAnswered <= o.pendingPolls) return send(400, { error: "authorization_pending" });
