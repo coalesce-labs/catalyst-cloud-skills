@@ -373,6 +373,7 @@ export interface CodingAccount {
   walled?: boolean;
   quarantined?: boolean;
   quarantineReason?: string | null;
+  renewalStatus?: string | null;
   bindingWindow?: string | null;
   bindingUsedPercent?: number | null;
   bindingResetsAtMs?: number | null;
@@ -387,6 +388,8 @@ export function renderAccount(a: CodingAccount): string {
   const harness = a.harness ? `/${a.harness}` : "";
   const status = a.status ? (ACCOUNT_STATUS[a.status] ?? a.status) : "status unknown";
   const bits = [`${name}  ${a.provider ?? "?"}${harness}  ${status}`];
+  // CTC-4199: a cancelled subscription is retired, never re-credentialed; say so in the text view too.
+  if (a.renewalStatus === "canceled") bits.push("subscription canceled — retire on the AI accounts page");
   if (typeof a.bindingUsedPercent === "number") {
     const resets = typeof a.bindingResetsAtMs === "number" ? `, resets ${new Date(a.bindingResetsAtMs).toISOString()}` : "";
     bits.push(`usage ${a.bindingUsedPercent}% of the ${a.bindingWindow ?? "binding"} window${resets}`);
