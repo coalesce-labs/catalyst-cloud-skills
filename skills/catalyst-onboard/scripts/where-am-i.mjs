@@ -288,7 +288,11 @@ let accountsNext = "enrol a coding account a phase can run on";
 // credential itself. The poll fields are read only when the cloud sends them.
 const CREDENTIAL_ERROR_CODES = new Set(["no_access_token", "no_credential", "http_401", "http_403", "usage_unauthorized", "usage_forbidden"]);
 const CREDENTIAL_FAILURE_STREAK = 3;
+// A cancelled subscription or an ended account is not a credential problem: no token brings it
+// back. It is retired, never re-credentialed, and it does not make setup unfinished.
+const isRetirable = (a) => a?.renewalStatus === "canceled" || a?.status === "ended" || a?.declaredState === "ended";
 const credentialProblem = (a) => {
+  if (isRetirable(a)) return null;
   if (a?.quarantined === true) return `quarantined${typeof a.quarantineReason === "string" && a.quarantineReason !== "" ? `: ${a.quarantineReason}` : ""}`;
   if (a?.status === "expired-or-revoked") return "expired or revoked";
   if (CREDENTIAL_ERROR_CODES.has(a?.lastPollErrorCode) && typeof a?.pollFailureCount === "number" && a.pollFailureCount >= CREDENTIAL_FAILURE_STREAK) {
@@ -318,18 +322,21 @@ if (!connected) {
       const head = [line, `${ca.activeCount ?? "?"} active`];
       const { rows, error } = readAccountRows();
       const dead = rows === null ? [] : rows.filter((a) => credentialProblem(a) !== null);
+      const retirable = rows === null ? [] : rows.filter(isRetirable);
+      const who = (a) => [a.label, a.email].find((v) => typeof v === "string" && v !== "");
+      const retireLine = retirable.length === 0 ? [] : [`${retirable.length} account(s) ended or cancelled (${retirable.map((a) => `${a.provider ?? "unknown provider"} ${a.accountSlot ?? "?"}`).join(", ")}): retire them on the AI accounts page. Do not replace their credential; no token revives a cancelled subscription.`];
       if (rows === null) {
         accountsNext = "read the coding accounts again; each account's credential could not be checked";
         add("coding accounts", DETAIL, "unreadable", [...head, `coding accounts could not be checked in detail (${error}). Whether each one still has a working credential is unknown. Do not enroll one on this reading.`], null, null);
       } else if (dead.length > 0) {
-        const name = (a) => `${a.provider ?? "unknown provider"} account ${a.accountSlot ?? "?"}`;
+        const name = (a) => `${a.provider ?? "unknown provider"} account ${a.accountSlot ?? "?"}${who(a) ? ` (${who(a)})` : ""}`;
         const more = dead.length > 1 ? ` (and ${dead.length - 1} more)` : "";
         accountsNext = `${name(dead[0])} needs a new credential${more}. Replace it on the AI accounts page (Settings → AI accounts → the account → Replace credential). Do not enroll another account.`;
         add(
           "coding accounts",
           DETAIL,
           "unfinished",
-          [...head, ...dead.map((a) => `${name(a)} needs a new credential: ${credentialProblem(a)}`), "Replace its credential on its own page. Do not enroll another account. The steps are in references/replacing-a-credential.md."],
+          [...head, ...dead.map((a) => `${name(a)} needs a new credential: ${credentialProblem(a)}`), "Replace its credential on its own page, with a credential minted from THAT account: check the login you mint from matches the account named here first. Do not enroll another account. The steps are in references/replacing-a-credential.md.", ...retireLine],
           owner,
           where,
         );
@@ -337,7 +344,7 @@ if (!connected) {
         accountsNext = "replace the credential of the coding account the page marks; do not enroll another account";
         add("coding accounts", DETAIL, "unfinished", [...head, "The contract says an account needs a new credential, and the account list does not say which. Open the page and look for it."], owner, where);
       } else {
-        add("coding accounts", DETAIL, "ok", [...head, `${rows.length} checked, none needs a new credential`]);
+        add("coding accounts", DETAIL, "ok", [...head, `${rows.length} checked, none needs a new credential`, ...retireLine]);
       }
     } else if (ca.state === "inactive") {
       accountsNext = "reactivate a coding account that is out of rotation; do not enroll another one";
