@@ -54,6 +54,9 @@ function answers(s: Scenario): Record<string, unknown> {
   return {
     "ready --json": { ready: true, checks: [{ id: "config", ok: true, line: "config: connected" }] },
     "me --json": { user: { label: "Pat Example", role: "owner", linearUserId: "lin-user-fixture" } },
+    // CTC-3212 — both personal grants connected, so the person part is finished in these scenarios.
+    "connections personal linear status --json": { outcome: "connected", status: 200 },
+    "connections personal github status --json": { outcome: "connected", status: 200 },
     "contract --path account --json": { name: "Example Co", slug: "example", linearWorkspaceSlug: "example-ws" },
     "environment read --json": { current: null },
     "contract --path teams --json": [
