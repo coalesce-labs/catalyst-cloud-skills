@@ -16,7 +16,7 @@ Merge evidence has three independent legs. Two are unconditional under every pol
 | reviewer | the reviewer signal the policy accepts (below) | only under a reviewer-attestation policy |
 | threads | zero unresolved review threads, and no resolved thread whose resolving commit has left the head | yes |
 
-Which checks are gating: the names the queue configuration itself requires, plus any extra gating check the cloud names. The contract serves the checks the cloud's own remediation waits on as `cloudRemediateRequiredChecks`; a check that cannot block a merge is informational and never a reason to withhold the label.
+Which checks are gating: the names the queue configuration itself requires, plus any extra gating check the cloud names. A 1.x contract also serves the checks the cloud's own remediation waits on as `cloudRemediateRequiredChecks`; a 2.x contract no longer carries it, so only the queue configuration's names gate there; a check that cannot block a merge is informational and never a reason to withhold the label.
 
 ## The policies
 
