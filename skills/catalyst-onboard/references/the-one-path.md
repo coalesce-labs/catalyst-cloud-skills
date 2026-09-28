@@ -118,7 +118,7 @@ Add `--approve` to approve exactly the revision that propose just returned, whic
 
 **Owner:** you can read it from any active seat; proposing and approving need an admin or owner seat, and the cloud refuses with that sentence if the person does not have one — read the refusal to them rather than retrying.
 
-⛔ **Values never pass through you.** The declaration carries the *names* a build needs. The values are entered by the person, once, in the app, and nothing you run ever sees them. Say that plainly; a person asked for a secret by an agent is right to be suspicious. The names one repository needs go in its own committed `catalyst.env.json`. See `references/declaring-a-repository.md`.
+⛔ **Values never pass through you.** The declaration carries the *names* a build needs. The values are entered by the person, once, in the app, and nothing you run ever sees them. Say that plainly; a person asked for a secret by an agent is right to be suspicious. The names one repository needs go in its own committed `.catalyst/catalyst.toml`. See `references/declaring-a-repository.md`.
 
 If they do not know what their build needs yet, skip this step. It blocks nothing until a phase needs a secret.
 
