@@ -1,0 +1,6 @@
+Revision history for #101:
+
+rev 2 (content) 2026-09-28 19:18 UTC — cli.test.ts: the out-of-range login case moves from 2.0.0 to 3.0.0 (2.x is now accepted).
+rev 1 (initial) 2026-09-28 19:18 UTC
+
+<!-- mergify-revision-data: {"schema_version":1,"pull_number":101,"entries":[{"number":1,"change_type":"initial","old_sha":null,"new_sha":"9cfb621604c1267d3bb6bbfb62195544d98f8998","timestamp_iso":"2026-09-28T19:18:12Z","reason":"","replay_sha":null,"compare_url":null},{"number":2,"change_type":"content","old_sha":"9cfb621604c1267d3bb6bbfb62195544d98f8998","new_sha":"55bdd3a402aa85b28807106289f097aa154942dc","timestamp_iso":"2026-09-28T19:18:12Z","reason":"cli.test.ts: the out-of-range login case moves from 2.0.0 to 3.0.0 (2.x is now accepted).","replay_sha":null,"compare_url":"https://github.com/coalesce-labs/catalyst-cloud-skills/compare/9cfb621604c1267d3bb6bbfb62195544d98f8998...55bdd3a402aa85b28807106289f097aa154942dc"}]} -->
