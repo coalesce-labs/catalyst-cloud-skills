@@ -1,0 +1,6 @@
+Revision history for #95:
+
+rev 2 (content) 2026-09-28 18:50 UTC — CHANGELOG 0.9.1 also records #54 (CTC-3202: write create --description/--stdin), which merged to main before #93 and asked the next release PR to write its entry. Ryan approved publishing 0.9.1 (relayed by Lantern, ~18:40Z).
+rev 1 (initial) 2026-09-28 18:50 UTC
+
+<!-- mergify-revision-data: {"schema_version":1,"pull_number":95,"entries":[{"number":1,"change_type":"initial","old_sha":null,"new_sha":"ceb1139c5a6f6bd1714408c800311831c20d4a07","timestamp_iso":"2026-09-28T18:50:02Z","reason":"","replay_sha":null,"compare_url":null},{"number":2,"change_type":"content","old_sha":"ceb1139c5a6f6bd1714408c800311831c20d4a07","new_sha":"c0d6eaa1be6919f0dfe0e73ce5eff76072d0b4f4","timestamp_iso":"2026-09-28T18:50:02Z","reason":"CHANGELOG 0.9.1 also records #54 (CTC-3202: write create --description/--stdin), which merged to main before #93 and asked the next release PR to write its entry. Ryan approved publishing 0.9.1 (relayed by Lantern, ~18:40Z).","replay_sha":null,"compare_url":"https://github.com/coalesce-labs/catalyst-cloud-skills/compare/ceb1139c5a6f6bd1714408c800311831c20d4a07...c0d6eaa1be6919f0dfe0e73ce5eff76072d0b4f4"}]} -->
