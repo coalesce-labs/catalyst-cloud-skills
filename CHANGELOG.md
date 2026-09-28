@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.9.3
+
+A machine the Catalyst installer moved from `@catalyst-cloud/catalyst-skills` to `@catalyst-cloud/cli` works without logging in again. The recorded launcher pointed into the removed package, so `ready` failed its CLI-path check and skill scripts could not start the CLI; any command now repoints it at the launcher that is running. The CLI also leaves the installer's skills alone: it never writes through a symlinked skill folder, and when the installer owns skill placement it does not refresh skills at all. When a refresh does fail, it tells you to re-run the install command.
+
+Onboarding no longer tells you to re-credential an ended or cancelled coding account: it says to retire it on the AI accounts page, and such an account no longer leaves setup unfinished. Before you mint a replacement token, it has you check that your terminal is logged into the account the slot belongs to. `catalyst accounts` names each account by its label, else its email, with the slot id second, adds `displayName` to `--json`, and marks a cancelled subscription "subscription canceled — retire on the AI accounts page".
+
 ## 0.9.2
 
 The CLI works against a tenant serving contract 2.x. Catalyst Cloud's tenant contract moved to 2.0.0 when it removed `merge.cloudRemediateRequiredChecks`, and every earlier bundle accepted only 1.x, so `ready`, onboarding and most commands stopped with "the tenant serves contract version 2.2.0 but this bundle accepts 1.x". This bundle accepts `1.x || 2.x`. The one place that read the removed field already treated it as absent.
