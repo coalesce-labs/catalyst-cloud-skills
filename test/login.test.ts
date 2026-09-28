@@ -359,16 +359,37 @@ describe("main — login (and the deprecated join alias)", () => {
     expect(cfg.auth?.sessionId).toBe("session_fixture");
     expect(statSync(configPathFor(home)).mode & 0o777).toBe(0o600);
   });
-  test("keyless login on an EXPIRED device code prints one clear actionable line (with the duration) and exits 2", async () => {
+  test("CTC-2136: keyless login whose codes ALL expire mints 3, then prints one plain resume line and exits 2", async () => {
     server.oauth.expired = true;
+    const before = server.oauth.deviceAuthorizeCount;
     try {
       const code = await main(["login", "--base-url", server.url], ctx(), { isTty: () => false, sleep: async () => {} });
       expect(code).toBe(2);
-      expect(err.join("\n")).toMatch(/expired after 5 minutes/);
-      expect(err.join("\n")).toContain("catalyst-skills login");
+      expect(err.join("\n")).toContain("The sign-in code expired 3 times. Run the same command again when you are ready to approve.");
+      expect(server.oauth.deviceAuthorizeCount - before, "exactly 3 device codes in one login").toBe(3);
       expect(existsSync(configPathFor(home)), "no config written on a failed login").toBe(false);
     } finally {
       server.oauth.expired = false;
+      server.oauth.lastMintExpired = false; // the shared server's next login starts a fresh code chain
+    }
+  });
+  test("⭐ CTC-2136: keyless login whose first code expires carries on with a fresh code and connects, in one process", async () => {
+    server.oauth.expireNextCodes = 1;
+    const before = server.oauth.deviceAuthorizeCount;
+    try {
+      const code = await main(["login", "--base-url", server.url], ctx(), { isTty: () => false, sleep: async () => {} });
+      expect(code).toBe(0);
+      const printed = out.join("\n");
+      expect(printed).toContain("That code expired. Here is a new one (2 of 3):");
+      expect(printed).toContain("WXYZ-1235");
+      expect(printed).toContain(`Connected as ${FIXTURE_ME_USER.label}`);
+      expect(printed.match(/Config written to /g), "credentials written once").toHaveLength(1);
+      expect(server.oauth.deviceAuthorizeCount - before).toBe(2);
+      expect(readConfig().auth?.kind).toBe("oauth");
+      expect(readConfig().auth?.refreshToken).toBe("refresh-1");
+    } finally {
+      server.oauth.expireNextCodes = 0;
+      server.oauth.lastMintExpired = false;
     }
   });
   test("keyless login DENIED prints one clear actionable line and exits 2", async () => {
