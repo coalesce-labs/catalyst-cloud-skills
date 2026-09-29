@@ -16,7 +16,7 @@ A request that contains a decision is both: route the work and raise the decisio
 
 You hold no authority over project owners. Your job is to make the work visible and hand it to a single-threaded owner, then get out of the way.
 
-1. **Find the existing home first.** `catalyst-skills query projects` and `query search <terms>`. A request that fits an open project is a ticket in that project, not a new project. Duplicate projects split one goal's status across two places.
+1. **Find the existing home first.** `catalyst query projects` and `query search <terms>`. A request that fits an open project is a ticket in that project, not a new project. Duplicate projects split one goal's status across two places.
 2. **Scaffold when there is no home.** State the outcome in one sentence, the first ticket or two, and who owns it. Tickets are created through the `catalyst-linear` skill (the app actor, the team key from the contract); a project itself is created by the person in Linear, so name what you want it called and ask them to create it if none fits.
 3. **Name the owner.** The owner is a `run-this-project` session for that project, or a person. Say which, in the reply. Tell the person the one command that starts the owner session, and do not start long-running work inside this session: the desk answers questions; the owner reacts to events.
 4. **Say what you did.** The reply ends with the identifiers created, the owner named, and the next thing the person will see.

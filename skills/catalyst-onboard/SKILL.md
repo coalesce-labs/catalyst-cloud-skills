@@ -3,7 +3,7 @@ name: catalyst-onboard
 description: >-
   Walk a person from nothing to their first Catalyst Cloud ticket running, one step at a time, hand-held. Use when someone says "set me up", "onboard me", "I just signed up", "get me started", "what do I do first", or when they have the Catalyst Cloud skills installed and nothing else. Starts with the coding account, then the project, the integrations and the person's connected accounts, each repository's settings file, and ends with one real ticket moving. Reads each part of the setup with the instrument that owns it, does every step a key can do through the catalyst CLI, and for the steps only a browser can do hands over the exact page and says what to come back with. Never claims a step it did not watch succeed.
 disable-model-invocation: true
-allowed-tools: Bash(catalyst:*) Bash(npx -p @catalyst-cloud/cli catalyst:*) Bash(npx @catalyst-cloud/catalyst-skills:*)
+allowed-tools: Bash(catalyst:*) Bash(npx -p @catalyst-cloud/cli catalyst:*)
 ---
 <!-- vendored-from: @catalyst-cloud/catalyst-skills@0.13.0 — written in this repository for customer tenants -->
 

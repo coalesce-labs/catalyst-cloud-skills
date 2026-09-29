@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // check.mjs — validates a catalyst.env.json file offline, with the same rules this bundle vendors
 // from the cloud's own validator. Never reads or prints a value. Offline: no login, no network —
-// wraps `catalyst-skills env check`.
+// wraps `catalyst env check`.
 import { runCliOffline } from "./lib/cli.mjs";
 
 const HELP = `Usage: node scripts/check.mjs <file> [--json]
@@ -30,7 +30,7 @@ if (res.stderr) process.stderr.write(res.stderr);
 await finish(res.code);
 
 /**
- * ⛔ NEVER `process.exit(code)` STRAIGHT AFTER A WRITE — the same rule `bin/catalyst-skills.js`
+ * ⛔ NEVER `process.exit(code)` STRAIGHT AFTER A WRITE — the same rule `bin/launch.js`
  * states in full, reintroduced here at validate attempt 29 (M-3). When this script's own stdout is a
  * PIPE — which is how an agent harness runs it — writes are asynchronous, so `process.exit` severs
  * whatever is still in flight AND STILL REPORTS THE ORIGINAL EXIT CODE. Measured: a `--json` body of

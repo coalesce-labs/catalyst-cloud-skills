@@ -73,7 +73,7 @@ No survivor is `no_eligible_account_slot` when any candidate was skipped on capa
 | `routing_unavailable` | claimed then refused at kickoff: no route, no eligible slot, or the provider is unavailable; the detail names which |
 | `repo_paused` | an operator paused the repository |
 | `wip_limit` | the project is at its WIP limit (see above): its tickets in progress are waiting, and this new start waits until one of them finishes |
-| `remediate_parked` | the remediate phase is parked, so the failing phase has nowhere to be repaired; `catalyst-skills release <ticket>` releases the park once its cause is fixed |
+| `remediate_parked` | the remediate phase is parked, so the failing phase has nowhere to be repaired; `catalyst release <ticket>` releases the park once its cause is fixed |
 | `phase_parked` | the offered phase is parked after repeated failures or a spent repair-round cap; the person releases it once its cause is fixed |
 | `later_phase_lease_held` | an earlier phase is offered while a live container still holds a later phase of this ticket |
 | `human_owned_pr` | a person's own pull request holds this ticket; that person closes or merges the PR themselves, and no release command clears it |

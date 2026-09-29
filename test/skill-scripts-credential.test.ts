@@ -160,7 +160,7 @@ describe("every skill's scripts run for either credential", () => {
       expect(calls()).toEqual([]);
       // The not-connected line names the keyless login first, the personal-key form only as the alternative.
       expect(r.stderr).toContain(
-        "run: npx @catalyst-cloud/catalyst-skills login (or, with a personal key: CATALYST_CLOUD_TOKEN=<your personal key> npx @catalyst-cloud/catalyst-skills login)",
+        "run: npx -p @catalyst-cloud/cli catalyst login (or, with a personal key: CATALYST_CLOUD_TOKEN=<your personal key> npx -p @catalyst-cloud/cli catalyst login)",
       );
       expect(r.stderr).not.toMatch(/run: CATALYST_CLOUD_TOKEN=/);
     });
@@ -186,7 +186,7 @@ describe("every skill's scripts run for either credential", () => {
   // or the bare `catalyst-skills` command, any key placeholder, and `--key` — and compare ORDER
   // within the file: the first key-form login must come after the first keyless one.
   // Both CLI names are read: `catalyst` (the name since 0.9.5) and the deprecated `catalyst-skills` alias.
-  const LOGIN = String.raw`(?:npx\s+@catalyst-cloud\/(?:catalyst-skills|cli)|\bcatalyst(?:-skills)?)\s+login`;
+  const LOGIN = String.raw`(?:npx\s+-p\s+@catalyst-cloud\/cli\s+catalyst|npx\s+@catalyst-cloud\/(?:catalyst-skills|cli)|\bcatalyst(?:-skills)?)\s+login`;
   // A key placeholder may carry spaces (`<your personal key>`), so it is a bracketed run or a token.
   const KEY_VALUE = String.raw`(?:<[^>\n]*>|\S+)`;
   const KEY_FORM = new RegExp(String.raw`CATALYST_CLOUD_TOKEN=${KEY_VALUE}\s+${LOGIN}|${LOGIN}\s+--key\b`);
@@ -206,6 +206,7 @@ describe("every skill's scripts run for either credential", () => {
       "```sh\nCATALYST_CLOUD_TOKEN=<your-personal-key> catalyst-skills login\n```\nor keyless: `catalyst-skills login`",
       "connect with `catalyst-skills login --key <your-personal-key>`, or `npx @catalyst-cloud/catalyst-skills login`",
       "run `CATALYST_CLOUD_TOKEN=<your-personal-key> catalyst login`; keyless `catalyst login` also works",
+      "run: CATALYST_CLOUD_TOKEN=<your personal key> npx -p @catalyst-cloud/cli catalyst login",
     ]) {
       expect(keyFirst(bad), bad).toBe(true);
     }
@@ -213,6 +214,7 @@ describe("every skill's scripts run for either credential", () => {
       "run: npx @catalyst-cloud/catalyst-skills login (or, with a personal key: CATALYST_CLOUD_TOKEN=<your personal key> npx @catalyst-cloud/catalyst-skills login)",
       "`catalyst-skills login`, or with a key `CATALYST_CLOUD_TOKEN=<your-personal-key> catalyst-skills login`",
       "On a yes, run `catalyst login`. Do not offer the key form (`catalyst login --key <key>`) unless they hold one.",
+      "run: npx -p @catalyst-cloud/cli catalyst login (or, with a personal key: CATALYST_CLOUD_TOKEN=<your personal key> npx -p @catalyst-cloud/cli catalyst login)",
       "re-run login",
     ]) {
       expect(keyFirst(good), good).toBe(false);

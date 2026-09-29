@@ -1,4 +1,4 @@
-// release.ts — `catalyst-skills release`: a person's release of a parked or held ticket, or of every
+// release.ts — `catalyst release`: a person's release of a parked or held ticket, or of every
 // ticket on one team parked under one failure class, through the contract's `ticket-release` and
 // `ticket-release-class` routes. The cloud reads every governor holding the ticket and either releases
 // all of them or releases nothing and names, per governor, the human action that does fix it; this verb

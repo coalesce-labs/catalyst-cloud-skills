@@ -48,7 +48,7 @@ This reference restates an invariant: the vocabulary the cloud's eligibility exp
 
 ## Reasons a release clears once the cause is fixed
 
-These do not release themselves: once the recorded cause is fixed, the person's own login releases them with `catalyst-skills release <ticket>`. The desk does not release; route the ticket to the `unstick` skill, which reads the history, previews the release and runs it, or names what a person must do first.
+These do not release themselves: once the recorded cause is fixed, the person's own login releases them with `catalyst release <ticket>`. The desk does not release; route the ticket to the `unstick` skill, which reads the history, previews the release and runs it, or names what a person must do first.
 
 | reason | what it means | note | who acts |
 | -- | -- | -- | -- |

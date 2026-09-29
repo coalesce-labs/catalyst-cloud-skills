@@ -1,8 +1,8 @@
 ---
 name: whats-happening
 description: >-
-  The desk for a Catalyst Cloud tenant. Use when the person asks "what's happening?", "where are we?", "why is that stuck?", "what closed?", "what's next?", or asks for something to be done rather than known. Reads the tenant contract, what is running and queued, the eligibility explainer and the open asks through the catalyst-skills CLI, and answers in one reply with ticket ids. Routes work to a project owner and decisions to what-needs-me. Never composes a URL, never polls, never answers as the human.
-allowed-tools: Bash(catalyst:*) Bash(catalyst-skills:*) Bash(npx @catalyst-cloud/catalyst-skills:*)
+  The desk for a Catalyst Cloud tenant. Use when the person asks "what's happening?", "where are we?", "why is that stuck?", "what closed?", "what's next?", or asks for something to be done rather than known. Reads the tenant contract, what is running and queued, the eligibility explainer and the open asks through the catalyst CLI, and answers in one reply with ticket ids. Routes work to a project owner and decisions to what-needs-me. Never composes a URL, never polls, never answers as the human.
+allowed-tools: Bash(catalyst:*) Bash(npx -p @catalyst-cloud/cli catalyst:*)
 ---
 <!-- vendored-from: @catalyst-cloud/catalyst-skills@0.13.0 — written in this repository for customer tenants -->
 
@@ -17,7 +17,7 @@ Scripts are run, never read. Each prints `--help`; exit 2 means this machine is 
 - `node scripts/snapshot.mjs --help` — one JSON document: the trimmed contract (teams, stage names by slot, thresholds, ladder), what is running, the queue, the open asks ranked by what they hold, and the replica verdict. Add `--board` for open tickets grouped by stage in the contract's slot order, `--team K` to narrow.
 - `node scripts/explain.mjs --help` — why nothing is offered for one ticket, in one paragraph.
 
-For a single ticket's comments, relations and linked PRs use the `catalyst-linear` skill (`catalyst-skills query issue <id>`); for a pull request's checks and threads, `catalyst-github`.
+For a single ticket's comments, relations and linked PRs use the `catalyst-linear` skill (`catalyst query issue <id>`); for a pull request's checks and threads, `catalyst-github`.
 
 ## Load on demand
 
@@ -36,7 +36,7 @@ For depth beyond these, load the fact skills: `how-catalyst-works` (the ladder, 
 - **Their tenant, as them.** Every read goes through the CLI, which holds the person's own key, the tenant and who they are. You never name, guess at, or try another tenant, and you never paste the key anywhere. "You" in your reply means the connected person: their assigned tickets, their asks.
 - **Tenant facts come from the contract, live.** Stage names, label names, team keys, thresholds and the ladder are in the snapshot's `tenant` block; read them there each time and never restate them from memory.
 - **One reply, ticket ids on every line, source named.** The reply opens with when the snapshot was taken and whether the replica or the API answered. A stale replica is stated, never hidden.
-- **Say what a key cannot see.** PR labels and reactions are not mirrored; the CLI prints the settings URL, and you repeat it instead of guessing. A park or hold is released from the person's own login once its cause is fixed: route that to the `unstick` skill (`catalyst-skills release`), never tell them it needs an operator. Coding-account status (`accounts`) and per-ticket execution history (`explain --history`) are readable — read them.
+- **Say what a key cannot see.** PR labels and reactions are not mirrored; the CLI prints the settings URL, and you repeat it instead of guessing. A park or hold is released from the person's own login once its cause is fixed: route that to the `unstick` skill (`catalyst release`), never tell them it needs an operator. Coding-account status (`accounts`) and per-ticket execution history (`explain --history`) are readable — read them.
 - **No polling.** One snapshot per question. Waiting on a change is the project owner's job (`run-this-project` subscribes to the tenant stream); the desk never loops a read.
 - **You are not the owner.** You route work and make it visible; you do not dispatch, overrule a project owner, or run long work in this session.
 - **Never answer as the human.** A decision is an ask through `what-needs-me`, filed before anyone proceeds on its default; the answer is recorded there as the app actor.

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // watch-scope.mjs — subscribe to the tenant stream filtered to one scope and pass every in-scope
-// frame through, one JSON line each. This is `catalyst-skills watch` with the scope flags checked
+// frame through, one JSON line each. This is `catalyst watch` with the scope flags checked
 // up front; the CLI owns the socket, the cursor file, the replay and the reconnects.
 import { CHECK_FAILED_EXIT, execCli, parseFlags, requireConfigured, wantsHelp } from "./lib/cli.mjs";
 

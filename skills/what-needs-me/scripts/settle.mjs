@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // settle.mjs — record the human's answer on an ask and release the work it held.
-// 1. `catalyst-skills ask accept <ask> --answer <commentId> --role <role>` records which comment is
+// 1. `catalyst ask accept <ask> --answer <commentId> --role <role>` records which comment is
 //    the accepted answer, as the app actor.
 // 2. Every open ticket the ask blocks gets one bookkeeping comment naming the ask and the answer,
 //    so the next agent on that ticket reads the decision without opening the ask.

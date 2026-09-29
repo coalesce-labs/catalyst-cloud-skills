@@ -7,7 +7,7 @@ import { exitOnFailure, parseFlags, parseJson, relayStderr, runCli, wantsHelp } 
 const HELP = `Usage: node scripts/show-my-map.mjs [--team <key>] [--json]
 
 Prints the tenant contract's stage map, ladder and thresholds. Nothing here is guessed: every value is
-read from the contract Catalyst Cloud serves for your tenant. Wraps: catalyst-skills contract --path.
+read from the contract Catalyst Cloud serves for your tenant. Wraps: catalyst contract --path.
 
   --team <key>   only this team
   --json         one JSON document: { slots, teams, ladder, thresholds }

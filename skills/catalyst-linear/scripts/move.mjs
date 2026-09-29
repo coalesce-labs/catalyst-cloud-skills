@@ -5,7 +5,7 @@ import { exitOnFailure, parseFlags, parseJson, relayStderr, runCli, usage, wants
 
 const HELP = `Usage: node scripts/move.mjs <ticket> (--slot <slot> | --state-type <type>) [--json]
 
-Moves a ticket's card. Wraps: catalyst-skills write state. Spends one unit of the daily write budget.
+Moves a ticket's card. Wraps: catalyst write state. Spends one unit of the daily write budget.
 
   <ticket>              the Linear identifier, e.g. KEY-123
   --slot <slot>         one of the eleven slots: dispatch, intake, research, plan, implement,

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // inbox.mjs — "what needs me?": the open asks on this tenant, ranked by what each answer releases.
-// A thin wrapper over `catalyst-skills ask list`, which reads the open tickets carrying the team's
+// A thin wrapper over `catalyst ask list`, which reads the open tickets carrying the team's
 // ask label (from the contract), follows each one's blocking relations, and weights held work by
 // priority. By default the CLI keeps only the asks assigned to the connected person; --anyone widens
 // to the whole tenant. Prints the ranked list; --json prints the CLI's {scope, asks} unchanged.

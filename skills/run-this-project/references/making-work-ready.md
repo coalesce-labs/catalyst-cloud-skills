@@ -1,6 +1,6 @@
 # Making work ready
 
-This reference restates invariants of how Catalyst takes work. The tenant's own values (which Linear state is the dispatch column, which state is the backlog, the ask and release label ids, the round cap and the park threshold) are read live from `catalyst-skills contract`; the scripts here never name a stage.
+This reference restates invariants of how Catalyst takes work. The tenant's own values (which Linear state is the dispatch column, which state is the backlog, the ask and release label ids, the round cap and the park threshold) are read live from `catalyst contract`; the scripts here never name a stage.
 
 ## The steward's two moves
 
@@ -33,7 +33,7 @@ A ticket does not need a branch, a PR, or any artifact to be dispatched: the lad
 `make-ready.mjs` asks the eligibility explainer as soon as the move lands and prints the verdict. Read it as follows:
 
 - `offered` or `eligible` with a queue position: done; a runner will pick it up in the next dispatch pass, ordered by priority, then age, then identifier, with tickets already mid-ladder ahead of fresh ones.
-- An ordering that is stale or never published: the cloud re-derives the team's queue within a pass of the move; ask again in a minute with `catalyst-skills explain <ticket>`.
+- An ordering that is stale or never published: the cloud re-derives the team's queue within a pass of the move; ask again in a minute with `catalyst explain <ticket>`.
 - Any other exclusion reason: the paragraph names it and what releases it. The reasons and what unblocks each are in `how-catalyst-works` and in `whats-happening`'s "why is it stuck" reference.
 
 ## Evidence a phase ran
@@ -48,7 +48,7 @@ The card's stage is the fourth, weakest signal: a completed phase moves the card
 
 ## Parking, and what it does not do
 
-Parking is the lever that stops the cloud offering more rounds on a ticket: moved out of the dispatch column and the ladder's stages, the ticket is excluded at the next offer. It does not kill a phase that is already running under a lease; that container finishes its phase, posts its outcome, and the next offer finds the card parked. If you park a ticket the cloud has itself parked (three consecutive failures, or the remediate round cap), record why in a bookkeeping note. Releasing a cloud park is not a card move: once its cause is fixed, the `unstick` skill releases it with `catalyst-skills release <ticket>`, and only a refusal that names a person's action becomes an ask.
+Parking is the lever that stops the cloud offering more rounds on a ticket: moved out of the dispatch column and the ladder's stages, the ticket is excluded at the next offer. It does not kill a phase that is already running under a lease; that container finishes its phase, posts its outcome, and the next offer finds the card parked. If you park a ticket the cloud has itself parked (three consecutive failures, or the remediate round cap), record why in a bookkeeping note. Releasing a cloud park is not a card move: once its cause is fixed, the `unstick` skill releases it with `catalyst release <ticket>`, and only a refusal that names a person's action becomes an ask.
 
 Un-parking is the same dispatch move again. The counted attempts and rounds do not reset when a card comes back; the contract's thresholds say how many remain.
 

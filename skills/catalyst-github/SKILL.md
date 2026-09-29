@@ -2,7 +2,7 @@
 name: catalyst-github
 description: >-
   Catalyst's GitHub: show a ticket's pull request with its checks, reviews and review threads, say whether it is mergeable under this repository's policy, and explain what a PR accumulates as the ticket moves (the branch, the draft, the rewrite, the force-pushes, the labels, the queue). Use when someone asks "show me the PR", "what are the checks saying", "why hasn't it merged", "what does the queue need", "what does that label mean", or wants the branch and merge conventions Catalyst follows.
-allowed-tools: Bash(catalyst-skills:*) Bash(npx @catalyst-cloud/catalyst-skills:*)
+allowed-tools: Bash(catalyst:*) Bash(npx -p @catalyst-cloud/cli catalyst:*)
 ---
 <!-- vendored-from: @catalyst-cloud/catalyst-skills@0.13.0 — written in this repository for customer tenants -->
 
@@ -15,7 +15,7 @@ You answer for the pull requests Catalyst opens and moves. The person asking wan
 - `node scripts/read-pr.mjs --help` — a ticket's PR (or a PR by node id): state, branch, head, linked ticket, GitHub's mergeable state, every check, status and review. `--all` lists every PR for a ticket.
 - `node scripts/is-it-mergeable.mjs --help` — the three legs (checks, reviewer signal, unresolved threads) judged under the repository's policy, plus the prerequisites; exit 1 when a leg is red.
 
-Both read through `catalyst-skills query`, `contract` and, when fresh, `replica`; the first stderr line names the source, and your answer repeats it.
+Both read through `catalyst query`, `contract` and, when fresh, `replica`; the first stderr line names the source, and your answer repeats it.
 
 ## Load on demand
 
@@ -26,7 +26,7 @@ Both read through `catalyst-skills query`, `contract` and, when fresh, `replica`
 
 ## Rules
 
-- Never compose a URL or call the API yourself. Every read is a `catalyst-skills` verb behind a script; run the script, do not read it.
+- Never compose a URL or call the API yourself. Every read is a `catalyst` verb behind a script; run the script, do not read it.
 - A queue-ready label is the cloud's attestation, never a lever you apply; "merged by the queue" is the terminal signal.
 - Hold labels are the human's lever. Describe them; do not apply or remove them.
 - Say what a key cannot see by name (PR labels, the reviewer's reaction, the queue's own state); never guess it.

@@ -7,7 +7,7 @@ import { exitOnFailure, parseFlags, parseJson, relayStderr, runCli, usage, wants
 
 const HELP = `Usage: node scripts/create-ticket.mjs --team <key> --title <text> [--description <text> | --stdin] [--label <name|id>]... [--priority <0-4>] [--as-user] [--json]
 
-Creates one ticket. Wraps: catalyst-skills write create. Spends one unit of the daily write budget.
+Creates one ticket. Wraps: catalyst write create. Spends one unit of the daily write budget.
 
   --team <key>          the team key (the prefix of its ticket identifiers)
   --title <text>        the ticket title

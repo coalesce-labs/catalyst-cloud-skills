@@ -1,4 +1,4 @@
-// runtime-verb.ts — CTC-2158, Tier 2. `catalyst-skills runtime status|install|path|uninstall`: the
+// runtime-verb.ts — CTC-2158, Tier 2. `catalyst runtime status|install|path|uninstall`: the
 // verb every unsupported-runtime message points at. It downloads the pinned Node named by
 // package.json's `catalystCloud.pinnedNode`, verifies it, and unpacks it under this CLI's own
 // cache — it never touches the machine's default Node and needs no admin rights.

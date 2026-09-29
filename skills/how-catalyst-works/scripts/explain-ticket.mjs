@@ -6,7 +6,7 @@ import { exitOnFailure, parseFlags, parseJson, relayStderr, runCli, usage, wants
 const HELP = `Usage: node scripts/explain-ticket.mjs <ticket> [--json]
 
 Asks Catalyst Cloud for the ticket's eligibility row (position, status, the exclusion reason in plain
-English, the last failure, advisories) and prints it as one paragraph. Wraps: catalyst-skills explain.
+English, the last failure, advisories) and prints it as one paragraph. Wraps: catalyst explain.
 
   <ticket>   the Linear identifier, e.g. KEY-123
   --json     print the CLI's JSON document instead of the paragraph

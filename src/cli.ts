@@ -1,4 +1,4 @@
-// cli.ts — the `catalyst-skills` dispatcher (npm: @catalyst-cloud/catalyst-skills). Verbs live in
+// cli.ts — the `catalyst` dispatcher (npm: @catalyst-cloud/cli). Verbs live in
 // their own modules; this file keeps every export the 0.1 tests and the bin import.
 import { existsSync } from "node:fs";
 import { parseArgs, positionals, verbHelp, type ParsedArgs } from "./args.js";

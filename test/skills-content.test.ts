@@ -173,7 +173,7 @@ describe("the customer skills ship, with provenance", () => {
       // The fallback when no CLI path is recorded: npx, with this package as the target. Some libs
       // build that argv from a constant, so assert the two parts rather than one joined literal.
       expect(lib, `${name} lib must fall back to npx`).toMatch(/["']npx["']/);
-      expect(lib, `${name} lib must name this package`).toContain("@catalyst-cloud/catalyst-skills");
+      expect(lib, `${name} lib must name this package`).toContain("@catalyst-cloud/cli");
     });
 
     test(`${name}: the mutating triple is ${MUTATING.has(name) ? "present as a set" : "absent as a set"}`, () => {
@@ -257,7 +257,7 @@ describe("no internal name reaches a customer", () => {
   });
 });
 
-describe("each skill's scripts spawn the catalyst-skills verbs it teaches", () => {
+describe("each skill's scripts spawn the catalyst verbs it teaches", () => {
   const verbs: Record<(typeof ROSTER)[number], RegExp[]> = {
     "catalyst-setup": [/"ready"/, /"replica",\s*"status"/],
     // Each grain by its own instrument: the machine by `status` and `ready`, the person by `me`, and
@@ -1224,13 +1224,13 @@ describe("releasing a park is a verb the person's agent runs, not an operator ac
     test(`${rel} no longer says release is an operator's, and names the release`, () => {
       const text = read(rel);
       expect(text).not.toMatch(re);
-      expect(text).toMatch(/`unstick`|catalyst-skills release/);
+      expect(text).toMatch(/`unstick`|catalyst release/);
     });
   }
 
   test("the unstick playbook runs explain, then history, then a dry run, then the release, and files an ask only for a refusal a person must fix", () => {
     const playbook = read("unstick/references/playbook.md");
-    const order = ["catalyst-skills explain", "--history", "--dry-run", "--because"].map((s) => playbook.indexOf(s));
+    const order = ["catalyst explain", "--history", "--dry-run", "--because"].map((s) => playbook.indexOf(s));
     for (const i of order) expect(i).toBeGreaterThanOrEqual(0);
     expect([...order].sort((a, b) => a - b)).toEqual(order);
     expect(playbook).toMatch(/--retry-unchanged/);

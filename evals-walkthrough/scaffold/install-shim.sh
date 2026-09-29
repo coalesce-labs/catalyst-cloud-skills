@@ -19,13 +19,14 @@ old_target=$(dirname "$target")/catalyst-skills
 cp "$target" "$old_target" && chmod 755 "$old_target"
 echo "old-name alias written to $old_target"
 
-# An `npx` in front of the real one: the skill's scripts fall back to `npx @catalyst-cloud/catalyst-skills`
+# An `npx` in front of the real one: the skill's scripts fall back to `npx -p @catalyst-cloud/cli catalyst`
 # when no credential is stored (the nothing-connected state), and a sandbox has no network for npm.
 real_npx=$(command -v npx || true)
 npx_target=$(dirname "$target")/npx
 cat > "$npx_target" <<SHIM
 #!/bin/sh
 case "\$1" in
+  -p) case "\$2 \$3" in "@catalyst-cloud/cli catalyst"|"@catalyst-cloud/cli@"*" catalyst") shift 3; exec "$target" "\$@" ;; esac ;;
   @catalyst-cloud/catalyst-skills|@catalyst-cloud/catalyst-skills@*|@catalyst-cloud/cli|@catalyst-cloud/cli@*) shift; exec "$target" "\$@" ;;
 esac
 exec "$real_npx" "\$@"

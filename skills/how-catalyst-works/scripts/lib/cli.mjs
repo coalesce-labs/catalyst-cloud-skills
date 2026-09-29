@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// lib/cli.mjs — the one way a skill script reaches Catalyst Cloud: it spawns the catalyst-skills CLI
+// lib/cli.mjs — the one way a skill script reaches Catalyst Cloud: it spawns the catalyst CLI
 // this machine connected with (the path recorded in customer.json, else npx) and hands back its
 // output. Scripts import it; a person runs it with --help to see what it does. No dependencies.
 import { spawnSync } from "node:child_process";
@@ -8,7 +8,9 @@ import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { CONNECT_COMMAND, hasCredential } from "./credential.mjs";
 
-export const PACKAGE = "@catalyst-cloud/catalyst-skills";
+export const PACKAGE = "@catalyst-cloud/cli";
+/** The package ships two commands, so npx needs the one to run named: `npx -p <package> catalyst`. */
+export const NPX_ARGS = ["-p", PACKAGE, "catalyst"];
 export const CONNECT_HINT = CONNECT_COMMAND;
 
 /** ~/.config/catalyst-cloud/customer.json, honouring CATALYST_SKILLS_HOME (used by tests) over HOME. */
@@ -39,8 +41,8 @@ export function notConfigured(reason) {
 }
 
 /**
- * Run one catalyst-skills verb. Returns { code, stdout, stderr }. The CLI is `node <cliPath>` when
- * the config recorded one that still exists, else `npx @catalyst-cloud/catalyst-skills`.
+ * Run one catalyst verb. Returns { code, stdout, stderr }. The CLI is `node <cliPath>` when
+ * the config recorded one that still exists, else `npx -p @catalyst-cloud/cli catalyst`.
  * Exits 2 (not configured) before spawning anything when the config is absent or unreadable.
  */
 export function runCli(args, { stdin } = {}) {
@@ -55,7 +57,7 @@ export function runCli(args, { stdin } = {}) {
     argv = [cfg.cliPath, ...args];
   } else {
     cmd = process.platform === "win32" ? "npx.cmd" : "npx";
-    argv = [PACKAGE, ...args];
+    argv = [...NPX_ARGS, ...args];
     shell = process.platform === "win32";
   }
   const r = spawnSync(cmd, argv, {
@@ -152,8 +154,8 @@ if (runDirectly) {
       [
         "lib/cli.mjs — shared helper for this skill's scripts (not a command of its own)",
         "",
-        "Reads ~/.config/catalyst-cloud/customer.json and runs the catalyst-skills CLI recorded there",
-        `(or npx ${PACKAGE} when no path is recorded). Exit 2 when the machine is not connected.`,
+        "Reads ~/.config/catalyst-cloud/customer.json and runs the catalyst CLI recorded there",
+        `(or npx -p ${PACKAGE} catalyst when no path is recorded). Exit 2 when the machine is not connected.`,
         "",
         `Connect first with: ${CONNECT_HINT}`,
         `Config in use: ${configPath()}`,
