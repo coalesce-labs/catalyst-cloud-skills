@@ -165,6 +165,9 @@ export const FLAG_TABLES: Record<string, FlagTable> = {
   },
   identity: {},
   capabilities: {},
+  project: {
+    team: { value: true, help: "the project's team key (default: the only mapped project)" },
+  },
   connections: {
     wait: { value: true, help: "start: wait up to this many seconds for browser approval (0-600)" },
   },
@@ -211,6 +214,7 @@ export const VERB_USAGE: Record<string, string> = {
     "secret set <NAME> --repo <owner/name> [--command '<cmd>'] [--json]   (value from --command, stdin, or a hidden prompt) | secret import <file> --repo <owner/name> [--rotate NAME]... [--json]",
   identity: "identity linear <status|options|set> [<linearUserId>] [--json]",
   capabilities: "capabilities [--json]",
+  project: "project wip-limit <get|set <n>|set default> [--team K] [--json]",
   connections: "connections personal <linear|github> <start|status> [--wait <seconds>] [--json]",
   release:
     "release <ticket> --because <what changed> [--retry-unchanged] [--dry-run] [--json] | release --class <failure-class> --team <K> --because <what changed> [--retry-unchanged] [--dry-run] [--limit N] [--json]",

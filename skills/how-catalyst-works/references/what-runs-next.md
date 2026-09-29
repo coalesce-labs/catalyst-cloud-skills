@@ -19,13 +19,13 @@ The queue re-derives within seconds of any board change and at the top of every 
 
 ## The WIP limit
 
-A Catalyst project (one Linear team, across every repository registered to it) starts no new ticket while its work in progress is at its limit. The limit is per project, never per repository and never workspace-wide: the project's own stored setting when there is one, else a tenant-wide value the operator set, else 12. `0` is a real limit and holds every new start. A workspace owner or admin sets it per project through the project-settings route; there is no page for it yet.
+A Catalyst project (one Linear team, across every repository registered to it) starts no new ticket while its work in progress is at its limit. The limit is per project, never per repository and never workspace-wide: the project's own stored setting when there is one, else a tenant-wide value the operator set, else 12. `0` is a real limit and holds every new start. Any member reads it with `catalyst project wip-limit get --team <KEY>`: the limit, where it comes from, and the work in progress now. A workspace owner or admin sets it with `catalyst project wip-limit set <n> --team <KEY>`, or `set default` to return to the workspace value.
 
 It holds only new starts. A ticket in the dispatch column that has never run gets no first phase while the team is at its limit, and the explainer prints `wip_limit` with a detail such as "14 tickets in progress in <team key>, at or above its WIP limit of 12; this ticket starts once one finishes". A ticket that has already started keeps getting every later phase, whatever the count.
 
 What counts as in progress: every live ticket of the team that is past the dispatch column, or was granted a first phase even if its card still sits there, and is not in a terminal state (done, canceled, duplicate). Blocked, parked, waiting on the merge queue or waiting on a human all count: the count is tickets, not running containers. What does not count: triage and backlog states, a dispatch-column ticket that never started, a ticket fenced for a worker outside the cloud (the local-lane label), and a ticket whose PR merged and that only the runner-pin gate holds.
 
-How to read a fleet idle at the limit: nothing runs because the tickets in progress are all waiting, on the merge queue, on a hold, on a paused repository or on a person. Unstick those (`unstick`, `catalyst-github`, `what-needs-me`); the limit is doing its job. Raising the limit is the project owner's call, not a repair.
+How to read a fleet idle at the limit: nothing runs because the tickets in progress are all waiting, on the merge queue, on a hold, on a paused repository or on a person. Unstick those (`unstick`, `catalyst-github`, `what-needs-me`); the limit is doing its job. Raising the limit is the project owner's call, not a repair (`catalyst project wip-limit set <n> --team <KEY>`).
 
 ## The routing decision, in five checks
 
