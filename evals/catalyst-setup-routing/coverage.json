@@ -1,0 +1,11 @@
+{
+  "skill": "catalyst-setup",
+  "invocation": "implicit",
+  "exercised_phrase": "am I set up",
+  "promised_phrases": [
+    "am I set up",
+    "what is missing",
+    "why does nothing happen",
+    "is the replica running"
+  ]
+}

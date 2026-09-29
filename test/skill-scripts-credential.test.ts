@@ -13,7 +13,7 @@ import { describe, expect, test } from "vitest";
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { delimiter, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { CUSTOMER_SKILLS } from "../src/cli";
 
@@ -51,10 +51,30 @@ function connectedHome(credential: Record<string, unknown>): { home: string; cal
     cli,
     [
       'import { appendFileSync } from "node:fs";',
+      'const args = process.argv.slice(2);',
+      // `--refresh` may precede `--path`: read the path by its flag, not its position.
+      'const path = args.includes("--path") ? args[args.indexOf("--path") + 1] : undefined;',
       `appendFileSync(${JSON.stringify(log)}, JSON.stringify(process.argv.slice(2)) + "\\n");`,
-      'process.stdout.write("{}\\n");',
+      'let out = "{}\\n";',
+      'if (args[0] === "status") out = "Tenant: Fixture\\nAPI: https://cloud.example/api/v1\\n";',
+      'else if (args[0] === "ready") out = JSON.stringify({ ready: true, checks: [] }) + "\\n";',
+      'else if (args[0] === "me") out = JSON.stringify({ user: { id: "user-fixture", label: "Fixture", role: "member", linearUserId: "linear-fixture" } }) + "\\n";',
+      'else if (args[0] === "connections") out = JSON.stringify({ outcome: "connected" }) + "\\n";',
+      'else if (args[0] === "contract" && path === "account") out = JSON.stringify({ name: "Fixture", slug: "fixture", linearWorkspaceSlug: "fixture" }) + "\\n";',
+      'else if (args[0] === "contract" && path === "teams") out = JSON.stringify([{ key: "ENG", dispatchGate: { status: "open" }, readiness: { status: "ready", checks: [{ id: "hosts_current", state: "pass" }] } }]) + "\\n";',
+      'else if (args[0] === "contract" && path === "codingAccounts") out = JSON.stringify({ state: "enrolled", activeCount: 1, line: "At least one coding account is enrolled and active for this tenant." }) + "\\n";',
+      'else if (args[0] === "contract" && path === "readinessChecks") out = "[]\\n";',
+      'else if (args[0] === "accounts") out = JSON.stringify({ accounts: [{ accountSlot: "claude-1", provider: "claude", status: "active", quarantined: false }] }) + "\\n";',
+      'else if (args[0] === "contract" && path === "merge.repositories") out = JSON.stringify([{ owner: "coalesce-labs", name: "fixture" }]) + "\\n";',
+      'else if (args[0] === "environment") out = JSON.stringify({ current: { revision: 1, canonicalHash: "fixture" }, isApproved: true, delivered: { revision: 1 }, unresolvedReferences: [] }) + "\\n";',
+      'else if (args[0] === "replica" && args[1] === "status") out = JSON.stringify({ verdict: "absent", exitCode: 3, dbPath: "/tmp/replica.db", writerAlive: false }) + "\\n";',
+      'else if (args[0] === "events" && args[1] === "status") out = JSON.stringify({ verdict: "absent", cursor: null, head: null, writerAlive: false, reasons: ["event cache cursor is absent"] }) + "\\n";',
+      'process.stdout.write(out);',
     ].join("\n"),
   );
+  // A stand-in `gh` first on PATH, so the onboarding report's thoughts note never reaches the real GitHub.
+  mkdirSync(join(home, "bin"));
+  writeFileSync(join(home, "bin", "gh"), "#!/bin/sh\necho 'not found' >&2\nexit 1\n", { mode: 0o755 });
   mkdirSync(join(home, ".config", "catalyst-cloud"), { recursive: true });
   writeFileSync(
     join(home, ".config", "catalyst-cloud", "customer.json"),
@@ -74,7 +94,7 @@ function runScript(skill: keyof typeof CASES, home: string) {
   return spawnSync(process.execPath, [join(skillsRoot, skill, "scripts", script), ...args], {
     encoding: "utf8",
     timeout: 20_000,
-    env: { ...process.env, CATALYST_SKILLS_HOME: home, HOME: home },
+    env: { ...process.env, CATALYST_SKILLS_HOME: home, HOME: home, PATH: `${join(home, "bin")}${delimiter}${process.env.PATH ?? ""}` },
   });
 }
 
@@ -101,6 +121,27 @@ describe("every skill's scripts run for either credential", () => {
     });
   }
 
+  test("catalyst-onboard reports optional local freshness without making it block setup", () => {
+    const { home, calls } = connectedHome({ auth: OAUTH });
+    const script = join(skillsRoot, "catalyst-onboard", "scripts", "where-am-i.mjs");
+    const r = spawnSync(process.execPath, [script, "--json"], {
+      encoding: "utf8",
+      timeout: 20_000,
+      env: { ...process.env, CATALYST_SKILLS_HOME: home, HOME: home, PATH: `${join(home, "bin")}${delimiter}${process.env.PATH ?? ""}` },
+    });
+    expect(r.status, r.stderr).toBe(0);
+    const report = JSON.parse(r.stdout) as {
+      finished: boolean;
+      localSync: { assessment: { verdict: string; reason: string } };
+      parts: { part: string; lines: string[] }[];
+    };
+    expect(report.finished).toBe(true);
+    expect(report.localSync.assessment.verdict).toBe("absent");
+    expect(report.parts.find((part) => part.part === "machine")?.lines.join("\n")).toContain("note optional local sync absent");
+    expect(calls()).toContainEqual(["replica", "status", "--probe", "--json"]);
+    expect(calls()).toContainEqual(["events", "status", "--probe", "--json"]);
+  });
+
   // Two skills deliberately run `status` even with no usable config, because asking the CLI whether
   // this machine is connected IS their job: connect-me's verifier, and catalyst-onboard's report,
   // whose first reading is the machine grain and whose FIRST STATE is "no credential here yet".
@@ -124,7 +165,8 @@ describe("every skill's scripts run for either credential", () => {
   // alternative. Codex P2 (#11): read every supported spelling, not three literal strings — the npx
   // or the bare `catalyst-skills` command, any key placeholder, and `--key` — and compare ORDER
   // within the file: the first key-form login must come after the first keyless one.
-  const LOGIN = String.raw`(?:npx\s+@catalyst-cloud\/catalyst-skills|\bcatalyst-skills)\s+login`;
+  // Both CLI names are read: `catalyst` (the name since 0.9.5) and the deprecated `catalyst-skills` alias.
+  const LOGIN = String.raw`(?:npx\s+@catalyst-cloud\/(?:catalyst-skills|cli)|\bcatalyst(?:-skills)?)\s+login`;
   // A key placeholder may carry spaces (`<your personal key>`), so it is a bracketed run or a token.
   const KEY_VALUE = String.raw`(?:<[^>\n]*>|\S+)`;
   const KEY_FORM = new RegExp(String.raw`CATALYST_CLOUD_TOKEN=${KEY_VALUE}\s+${LOGIN}|${LOGIN}\s+--key\b`);
@@ -143,12 +185,14 @@ describe("every skill's scripts run for either credential", () => {
       "the connect step, not a retry: `CATALYST_CLOUD_TOKEN=<your personal key> npx @catalyst-cloud/catalyst-skills login`",
       "```sh\nCATALYST_CLOUD_TOKEN=<your-personal-key> catalyst-skills login\n```\nor keyless: `catalyst-skills login`",
       "connect with `catalyst-skills login --key <your-personal-key>`, or `npx @catalyst-cloud/catalyst-skills login`",
+      "run `CATALYST_CLOUD_TOKEN=<your-personal-key> catalyst login`; keyless `catalyst login` also works",
     ]) {
       expect(keyFirst(bad), bad).toBe(true);
     }
     for (const good of [
       "run: npx @catalyst-cloud/catalyst-skills login (or, with a personal key: CATALYST_CLOUD_TOKEN=<your personal key> npx @catalyst-cloud/catalyst-skills login)",
       "`catalyst-skills login`, or with a key `CATALYST_CLOUD_TOKEN=<your-personal-key> catalyst-skills login`",
+      "On a yes, run `catalyst login`. Do not offer the key form (`catalyst login --key <key>`) unless they hold one.",
       "re-run login",
     ]) {
       expect(keyFirst(good), good).toBe(false);

@@ -158,12 +158,19 @@ export async function cmdWrite(args: ParsedArgs, ctx: Ctx, deps: WriteDeps = {})
       const teamKey = flagString(args, "team");
       const title = flagString(args, "title");
       if (!teamKey || !title) throw new UsageError("write create needs --team <key> and --title <text>");
+      let description = flagString(args, "description");
+      if (flagBool(args, "stdin")) {
+        if (description !== undefined) throw new UsageError("write create takes --description <text> or --stdin, not both");
+        description = (await (deps.readStdin ?? readStdin)()).trimEnd();
+        if (!description) throw new UsageError("write create --stdin read an empty description");
+      }
       const team = teamByKey(doc, teamKey);
       const labels = flagList(args, "label").map((n) => labelId(team, n));
       const priority = flagString(args, "priority") !== undefined ? flagInt(args, "priority", 0) : undefined;
       result = await postAgent(api, doc, "issue-create", {
         teamId: team.id,
         title,
+        ...(description ? { description } : {}),
         ...(labels.length ? { labelIds: labels } : {}),
         ...(priority !== undefined ? { priority } : {}),
         ...(asUser ? { createAsUser: true } : {}),

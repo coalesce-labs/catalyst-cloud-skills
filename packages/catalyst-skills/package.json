@@ -1,0 +1,33 @@
+{
+  "name": "@catalyst-cloud/catalyst-skills",
+  "version": "0.9.5",
+  "description": "Deprecated name of @catalyst-cloud/cli. Installs the same Catalyst Cloud CLI release, with the catalyst command and the old catalyst-skills name. Install @catalyst-cloud/cli instead.",
+  "license": "MIT",
+  "type": "module",
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/coalesce-labs/catalyst-cloud-skills.git",
+    "directory": "packages/catalyst-skills"
+  },
+  "homepage": "https://github.com/coalesce-labs/catalyst-cloud-skills#readme",
+  "bugs": {
+    "url": "https://github.com/coalesce-labs/catalyst-cloud-skills/issues"
+  },
+  "engines": {
+    "node": ">=22.15"
+  },
+  "bin": {
+    "catalyst": "bin/catalyst.js",
+    "catalyst-skills": "bin/catalyst-skills.js"
+  },
+  "files": [
+    "bin",
+    "README.md"
+  ],
+  "dependencies": {
+    "@catalyst-cloud/cli": "0.9.5"
+  }
+}

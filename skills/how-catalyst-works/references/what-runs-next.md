@@ -17,6 +17,16 @@ The queue re-derives within seconds of any board change and at the top of every 
 - Dispatch buckets by repository and splits slots across teams so no team starves another. A slot that is running, might be running, or is restarting is never free capacity.
 - Comment-wake work (an agent answering a human comment) shares the same cap as ladder work.
 
+## The WIP limit
+
+A Catalyst project (one Linear team, across every repository registered to it) starts no new ticket while its work in progress is at its limit. The limit is per project, never per repository and never workspace-wide: the project's own stored setting when there is one, else a tenant-wide value the operator set, else 12. `0` is a real limit and holds every new start. A workspace owner or admin sets it per project through the project-settings route; there is no page for it yet.
+
+It holds only new starts. A ticket in the dispatch column that has never run gets no first phase while the team is at its limit, and the explainer prints `wip_limit` with a detail such as "14 tickets in progress in <team key>, at or above its WIP limit of 12; this ticket starts once one finishes". A ticket that has already started keeps getting every later phase, whatever the count.
+
+What counts as in progress: every live ticket of the team that is past the dispatch column, or was granted a first phase even if its card still sits there, and is not in a terminal state (done, canceled, duplicate). Blocked, parked, waiting on the merge queue or waiting on a human all count: the count is tickets, not running containers. What does not count: triage and backlog states, a dispatch-column ticket that never started, a ticket fenced for a worker outside the cloud (the local-lane label), and a ticket whose PR merged and that only the runner-pin gate holds.
+
+How to read a fleet idle at the limit: nothing runs because the tickets in progress are all waiting, on the merge queue, on a hold, on a paused repository or on a person. Unstick those (`unstick`, `catalyst-github`, `what-needs-me`); the limit is doing its job. Raising the limit is the project owner's call, not a repair.
+
 ## The routing decision, in five checks
 
 When a phase is about to start, a route is chosen per candidate, in order, and the first survivor wins:
@@ -62,6 +72,7 @@ No survivor is `no_eligible_account_slot` when any candidate was skipped on capa
 | `retry_backoff` | retrying in place, waiting out its 2/5/15-minute rung |
 | `routing_unavailable` | claimed then refused at kickoff: no route, no eligible slot, or the provider is unavailable; the detail names which |
 | `repo_paused` | an operator paused the repository |
+<<<<<<< HEAD
 | `remediate_parked` | the remediate phase is parked, so the failing phase has nowhere to be repaired; `catalyst-skills release <ticket>` releases the park once its cause is fixed |
 | `phase_parked` | the offered phase is parked after repeated failures or a spent repair-round cap; the person releases it once its cause is fixed |
 | `later_phase_lease_held` | an earlier phase is offered while a live container still holds a later phase of this ticket |
@@ -70,6 +81,10 @@ No survivor is `no_eligible_account_slot` when any candidate was skipped on capa
 | `round_threshold` | the ticket spent its lifetime repair budget |
 | `claim_storm` | claimed too many times in the last hour; it waits the hour out, and there is nothing to release |
 | `repo_at_capacity` | the repository's runner seats are all in use; it starts when one frees |
+=======
+| `wip_limit` | the project is at its WIP limit (see above): its tickets in progress are waiting, and this new start waits until one of them finishes |
+| `remediate_parked` | the remediate phase is parked, so the failing phase has nowhere to be repaired |
+>>>>>>> 46df57dfe613bf06403b918e65924ab95fc33d16
 
 ## The unknowns (the evaluator fails closed)
 

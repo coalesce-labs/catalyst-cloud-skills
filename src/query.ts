@@ -94,7 +94,7 @@ export async function cmdQuery(args: ParsedArgs, ctx: Ctx, deps: QueryDeps = {})
 
 async function fromReplica(ctx: Ctx, cfg: CustomerConfig, sub: string, rest: string[], f: Filters, deps: QueryDeps): Promise<unknown> {
   const sdk = await loadSdk();
-  const dbPath = replicaDbPath(cfg, ctx.home);
+  const dbPath = replicaDbPath(cfg, ctx.home, ctx.env);
   const engine = await engineFor(sdk, dbPath, ctx, { ...deps.engineDeps, readonly: true });
   const replica = await sdk.CatalystReplica.openReadOnly({ dbPath, engine, log: () => {} });
   try {
@@ -166,7 +166,7 @@ async function fromApi(ctx: Ctx, cfg: CustomerConfig, sub: string, rest: string[
       const q = rest.join(" ").trim();
       if (!q) throw new UsageError("search needs terms: query search <terms>");
       const res = await api.getJson<unknown>("/api/v1/search", { query: { q, limit: f.limit } });
-      return rowsOf(res.body);
+      return searchRows(res.body);
     }
     case "changes": {
       const since = flagString(args, "since");
@@ -244,6 +244,22 @@ export function applyFilters(rows: Record<string, unknown>[], f: Partial<Filters
   });
 }
 
+/** The hub answers search in four groups (`issues`, `pulls`, `projects`, `initiatives`, the read
+ *  model's SearchView). `rowsOf` returns only the first array it finds, so it dropped every match that
+ *  was not a ticket. Every group comes back here, flattened, each row tagged with its `kind`. */
+const SEARCH_GROUPS: [string, string][] = [["issues", "issue"], ["pulls", "pull"], ["projects", "project"], ["initiatives", "initiative"]];
+export function searchRows(body: unknown): Record<string, unknown>[] {
+  if (Array.isArray(body)) return body as Record<string, unknown>[];
+  if (!body || typeof body !== "object") return [];
+  const b = body as Record<string, unknown>;
+  if (SEARCH_GROUPS.some(([group]) => Array.isArray(b[group]))) {
+    return SEARCH_GROUPS.flatMap(([group, kind]) =>
+      Array.isArray(b[group]) ? (b[group] as Record<string, unknown>[]).map((row) => ({ kind, ...row })) : [],
+    );
+  }
+  return rowsOf(body);
+}
+
 function printResult(ctx: Ctx, args: ParsedArgs, sub: string, result: unknown): void {
   if (args.json || !Array.isArray(result)) {
     ctx.stdout(JSON.stringify(result, null, args.json ? 0 : 2));
@@ -262,6 +278,17 @@ export function summaryLine(sub: string, r: Record<string, unknown>): string {
       return `${r.id}  ${r.state ?? "?"}  ${r.name ?? ""}`;
     case "cycles":
       return `cycle ${r.number ?? r.id}  ${r.name ?? ""}  ${r.starts_at ?? ""} → ${r.ends_at ?? ""}`;
+    case "search":
+      switch (r.kind) {
+        case "pull":
+          return `pull        #${r.number ?? "?"}  ${r.title ?? ""}${r.repo_id ? `  (${r.repo_id})` : ""}`;
+        case "project":
+          return `project     ${r.name ?? r.id}`;
+        case "initiative":
+          return `initiative  ${r.name ?? r.id}`;
+        default:
+          return `issue       ${r.identifier ?? r.id}  ${r.title ?? ""}`;
+      }
     default:
       return JSON.stringify(r);
   }

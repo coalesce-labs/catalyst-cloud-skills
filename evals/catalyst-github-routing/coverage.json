@@ -1,0 +1,12 @@
+{
+  "skill": "catalyst-github",
+  "invocation": "implicit",
+  "exercised_phrase": "show me the PR",
+  "promised_phrases": [
+    "show me the PR",
+    "what are the checks saying",
+    "why hasn't it merged",
+    "what does the queue need",
+    "what does that label mean"
+  ]
+}

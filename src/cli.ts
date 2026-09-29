@@ -5,6 +5,7 @@ import { parseArgs, positionals, verbHelp, type ParsedArgs } from "./args.js";
 import {
   CONFIG_MODE,
   DEFAULT_BASE_URL,
+  LEGACY_PACKAGE_NAME,
   PACKAGE_NAME,
   cliPath,
   configPathFor,
@@ -13,7 +14,10 @@ import {
   defaultReplicaDbFor,
   defaultSkillsDirFor,
   formatMode,
+  installerOwnsSkills,
+  INSTALL_COMMAND,
   loadConfig,
+  modernCliPath,
   normalizeBaseUrl,
   readManifest,
   requireConfig,
@@ -32,6 +36,7 @@ import { cmdAccounts, cmdExplain, cmdHistory, cmdQueue, cmdRunning } from "./exe
 import { cmdQuery } from "./query.js";
 import { cmdReady } from "./ready.js";
 import { cmdReplica, type ReplicaDeps } from "./replica.js";
+import { cmdRuntime, type RuntimeVerbDeps } from "./runtime-verb.js";
 import { cmdEvents, type EventDeps } from "./events.js";
 import { stdinIsTty } from "./prompt.js";
 import { FIRST_STAMPED_VERSION, PROVENANCE_MARKER, parseProvenanceVersion } from "./skill-shape.js";
@@ -48,13 +53,20 @@ import {
 import { cmdWatch, type WatchDeps } from "./watch.js";
 import { cmdWrite, type WriteDeps } from "./write.js";
 import { cmdAsk } from "./ask.js";
+import { cmdMcp } from "./mcp.js";
 import { cmdRelease } from "./release.js";
 import { cmdEnvironment, type EnvironmentDeps } from "./environment.js";
+import { cmdSecret, type SecretDeps } from "./secret.js";
+import { cmdTeam, type TeamDeps } from "./team.js";
+import { cmdCapabilities } from "./capabilities.js";
+import { cmdIdentity, type IdentityDeps } from "./identity.js";
+import { cmdConnections, type ConnectionsDeps } from "./connections.js";
 
 export {
   CONFIG_MODE,
   DEFAULT_BASE_URL,
   FIRST_STAMPED_VERSION,
+  LEGACY_PACKAGE_NAME,
   PACKAGE_NAME,
   PROVENANCE_MARKER,
   CliError,
@@ -70,6 +82,7 @@ export {
   installedBundleVersion,
   installSkills,
   loadConfig,
+  modernCliPath,
   normalizeBaseUrl,
   parseArgs,
   parseChangelogEntry,
@@ -109,21 +122,28 @@ export function usageText(): string {
     `${PACKAGE_NAME} — the Catalyst Cloud customer CLI: connect to your tenant, read through the SDK, write through the agent proxy`,
     "",
     "Usage:",
-    "  catalyst-skills login [--base-url <url>] [--start-replica]   (keyless: logs you in as yourself)",
-    "  catalyst-skills login --key <personal-key> [--base-url <url>]   (or CATALYST_CLOUD_TOKEN, for a key)",
-    "  catalyst-skills join ...   (deprecated alias of login; removed in the next minor version)",
-    "  catalyst-skills install [--skills-dir <dir>] [--force]   (repair path; your agent's own command installs the skills)",
-    "  catalyst-skills status | notice | me | ready | accounts",
-    "  catalyst-skills contract [--refresh] [--path <a.b.c>]",
-    "  catalyst-skills query <issues|issue <id>|pulls|pull <id>|projects|cycles|search <terms>|changes --since <cursor|head>>",
-    "  catalyst-skills replica <start [--detach]|stop|status [--probe]|sql \"<select>\"|schema [table]>",
-    "  catalyst-skills events <tail|wait-for|query> [--type NAME] [--ticket CTC-N] [--after SEQUENCE]",
-    "  catalyst-skills explain <ticket> | history <ticket> | running [--ticket T --phase P] | queue [--team K]",
-    "  catalyst-skills watch [--team K] [--ticket T]... [--project P] [--exec CMD]",
-    "  catalyst-skills write <comment|state|label|create|reaction|attachment|session> ...",
-    "  catalyst-skills ask <raise|accept|list> ...",
-    "  catalyst-skills release <ticket> --because <what changed> [--retry-unchanged] [--dry-run] | release --class <c> --team <K> ...",
-    "  catalyst-skills environment [read] | environment propose --file <path>|--stdin [--approve] | environment approve",
+    "  catalyst login [--base-url <url>] [--start-replica]   (keyless: logs you in as yourself)",
+    "  catalyst login --key <personal-key> [--base-url <url>]   (or CATALYST_CLOUD_TOKEN, for a key)",
+    "  catalyst join ...   (deprecated alias of login; removed in the next minor version)",
+    "  catalyst install [--skills-dir <dir>] [--force]   (repair path; your agent's own command installs the skills)",
+    "  catalyst status | notice | me | ready | accounts",
+    "  catalyst mcp add|list|remove (vault references only)",
+    "  catalyst contract [--refresh] [--path <a.b.c>]",
+    "  catalyst query <issues|issue <id>|pulls|pull <id>|projects|cycles|search <terms>|changes --since <cursor|head>>",
+    "  catalyst replica <start [--detach]|stop|status [--probe]|sql \"<select>\"|schema [table]>",
+    "  catalyst runtime <status [--json]|install|path|uninstall>   (a pinned Node this CLI manages itself)",
+    "  catalyst events <tail|wait-for|query|status [--probe]> [--type NAME] [--ticket CTC-N] [--after SEQUENCE]",
+    "  catalyst explain <ticket> | history <ticket> | running [--ticket T --phase P] | queue [--team K]",
+    "  catalyst watch [--team K] [--ticket T]... [--project P] [--exec CMD]",
+    "  catalyst write <comment|state|label|create|reaction|attachment|session> ...",
+    "  catalyst ask <raise|accept|list> ...",
+    "  catalyst release <ticket> --because <what changed> [--retry-unchanged] [--dry-run] | release --class <c> --team <K> ...",
+    "  catalyst environment [read] | environment propose --file <path>|--stdin [--approve] | environment approve",
+    "  catalyst secret set <NAME> --repo <owner/name> [--command '<cmd>'] | secret import <file> --repo <owner/name>",
+    "  catalyst team <list|check|map|adopt|migrate|checklist> ...",
+    "  catalyst capabilities [--json]   (what this CLI can do, the role each verb needs, and whether this cloud serves it)",
+    "  catalyst identity linear <status|options|set> [<linearUserId>] [--json]",
+    "  catalyst connections personal <linear|github> <start|status> [--wait <seconds>] [--json]",
     "",
     "Every verb takes --help. --json makes the output machine-readable.",
     "",
@@ -142,10 +162,15 @@ export function usageText(): string {
 
 export interface MainDeps {
   replica?: ReplicaDeps;
+  runtime?: RuntimeVerbDeps;
   events?: EventDeps;
   watch?: WatchDeps;
   write?: WriteDeps;
   environment?: EnvironmentDeps;
+  secret?: SecretDeps;
+  connections?: ConnectionsDeps;
+  identity?: IdentityDeps;
+  team?: TeamDeps;
   loadSdk?: () => Promise<unknown>;
   /** Injected by the tests so no suite ever touches a real terminal. */
   isTty?: () => boolean;
@@ -153,6 +178,36 @@ export interface MainDeps {
   openBrowser?: (url: string) => void;
   /** Injected by the tests: the device-flow poll delay (no real waiting under test). */
   sleep?: (ms: number) => Promise<void>;
+}
+
+/**
+ * CTC-3479 — a login before the rename recorded bin/catalyst-skills.js as cliPath. Skill scripts
+ * spawn that path, and it now prints the deprecated-name notice on every call. Move the record onto
+ * the `catalyst` launcher beside it, once, on the next run of either name. Read and write back to
+ * back, so the window for racing a concurrent OAuth refresh is as small as the update notice's.
+ */
+function migrateLegacyCliPath(ctx: Ctx): void {
+  let cfg: CustomerConfig | null;
+  try {
+    cfg = loadConfig(ctx.home);
+  } catch {
+    return;
+  }
+  if (!cfg) return;
+  let next = modernCliPath(cfg.cliPath);
+  // An upgrade from @catalyst-cloud/catalyst-skills to @catalyst-cloud/cli removes the old package
+  // folder, so the recorded launcher no longer exists and has no sibling. Point it at the launcher
+  // that is running now, so `ready` and every skill script work without another login.
+  if (next === null && typeof cfg.cliPath === "string" && cfg.cliPath !== "" && !existsSync(cfg.cliPath)) {
+    next = cliPath();
+  }
+  if (next === null || next === cfg.cliPath) return;
+  cfg.cliPath = next;
+  try {
+    saveConfig(ctx.home, cfg);
+  } catch {
+    // Best effort: the old launcher still works, it only prints the notice.
+  }
 }
 
 /**
@@ -175,19 +230,28 @@ function maybePrintUpdateNotice(args: ParsedArgs, ctx: Ctx): void {
     const entry = parseChangelogEntry(readChangelog(), manifest.version);
     say(updateNoticeLine(previous, manifest.version, entry));
   }
+  if (installerOwnsSkills(ctx.home, ctx.env)) {
+    cfg.lastSkillBundleVersion = manifest.version;
+    try {
+      saveConfig(ctx.home, cfg);
+    } catch {
+      // Best effort: the notice prints again next time, and nothing else depends on it.
+    }
+    return;
+  }
   const skillsDir = resolveSkillsDir(args, ctx, cfg);
   let refreshed: SkillsInstallResult;
   try {
     refreshed = installSkills(skillsDir, { force: false, onlyExisting: true });
   } catch (err) {
     ctx.stderr(
-      `[catalyst-skills] could not refresh the skills at ${skillsDir} (${err instanceof Error ? err.message : String(err)}) — the ${manifest.version} skills are not installed yet; run: catalyst-skills install`,
+      `[catalyst] could not refresh the skills at ${skillsDir} (${err instanceof Error ? err.message : String(err)}) — the ${manifest.version} skills are not installed yet; re-run the install command: ${INSTALL_COMMAND}`,
     );
     return;
   }
-  if (refreshed.installed.length > 0) say(`[catalyst-skills] refreshed ${refreshed.installed.join(", ")} at ${skillsDir} to ${manifest.version}`);
+  if (refreshed.installed.length > 0) say(`[catalyst] refreshed ${refreshed.installed.join(", ")} at ${skillsDir} to ${manifest.version}`);
   for (const s of refreshed.skipped) {
-    say(`[catalyst-skills] left "${s.name}" alone: ${skillsDir}/${s.name} was not installed by this package (catalyst-skills install --force to replace)`);
+    say(`[catalyst] left "${s.name}" alone: ${skillsDir}/${s.name} was not installed by this package (catalyst install --force to replace)`);
   }
   cfg.lastSkillBundleVersion = manifest.version;
   cfg.skillsDir = skillsDir;
@@ -218,6 +282,7 @@ export async function main(argv: string[], ctx: Ctx = defaultCtx(), deps: MainDe
     return 0;
   }
   try {
+    migrateLegacyCliPath(ctx);
     maybePrintUpdateNotice(args, ctx);
     switch (args.command) {
       case "login":
@@ -236,6 +301,8 @@ export async function main(argv: string[], ctx: Ctx = defaultCtx(), deps: MainDe
         return await cmdQuery(args, ctx, { engineDeps: deps.replica?.engineDeps });
       case "replica":
         return await cmdReplica(args, ctx, deps.replica);
+      case "runtime":
+        return await cmdRuntime(args, ctx, deps.runtime);
       case "events":
         return await cmdEvents(args, ctx, deps.events);
       case "explain":
@@ -254,12 +321,24 @@ export async function main(argv: string[], ctx: Ctx = defaultCtx(), deps: MainDe
         return await cmdAsk(args, ctx);
       case "ready":
         return await cmdReady(args, ctx, { skillNames: CUSTOMER_SKILLS, loadSdk: deps.loadSdk, offline: args.flags.offline === true });
+      case "mcp":
+        return await cmdMcp(args, ctx);
       case "accounts":
         return await cmdAccounts(args, ctx);
       case "release":
         return await cmdRelease(args, ctx);
       case "environment":
         return await cmdEnvironment(args, ctx, deps.environment ?? {});
+      case "secret":
+        return await cmdSecret(args, ctx, deps.secret ?? {});
+      case "team":
+        return await cmdTeam(args, ctx, deps.team);
+      case "capabilities":
+        return await cmdCapabilities(args, ctx);
+      case "identity":
+        return await cmdIdentity(args, ctx, deps.identity ?? {});
+      case "connections":
+        return await cmdConnections(args, ctx, deps.connections ?? {});
       default:
         ctx.stderr(`unknown command: ${args.command}`);
         ctx.stderr(usageText());
@@ -272,11 +351,11 @@ export async function main(argv: string[], ctx: Ctx = defaultCtx(), deps: MainDe
       return 1;
     }
     if (err instanceof CliError) {
-      ctx.stderr(`catalyst-skills: ${err.message}`);
+      ctx.stderr(`catalyst: ${err.message}`);
       return err.exitCode;
     }
     if (err instanceof MeError) {
-      ctx.stderr(`catalyst-skills: ${err.message}`);
+      ctx.stderr(`catalyst: ${err.message}`);
       return 2;
     }
     throw err;
@@ -284,7 +363,7 @@ export async function main(argv: string[], ctx: Ctx = defaultCtx(), deps: MainDe
 }
 
 const VERB_HELP_KNOWN: Record<string, true> = Object.fromEntries(
-  ["login", "join", "install", "status", "notice", "me", "contract", "query", "replica", "events", "explain", "running", "queue", "watch", "write", "ask", "ready", "accounts", "release"].map((v) => [v, true]),
+  ["login", "join", "install", "status", "notice", "me", "contract", "query", "replica", "runtime", "events", "explain", "running", "queue", "watch", "write", "ask", "ready", "accounts", "release", "secret", "environment", "connections", "identity", "mcp", "team", "capabilities"].map((v) => [v, true]),
 );
 
 async function cmdLogin(args: ParsedArgs, ctx: Ctx, deps: MainDeps): Promise<number> {
@@ -336,7 +415,7 @@ async function cmdLogin(args: ParsedArgs, ctx: Ctx, deps: MainDeps): Promise<num
     );
   } else {
     ctx.stderr(
-      `[catalyst-skills] this is the tenant's account key (a host credential), not your own — the skills work, but nothing your agent writes will carry your name and "what needs me" cannot mean you. Mint a personal key at Settings → API keys and log in with that.`,
+      `[catalyst] this is the tenant's account key (a host credential), not your own — the skills work, but nothing your agent writes will carry your name and "what needs me" cannot mean you. Mint a personal key at Settings → API keys and log in with that.`,
     );
   }
   ctx.stdout(
@@ -350,7 +429,7 @@ async function cmdLogin(args: ParsedArgs, ctx: Ctx, deps: MainDeps): Promise<num
     ctx.stdout(`Tenant contract ${loaded.doc.contractVersion} cached at ${loaded.path}`);
   } catch (err) {
     if (err instanceof CliError && (err.code === "contract-forbidden" || err.code === "contract-version")) {
-      ctx.stderr(`[catalyst-skills] ${err.message}`);
+      ctx.stderr(`[catalyst] ${err.message}`);
     } else {
       throw err;
     }
@@ -393,7 +472,7 @@ function cmdStatus(ctx: Ctx): number {
   const manifest = readManifest();
   const cfg = loadConfig(ctx.home);
   if (!cfg) {
-    ctx.stdout(`Not connected yet — run: npx ${PACKAGE_NAME} login (keyless; or pass --key / set CATALYST_CLOUD_TOKEN)`);
+    ctx.stdout(`Not connected yet — run: npx ${LEGACY_PACKAGE_NAME} login (keyless; or pass --key / set CATALYST_CLOUD_TOKEN)`);
     return 0;
   }
   ctx.stdout(`Tenant: ${cfg.name} (${cfg.slug}) — account ${cfg.account}`);
@@ -402,7 +481,7 @@ function cmdStatus(ctx: Ctx): number {
   ctx.stdout(cfg.auth ? `Credential: your login (expires ${relativeExpiry(cfg.auth.expiresAt, ctx.now())})` : "Credential: personal key");
   ctx.stdout(`Bundle: ${PACKAGE_NAME} ${manifest.version} (tenant contract range: ${manifest.tenantContractRange})`);
   if (cfg.cliPath) ctx.stdout(`CLI: ${cfg.cliPath}${existsSync(cfg.cliPath) ? "" : " (missing — re-run login)"}`);
-  ctx.stdout(`Contract: ${existsSync(contractPathFor(ctx.home)) ? contractPathFor(ctx.home) : "not cached (run: catalyst-skills contract --refresh)"}`);
+  ctx.stdout(`Contract: ${existsSync(contractPathFor(ctx.home)) ? contractPathFor(ctx.home) : "not cached (run: catalyst contract --refresh)"}`);
   return 0;
 }
 

@@ -62,7 +62,7 @@ describe("loadContract", () => {
     writeFileSync(contractPathFor(home), JSON.stringify({ ...JSON.parse(readFileSync(contractPathFor(home), "utf8")), fetchedAt: "2020-01-01T00:00:00Z" }));
     writeFileSync(`${home}/.config/catalyst-cloud/customer.json`, JSON.stringify({ ...cfg, baseUrl: deadUrl }));
     expect(await main(["contract"], ctx)).toBe(2);
-    const lines = ctx.err.filter((l) => l.startsWith("catalyst-skills:"));
+    const lines = ctx.err.filter((l) => l.startsWith("catalyst:"));
     expect(lines).toHaveLength(1);
     expect(lines[0]).toMatch(/old \(refusal after 3600s\)/);
     expect(lines[0]).toContain("could not reach");
@@ -80,12 +80,18 @@ describe("loadContract", () => {
     expect(loaded.ageSeconds).toBe(1000);
   });
 
-  test("contractVersion 2.0.0 against range 1.x exits 2 naming both", async () => {
+  test("contractVersion 3.0.0 against range 1.x || 2.x exits 2 naming both", async () => {
     await seedJoined(home, server, { contract: false });
-    server.contractVersion = "2.0.0";
+    server.contractVersion = "3.0.0";
     const code = await main(["contract"], ctx);
     expect(code).toBe(2);
-    expect(ctx.err.join("\n")).toMatch(/2\.0\.0.*1\.x/);
+    expect(ctx.err.join("\n")).toMatch(/3\.0\.0.*1\.x \|\| 2\.x/);
+  });
+
+  test("CTC-1999: a 2.x contract (the removed cloudRemediateRequiredChecks) is accepted", async () => {
+    await seedJoined(home, server, { contract: false });
+    server.contractVersion = "2.2.0";
+    expect(await main(["contract"], ctx)).toBe(0);
   });
 
   test("--path teams.0.stages prints the sub-document; an absent path is exit 2", async () => {
@@ -123,7 +129,7 @@ describe("loadContract", () => {
     const code = await main(["join", "--key", "fixture-key", "--base-url", server.url], ctx);
     expect(code).toBe(0);
     const cfg = JSON.parse(readFileSync(`${home}/.config/catalyst-cloud/customer.json`, "utf8")) as { cliPath: string; replicaDb: string };
-    expect(cfg.cliPath.endsWith("bin/catalyst-skills.js")).toBe(true);
+    expect(cfg.cliPath.endsWith("bin/catalyst.js")).toBe(true);
     expect(cfg.replicaDb).toBe(`${home}/.config/catalyst-cloud/replica.db`);
     expect(existsSync(contractPathFor(home))).toBe(true);
     expect(ctx.out.join("\n")).toContain("Tenant contract 1.0.0 cached at");
@@ -134,6 +140,10 @@ describe("helpers", () => {
   test("version ranges", () => {
     expect(contractVersionInRange("1.4.2", "1.x")).toBe(true);
     expect(contractVersionInRange("2.0.0", "1.x")).toBe(false);
+    expect(contractVersionInRange("2.2.0", "1.x || 2.x")).toBe(true);
+    expect(contractVersionInRange("1.27.0", "1.x || 2.x")).toBe(true);
+    expect(contractVersionInRange("3.0.0", "1.x || 2.x")).toBe(false);
+    expect(contractVersionInRange("2.2.0", "1.x || nonsense")).toBeNull();
     expect(contractVersionInRange("1.0.0", "1.0.0")).toBe(true);
     expect(contractVersionInRange("1.0.0", "unpinned")).toBe(true);
     expect(contractVersionInRange("1.0.0", "banana")).toBeNull();

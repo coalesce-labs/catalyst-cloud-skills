@@ -157,8 +157,8 @@ describe("explain", () => {
     expect(await main(["explain", "nodash"], makeCtx(home))).toBe(1);
     expect(await main(["explain", "ENG-1"], makeCtx(tempHome()))).toBe(2);
   });
-  test("the reason table covers the thirty-seven exclusions and eleven unknowns", () => {
-    expect(Object.keys(EXCLUSION_REASONS)).toHaveLength(37);
+  test("the reason table covers the thirty-eight exclusions and eleven unknowns", () => {
+    expect(Object.keys(EXCLUSION_REASONS)).toHaveLength(38);
     expect(Object.keys(UNKNOWN_REASONS)).toHaveLength(11);
     expect(describeReason("blocked")).toMatch(/blocking relation/);
     expect(describeReason("ticket_unknown")).toMatch(/not in the mirror/);
@@ -422,12 +422,16 @@ describe("running / queue / accounts", () => {
     expect(server.requests.map((r) => r.path.split("?")[0])).toContain("/api/v1/coding-accounts");
     const text = ctx.out.join("\n");
     expect(text).not.toContain("not visible to an account key yet");
-    expect(text).toContain("slot-a (primary)  claude/claude-code  active — observed working");
+    expect(text).toContain("primary (slot-a)  claude/claude-code  active — observed working");
     expect(text).toContain("holding ENG-2/implement");
     expect(text).toContain("walled — the provider's usage limit is spent for now");
     const c2 = makeCtx(home);
     expect(await main(["accounts", "--json"], c2)).toBe(0);
-    expect((JSON.parse(c2.out.join("\n")) as { accounts: unknown[] }).accounts).toHaveLength(2);
+    const json = JSON.parse(c2.out.join("\n")) as { accounts: { accountSlot: string; displayName: string }[] };
+    expect(json.accounts).toHaveLength(2);
+    // Every account carries a displayName: its label, else its email, else its slot id.
+    expect(json.accounts.find((a) => a.accountSlot === "slot-a")?.displayName).toBe("primary");
+    expect(json.accounts.every((a) => typeof a.displayName === "string" && a.displayName !== "")).toBe(true);
     expect(await main(["accounts"], makeCtx(tempHome()))).toBe(2);
   });
   test("history renders the ticket's phases, failure, rounds and lease", async () => {
@@ -473,10 +477,10 @@ describe("running / queue / accounts", () => {
     }
   });
   test("the reasons a release verb now clears are in the bundle's table, never printed raw", () => {
-    for (const reason of ["phase_parked", "human_owned_pr", "review_not_converging", "round_threshold", "claim_storm", "repo_at_capacity", "later_phase_lease_held"]) {
+    for (const reason of ["phase_parked", "human_owned_pr", "review_not_converging", "round_threshold", "claim_storm", "repo_at_capacity", "later_phase_lease_held", "wip_limit"]) {
       expect(describeReason(reason), reason).not.toMatch(/not in this bundle's table/);
     }
-    expect(describeReason("phase_parked")).toMatch(/catalyst-skills release/);
+    expect(describeReason("phase_parked")).toMatch(/catalyst release/);
   });
   // ⛔ A route this tenant's cloud does not serve is SAID, never rendered as an empty success.
   test("a 404 from either new route says the cloud is older than the bundle, and exits non-zero", async () => {

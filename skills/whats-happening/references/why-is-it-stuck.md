@@ -8,6 +8,7 @@ This reference restates an invariant: the vocabulary the cloud's eligibility exp
 
 ## Reasons that release themselves
 
+<<<<<<< HEAD
 | reason | what it means | how it clears | who acts |
 | -- | -- | -- | -- |
 | `retry_backoff` | the failed phase is retrying in place and waiting out its rung | a clock; the rungs are the contract's `thresholds.retryBackoffMs` | no one acts |
@@ -22,6 +23,18 @@ This reference restates an invariant: the vocabulary the cloud's eligibility exp
 | `cooling_down` (with a named callback) | the phase is parked on a condition the cloud watches | the callback fires; the `detail` names it | no one acts; an operator can release it directly if the callback stalls |
 | `no_branch_to_remediate` / `branch_missing` | a branch-dependent phase has no branch yet | the cloud releases these parks on its own budget | no one acts |
 | `stale_failure_episode` | the ladder advanced after the recorded failure, so the round would repair a phase already passed | the round is dropped automatically; the reason is informational | no one acts |
+=======
+| reason | what it means | how it clears |
+| -- | -- | -- |
+| `retry_backoff` | the failed phase is retrying in place and waiting out its rung | a clock; the rungs are the contract's `thresholds.retryBackoffMs` |
+| `lease_held` | a live container already holds this phase | the phase finishes |
+| `intake_lease_held` | a later phase is offered while an intake container still holds the ticket | intake finishes |
+| `environment_check_running` | the repository's environment check is in flight | the check finishes |
+| `runner_image_breaker` | fleet-wide: the live runner image fails every phase at startup, so dispatch is held rather than parking tickets | the cloud moves the pin; one alert per tenant, no per-ticket action |
+| `routing_unavailable` | claimed, then refused at kickoff: no route, no eligible coding-account slot, or the provider is unavailable | provider recovery or a slot freeing; if it persists, the tenant admin checks coding accounts in settings |
+| `cooling_down` (with a named callback) | the phase is parked on a condition the cloud watches | the callback fires; the `detail` names it |
+| `wip_limit` | the project (one Linear team, all its repositories) is at its WIP limit, default 12, so this ticket gets no first phase; tickets already in progress are unaffected | a ticket in progress finishes. If the fleet is idle at the limit, the in-progress tickets are the ones waiting (merge queue, holds, paused repositories, asks): unstick those, never the queue. Raising the limit is the project owner's call |
+>>>>>>> 46df57dfe613bf06403b918e65924ab95fc33d16
 
 ## Reasons that need a human
 

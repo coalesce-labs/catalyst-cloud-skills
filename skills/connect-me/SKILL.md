@@ -5,7 +5,11 @@ description: >-
 disable-model-invocation: true
 allowed-tools: Bash(catalyst-skills:*) Bash(npx @catalyst-cloud/catalyst-skills:*)
 ---
+<<<<<<< HEAD
 <!-- vendored-from: @catalyst-cloud/catalyst-skills@0.8.0 — written in this repository for customer tenants -->
+=======
+<!-- vendored-from: @catalyst-cloud/catalyst-skills@0.9.5 — written in this repository for customer tenants -->
+>>>>>>> 46df57dfe613bf06403b918e65924ab95fc33d16
 
 # Connect me
 
@@ -27,9 +31,9 @@ CATALYST_CLOUD_TOKEN=<your-personal-key> catalyst-skills login
 
 **This skill never installs skills.** You are already reading one, so the person's agent installed the set with its own command. Connecting is only about the credential and the contract.
 
-**What it writes.** `~/.config/catalyst-cloud/customer.json` (mode 0600) holding the credential — a keyless login session (`auth`), or a personal key — the tenant it resolved, the person it resolved (`user`: id, label, role, Linear user id), and the absolute path of this CLI so skill scripts can spawn it; `~/.config/catalyst-cloud/contract.json`, the tenant contract with its ETag. A keyless session's token rotates on its own and the file is rewritten atomically each time.
+**What it writes.** `~/.config/catalyst-cloud/customer.json` (mode 0600) holding the credential — a keyless login session (`auth`), or a personal key — the tenant it resolved, the person it resolved (`user`: id, label, role, Linear user id), and the absolute path of this CLI so skill scripts can spawn it; `~/.config/catalyst-cloud/contract.json`, the tenant contract with its ETag. A keyless session's token rotates on its own and the file is rewritten atomically each time. The directory sits under `$HOME`; `CATALYST_SKILLS_HOME` overrides it. With no home directory (a container, or `HOME` unset or `/`) the config lands under `/`. Stop, confirm this is the person's own machine, and set `CATALYST_SKILLS_HOME` if it is.
 
-**The replica is optional and one command away.** Nothing has to be running for reads, writes, asks or explanations; the API is origin-fresh. `catalyst-skills replica start --detach` starts the local replica for cheap repeated reads and ad hoc SQL; `login --start-replica` does the same at the end. Every skill checks `catalyst-skills replica status` first and falls back to the API when the replica is absent or stale, saying so.
+**The replica is optional and one command away.** Nothing has to be running for reads, writes, asks or explanations; the API is origin-fresh. `catalyst-skills replica start --detach` starts the local replica for cheap repeated reads and ad hoc SQL, but only start it when the person asks: it is off by default for large projects. Every skill checks `catalyst-skills replica status` first and falls back to the API when the replica is absent or stale, saying so.
 
 ## What you do
 
@@ -37,8 +41,8 @@ CATALYST_CLOUD_TOKEN=<your-personal-key> catalyst-skills login
 2. Run the login command. Its output names the tenant (`Connected to <name> (<slug>)`), the person (`Connected as <label> (<role>)`), the config path, and the cached contract version. If the person line says their Linear identity is not matched yet, tell them: an admin matches it in Settings → Members, and until then "what needs me" shows everyone's asks — connecting Linear personally does not match the identity.
 3. Verify with `node scripts/verify-connection.mjs`: one line each for the tenant, the contract version, and the replica; exit 1 when the machine is not connected.
 4. Run `catalyst-skills ready` and read the verdict to them.
-5. Offer the replica: `catalyst-skills replica start --detach`, then `catalyst-skills replica status`. For keeping it alive across a reboot, load `references/keeping-the-replica-running.md`.
-6. If login fails: a keyless session that reports "your login expired or was revoked" needs one fresh `catalyst-skills login`, never a retry loop (it means the session was revoked or lapsed past the inactivity window — routine expiry refreshes silently and never surfaces). A `401` on the key rail means a stale, mistyped or revoked key — mint a new one at Settings → API keys, never a retry loop; a network error names the URL, check `--base-url`. A `403` on the contract naming an older cloud means the cloud has not yet deployed personal-key access: update the cloud, or connect with the account key until it has. If login succeeds but prints a line naming two contract versions, the tenant serves a contract outside this bundle's range: update the bundle before using the other skills.
+5. Do not offer the replica. It is optional and off by default for large projects while the snapshot path is made safe, and every read works through the API without it. Start it only if the person asks for local SQL, and then load `references/keeping-the-replica-running.md`.
+6. If login fails: a keyless session that reports "your login expired or was revoked" needs one fresh `catalyst-skills login`, never a retry loop (it means the session was revoked or lapsed past the inactivity window — routine expiry refreshes silently and never surfaces). A `401` on the key rail means a stale, mistyped or revoked key — mint a new one at Settings → API keys, never a retry loop; a network error names the URL, check `--base-url`. A `403` on the contract naming an older cloud means the cloud has not yet deployed personal-key access: update the cloud, or connect with the account key until it has. If login succeeds but prints a line naming two contract versions, the tenant serves a contract outside this bundle's range: update the bundle before using the other skills. A refusal naming `jwt-no-membership` means the cloud has not met this person yet: it learns of a person at their first sign-in to the app. Have them sign in once with this tenant active, then run `login` again. If it repeats, their seat is not active, and a tenant owner or admin activates it.
 
 ## The verbs a session runs first
 

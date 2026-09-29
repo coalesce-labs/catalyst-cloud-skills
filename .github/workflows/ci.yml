@@ -14,14 +14,36 @@ permissions:
   contents: read
 
 jobs:
-  check:
+  matrix:
+    runs-on: ubuntu-latest
+    outputs:
+      node: ${{ steps.derive.outputs.node }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: package.json
+
+      # CTC-2158 / Ryan 2026-09-17: "current plus active LTS, matrix derived from engines". The list
+      # is DERIVED here, never hand-written — raising engines.node is the only edit that changes it.
+      - id: derive
+        run: echo "node=$(node scripts/node-support-matrix.mjs --json)" >> "$GITHUB_OUTPUT"
+
+  check-node:
+    name: check (node ${{ matrix.node }})
+    needs: matrix
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ${{ fromJSON(needs.matrix.outputs.node) }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
 
       - uses: actions/setup-node@v6
         with:
-          node-version: 22
+          node-version: ${{ matrix.node }}
 
       - uses: oven-sh/setup-bun@v2
         with:
@@ -35,6 +57,147 @@ jobs:
 
       - name: Test
         run: bun run test
+
+      - name: Build
+        run: bun run build
+
+      # ⛔ The suite itself CANNOT see this. Measured 2026-09-17: inside `bun run test`,
+      # process.execPath is the real node setup-node installed and process.versions.bun is ABSENT,
+      # because vitest's bin carries `#!/usr/bin/env node` and `bun run` delegates to it. Every test
+      # that spawns the built CLI uses process.execPath, so the Node the CLI runs under is the Node
+      # vitest runs under — never a second major. This step is the only thing that runs the built CLI
+      # on THIS matrix major, which is the exact regression Tony hit on Node 26.
+      - name: The built CLI loads the SDK on Node ${{ matrix.node }}
+        run: |
+          set -euo pipefail
+          out="$(node bin/catalyst-skills.js ready || true)"
+          printf '%s\n' "$out"
+          printf '%s\n' "$out" | grep -q '^ok .*sdk: loads' \
+            || { echo "::error title=SDK did not load on Node ${{ matrix.node }}::$out"; exit 1; }
+
+      - uses: astral-sh/setup-uv@v7
+
+      # CTC-2012 Tier 1b — the deterministic half of skill-scanner: no credential, no live model,
+      # runs on every PR and every push to main. Fails on any finding not written down in
+      # scripts/skill-scanner-accepted.json.
+      - name: Skill scanner over skills/
+        run: bun run skills:scan
+
+  # CTC-2012 Tier 1a — the scored half. `claude plugin eval . --no-publish` runs `--runs 1` (or
+  # more, per skill) `claude -p` sessions that spend a real credential, so it is a separate job
+  # from `check`, gated to paths that could actually change routing, and never fails the job over
+  # a credential nobody has minted yet — see scripts/run-evals.mjs and evals/README.md.
+  evals:
+    name: Skill routing evals
+    needs: check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: package.json
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+
+      - name: Install (frozen)
+        run: bun install --frozen-lockfile
+
+      - name: Install the Claude Code CLI
+        run: bun add -g @anthropic-ai/claude-code
+
+      - name: Assert a CLI new enough for --json result documents
+        run: |
+          set -euo pipefail
+          version="$(claude --version | awk '{print $1}')"
+          IFS=. read -r major minor patch <<<"$version"
+          if [ "$major" -lt 2 ] || { [ "$major" -eq 2 ] && [ "$minor" -lt 1 ]; } || { [ "$major" -eq 2 ] && [ "$minor" -eq 1 ] && [ "$patch" -lt 224 ]; }; then
+            echo "::error title=plugin eval::claude $version is older than the 2.1.224 minimum for --json result documents" >&2
+            exit 1
+          fi
+          echo "claude $version"
+
+      # ⛔ WARNS LOUDLY, NEVER FAILS OPEN SILENTLY — same pattern as notify-catalyst-cloud below.
+      # Two independent reasons this step can decide there is nothing scored to prove today: (1) the
+      # diff does not touch anything plugin-eval could catch (60 agent runs on a README typo is
+      # waste — the deterministic gate in the `check` job runs regardless of this filter), or (2)
+      # either secret this job needs is unset. Either way this must never fail the build, and must
+      # never report green having evaluated nothing — it names exactly which is true.
+      - name: Run the scored eval suite
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY_FOR_EVALS }}
+          CLAUDE_CODE_WALNUT_SPIRE: ${{ secrets.CLAUDE_CODE_PLUGIN_EVAL_ENABLEMENT }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          set -euo pipefail
+          if [ -n "${BASE_SHA:-}" ] && git cat-file -e "$BASE_SHA" 2>/dev/null; then
+            if ! git diff --name-only "$BASE_SHA" "${{ github.sha }}" | grep -qE '^(skills/|evals/|\.claude-plugin/)'; then
+              echo "::notice title=skill evals skipped::Nothing under skills/, evals/ or .claude-plugin/ changed in this diff, so the scored suite did not run. The deterministic gate (test/evals-suite.test.ts, in the check job) always runs regardless."
+              exit 0
+            fi
+          fi
+          if [ -z "${ANTHROPIC_API_KEY:-}" ] || [ -z "${CLAUDE_CODE_WALNUT_SPIRE:-}" ]; then
+            echo "::warning title=skill evals not wired::No skill was actually asked to trigger in this run. ANTHROPIC_API_KEY_FOR_EVALS and/or CLAUDE_CODE_PLUGIN_EVAL_ENABLEMENT are unset, so the scored 'claude plugin eval' suite did not run. The deterministic half (test/evals-suite.test.ts) DID run and still holds every description to its cases. Add both secrets to close this gap."
+            exit 0
+          fi
+          bun run evals
+
+  bun-runtime:
+    needs: check-node
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # 1.3.14 has no node:sqlite (measured: `bun -e 'import "node:sqlite"'` -> could not resolve);
+        # latest has it. Both directions are asserted, because the FAILING one is what a customer hits.
+        include:
+          - bun: 1.3.14
+            expect: friendly-refusal
+          - bun: latest
+            expect: sdk-loads
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: package.json
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ matrix.bun }}
+      - run: bun install --frozen-lockfile
+      - run: bun run build
+      - name: The built CLI under bun ${{ matrix.bun }} (${{ matrix.expect }})
+        run: |
+          set -euo pipefail
+          out="$(bun bin/catalyst-skills.js ready 2>&1 || true)"
+          printf '%s\n' "$out"
+          case "${{ matrix.expect }}" in
+            sdk-loads)
+              printf '%s\n' "$out" | grep -q '^ok .*sdk: loads' ;;
+            friendly-refusal)
+              # It must name bun, name the floor, print the one command — and NEVER leak the raw
+              # ResolveMessage the launcher used to print before CTC-2158.
+              printf '%s\n' "$out" | grep -q 'bun 1\.3\.14' \
+                && printf '%s\n' "$out" | grep -q 'runtime install' \
+                && ! printf '%s\n' "$out" | grep -q 'ResolveMessage' ;;
+          esac
+
+  # The one gate name Mergify reads (`check-success=check` in .mergify.yml). A matrixed job reports
+  # as `check (node 24)` and so on, never as bare `check`, so without this job the queue would wait
+  # forever. It is green only when every Node major and both bun directions are green.
+  check:
+    needs: [check-node, bun-runtime]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Every Node major and every bun direction passed
+        run: |
+          echo "check-node=${{ needs.check-node.result }} bun-runtime=${{ needs.bun-runtime.result }}"
+          test "${{ needs.check-node.result }}" = success
+          test "${{ needs.bun-runtime.result }}" = success
 
   # CTC-2534 — tell catalyst-cloud that the bundle moved, so its vendored `.well-known` index stops
   # lagging. It lagged 27 commits and a whole skill (`unstick`) before this existed, and served a

@@ -1,0 +1,10 @@
+{
+  "skill": "run-this-project",
+  "invocation": "explicit",
+  "exercised_phrase": "run this project for me",
+  "promised_phrases": [
+    "run this project for me",
+    "own this until it ships",
+    "keep this moving"
+  ]
+}

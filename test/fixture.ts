@@ -78,6 +78,17 @@ export interface FixtureServer {
     approved: { revision: number; canonicalHash: string } | null;
     unresolvedReferences: string[];
   };
+  /** CTC-3549 — the repo secret store behind `/me/secrets` and `/me/secrets/import`: what was stored
+   *  (keyed `owner/name:NAME`, value kept only so a test can assert the stored value), the audit
+   *  `source` each write declared, the approved declaration's secret names, and the caller's seat. */
+  secrets: {
+    stored: Map<string, { value: string; version: number; source: string | null }>;
+    repos: string[];
+    declared: string[] | null;
+    role: "admin" | "owner" | "member";
+    /** `false` answers 401 to a bearer, the way a cloud that predates CTC-3549 does. */
+    deployed: boolean;
+  };
   /** Force one raw answer for the next environment call, by verb (e.g. a 400 invalid_declaration). */
   environmentForced?: Partial<Record<"read" | "propose" | "approve", { status: number; body: unknown }>>;
   /** Fields merged over the fixture execution report, for the renderer's null and park branches. */
@@ -98,6 +109,11 @@ export interface OauthFixture {
   expired: boolean;
   /** `expires_in` the device-authorize response advertises (the poll's own deadline). Default 300. */
   deviceExpiresIn: number;
+  /** CTC-2136: the next N device codes minted answer `expired_token` (counts down per mint); a later
+   *  one proceeds normally. Safe on a server shared across tests. */
+  expireNextCodes: number;
+  /** CTC-2136: leave `verification_uri_complete` out of the device-authorize response. */
+  omitVerificationUriComplete: boolean;
   /** Answer the first N device-code polls with this transient status (408/429/5xx) — retried, not fatal. */
   pollTransientStatus: number | null;
   pollTransientTimes: number;
@@ -124,6 +140,11 @@ export interface OauthFixture {
   /** Every access token the fixture has minted; any of them authenticates as the person. */
   issuedAccessTokens: Set<string>;
   lastRefreshToken: string | null;
+  // ── CTC-2136 bookkeeping: which minted codes expire, and how far into a chain of expiries we are ──
+  expiringDeviceCodes: Set<string>;
+  /** 0 for a fresh login's first code; +1 for each code minted right after one that expired. */
+  mintChain: number;
+  lastMintExpired: boolean;
 }
 
 // ── the tenant's data ─────────────────────────────────────────────────────────────────────────────
@@ -496,6 +517,7 @@ export async function startMeFixture(
     issues: fixtureIssues(),
     eligibilityByTeam: {},
     accountEnvironment: { current: null, approved: null, unresolvedReferences: [] },
+    secrets: { stored: new Map(), repos: ["acme/app"], declared: null, role: "admin", deployed: true },
     oauth: {
       clientId: "client_fixture",
       pendingPolls: 0,
@@ -503,6 +525,8 @@ export async function startMeFixture(
       denied: false,
       expired: false,
       deviceExpiresIn: 300,
+      expireNextCodes: 0,
+      omitVerificationUriComplete: false,
       pollTransientStatus: null,
       pollTransientTimes: 0,
       refreshInvalidGrant: false,
@@ -517,6 +541,9 @@ export async function startMeFixture(
       refreshCount: 0,
       issuedAccessTokens: new Set<string>(),
       lastRefreshToken: null,
+      expiringDeviceCodes: new Set<string>(),
+      mintChain: 0,
+      lastMintExpired: false,
     },
   };
   const postRoutes = () => new Set(state.contract.routes.filter((r) => r.method === "POST").map((r) => r.path));
@@ -588,11 +615,21 @@ export async function startMeFixture(
     }
     if (path === "/oauth/device") {
       o.deviceAuthorizeCount += 1;
+      // CTC-2136: a code minted right after one that expired is the next in its chain, so a re-minted
+      // login shows WXYZ-1235, WXYZ-1236…; a fresh login's first code is always WXYZ-1234.
+      o.mintChain = o.lastMintExpired ? o.mintChain + 1 : 0;
+      const deviceCode = `device-code-fixture-${o.deviceAuthorizeCount}`;
+      o.lastMintExpired = o.expired || o.expireNextCodes > 0;
+      if (o.expireNextCodes > 0) {
+        o.expireNextCodes -= 1;
+        o.expiringDeviceCodes.add(deviceCode);
+      }
+      const userCode = `WXYZ-${1234 + o.mintChain}`;
       return send(200, {
-        device_code: "device-code-fixture",
-        user_code: "WXYZ-1234",
+        device_code: deviceCode,
+        user_code: userCode,
         verification_uri: `${state.url}/activate`,
-        verification_uri_complete: `${state.url}/activate?user_code=WXYZ-1234`,
+        ...(o.omitVerificationUriComplete ? {} : { verification_uri_complete: `${state.url}/activate?user_code=${userCode}` }),
         expires_in: o.deviceExpiresIn,
         interval: 5,
       });
@@ -621,6 +658,9 @@ export async function startMeFixture(
       o.tokenPollCount += 1;
       if (o.denied) return send(400, { error: "access_denied", error_description: "the request was denied" });
       if (o.expired) return send(400, { error: "expired_token", error_description: "the device code expired" });
+      if (o.expiringDeviceCodes.has(String((body as { device_code?: string } | undefined)?.device_code))) {
+        return send(400, { error: "expired_token", error_description: "the device code expired" });
+      }
       if (o.slowDownOnce && o.tokenPollCount === 1) return send(400, { error: "slow_down" });
       const pendingAnswered = o.slowDownOnce ? o.tokenPollCount - 1 : o.tokenPollCount;
       if (pendingAnswered <= o.pendingPolls) return send(400, { error: "authorization_pending" });
@@ -717,7 +757,14 @@ export async function startMeFixture(
     if (path === "/api/v1/cycles") return send(200, { rows: [{ id: "cyc-1", number: 12, name: "Cycle 12", starts_at: "2026-09-01", ends_at: "2026-09-14" }] });
     if (path === "/api/v1/search") {
       const q = (url.searchParams.get("q") ?? "").toLowerCase();
-      return send(200, { rows: state.issues.filter((r) => String(r.title).toLowerCase().includes(q)).map((r) => ({ kind: "issue", identifier: r.identifier, title: r.title })) });
+      // The hub's real shape (read-model SearchView): four groups, not one `rows` list.
+      const hit = (s: unknown) => String(s ?? "").toLowerCase().includes(q);
+      return send(200, {
+        issues: state.issues.filter((r) => hit(r.title)).map((r) => ({ id: r.id, identifier: r.identifier, title: r.title })),
+        pulls: q === "widget" ? [{ repo_id: "acme/app", number: 41, node_id: "PR_41", title: "Widget pull" }] : [],
+        projects: q === "widget" ? [{ id: "proj-w", name: "Widget project" }] : [],
+        initiatives: q === "widget" ? [{ id: "init-w", name: "Widget initiative" }] : [],
+      });
     }
     // ⛔ The changefeed EVICTS. A cursor before the oldest retained seq is a 409
     // `{error:"cursor_underflow", resync:true}`, and one past the head is a 409
@@ -802,6 +849,48 @@ export async function startMeFixture(
         unresolvedReferences: env.unresolvedReferences,
         audit: [],
       });
+    }
+
+    // CTC-3549 — the repo secret writes, on the browser's own paths, admitting a person's bearer.
+    if (req.method === "POST" && (path === "/me/secrets" || path === "/me/secrets/import")) {
+      const sec = state.secrets;
+      if (!sec.deployed) return send(401, { error: "unauthorized" });
+      if (machine) return send(403, { error: "personal_credential_required", message: "this route acts as a person: use your personal key (ctc_user_…) or a CLI login, not an account key" });
+      state.writes.push({ method: "POST", path, headers: req.headers, body });
+      if (sec.role === "member") return send(403, { error: "forbidden", message: "managing the organization's secrets requires an admin or owner role" });
+      const b = (body ?? {}) as Record<string, unknown>;
+      const repo = typeof b.repo === "string" ? b.repo : "";
+      if (!sec.repos.includes(repo)) return send(404, { error: "not_found", message: "no such repository" });
+      const source = typeof b.source === "string" ? b.source : null;
+      const held = (n: string) => sec.stored.has(`${repo}:${n}`);
+      const put = (n: string, value: string): { version: number; created: boolean } => {
+        const prior = sec.stored.get(`${repo}:${n}`);
+        const version = (prior?.version ?? 0) + 1;
+        sec.stored.set(`${repo}:${n}`, { value, version, source });
+        return { version, created: prior === undefined };
+      };
+      const declared = () =>
+        sec.declared === null ? null : { declared: [...sec.declared].sort(), missing: sec.declared.filter((n) => !held(n)).sort() };
+      if (path === "/me/secrets") {
+        if (typeof b.name !== "string" || typeof b.value !== "string" || b.value === "") return send(400, { error: "invalid_value" });
+        const r = put(b.name, b.value);
+        return send(r.created ? 201 : 200, { secret: { name: b.name, value: null }, version: r.version, created: r.created, declared: declared() });
+      }
+      const rotate = Array.isArray(b.rotateExisting) ? (b.rotateExisting as string[]) : [];
+      const created: string[] = [];
+      const rotated: string[] = [];
+      const errors: Array<{ name: string; reason: string }> = [];
+      for (const line of String(b.text ?? "").split("\n")) {
+        const m = /^\s*(?:export\s+)?([^=#\s]+)\s*=(.*)$/.exec(line);
+        if (!m) continue;
+        const [, n, v] = m as unknown as [string, string, string];
+        if (held(n) && !rotate.includes(n)) {
+          errors.push({ name: n, reason: "name_exists" });
+          continue;
+        }
+        (put(n, v.trim()).created ? created : rotated).push(n);
+      }
+      return send(200, { created, rotated, errors, declared: declared() });
     }
 
     if (req.method === "POST" && postRoutes().has(path)) {

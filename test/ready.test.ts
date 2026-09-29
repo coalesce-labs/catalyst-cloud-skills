@@ -54,7 +54,7 @@ describe("ready", () => {
     expect(await main(["ready"], ctx)).toBe(0);
     const text = ctx.out.join("\n");
     expect(text.split("\n").at(-1)).toBe("READY");
-    expect(text).toMatch(/^ok {3}node: /m);
+    expect(text).toMatch(/^ok {3}runtime: /m);
     expect(text).toMatch(/^ok {3}config: joined Hagale Technologies/m);
     expect(text).toMatch(/^ok {3}contract: 1\.0\.0 cached/m);
     expect(text).toMatch(/^ok {3}cliPath: /m);
@@ -75,7 +75,7 @@ describe("ready", () => {
   });
   test("NOT READY names Node, config, contract, skills dir and sdk failures separately, each with its fix", async () => {
     const report = await readyReport(ctx, {
-      nodeMajor: 20,
+      runtime: { kind: "node", version: "20.0.0", nodeCompat: "20.0.0" },
       skillNames: CUSTOMER_SKILLS,
       loadSdk: async () => {
         throw new Error("no registerHooks");
@@ -85,30 +85,31 @@ describe("ready", () => {
     const failed = report.checks.filter((c) => !c.ok && !c.note).map((c) => c.id);
     // "skills" is a note, not a failure: the customer's own agent installs them, so a copy
     // directory with none of ours in it is the normal plugin case.
-    expect(failed).toEqual(["node", "config", "contract", "sdk"]);
+    expect(failed).toEqual(["runtime", "config", "contract", "sdk"]);
     expect(report.checks.find((c) => c.id === "skills")).toMatchObject({ ok: true, note: true });
     for (const c of report.checks.filter((c) => !c.ok && !c.note)) {
       expect(c.fix, `${c.id} must name a fix`).toBeTruthy();
       expect(c.who, `${c.id} must name who`).toBeTruthy();
     }
-    expect(report.checks.find((c) => c.id === "config")?.fix).toContain("npx @catalyst-cloud/catalyst-skills login");
+    expect(report.checks.find((c) => c.id === "config")?.fix).toContain("npx -p @catalyst-cloud/cli catalyst login");
     expect(report.checks.find((c) => c.id === "sdk")?.line).toContain("no registerHooks");
     expect(await main(["ready"], ctx)).toBe(1);
     expect(ctx.out.join("\n")).toMatch(/NOT READY$/);
-    expect(ctx.out.join("\n")).toMatch(/fix: npx @catalyst-cloud\/catalyst-skills login/);
+    expect(ctx.out.join("\n")).toMatch(/fix: npx -p @catalyst-cloud\/cli catalyst login/);
   });
-  test("a missing cliPath, an out-of-range contract, and a corrupt config each fail by name", async () => {
+  test("a missing cliPath heals to the running launcher; an out-of-range contract and a corrupt config each fail by name", async () => {
     await seedJoined(home, server, { config: { cliPath: `${home}/nope.js` } });
     installSkills(defaultSkillsDirFor(home), {});
     const cache = JSON.parse(readFileSync(contractPathFor(home), "utf8")) as { contractVersion: string };
     writeFileSync(contractPathFor(home), JSON.stringify({ ...cache, contractVersion: "3.0.0" }));
     expect(await main(["ready"], ctx)).toBe(1);
     const text = ctx.out.join("\n");
-    expect(text).toMatch(/^FAIL {2}cliPath: .*does not exist/m);
+    // 0.9.3: a recorded launcher that no longer exists is rewritten to the running one before ready reads it.
+    expect(text).toMatch(/^ok {3}cliPath: /m);
     expect(text).toMatch(/^FAIL {2}contract: version 3\.0\.0 is outside/m);
     // The out-of-range fix must pin @latest (`npm update -g` never crosses a caret below 1.0.0) AND
     // re-login so the new global bin rewrites customer.json.cliPath.
-    expect(text).toContain("fix: npm install -g @catalyst-cloud/catalyst-skills@latest && catalyst-skills login");
+    expect(text).toContain("fix: npm install -g @catalyst-cloud/cli@latest && catalyst login");
     expect(text).not.toContain("npm update");
     writeFileSync(`${home}/.config/catalyst-cloud/customer.json`, "{corrupt");
     const c2 = makeCtx(home);
@@ -129,6 +130,157 @@ describe("ready", () => {
     expect(text).toMatch(/^FAIL {2}team ENG: oauth_scope is fail \(missing_scope\), blocking/m);
     expect(text).toMatch(/who: owner u-fixture-owner, admin u-fixture-admin/);
     expect(text).toMatch(/^FAIL {2}team OPS: blocked/m);
+  });
+  test("CTC-3561: a required_values fail names the missing variables and where to set them, and prints no value", async () => {
+    await seedJoined(home, server);
+    installSkills(defaultSkillsDirFor(home), {});
+    const cache = JSON.parse(readFileSync(contractPathFor(home), "utf8")) as { doc: { teams: { readiness: { status: string; checks: Record<string, unknown>[] } }[] } };
+    const eng = cache.doc.teams[0]!;
+    eng.readiness.status = "degraded";
+    // A value-shaped key rides along to prove the renderer reads `names` only.
+    eng.readiness.checks.push({ id: "required_values", state: "fail", names: ["DATABASE_URL", "STRIPE_KEY"], value: "sk_live_never_printed" });
+    writeFileSync(contractPathFor(home), JSON.stringify(cache));
+    expect(await main(["ready"], ctx)).toBe(1);
+    const text = ctx.out.join("\n");
+    expect(text).toMatch(/^FAIL {2}team ENG: required_values is fail/m);
+    expect(text).toContain(
+      "fix: set DATABASE_URL, STRIPE_KEY on the repository's Environment page under Settings → Repositories (team ENG; they have no value at repository or account scope)",
+    );
+    expect(text).not.toContain("sk_live_never_printed");
+    expect(text).not.toContain("resolve required_values");
+  });
+  test("CTC-3561: one missing variable reads in the singular", async () => {
+    await seedJoined(home, server);
+    const cache = JSON.parse(readFileSync(contractPathFor(home), "utf8")) as { doc: { teams: { readiness: { checks: Record<string, unknown>[] } }[] } };
+    cache.doc.teams[0]!.readiness.checks.push({ id: "required_values", state: "fail", names: ["DATABASE_URL"] });
+    writeFileSync(contractPathFor(home), JSON.stringify(cache));
+    const r = await readyReport(ctx, { skillNames: CUSTOMER_SKILLS, offline: true });
+    expect(r.checks.find((c) => c.id === "team:ENG:required_values")!.fix).toBe(
+      "set DATABASE_URL on the repository's Environment page under Settings → Repositories (team ENG; it has no value at repository or account scope)",
+    );
+  });
+  test("CTC-3561: a team check without names, or with an empty list, keeps today's fix line", async () => {
+    await seedJoined(home, server);
+    const cache = JSON.parse(readFileSync(contractPathFor(home), "utf8")) as { doc: { teams: { readiness: { checks: Record<string, unknown>[] } }[] } };
+    cache.doc.teams[0]!.readiness.checks[0] = { id: "oauth_scope", state: "fail", reason: "missing_scope" };
+    cache.doc.teams[0]!.readiness.checks.push({ id: "required_values", state: "fail", names: [] });
+    writeFileSync(contractPathFor(home), JSON.stringify(cache));
+    const r = await readyReport(ctx, { skillNames: CUSTOMER_SKILLS, offline: true });
+    expect(r.checks.find((c) => c.id === "team:ENG:oauth_scope")!.fix).toBe("open settings for team ENG and resolve oauth_scope");
+    expect(r.checks.find((c) => c.id === "team:ENG:required_values")!.fix).toBe("open settings for team ENG and resolve required_values");
+  });
+  test("CTC-3606: an unresolved reference names the variable and the reference, and says the checkout refuses it", async () => {
+    await seedJoined(home, server);
+    installSkills(defaultSkillsDirFor(home), {});
+    const cache = JSON.parse(readFileSync(contractPathFor(home), "utf8")) as { doc: { teams: { readiness: { status: string; checks: Record<string, unknown>[] } }[] } };
+    const eng = cache.doc.teams[0]!;
+    eng.readiness.status = "degraded";
+    // DATABASE_URL is `$DB_SECRET` and DB_SECRET has no value. A value-shaped key rides along to prove only names are read.
+    eng.readiness.checks.push({
+      id: "required_values",
+      state: "fail",
+      names: ["DATABASE_URL"],
+      unresolved: [{ name: "DATABASE_URL", references: ["DB_SECRET"], value: "postgres://never_printed" }],
+    });
+    writeFileSync(contractPathFor(home), JSON.stringify(cache));
+    expect(await main(["ready"], ctx)).toBe(1);
+    const text = ctx.out.join("\n");
+    expect(text).toContain("fix: DATABASE_URL references DB_SECRET, which has no value; the checkout refuses it before work starts");
+    // An unresolved variable exists; it is not told to be set.
+    expect(text).not.toContain("set DATABASE_URL");
+    expect(text).not.toContain("never_printed");
+  });
+  test("CTC-3606: missing names, unresolved references and other repositories' missing names share one fix line", async () => {
+    await seedJoined(home, server);
+    const cache = JSON.parse(readFileSync(contractPathFor(home), "utf8")) as { doc: { teams: { readiness: { checks: Record<string, unknown>[] } }[] } };
+    cache.doc.teams[0]!.readiness.checks.push({
+      id: "required_values",
+      state: "fail",
+      names: ["API_URL", "DATABASE_URL"],
+      unresolved: [{ name: "DATABASE_URL", references: ["DB_SECRET", "DB_HOST"] }],
+      repos: [
+        { repo: "acme/billing", reason: "required_value_missing", names: ["STRIPE_KEY"] },
+        { repo: "acme/web", reason: "required_value_missing", names: ["SENTRY_DSN"], unresolved: [{ name: "SENTRY_DSN", references: ["SENTRY_TOKEN"] }] },
+        { repo: "acme/docs", reason: "required_value_missing" },
+      ],
+    });
+    writeFileSync(contractPathFor(home), JSON.stringify(cache));
+    const r = await readyReport(ctx, { skillNames: CUSTOMER_SKILLS, offline: true });
+    expect(r.checks.find((c) => c.id === "team:ENG:required_values")!.fix).toBe(
+      "set API_URL on the repository's Environment page under Settings → Repositories (team ENG; it has no value at repository or account scope). " +
+        "DATABASE_URL references DB_SECRET, DB_HOST, which have no value; the checkout refuses it before work starts. " +
+        "acme/billing is missing STRIPE_KEY. " +
+        "in acme/web, SENTRY_DSN references SENTRY_TOKEN, which has no value; the checkout refuses it before work starts",
+    );
+  });
+  test("CTC-3606: a check whose only finding is another repository's missing names names that repository", async () => {
+    await seedJoined(home, server);
+    const cache = JSON.parse(readFileSync(contractPathFor(home), "utf8")) as { doc: { teams: { readiness: { checks: Record<string, unknown>[] } }[] } };
+    cache.doc.teams[0]!.readiness.checks.push({
+      id: "required_values",
+      state: "fail",
+      repos: [{ repo: "owner/repo", reason: "required_value_missing", names: ["STRIPE_KEY"] }],
+    });
+    writeFileSync(contractPathFor(home), JSON.stringify(cache));
+    const r = await readyReport(ctx, { skillNames: CUSTOMER_SKILLS, offline: true });
+    expect(r.checks.find((c) => c.id === "team:ENG:required_values")!.fix).toBe("owner/repo is missing STRIPE_KEY");
+  });
+  test("CTC-3606: malformed unresolved and repos entries are dropped, and a check left with nothing keeps the generic line", async () => {
+    await seedJoined(home, server);
+    const cache = JSON.parse(readFileSync(contractPathFor(home), "utf8")) as { doc: { teams: { readiness: { checks: Record<string, unknown>[] } }[] } };
+    cache.doc.teams[0]!.readiness.checks.push({
+      id: "required_values",
+      state: "fail",
+      unresolved: [{ name: "DATABASE_URL", references: [] }, { references: ["X"] }, null, "junk"],
+      repos: [{ names: ["STRIPE_KEY"] }, { repo: "owner/repo", names: [] }, null],
+    });
+    writeFileSync(contractPathFor(home), JSON.stringify(cache));
+    const r = await readyReport(ctx, { skillNames: CUSTOMER_SKILLS, offline: true });
+    expect(r.checks.find((c) => c.id === "team:ENG:required_values")!.fix).toBe("open settings for team ENG and resolve required_values");
+  });
+  test("CTC-3561: the bundle's contract range accepts 1.24.0, the version that ships names", async () => {
+    const { contractVersionInRange } = await import("../src/contract");
+    expect(contractVersionInRange("1.24.0", readManifest().tenantContractRange)).toBe(true);
+  });
+});
+
+describe("the runtime check — CTC-2158", () => {
+  test("an unsupported runtime FAILS the runtime check and carries the one fix command", async () => {
+    const report = await readyReport(ctx, {
+      runtime: { kind: "node", version: "22.14.0", nodeCompat: "22.14.0" },
+      skillNames: [],
+      loadSdk: async () => {
+        throw new Error("no registerHooks");
+      },
+    });
+    const runtime = report.checks.find((c) => c.id === "runtime")!;
+    expect(runtime.ok).toBe(false);
+    expect(runtime.line).toContain("22.14.0");
+    expect(runtime.line).toContain("22.15");
+    expect(runtime.fix).toContain("runtime install");
+    expect(report.ready).toBe(false);
+  });
+
+  test("bun 1.3.14 FAILS the runtime check as bun, never as its node compat major", async () => {
+    const report = await readyReport(ctx, {
+      runtime: { kind: "bun", version: "1.3.14", nodeCompat: "24.3.0" },
+      skillNames: [],
+      loadSdk: async () => {},
+    });
+    const runtime = report.checks.find((c) => c.id === "runtime")!;
+    expect(runtime.line).toContain("bun 1.3.14");
+    expect(runtime.line).not.toMatch(/\bnode: 24\b/);
+    expect(runtime.ok).toBe(false);
+  });
+
+  test("a supported runtime passes and there is no check called `node` any more", async () => {
+    const report = await readyReport(ctx, {
+      runtime: { kind: "node", version: "26.8.1", nodeCompat: "26.8.1" },
+      skillNames: [],
+      loadSdk: async () => {},
+    });
+    expect(report.checks.find((c) => c.id === "runtime")!.ok).toBe(true);
+    expect(report.checks.find((c) => c.id === "node")).toBeUndefined();
   });
 });
 
@@ -172,7 +324,7 @@ describe("more ready branches", () => {
     const note = j.checks.find((c) => c.id === "bundle");
     expect(note).toMatchObject({ note: true });
     expect(note!.line).toContain("9.9.9");
-    expect(note!.line).toContain("npm install -g @catalyst-cloud/catalyst-skills@latest && catalyst-skills login");
+    expect(note!.line).toContain("npm install -g @catalyst-cloud/cli@latest && catalyst login");
     expect(note!.line).not.toContain("npm update");
   });
   test("no bundle note when the installed bundle meets the contract's minimum", async () => {
@@ -240,7 +392,9 @@ describe("ready never recommends starting the replica (CTC-2499)", () => {
     expect(text).toMatch(/^note {2}replica: absent/m); // the existing pin, unchanged
     expect(text).toContain("optional");
     expect(text).toContain("off by default for large tenants");
-    expect(text).not.toMatch(/\bC[TL]C-\d+\b/);
+    const replicaNote = text.split("\n").find((line) => /^note {2}replica: absent/.test(line));
+    expect(replicaNote).toBeDefined();
+    expect(replicaNote).not.toMatch(/\bC[TL]C-\d+\b/);
   });
   test("ready --json exposes the writer's stopped state and failure count", async () => {
     await seedJoined(home, server);
@@ -249,7 +403,7 @@ describe("ready never recommends starting the replica (CTC-2499)", () => {
     seedWriterState(home, {
       consecutiveFailures: 5,
       lastError: "/snapshot 503",
-      stopped: { at: 1_700_000_000_000, reason: "5 consecutive snapshot failures", restartWith: "catalyst-skills replica start --detach" },
+      stopped: { at: 1_700_000_000_000, reason: "5 consecutive snapshot failures", restartWith: "catalyst replica start --detach" },
     });
     expect(await main(["ready", "--json"], ctx)).toBe(0); // still a note, never a failure
     const j = JSON.parse(ctx.out.join("\n")) as {
@@ -279,13 +433,13 @@ describe("ready never recommends starting the replica (CTC-2499)", () => {
     seedWriterState(home, {
       consecutiveFailures: 5,
       lastError: "/snapshot 503",
-      stopped: { at: 1_700_000_000_000, reason: "5 consecutive snapshot failures", restartWith: "catalyst-skills replica start --detach" },
+      stopped: { at: 1_700_000_000_000, reason: "5 consecutive snapshot failures", restartWith: "catalyst replica start --detach" },
     });
     await main(["ready"], ctx);
     const text = ctx.out.join("\n");
     expect(text).toContain("5 consecutive snapshot failures");
     expect(text).toContain("/snapshot 503");
-    expect(text).toContain("catalyst-skills replica start --detach");
+    expect(text).toContain("catalyst replica start --detach");
     expect(text.split("\n").filter((l) => l.startsWith("note  replica:"))).toHaveLength(1);
   });
 });
@@ -470,7 +624,7 @@ describe("ready reports when the installed skill bundle or CLI is behind the pub
     expect(note).toMatchObject({ ok: false, note: true });
     expect(note.line).toContain(readManifest().version);
     expect(note.line).toContain("9.9.9");
-    expect(note.line).toContain("npm install -g @catalyst-cloud/catalyst-skills@latest && catalyst-skills login");
+    expect(note.line).toContain("npm install -g @catalyst-cloud/cli@latest && catalyst login");
     expect(note.line).not.toContain("npm update");
   });
 

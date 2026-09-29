@@ -1,0 +1,16 @@
+[
+  {
+    "skill": "run-this-project",
+    "file": "scripts/scope-status.js",
+    "description": "Sensitive directory access",
+    "severity": "high",
+    "reason": "scan_skill.py's `(~|HOME|USERPROFILE).*\\.(ssh|aws|gnupg|config)` pattern matches this skill's --help text naming ~/.config/catalyst-cloud/stall-policy.json. That is the CLI's own config directory, documented in the skill, and the path is read, never written. skill-scanner's own instructions put false-positive filtering in the agent layer; this is that judgement, recorded."
+  },
+  {
+    "skill": "run-this-project",
+    "file": "scripts/watch-scope.js",
+    "description": "Sensitive directory access",
+    "severity": "high",
+    "reason": "Same pattern, same reason: the --cursor-file default is ~/.config/catalyst-cloud/watch-cursor.json, this package's own config directory."
+  }
+]

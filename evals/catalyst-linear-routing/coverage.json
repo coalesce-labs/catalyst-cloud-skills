@@ -1,0 +1,13 @@
+{
+  "skill": "catalyst-linear",
+  "invocation": "explicit",
+  "exercised_phrase": "show me the ticket",
+  "promised_phrases": [
+    "show me the ticket",
+    "what did Catalyst write on it",
+    "comment on it",
+    "move it",
+    "label it",
+    "file a ticket"
+  ]
+}
