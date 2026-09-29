@@ -23,6 +23,7 @@ const NOTES = [
   "`contract --path codingAccounts` and `accounts --json` (coding accounts, and which one needs a new credential), and each",
   "project's hosts_current check with its fixedWhere (host), and each project's environment_declared check with its per-repository notes (repository declarations). The teams read is refreshed, so a mapping just saved reads back mapped.",
   "Reads `capabilities --json` once: when the installed CLI can run a step for this person's role (`team check`, `team map`), the next step is that command; otherwise the page, with who can.",
+  "Reads `legacy --json` when the CLI has the verb: leftovers of the old local Catalyst runtime become a machine line and a note; removing them is the person's yes.",
   "With --repo <path>, reads `repo agent-setup <path> --json` (a read; nothing changes) and adds a `repository agent setup` part that never blocks: the Catalyst block in AGENTS.md and the portable layout, with the writes named for the person to approve.",
   "Also runs `gh repo view <owner>/thoughts` for each registered repository's owner, as a note: it shows the repository exists, never that the GitHub App can reach it.",
   "When the tenant serves a contract version this CLI refuses, runs `npm view @catalyst-cloud/cli version` once to say whether a newer CLI is published.",
@@ -156,6 +157,19 @@ add(
 if (connected) {
   const capDoc = tryJson(runCli(["capabilities", "--json"]).stdout);
   capabilities = Array.isArray(capDoc?.capabilities) ? capDoc.capabilities : null;
+}
+// Leftovers of the old local Catalyst runtime (its plugin, jobs, commands, state), from the CLI's own
+// fixed list. Reported on the machine part and as a note; removal is the person's yes, never this script's.
+let legacyNote = null;
+if (verbAvailable("legacy")) {
+  const legacyDoc = tryJson(runCli(["legacy", "--json"]).stdout);
+  const found = Array.isArray(legacyDoc?.found) ? legacyDoc.found : [];
+  if (found.length > 0) {
+    const machine = parts.find((p) => p.part === "machine");
+    const names = found.map((f) => `${f.kind} ${f.name}`);
+    machine?.lines.push(`note leftovers of the old local Catalyst runtime (${found.length}): ${names.slice(0, 6).join(", ")}${found.length > 6 ? ", …" : ""}; removing them is strongly recommended: catalyst legacy --remove (the data folders are a separate yes, --data)`);
+    legacyNote = `this machine still carries ${found.length} piece${found.length === 1 ? "" : "s"} of the old local Catalyst runtime (${names.slice(0, 4).join(", ")}${found.length > 4 ? ", …" : ""}); offer catalyst legacy --remove once, strongly recommended, then --data as a separate question`;
+  }
 }
 
 // ── person ────────────────────────────────────────────────────────────────────────────────────────
@@ -722,9 +736,9 @@ if (contractMismatch !== null && stuck !== null) {
 const finished = parts.every((p) => p.verdict === "ok");
 
 if (flags.json) {
-  console.log(JSON.stringify({ cli: via, connected, cloud, personalConnections, parts, localSync, next, finished, notes: [retireNote, repoNote].filter((n) => n !== null) }));
+  console.log(JSON.stringify({ cli: via, connected, cloud, personalConnections, parts, localSync, next, finished, notes: [retireNote, repoNote, legacyNote].filter((n) => n !== null) }));
 } else if (flags.next) {
-  process.on("exit", () => { for (const n of [retireNote, repoNote]) if (n !== null) console.log(`note: ${n}`); });
+  process.on("exit", () => { for (const n of [retireNote, repoNote, legacyNote]) if (n !== null) console.log(`note: ${n}`); });
   if (next === null) console.log("nothing left: every part is finished, a coding account is enrolled and the host check passes. Move one card into the project's start stage (usually Todo).");
   else console.log(`${next.part}: ${next.action}${next.blocking ? "" : " (does not block the steps below)"}${next.owner ? ` — who: ${next.owner}` : ""}${next.where ? ` — ${next.where.startsWith("http") ? "where" : "do"}: ${next.where}` : ""}`);
 } else {

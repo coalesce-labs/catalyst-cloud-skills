@@ -38,6 +38,8 @@ interface Scenario {
   blockingChecks?: Check[];
   /** What `repo agent-setup <path> --json` answers for any path; omitted, the verb is unknown. */
   repoSetup?: unknown;
+  /** What `legacy --json` answers; omitted, the stand-in has no such verb. */
+  legacy?: unknown;
   hostFixedWhere?: { page: string; command: string | null } | null;
   /** The person's role on `me --json`; owner when omitted. */
   role?: string;
@@ -140,6 +142,8 @@ function connectedHome(s: Scenario): string {
       'if (contractError !== null && a.startsWith("contract --path ")) { process.stderr.write(`contract: 2.2.0 from cloud\\n${contractError}\\n`); process.exit(2); }',
       "if (a in answers) { console.log(JSON.stringify(answers[a])); process.exit(0); }",
       `const repoSetup = ${JSON.stringify(s.repoSetup ?? null)};`,
+      `const legacy = ${JSON.stringify(s.legacy ?? null)};`,
+      'if (a === "legacy --json") { if (legacy === null) { process.stderr.write("unknown verb: legacy\\n"); process.exit(9); } console.log(JSON.stringify(legacy)); process.exit(legacy.found && legacy.found.length ? 1 : 0); }',
       'if (a.startsWith("repo agent-setup ")) { if (repoSetup === null) { process.stderr.write("unknown verb: repo\\n"); process.exit(9); } console.log(JSON.stringify(repoSetup)); process.exit(0); }',
       // what the real CLI prints when the cached contract lacks the path (an older cloud)
       'if (a.startsWith("contract --path ")) { process.stderr.write(`contract: 1.22.0 from cache\\nthe contract has nothing at "${a.split(" ")[2]}"\\n`); process.exit(2); }',
@@ -723,6 +727,27 @@ describe("where-am-i.mjs: a logged-out machine keeps its installed CLI", () => {
     // the keyless login alone, by the installed CLI's own name: no npx line for a machine that holds the
     // CLI, and no key form for a person who has not said they hold one
     expect(doc.next?.where).toBe("catalyst login");
+  });
+});
+
+describe("where-am-i.mjs: leftovers of the old local runtime, from the CLI's own list", () => {
+  const CAPS = { capabilities: [{ verb: "legacy", needs: "member", availability: "available" }] };
+  const found = [{ kind: "plugin", name: "catalyst-dev@catalyst", path: "/x" }, { kind: "job", name: "com.catalyst.agent", path: "/y" }, { kind: "data", name: "~/.config/catalyst", path: "/z", data: true }];
+  test("found: a machine line and a --next note that offer catalyst legacy --remove, never blocking the next step", () => {
+    const home = connectedHome({ codingAccounts: CA_ENROLLED, hostsCurrent: PASS, capabilities: CAPS, legacy: { sourceCommit: "abc", found, removed: [], remaining: found } });
+    const doc = json(home) as Doc & { notes: string[] };
+    expect(part(doc, "machine").verdict).toBe("ok");
+    expect(part(doc, "machine").lines.at(-1)).toBe("note leftovers of the old local Catalyst runtime (3): plugin catalyst-dev@catalyst, job com.catalyst.agent, data ~/.config/catalyst; removing them is strongly recommended: catalyst legacy --remove (the data folders are a separate yes, --data)");
+    expect(doc.notes).toContain("this machine still carries 3 pieces of the old local Catalyst runtime (plugin catalyst-dev@catalyst, job com.catalyst.agent, data ~/.config/catalyst); offer catalyst legacy --remove once, strongly recommended, then --data as a separate question");
+    expect(doc.next?.part).not.toBe("machine");
+    expect(run(home, ["--next"]).stdout).toMatch(/^note: this machine still carries 3 pieces/m);
+  });
+  test("nothing found, or an older CLI without the verb: no line and no note", () => {
+    for (const s of [{ capabilities: CAPS, legacy: { found: [] } }, { capabilities: { capabilities: [] } }]) {
+      const doc = json(connectedHome({ codingAccounts: CA_ENROLLED, hostsCurrent: PASS, ...s })) as Doc & { notes: string[] };
+      expect(part(doc, "machine").lines.join("\n")).not.toContain("old local Catalyst runtime");
+      expect(doc.notes.join("\n")).not.toContain("old local Catalyst runtime");
+    }
   });
 });
 
