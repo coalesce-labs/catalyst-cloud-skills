@@ -318,7 +318,7 @@ describe("bearerFor — the silent refresh", () => {
     const err = await bearerFor(ctx, cfg).catch((e: unknown) => e);
     expect(err).toBeInstanceOf(CliError);
     expect((err as CliError).code).toBe("session-expired");
-    expect((err as CliError).message).toContain("catalyst-skills login");
+    expect((err as CliError).message).toContain("catalyst login");
     expect(server.oauth.refreshCount).toBe(1);
     // the stored tokens are NOT discarded
     const { loadConfig } = await import("../src/config");

@@ -14,7 +14,7 @@ export const BUN_MIN = "1.4.0";
 
 /** The ONE copy-pasteable command. Installs a pinned Node under the CLI's own cache and pins it;
  *  it never touches the machine's default Node and needs no admin rights. See src/runtime-store.ts. */
-export const FIX_COMMAND = "npx -y @catalyst-cloud/catalyst-skills runtime install";
+export const FIX_COMMAND = "npx -y -p @catalyst-cloud/cli catalyst runtime install";
 
 export type RuntimeKind = "node" | "bun" | "unknown";
 

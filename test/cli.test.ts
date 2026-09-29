@@ -41,12 +41,12 @@ describe("dispatcher", () => {
   test("the update notice goes to stderr for a machine-read verb and to stdout for a human one", async () => {
     saveConfig(home, joinedConfig(server, { lastSkillBundleVersion: "0.0.1" }));
     expect(await main(["me"], ctx)).toBe(0);
-    expect(ctx.out.some((l) => l.startsWith("[catalyst-skills]"))).toBe(false);
-    expect(ctx.err.some((l) => l.startsWith("[catalyst-skills] updated 0.0.1"))).toBe(true);
+    expect(ctx.out.some((l) => l.startsWith("[catalyst]"))).toBe(false);
+    expect(ctx.err.some((l) => l.startsWith("[catalyst] updated 0.0.1"))).toBe(true);
     saveConfig(home, joinedConfig(server, { lastSkillBundleVersion: "0.0.1" }));
     const c2 = makeCtx(home);
     expect(await main(["notice"], c2)).toBe(0);
-    expect(c2.out.some((l) => l.startsWith("[catalyst-skills] updated 0.0.1"))).toBe(true);
+    expect(c2.out.some((l) => l.startsWith("[catalyst] updated 0.0.1"))).toBe(true);
   });
   test("status names the credential: 'personal key' for a key config, 'your login (expires …)' for an oauth one", async () => {
     await seedJoined(home, server, { config: { user: undefined } });
@@ -159,7 +159,7 @@ describe("sdk loader", () => {
     }).catch((e: unknown) => e)) as Error;
     expect(err.message).toMatch(/could not be loaded on Node .*: ERR_SOMETHING: nope — this verb needs the SDK/);
     expect(err.message).toContain("22.15");
-    expect(err.message).toContain("npx -y @catalyst-cloud/catalyst-skills runtime install");
+    expect(err.message).toContain("npx -y -p @catalyst-cloud/cli catalyst runtime install");
     expect(err.message).not.toMatch(/or under bun/);
     resetSdkCache();
     expect(typeof (await loadSdk()).nodeSqliteEngine).toBe("function");

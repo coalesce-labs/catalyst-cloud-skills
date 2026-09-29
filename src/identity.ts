@@ -15,7 +15,7 @@ function render(result: LinearIdentityResult, choices: boolean): string {
   if (!choices) return summary;
   if (result.options === undefined) return `${summary}\nNo choices were offered. An automatic match cannot be replaced; an unmatched roster may need a retry.`;
   if (result.options.length === 0) return `${summary}\nThe workspace roster has no eligible people.`;
-  return [summary, ...result.options.map((o) => `${o.id}\t${o.displayName ?? o.name ?? "(unnamed)"}`), "Select your own identity explicitly: catalyst-skills identity linear set <linearUserId>"].join("\n");
+  return [summary, ...result.options.map((o) => `${o.id}\t${o.displayName ?? o.name ?? "(unnamed)"}`), "Select your own identity explicitly: catalyst identity linear set <linearUserId>"].join("\n");
 }
 export async function cmdIdentity(args: ParsedArgs, ctx: Ctx, deps: IdentityDeps = {}): Promise<number> {
   const parts = positionals(args);
@@ -25,10 +25,10 @@ export async function cmdIdentity(args: ParsedArgs, ctx: Ctx, deps: IdentityDeps
     throw new UsageError("identity takes: linear <status|options> or linear set <linearUserId>");
   }
   const cfg = requireConfig(ctx);
-  if (!cfg.user) throw new CliError("this machine uses a tenant account key; run catalyst-skills login as yourself", "member-required");
+  if (!cfg.user) throw new CliError("this machine uses a tenant account key; run catalyst login as yourself", "member-required");
   const createClient = deps.createClient ?? (async (options: TenantClientOptions) => (await loadHttpSdk()).createTenantClient(options));
   const client = await createClient({ key: await bearerFor(ctx, cfg), baseUrl: cfg.baseUrl, fetch: ctx.fetch });
-  if (!client.linearIdentity) throw new CliError("the installed SDK lacks identity recovery; upgrade catalyst-skills after the SDK release", "sdk-upgrade-required");
+  if (!client.linearIdentity) throw new CliError("the installed SDK lacks identity recovery; upgrade the catalyst CLI after the SDK release", "sdk-upgrade-required");
   if (action === "set") {
     // The arity check above requires a selection; never choose the first roster entry for a person.
     if (selected === undefined) throw new UsageError("linearUserId is required");

@@ -334,8 +334,8 @@ describe("the install page (README) states what a customer needs, in the order t
   test("the credential step sits inside the install block, named login, keyless first and the key forms second", () => {
     const install = readme.indexOf("\n## Install\n");
     // Keyless is the preferred rail: the bare `catalyst-skills login` triple leads.
-    const keyless = "npm install -g @catalyst-cloud/catalyst-skills\ncatalyst-skills login\ncatalyst-skills ready";
-    const envForm = "CATALYST_CLOUD_TOKEN=<your-personal-key> catalyst-skills login";
+    const keyless = "npm install -g @catalyst-cloud/cli\ncatalyst login\ncatalyst ready";
+    const envForm = "CATALYST_CLOUD_TOKEN=<your-personal-key> catalyst login";
     // "Beside the install commands" is the property: the connect step is a sub-heading of Install,
     // and the login command lands before the next top-level section starts.
     const connect = readme.indexOf("\n### Then connect to your tenant\n");
@@ -358,7 +358,7 @@ describe("the install page (README) states what a customer needs, in the order t
     );
     // The 0.1 verb must not lead, and `install` is a repair path that never appears as a headline step.
     expect(readme).not.toMatch(/^.*catalyst-skills join\b/m);
-    expect(readme.indexOf("catalyst-skills install"), "install is a repair path, never part of the install headline").toBe(-1);
+    expect(readme.indexOf("catalyst install"), "install is a repair path, never part of the install headline").toBe(-1);
   });
 
   test("tenant discovery from the key alone via GET /api/v1/me; config path, mode and the contract cache stated", () => {
@@ -396,13 +396,13 @@ describe("the install page (README) states what a customer needs, in the order t
 
   test("says what has to be running: nothing by default, the optional replica with its four exit codes, the watch", () => {
     expect(readme).toMatch(/^## What has to be running$/m);
-    expect(readme).toContain("catalyst-skills replica start");
+    expect(readme).toContain("catalyst replica start");
     expect(readme).toContain("--detach");
-    expect(readme).toContain("catalyst-skills replica status");
-    expect(readme).toContain("catalyst-skills events status --probe");
+    expect(readme).toContain("catalyst replica status");
+    expect(readme).toContain("catalyst events status --probe");
     expect(readme).toContain("A fresh replica does not prove event freshness");
     expect(readme).toMatch(/`0` for fresh, `1` for present but stale, `2` for not connected, `3` for absent/);
-    expect(readme).toContain("catalyst-skills watch");
+    expect(readme).toContain("catalyst watch");
     expect(readme).toContain("seven days or 256 MiB");
   });
 
@@ -411,7 +411,7 @@ describe("the install page (README) states what a customer needs, in the order t
     expect(readme).toContain("settings/coding-accounts");
     expect(readme).toContain("explain --history");
     // A person releases a park themselves now; the README names the verb and the skill, never an operator.
-    expect(readme).toContain("catalyst-skills release");
+    expect(readme).toContain("catalyst release");
     expect(readme).not.toMatch(/Release a park\. When a ticket is parked after repeated failures, an operator releases it/);
     expect(readme).toContain("setup skill");
     expect(readme).toContain("the only connect step a customer runs");
@@ -426,10 +426,10 @@ describe("the install page (README) states what a customer needs, in the order t
   });
 
   test("documents the one-line update notice and the uninstall of everything it wrote; the publish secret lives in CONTRIBUTING", () => {
-    expect(readme).toContain("[catalyst-skills] updated");
-    expect(readme).toContain("npm install -g @catalyst-cloud/catalyst-skills@latest");
+    expect(readme).toContain("[catalyst] updated");
+    expect(readme).toContain("npm install -g @catalyst-cloud/cli@latest");
     // The install alone does not rewrite customer.json.cliPath — the re-login step must be documented.
-    expect(readme).toMatch(/npm install -g @catalyst-cloud\/catalyst-skills@latest && catalyst-skills login/);
+    expect(readme).toMatch(/npm install -g @catalyst-cloud\/cli@latest && catalyst login/);
     expect(readme).not.toMatch(/npm update -g/);
     for (const name of CUSTOMER_SKILLS) expect(readme, `uninstall must name ${name}`).toContain(`\`${name}\``);
     for (const f of ["customer.json", "contract.json", "published.json", "replica.db", "replica.db.pid", "replica.db.writer.lock", "replica.db.writer.state", "watch-cursor.json"]) {

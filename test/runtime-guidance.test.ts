@@ -94,7 +94,7 @@ test("the SDK-unavailable error names the range and the one command, and never s
     throw new Error("ERR_SOMETHING: nope");
   }).catch((e: unknown) => e)) as Error;
   expect(err.message).toContain("22.15");
-  expect(err.message).toContain("npx -y @catalyst-cloud/catalyst-skills runtime install");
+  expect(err.message).toContain("npx -y -p @catalyst-cloud/cli catalyst runtime install");
   expect(err.message).not.toMatch(/or under bun/);
   resetSdkCache();
 });

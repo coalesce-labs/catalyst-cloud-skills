@@ -268,7 +268,7 @@ describe("changelog + Tier 2 notice", () => {
     // the upgrade command must pin @latest via `npm install -g`, then re-run login so the new global
     // bin rewrites customer.json.cliPath (or the helpers keep spawning the stale recorded bundle).
     expect(line).toContain(`npm install -g ${PACKAGE_NAME}@latest`);
-    expect(line).toContain("catalyst-skills login");
+    expect(line).toContain("catalyst login");
     expect(line).not.toContain("npm update");
     expect(updateNoticeLine("0.1.0", "0.2.0", null)).toContain("see CHANGELOG.md");
   });
@@ -398,7 +398,7 @@ describe("main — login (and the deprecated join alias)", () => {
       const code = await main(["login", "--base-url", server.url], ctx(), { isTty: () => false, sleep: async () => {} });
       expect(code).toBe(2);
       expect(err.join("\n")).toMatch(/denied/);
-      expect(err.join("\n")).toContain("catalyst-skills login");
+      expect(err.join("\n")).toContain("catalyst login");
     } finally {
       server.oauth.denied = false;
     }
@@ -519,22 +519,22 @@ describe("main — Tier 2 notice (a new version's next session)", () => {
     saveConfig(home, seededConfig());
     let code = await main(["notice"], ctx());
     expect(code).toBe(0);
-    const noticeLines = out.filter((l) => l.startsWith("[catalyst-skills] updated"));
+    const noticeLines = out.filter((l) => l.startsWith("[catalyst] updated"));
     expect(noticeLines).toHaveLength(1);
     expect(noticeLines[0]).toContain(`npm install -g ${PACKAGE_NAME}@latest`);
-    expect(noticeLines[0]).toContain("catalyst-skills login");
+    expect(noticeLines[0]).toContain("catalyst login");
     expect(noticeLines[0]).not.toContain("npm update");
     expect(readConfig().lastSkillBundleVersion).not.toBe("0.0.9");
     out = [];
     code = await main(["notice"], ctx());
     expect(code).toBe(0);
-    expect(out.filter((l) => l.startsWith("[catalyst-skills]"))).toHaveLength(0);
+    expect(out.filter((l) => l.startsWith("[catalyst]"))).toHaveLength(0);
   });
   test("login after an update also prints the one-line notice", async () => {
     saveConfig(home, seededConfig({ baseUrl: server.url }));
     const code = await main(["login", "--key", "fixture-key", "--base-url", server.url], ctx());
     expect(code).toBe(0);
-    expect(out.filter((l) => l.startsWith("[catalyst-skills] updated"))).toHaveLength(1);
+    expect(out.filter((l) => l.startsWith("[catalyst] updated"))).toHaveLength(1);
     expect(readConfig().lastSkillBundleVersion).not.toBe("0.0.9");
   });
   test("notice with no config is silent and exit 0", async () => {
@@ -567,8 +567,8 @@ describe("main — Codex P2: an update refreshes the copied skills before record
       expect(md, `${name} must be the bundled copy after the update`).not.toContain("STALE COPY");
       expect(md).toContain(PROVENANCE_MARKER);
     }
-    expect(out.filter((l) => l.startsWith("[catalyst-skills] refreshed"))).toHaveLength(1);
-    expect(out.find((l) => l.startsWith("[catalyst-skills] refreshed"))).toContain(skillsDir);
+    expect(out.filter((l) => l.startsWith("[catalyst] refreshed"))).toHaveLength(1);
+    expect(out.find((l) => l.startsWith("[catalyst] refreshed"))).toContain(skillsDir);
     expect(readConfig().lastSkillBundleVersion).not.toBe("0.0.9");
   });
 
@@ -602,7 +602,7 @@ describe("main — Codex P2: an update refreshes the copied skills before record
     expect(code).toBe(0);
     expect(readConfig().lastSkillBundleVersion).toBe("0.0.9");
     expect(err.join("\n")).toContain("re-run the install command: curl -fsSL https://staging.catalystcloud.dev/install.sh | sh");
-    expect(out.filter((l) => l.startsWith("[catalyst-skills] refreshed"))).toHaveLength(0);
+    expect(out.filter((l) => l.startsWith("[catalyst] refreshed"))).toHaveLength(0);
   });
 
   test("a config with no stamp at all (pre-notice install) refreshes once and stamps, printing no notice", async () => {
@@ -611,7 +611,7 @@ describe("main — Codex P2: an update refreshes the copied skills before record
     saveConfig(home, seededConfig({ lastSkillBundleVersion: "" }));
     const code = await main(["status"], ctx());
     expect(code).toBe(0);
-    expect(out.filter((l) => l.startsWith("[catalyst-skills] updated"))).toHaveLength(0);
+    expect(out.filter((l) => l.startsWith("[catalyst] updated"))).toHaveLength(0);
     expect(readFileSync(join(skillsDir, "connect-me", "SKILL.md"), "utf8")).not.toContain("STALE COPY");
     expect(readConfig().lastSkillBundleVersion).not.toBe("");
   });

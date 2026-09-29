@@ -36,9 +36,9 @@ function statusLine(provider: PersonalConnectionProvider, result: PersonalConnec
     case "connected":
       return `Personal ${name}: connected as ${result.provider === "linear" ? result.linearUserId : result.githubLogin}`;
     case "absent":
-      return `Personal ${name}: not connected — run catalyst-skills connections personal ${provider} start`;
+      return `Personal ${name}: not connected — run catalyst connections personal ${provider} start`;
     case "lapsed":
-      return `Personal ${name}: connection expired — run catalyst-skills connections personal ${provider} start`;
+      return `Personal ${name}: connection expired — run catalyst connections personal ${provider} start`;
     case "unavailable":
       return `Personal ${name}: temporarily unavailable — the grant state is unknown; retry status later`;
     default:
@@ -53,7 +53,7 @@ function statusExit(result: PersonalConnectionStatusResult): number {
 export async function cmdConnections(args: ParsedArgs, ctx: Ctx, deps: ConnectionsDeps = {}): Promise<number> {
   const { provider, action, waitSeconds } = parseCommand(args);
   const cfg = requireConfig(ctx);
-  if (!cfg.user) throw new CliError("this machine uses a tenant account key, not a member credential — run catalyst-skills login as yourself", "member-required");
+  if (!cfg.user) throw new CliError("this machine uses a tenant account key, not a member credential — run catalyst login as yourself", "member-required");
   const createClient = deps.createClient ?? (async (options: TenantClientOptions) => (await loadHttpSdk()).createTenantClient(options));
   const client = await createClient({ key: await bearerFor(ctx, cfg), baseUrl: cfg.baseUrl, fetch: ctx.fetch });
 
@@ -75,7 +75,7 @@ export async function cmdConnections(args: ParsedArgs, ctx: Ctx, deps: Connectio
   }
   if (waitSeconds === 0) {
     if (args.json) ctx.stdout(JSON.stringify(started));
-    else ctx.stdout(`After approval, run: catalyst-skills connections personal ${provider} status`);
+    else ctx.stdout(`After approval, run: catalyst connections personal ${provider} status`);
     return 0;
   }
 
@@ -91,7 +91,7 @@ export async function cmdConnections(args: ParsedArgs, ctx: Ctx, deps: Connectio
   if (args.json) ctx.stdout(JSON.stringify({ start: started, status, waitedSeconds }));
   else {
     ctx.stdout(statusLine(provider, status));
-    if (status.outcome === "absent" || status.outcome === "lapsed") ctx.stdout(`Approval has not appeared yet; run catalyst-skills connections personal ${provider} status later.`);
+    if (status.outcome === "absent" || status.outcome === "lapsed") ctx.stdout(`Approval has not appeared yet; run catalyst connections personal ${provider} status later.`);
   }
   return status.outcome === "connected" ? 0 : status.outcome === "absent" || status.outcome === "lapsed" ? 2 : 1;
 }

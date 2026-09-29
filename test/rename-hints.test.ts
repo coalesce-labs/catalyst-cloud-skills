@@ -30,7 +30,7 @@ describe("upgrade hints name the installed package", () => {
     const cli = join(prefix, "lib", "node_modules", "@catalyst-cloud", "cli");
     writePkg(cli, PACKAGE_NAME);
     expect(updatePackageName(cli)).toBe(PACKAGE_NAME);
-    expect(upgradeCommand(cli)).toBe("npm install -g @catalyst-cloud/cli@latest && catalyst-skills login");
+    expect(upgradeCommand(cli)).toBe("npm install -g @catalyst-cloud/cli@latest && catalyst login");
   });
 
   test("the forwarder's global install (the CLI nested under it) updates the forwarder", () => {
@@ -40,7 +40,7 @@ describe("upgrade hints name the installed package", () => {
     const cli = join(forwarder, "node_modules", "@catalyst-cloud", "cli");
     writePkg(cli, PACKAGE_NAME);
     expect(updatePackageName(cli)).toBe(LEGACY_PACKAGE_NAME);
-    expect(upgradeCommand(cli)).toBe("npm install -g @catalyst-cloud/catalyst-skills@latest && catalyst-skills login");
+    expect(upgradeCommand(cli)).toBe("npm install -g @catalyst-cloud/catalyst-skills@latest && catalyst login");
   });
 
   test("the flat layout npx uses (the forwarder beside the CLI) updates the forwarder", () => {
@@ -165,7 +165,7 @@ describe("ready names a different program that answers to catalyst", () => {
     expect(catalystCommandCheck({}, "linux")).toBeNull();
   });
 
-  test("the catalyst-dev router first on PATH is a note that keeps catalyst-skills as the way in", () => {
+  test("the catalyst-dev router first on PATH is a note that keeps catalyst as the way in", () => {
     const routerBin = scratch();
     writeFileSync(join(routerBin, "catalyst"), "#!/usr/bin/env bash\necho router\n");
     chmodSync(join(routerBin, "catalyst"), 0o755);

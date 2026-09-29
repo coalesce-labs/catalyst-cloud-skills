@@ -1,4 +1,4 @@
-// environment.test.ts — `catalyst-skills environment`: the tenant-scope declaration through the
+// environment.test.ts — `catalyst environment`: the tenant-scope declaration through the
 // contract's account-environment routes, against the fixture cloud. The fixture's environment routes
 // are a real little state machine (propose bumps a revision and a hash, approve is a compare-and-set
 // against them), so a verb that approved the wrong revision fails here instead of passing on a canned
@@ -352,7 +352,7 @@ describe("environment propose and approve in --json, and odd cloud answers", () 
     expect(ctx.out[0]).toBe("proposed, but the cloud returned no state");
     const again = makeCtx(home);
     expect(await main(["environment", "propose", "--file", declarationFile(DECLARATION), "--approve"], again)).toBe(1);
-    expect(again.err).toEqual(["the cloud returned no state to approve — run: catalyst-skills environment read"]);
+    expect(again.err).toEqual(["the cloud returned no state to approve — run: catalyst environment read"]);
     expect(envWrites("approve")).toEqual([]);
   });
 

@@ -220,7 +220,7 @@ export async function readyReport(ctx: Ctx, deps: ReadyDeps): Promise<ReadyRepor
               ? `config: joined ${cfg.name} as ${cfg.user.label} (${cfg.user.role})`
               : `config: joined ${cfg.name} (${cfg.slug}) as ${cfg.principal}`,
           }
-        : { id: "config", ok: false, line: "config: not connected", fix: "npx @catalyst-cloud/catalyst-skills login (keyless; or pass --key / set CATALYST_CLOUD_TOKEN)", who: "you (approve the login in your browser)" },
+        : { id: "config", ok: false, line: "config: not connected", fix: "npx -p @catalyst-cloud/cli catalyst login (keyless; or pass --key / set CATALYST_CLOUD_TOKEN)", who: "you (approve the login in your browser)" },
     );
   } catch (err) {
     checks.push({ id: "config", ok: false, line: `config: ${err instanceof CliError ? err.message : String(err)}`, fix: "re-run login to rewrite it", who: "you" });
@@ -229,7 +229,7 @@ export async function readyReport(ctx: Ctx, deps: ReadyDeps): Promise<ReadyRepor
   const cache = readContractCache(ctx.home);
   const range = readManifest().tenantContractRange;
   if (!cache) {
-    checks.push({ id: "contract", ok: false, line: "contract: not cached", fix: "catalyst-skills contract --refresh", who: "you" });
+    checks.push({ id: "contract", ok: false, line: "contract: not cached", fix: "catalyst contract --refresh", who: "you" });
   } else if (contractVersionInRange(cache.contractVersion, range) !== true) {
     checks.push({ id: "contract", ok: false, line: `contract: version ${cache.contractVersion} is outside this bundle's range ${range}`, fix: upgradeCommand(), who: "you" });
   } else {
@@ -329,7 +329,7 @@ export async function readyReport(ctx: Ctx, deps: ReadyDeps): Promise<ReadyRepor
   } else if (missing.length === 0) {
     checks.push({ id: "skills", ok: true, line: `skills: all ${deps.skillNames.length} present in ${skillsDir}` });
   } else {
-    checks.push({ id: "skills", ok: false, line: `skills: ${present.length} of ${deps.skillNames.length} in ${skillsDir}, missing ${missing.join(", ")}`, fix: "catalyst-skills install", who: "you" });
+    checks.push({ id: "skills", ok: false, line: `skills: ${present.length} of ${deps.skillNames.length} in ${skillsDir}, missing ${missing.join(", ")}`, fix: "catalyst install", who: "you" });
   }
 
   try {
