@@ -1,4 +1,4 @@
-// env.ts — `catalyst-skills env inventory` / `env check`: a LOCAL, OFFLINE, repo-scoped reporter and
+// env.ts — `catalyst env inventory` / `env check`: a LOCAL, OFFLINE, repo-scoped reporter and
 // validator. Unlike every other verb in this file's siblings, `cmdEnv` never calls `requireConfig` or
 // `apiClient` — it needs neither a login nor a network call, which is the whole point of the feature:
 // a person reviews what a repository declares without connecting anything first.
@@ -42,7 +42,7 @@ export async function cmdEnv(args: ParsedArgs, ctx: Ctx, deps: EnvDeps = {}): Pr
 
   if (sub === "check") {
     const file = rest[0];
-    if (!file) throw new UsageError("env check needs a file: catalyst-skills env check <path to catalyst.env.json>");
+    if (!file) throw new UsageError("env check needs a file: catalyst env check <path to catalyst.env.json>");
     if (rest.length > 1) throw new UsageError(`env check takes exactly one file (got an extra "${rest[1]}")`);
     let text: string;
     try {

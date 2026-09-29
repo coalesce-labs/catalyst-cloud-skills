@@ -174,7 +174,7 @@ describe("the env inventory CLI verb", () => {
     for (const v of ["env", "environment"]) {
       const ctx = makeCtx(tempHome());
       await main([v, "read", "extra-positional"], ctx);
-      expect(ctx.err.join("\n"), `${v} must fall back to its own help`).toContain(`catalyst-skills ${VERB_USAGE[v]}`);
+      expect(ctx.err.join("\n"), `${v} must fall back to its own help`).toContain(`catalyst ${VERB_USAGE[v]}`);
     }
   });
 });

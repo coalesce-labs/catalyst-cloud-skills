@@ -140,9 +140,7 @@ export const FLAG_TABLES: Record<string, FlagTable> = {
     offline: { value: false, help: "skip the published-release check (no network)" },
   },
   accounts: {},
-<<<<<<< HEAD
   env: {},
-=======
   team: {
     all: { value: false, help: "check every team, one request at a time" },
     stage: { value: true, repeat: true, help: "map a role to a live Linear state name (role=StateName)" },
@@ -152,7 +150,6 @@ export const FLAG_TABLES: Record<string, FlagTable> = {
     undo: { value: false, help: "adopt: preview or archive stages a prior adoption created" },
     retire: { value: false, help: "migrate: separately preview or retire emptied source stages" },
   },
->>>>>>> 46df57dfe613bf06403b918e65924ab95fc33d16
   environment: {
     file: { value: true, help: "propose: a JSON file holding the declaration" },
     stdin: { value: false, help: "propose: read the declaration from stdin" },
@@ -205,21 +202,16 @@ export const VERB_USAGE: Record<string, string> = {
   ask: "ask <raise --team --title [--context] [--option]... [--default] --blocks <ticket>...|--nothing-to-block [--ask-key] | accept <askTicket> --answer <commentId> --role <role> | list [--anyone] [--json]>",
   ready: "ready [--json] [--offline]",
   accounts: "accounts [--json]",
-<<<<<<< HEAD
+  mcp: "mcp <add <name> --url URL <--auth none|--bearer SECRET_NAME|--header NAME=SECRET_NAME...>|list|remove <name>> [--json]",
+  team: "team <list|check <KEY>|check --all|map <KEY> [--stage role=StateName]... [--yes --plan-hash H]|adopt <KEY> [--undo] [--yes --plan-hash H]|migrate <KEY> [--choice sourceId=destinationId]... [--retire] [--yes --plan-hash H]|checklist <KEY>> [--json]",
   env: "env <inventory [path] | check <file>> [--json]   (THIS repository, offline — no login, no network)",
   environment:
     "environment [read] [--json] | environment propose --file <path>|--stdin [--expect-revision N] [--approve] [--json] | environment approve [--revision N --hash H] [--json]   (your ACCOUNT's declaration; needs login)",
-=======
-  mcp: "mcp <add <name> --url URL <--auth none|--bearer SECRET_NAME|--header NAME=SECRET_NAME...>|list|remove <name>> [--json]",
-  team: "team <list|check <KEY>|check --all|map <KEY> [--stage role=StateName]... [--yes --plan-hash H]|adopt <KEY> [--undo] [--yes --plan-hash H]|migrate <KEY> [--choice sourceId=destinationId]... [--retire] [--yes --plan-hash H]|checklist <KEY>> [--json]",
-  environment:
-    "environment [read] [--json] | environment propose --file <path>|--stdin [--expect-revision N] [--approve] [--json] | environment approve [--revision N --hash H] [--json]",
   secret:
     "secret set <NAME> --repo <owner/name> [--command '<cmd>'] [--json]   (value from --command, stdin, or a hidden prompt) | secret import <file> --repo <owner/name> [--rotate NAME]... [--json]",
   identity: "identity linear <status|options|set> [<linearUserId>] [--json]",
   capabilities: "capabilities [--json]",
   connections: "connections personal <linear|github> <start|status> [--wait <seconds>] [--json]",
->>>>>>> 46df57dfe613bf06403b918e65924ab95fc33d16
   release:
     "release <ticket> --because <what changed> [--retry-unchanged] [--dry-run] [--json] | release --class <failure-class> --team <K> --because <what changed> [--retry-unchanged] [--dry-run] [--limit N] [--json]",
 };

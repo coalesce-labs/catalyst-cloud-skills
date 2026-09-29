@@ -21,5 +21,9 @@
   { "file": "secret-in-argv.json", "valid": false, "reason": "secret material" },
   { "file": "secret-prefix-in-explanation.json", "valid": false, "reason": "secret material" },
   { "file": "secret-in-service-image.json", "valid": false, "reason": "secret material" },
-  { "file": "secret-in-agent-asset-reference.json", "valid": false, "reason": "secret material" }
+  { "file": "secret-in-agent-asset-reference.json", "valid": false, "reason": "secret material" },
+  { "file": "secret-prefix-gho.json", "valid": false, "reason": "secret material", "why": "gho_ (GitHub OAuth token) — validate attempt 31: the vendored prefix list omitted these, so env check said valid for a declaration the cloud refuses" },
+  { "file": "secret-prefix-ghs.json", "valid": false, "reason": "secret material", "why": "ghs_ (GitHub installation token) — validate attempt 31: the vendored prefix list omitted these, so env check said valid for a declaration the cloud refuses" },
+  { "file": "secret-prefix-sk-live.json", "valid": false, "reason": "secret material", "why": "sk_live_ (Stripe live key; sk- does not cover it, the separator is _) — validate attempt 31: the vendored prefix list omitted these, so env check said valid for a declaration the cloud refuses" },
+  { "file": "secret-prefix-aiza.json", "valid": false, "reason": "secret material", "why": "AIza (Google API key) — validate attempt 31: the vendored prefix list omitted these, so env check said valid for a declaration the cloud refuses" }
 ]

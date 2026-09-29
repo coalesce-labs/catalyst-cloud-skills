@@ -471,9 +471,8 @@ test("onboarding inventories teams without running every team's readiness check"
 });
 
 describe("the package manifest", () => {
-<<<<<<< HEAD
   test("is the documented name, public, and carries the SDK plus yaml (env inventory's workflow reader) as its runtime dependencies", () => {
-    expect(manifest.name).toBe("@catalyst-cloud/catalyst-skills");
+    expect(manifest.name).toBe("@catalyst-cloud/cli");
     expect(manifest.publishConfig.access).toBe("public");
     // yaml moved here from devDependencies: a hand-written line scanner over a GitHub workflow
     // silently loses names written in flow style, which is exactly the failure `env inventory`
@@ -481,15 +480,9 @@ describe("the package manifest", () => {
     // its own. `test/smoke-publish.test.ts` packs and installs the real tarball, so this is exercised
     // end to end, not just asserted here.
     expect(manifest.dependencies).toEqual({
-      "@catalyst-cloud/sdk": expect.stringMatching(/^\^0\.10\./),
+      "@catalyst-cloud/sdk": expect.stringMatching(/^\^0\.12\./),
       yaml: expect.stringMatching(/^\^2\./),
     });
-=======
-  test("is the documented name, public, and carries exactly the SDK as its runtime dependency", () => {
-    expect(manifest.name).toBe("@catalyst-cloud/cli");
-    expect(manifest.publishConfig.access).toBe("public");
-    expect(manifest.dependencies).toEqual({ "@catalyst-cloud/sdk": expect.stringMatching(/^\^0\.12\./) });
->>>>>>> 46df57dfe613bf06403b918e65924ab95fc33d16
   });
 
   test("bin, shipped files, engines, and the pinned contract range are wired", () => {

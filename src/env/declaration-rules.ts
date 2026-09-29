@@ -25,7 +25,13 @@ const ENV_NAME_RE = /^[A-Za-z_][A-Za-z0-9_]*$/;
 // prefix here is identifier-shaped, so a match is real only at the start of the text or after a
 // character that cannot be part of a token; PEM armour, which is not identifier-shaped and carries
 // its own unmistakable delimiter, keeps a plain substring match of its own.
-const KNOWN_SECRET_PREFIXES = ["ghp_", "github_pat_", "sk-", "AKIA", "xoxb-", "xoxp-"];
+// `gho_`, `sk_live_` and `AIza` are in the 2026-09-10 pass's list of upstream's prefixes
+// (thoughts: repos/catalyst/shared/research/2026-09-10-CTC-2020-laptop-environment-inventory.md:65),
+// and `ghs_` is pinned as an upstream entry by the 2026-09-27 CTC-3378 plan v2 (:238). Validate
+// attempt 31 found the first three missing here (and noted `ghs_`), so `env check` said `valid`
+// where upstream's validator refuses.
+// That upstream list ends "and others": this copy still cannot claim to hold every entry.
+const KNOWN_SECRET_PREFIXES = ["ghp_", "gho_", "ghs_", "github_pat_", "sk-", "sk_live_", "AKIA", "AIza", "xoxb-", "xoxp-"];
 const PEM_ARMOUR = "-----BEGIN";
 const KNOWN_SECRET_PREFIX_RE = new RegExp(`(?:^|[^A-Za-z0-9_])(?:${KNOWN_SECRET_PREFIXES.map(escapeForRegExp).join("|")})`);
 

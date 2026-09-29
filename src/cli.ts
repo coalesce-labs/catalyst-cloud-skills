@@ -56,15 +56,12 @@ import { cmdAsk } from "./ask.js";
 import { cmdMcp } from "./mcp.js";
 import { cmdRelease } from "./release.js";
 import { cmdEnvironment, type EnvironmentDeps } from "./environment.js";
-<<<<<<< HEAD
 import { cmdEnv, type EnvDeps } from "./env.js";
-=======
 import { cmdSecret, type SecretDeps } from "./secret.js";
 import { cmdTeam, type TeamDeps } from "./team.js";
 import { cmdCapabilities } from "./capabilities.js";
 import { cmdIdentity, type IdentityDeps } from "./identity.js";
 import { cmdConnections, type ConnectionsDeps } from "./connections.js";
->>>>>>> 46df57dfe613bf06403b918e65924ab95fc33d16
 
 export {
   CONFIG_MODE,
@@ -127,24 +124,6 @@ export function usageText(): string {
     `${PACKAGE_NAME} — the Catalyst Cloud customer CLI: connect to your tenant, read through the SDK, write through the agent proxy`,
     "",
     "Usage:",
-<<<<<<< HEAD
-    "  catalyst-skills login [--base-url <url>] [--start-replica]   (keyless: logs you in as yourself)",
-    "  catalyst-skills login --key <personal-key> [--base-url <url>]   (or CATALYST_CLOUD_TOKEN, for a key)",
-    "  catalyst-skills join ...   (deprecated alias of login; removed in the next minor version)",
-    "  catalyst-skills install [--skills-dir <dir>] [--force]   (repair path; your agent's own command installs the skills)",
-    "  catalyst-skills status | notice | me | ready | accounts",
-    "  catalyst-skills contract [--refresh] [--path <a.b.c>]",
-    "  catalyst-skills query <issues|issue <id>|pulls|pull <id>|projects|cycles|search <terms>|changes --since <cursor|head>>",
-    "  catalyst-skills replica <start [--detach]|stop|status [--probe]|sql \"<select>\"|schema [table]>",
-    "  catalyst-skills events <tail|wait-for|query> [--type NAME] [--ticket CTC-N] [--after SEQUENCE]",
-    "  catalyst-skills explain <ticket> | history <ticket> | running [--ticket T --phase P] | queue [--team K]",
-    "  catalyst-skills watch [--team K] [--ticket T]... [--project P] [--exec CMD]",
-    "  catalyst-skills write <comment|state|label|create|reaction|attachment|session> ...",
-    "  catalyst-skills ask <raise|accept|list> ...",
-    "  catalyst-skills release <ticket> --because <what changed> [--retry-unchanged] [--dry-run] | release --class <c> --team <K> ...",
-    "  catalyst-skills environment [read] | environment propose --file <path>|--stdin [--approve] | environment approve   (your account; needs login)",
-    "  catalyst-skills env <inventory [path] | check <file>>   (this repository, offline — no login, no network)",
-=======
     "  catalyst login [--base-url <url>] [--start-replica]   (keyless: logs you in as yourself)",
     "  catalyst login --key <personal-key> [--base-url <url>]   (or CATALYST_CLOUD_TOKEN, for a key)",
     "  catalyst join ...   (deprecated alias of login; removed in the next minor version)",
@@ -161,13 +140,13 @@ export function usageText(): string {
     "  catalyst write <comment|state|label|create|reaction|attachment|session> ...",
     "  catalyst ask <raise|accept|list> ...",
     "  catalyst release <ticket> --because <what changed> [--retry-unchanged] [--dry-run] | release --class <c> --team <K> ...",
-    "  catalyst environment [read] | environment propose --file <path>|--stdin [--approve] | environment approve",
+    "  catalyst environment [read] | environment propose --file <path>|--stdin [--approve] | environment approve   (your account; needs login)",
+    "  catalyst env <inventory [path] | check <file>>   (this repository, offline — no login, no network)",
     "  catalyst secret set <NAME> --repo <owner/name> [--command '<cmd>'] | secret import <file> --repo <owner/name>",
     "  catalyst team <list|check|map|adopt|migrate|checklist> ...",
     "  catalyst capabilities [--json]   (what this CLI can do, the role each verb needs, and whether this cloud serves it)",
     "  catalyst identity linear <status|options|set> [<linearUserId>] [--json]",
     "  catalyst connections personal <linear|github> <start|status> [--wait <seconds>] [--json]",
->>>>>>> 46df57dfe613bf06403b918e65924ab95fc33d16
     "",
     "Every verb takes --help. --json makes the output machine-readable.",
     "",
@@ -191,14 +170,11 @@ export interface MainDeps {
   watch?: WatchDeps;
   write?: WriteDeps;
   environment?: EnvironmentDeps;
-<<<<<<< HEAD
   env?: EnvDeps;
-=======
   secret?: SecretDeps;
   connections?: ConnectionsDeps;
   identity?: IdentityDeps;
   team?: TeamDeps;
->>>>>>> 46df57dfe613bf06403b918e65924ab95fc33d16
   loadSdk?: () => Promise<unknown>;
   /** Injected by the tests so no suite ever touches a real terminal. */
   isTty?: () => boolean;
@@ -357,10 +333,8 @@ export async function main(argv: string[], ctx: Ctx = defaultCtx(), deps: MainDe
         return await cmdRelease(args, ctx);
       case "environment":
         return await cmdEnvironment(args, ctx, deps.environment ?? {});
-<<<<<<< HEAD
       case "env":
         return await cmdEnv(args, ctx, deps.env ?? {});
-=======
       case "secret":
         return await cmdSecret(args, ctx, deps.secret ?? {});
       case "team":
@@ -371,7 +345,6 @@ export async function main(argv: string[], ctx: Ctx = defaultCtx(), deps: MainDe
         return await cmdIdentity(args, ctx, deps.identity ?? {});
       case "connections":
         return await cmdConnections(args, ctx, deps.connections ?? {});
->>>>>>> 46df57dfe613bf06403b918e65924ab95fc33d16
       default:
         ctx.stderr(`unknown command: ${args.command}`);
         ctx.stderr(usageText());
@@ -396,11 +369,7 @@ export async function main(argv: string[], ctx: Ctx = defaultCtx(), deps: MainDe
 }
 
 const VERB_HELP_KNOWN: Record<string, true> = Object.fromEntries(
-<<<<<<< HEAD
-  ["login", "join", "install", "status", "notice", "me", "contract", "query", "replica", "events", "explain", "running", "queue", "watch", "write", "ask", "ready", "accounts", "release", "env", "environment"].map((v) => [v, true]),
-=======
-  ["login", "join", "install", "status", "notice", "me", "contract", "query", "replica", "runtime", "events", "explain", "running", "queue", "watch", "write", "ask", "ready", "accounts", "release", "secret", "environment", "connections", "identity", "mcp", "team", "capabilities"].map((v) => [v, true]),
->>>>>>> 46df57dfe613bf06403b918e65924ab95fc33d16
+  ["login", "join", "install", "status", "notice", "me", "contract", "query", "replica", "runtime", "events", "explain", "running", "queue", "watch", "write", "ask", "ready", "accounts", "release", "secret", "env", "environment", "connections", "identity", "mcp", "team", "capabilities"].map((v) => [v, true]),
 );
 
 async function cmdLogin(args: ParsedArgs, ctx: Ctx, deps: MainDeps): Promise<number> {
