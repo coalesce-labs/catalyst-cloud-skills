@@ -118,7 +118,16 @@ describe("subcommands", () => {
     expect(c3.out.join("\n")).toContain("Project A");
     const c4 = makeCtx(home);
     expect(await main(["query", "search", "widget"], c4)).toBe(0);
-    expect(c4.out.join("\n")).toContain("ENG-7");
+    const found = c4.out.join("\n");
+    expect(found).toContain("ENG-7");
+    // CTC-4303: pulls, projects and initiatives the hub found come back too, each named by kind.
+    expect(found).toContain("pull        #41  Widget pull  (acme/app)");
+    expect(found).toContain("project     Widget project");
+    expect(found).toContain("initiative  Widget initiative");
+    const c4j = makeCtx(home);
+    expect(await main(["query", "search", "widget", "--json"], c4j)).toBe(0);
+    const kinds = (JSON.parse(c4j.out.join("\n")) as { kind: string }[]).map((r) => r.kind);
+    expect(new Set(kinds)).toEqual(new Set(["issue", "pull", "project", "initiative"]));
     const c5 = makeCtx(home);
     expect(await main(["query", "cycles"], c5)).toBe(0);
     expect(c5.out.join("\n")).toContain("cycle 12");
