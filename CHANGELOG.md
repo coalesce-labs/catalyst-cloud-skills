@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.9.5
+
+The CLI calls itself `catalyst` everywhere: usage lines, every verb's `--help`, hints, remedies and errors. `catalyst-skills` still works as a deprecated alias. The npx form is `npx -p @catalyst-cloud/cli catalyst …`, because bare `npx @catalyst-cloud/cli` cannot pick a binary. A replica read on the `node:sqlite` fallback no longer prints a notice every time; `CATALYST_DEBUG=1` still shows it.
+
+`catalyst team` sets up a Linear team as a Catalyst project from the terminal: `list`, `check`, `map`, `adopt`, `migrate` and `checklist`. Writes need a reviewed plan and the cloud's mapping, adoption or migration hash.
+
+`catalyst capabilities` lists what this CLI can do, the role each verb needs (member or admin), and whether this cloud serves the route. It reads only the cached contract, so it never touches the network.
+
+`/catalyst-onboard` runs `team check` and `team map` itself for an admin, where it used to send you to a page. It tells a member which role can run a step. With an older CLI or cloud it keeps the page, as before. A project whose readiness reads blocked is no longer counted as set up: the guide names the blocking checks and who fixes each.
+
+The how-catalyst-works and whats-happening skills explain the WIP limit as the code applies it. The limit is per Catalyst project (the project's setting, else the tenant-wide value, else 12; 0 holds every new start). It holds only new starts, and a ticket already in progress keeps getting phases. `catalyst explain` prints the `wip_limit` reason in words.
+
 ## 0.9.4
 
 `/catalyst-onboard` walks a new member through setup one step at a time, in the order a person can act on it: coding account, Linear integration, project, GitHub App and repository, connected accounts, the repository's `.catalyst/catalyst.toml` declaration, then the host, ending with one ticket moving. Each turn asks one question, says why in a line, and checks the result after. A new reference covers choosing a coding account (a Claude setup token, a Codex `auth.json`, or a GLM or Qwen API key), and it says plainly that a plain Anthropic or OpenAI API key cannot be enrolled today. Accounts are named by their label. The skills use the product's own nouns (workspace, project, repository, integration, connected account).
