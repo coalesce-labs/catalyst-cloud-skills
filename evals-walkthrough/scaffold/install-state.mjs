@@ -45,10 +45,10 @@ const PASSING = [{ id: "oauth_scope", state: "pass" }, { id: "hosts_current", st
 const UNCHECKED = [];
 const CAPABILITIES = { cli: { name: "catalyst", version: "0.9.5" }, contract: { version: "2.3.0", fetchedAt: "2026-09-29T00:00:00Z" }, capabilities: [
   { verb: "ready", does: "read readiness", needs: "member", routes: [], since: "0.1.0", availability: "available", missing: [] },
-  { verb: "team list", does: "list teams", needs: "member", routes: [], since: "0.9.4", availability: "available", missing: [] },
-  { verb: "team check", does: "run a project's readiness check now", needs: "admin", routes: [], since: "0.9.4", availability: "available", missing: [] },
-  { verb: "team map", does: "map a project's stages", needs: "admin", routes: [], since: "0.9.4", availability: "available", missing: [] },
-  { verb: "team adopt", does: "adopt the workflow", needs: "admin", routes: [], since: "0.9.4", availability: "available", missing: [] },
+  { verb: "team list", does: "list teams", needs: "member", routes: [], since: "0.9.5", availability: "available", missing: [] },
+  { verb: "team check", does: "run a project's readiness check now", needs: "admin", routes: [], since: "0.9.5", availability: "available", missing: [] },
+  { verb: "team map", does: "map a project's stages", needs: "admin", routes: [], since: "0.9.5", availability: "available", missing: [] },
+  { verb: "team adopt", does: "adopt the workflow", needs: "admin", routes: [], since: "0.9.5", availability: "available", missing: [] },
 ] };
 const NO_TOML = [{ id: "oauth_scope", state: "pass" }, { id: "hosts_current", state: "pass" }, { id: "environment_declared", state: "fail", reason: "no_environment_declaration" }];
 const READINESS_CHECKS = [
