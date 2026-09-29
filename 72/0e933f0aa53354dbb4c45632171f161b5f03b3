@@ -1,0 +1,1 @@
+Add project-list responses and Linear team stage mappings to the onboarding CLI fixtures; the previous CI run failed because the mocks did not support the new inventory read.
