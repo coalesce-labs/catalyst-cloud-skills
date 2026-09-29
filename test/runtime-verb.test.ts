@@ -1,4 +1,4 @@
-// runtime-verb.test.ts — CTC-2158, Tier 2. `catalyst-skills runtime status|install|path|uninstall`,
+// runtime-verb.test.ts — CTC-2158, Tier 2. `catalyst runtime status|install|path|uninstall`,
 // driven through `main()` exactly as every other verb's tests are.
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
@@ -123,7 +123,7 @@ describe("runtime --help and usage", () => {
   test("usage mentions the runtime verb", async () => {
     const ctx = makeCtx(tempHome());
     await main([], ctx);
-    expect(ctx.out.join("\n")).toContain("catalyst-skills runtime");
+    expect(ctx.out.join("\n")).toContain("catalyst runtime");
   });
   test("runtime --help documents the subcommands", async () => {
     const ctx = makeCtx(tempHome());
@@ -144,5 +144,5 @@ describe("an unknown subcommand", () => {
 // Tier 1, second clause, applied to this verb's own messaging: FIX_COMMAND is what every
 // unsupported-runtime message across the package points at, so it must be this command, verbatim.
 test("FIX_COMMAND is exactly the command this verb registers", () => {
-  expect(FIX_COMMAND).toBe("npx -y @catalyst-cloud/catalyst-skills runtime install");
+  expect(FIX_COMMAND).toBe("npx -y -p @catalyst-cloud/cli catalyst runtime install");
 });

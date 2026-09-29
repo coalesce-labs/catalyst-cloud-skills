@@ -207,7 +207,7 @@ async function pollDeviceCode(ctx: Ctx, discovery: CliDiscovery, auth: DeviceAut
       intervalMs += SLOW_DOWN_BUMP_MS;
       continue;
     }
-    if (err === "access_denied") throw new CliError("login was denied — run: catalyst-skills login to try again", "login-denied");
+    if (err === "access_denied") throw new CliError("login was denied — run: catalyst login to try again", "login-denied");
     if (err === "expired_token") return "expired";
     // A transient HTTP failure (request timeout, rate limit, server error) is retried, honouring
     // Retry-After for a 429; only a genuine, non-transient refusal ends the loop.
@@ -275,7 +275,7 @@ const inFlight = new Map<string, Promise<OauthAuth>>();
  */
 export async function bearerFor(ctx: Ctx, cfg: CustomerConfig, deps: RefreshDeps = {}): Promise<string> {
   if (typeof cfg.key === "string" && cfg.key !== "") return cfg.key;
-  if (!cfg.auth) throw new CliError("this machine is not connected — run: catalyst-skills login", "not-configured");
+  if (!cfg.auth) throw new CliError("this machine is not connected — run: catalyst login", "not-configured");
   const msToExpiry = Date.parse(cfg.auth.expiresAt) - ctx.now().getTime();
   if (Number.isFinite(msToExpiry) && msToExpiry > REFRESH_SKEW_MS) return cfg.auth.accessToken;
 
@@ -310,7 +310,7 @@ async function refreshAndPersist(ctx: Ctx, cfg: CustomerConfig, deps: RefreshDep
     const err = await oauthError(res, discovery.tokenUrl);
     if (err === "invalid_grant") {
       // revocation or > inactivity window — the ONLY session-expired case; NOT routine expiry.
-      throw new CliError("your login expired or was revoked — run: catalyst-skills login", "session-expired");
+      throw new CliError("your login expired or was revoked — run: catalyst login", "session-expired");
     }
     const transient = res.status === 429 || res.status >= 500;
     if (!transient) throw new CliError(`could not refresh your login (${res.status}): ${err}`, "session-refresh-failed");

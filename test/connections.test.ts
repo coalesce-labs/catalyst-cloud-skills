@@ -51,7 +51,7 @@ describe("connections personal", () => {
     expect(code).toBe(0);
     expect(keys).toEqual(["ctc_user_member"]);
     expect(opened).toEqual([URL]);
-    expect(ctx.out.join("\n")).toContain(`catalyst-skills connections personal linear status`);
+    expect(ctx.out.join("\n")).toContain(`catalyst connections personal linear status`);
   });
 
   test("--json returns only the SDK result and leaves browser opening to the caller", async () => {

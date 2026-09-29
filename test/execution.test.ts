@@ -480,7 +480,7 @@ describe("running / queue / accounts", () => {
     for (const reason of ["phase_parked", "human_owned_pr", "review_not_converging", "round_threshold", "claim_storm", "repo_at_capacity", "later_phase_lease_held"]) {
       expect(describeReason(reason), reason).not.toMatch(/not in this bundle's table/);
     }
-    expect(describeReason("phase_parked")).toMatch(/catalyst-skills release/);
+    expect(describeReason("phase_parked")).toMatch(/catalyst release/);
   });
   // ⛔ A route this tenant's cloud does not serve is SAID, never rendered as an empty success.
   test("a 404 from either new route says the cloud is older than the bundle, and exits non-zero", async () => {

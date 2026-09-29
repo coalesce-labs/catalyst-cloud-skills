@@ -105,7 +105,7 @@ function requireRepo(args: ParsedArgs, verb: string): string {
 /** The cloud's refusal, in its own words, plus what to do for the two we can explain. */
 function refusalLine(status: number, body: { error?: string; message?: string }, repo: string): string {
   if (status === 401) {
-    return "refused (401): the cloud did not accept your credential here. If `catalyst-skills me` works, this cloud predates secret writes from the CLI and needs a newer release; otherwise log in again.";
+    return "refused (401): the cloud did not accept your credential here. If `catalyst me` works, this cloud predates secret writes from the CLI and needs a newer release; otherwise log in again.";
   }
   if (status === 404) return `refused (404): ${repo} is not a repository of this tenant (register it in the app first)`;
   if (status === 409 && body.error === "registry_not_migrated") {

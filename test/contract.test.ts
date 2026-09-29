@@ -62,7 +62,7 @@ describe("loadContract", () => {
     writeFileSync(contractPathFor(home), JSON.stringify({ ...JSON.parse(readFileSync(contractPathFor(home), "utf8")), fetchedAt: "2020-01-01T00:00:00Z" }));
     writeFileSync(`${home}/.config/catalyst-cloud/customer.json`, JSON.stringify({ ...cfg, baseUrl: deadUrl }));
     expect(await main(["contract"], ctx)).toBe(2);
-    const lines = ctx.err.filter((l) => l.startsWith("catalyst-skills:"));
+    const lines = ctx.err.filter((l) => l.startsWith("catalyst:"));
     expect(lines).toHaveLength(1);
     expect(lines[0]).toMatch(/old \(refusal after 3600s\)/);
     expect(lines[0]).toContain("could not reach");

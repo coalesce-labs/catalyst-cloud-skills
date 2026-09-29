@@ -121,27 +121,27 @@ export function usageText(): string {
     `${PACKAGE_NAME} — the Catalyst Cloud customer CLI: connect to your tenant, read through the SDK, write through the agent proxy`,
     "",
     "Usage:",
-    "  catalyst-skills login [--base-url <url>] [--start-replica]   (keyless: logs you in as yourself)",
-    "  catalyst-skills login --key <personal-key> [--base-url <url>]   (or CATALYST_CLOUD_TOKEN, for a key)",
-    "  catalyst-skills join ...   (deprecated alias of login; removed in the next minor version)",
-    "  catalyst-skills install [--skills-dir <dir>] [--force]   (repair path; your agent's own command installs the skills)",
-    "  catalyst-skills status | notice | me | ready | accounts",
-    "  catalyst-skills mcp add|list|remove (vault references only)",
-    "  catalyst-skills contract [--refresh] [--path <a.b.c>]",
-    "  catalyst-skills query <issues|issue <id>|pulls|pull <id>|projects|cycles|search <terms>|changes --since <cursor|head>>",
-    "  catalyst-skills replica <start [--detach]|stop|status [--probe]|sql \"<select>\"|schema [table]>",
-    "  catalyst-skills runtime <status [--json]|install|path|uninstall>   (a pinned Node this CLI manages itself)",
-    "  catalyst-skills events <tail|wait-for|query|status [--probe]> [--type NAME] [--ticket CTC-N] [--after SEQUENCE]",
-    "  catalyst-skills explain <ticket> | history <ticket> | running [--ticket T --phase P] | queue [--team K]",
-    "  catalyst-skills watch [--team K] [--ticket T]... [--project P] [--exec CMD]",
-    "  catalyst-skills write <comment|state|label|create|reaction|attachment|session> ...",
-    "  catalyst-skills ask <raise|accept|list> ...",
-    "  catalyst-skills release <ticket> --because <what changed> [--retry-unchanged] [--dry-run] | release --class <c> --team <K> ...",
-    "  catalyst-skills environment [read] | environment propose --file <path>|--stdin [--approve] | environment approve",
-    "  catalyst-skills secret set <NAME> --repo <owner/name> [--command '<cmd>'] | secret import <file> --repo <owner/name>",
-    "  catalyst-skills team <list|check|map|adopt|migrate|checklist> ...",
-    "  catalyst-skills identity linear <status|options|set> [<linearUserId>] [--json]",
-    "  catalyst-skills connections personal <linear|github> <start|status> [--wait <seconds>] [--json]",
+    "  catalyst login [--base-url <url>] [--start-replica]   (keyless: logs you in as yourself)",
+    "  catalyst login --key <personal-key> [--base-url <url>]   (or CATALYST_CLOUD_TOKEN, for a key)",
+    "  catalyst join ...   (deprecated alias of login; removed in the next minor version)",
+    "  catalyst install [--skills-dir <dir>] [--force]   (repair path; your agent's own command installs the skills)",
+    "  catalyst status | notice | me | ready | accounts",
+    "  catalyst mcp add|list|remove (vault references only)",
+    "  catalyst contract [--refresh] [--path <a.b.c>]",
+    "  catalyst query <issues|issue <id>|pulls|pull <id>|projects|cycles|search <terms>|changes --since <cursor|head>>",
+    "  catalyst replica <start [--detach]|stop|status [--probe]|sql \"<select>\"|schema [table]>",
+    "  catalyst runtime <status [--json]|install|path|uninstall>   (a pinned Node this CLI manages itself)",
+    "  catalyst events <tail|wait-for|query|status [--probe]> [--type NAME] [--ticket CTC-N] [--after SEQUENCE]",
+    "  catalyst explain <ticket> | history <ticket> | running [--ticket T --phase P] | queue [--team K]",
+    "  catalyst watch [--team K] [--ticket T]... [--project P] [--exec CMD]",
+    "  catalyst write <comment|state|label|create|reaction|attachment|session> ...",
+    "  catalyst ask <raise|accept|list> ...",
+    "  catalyst release <ticket> --because <what changed> [--retry-unchanged] [--dry-run] | release --class <c> --team <K> ...",
+    "  catalyst environment [read] | environment propose --file <path>|--stdin [--approve] | environment approve",
+    "  catalyst secret set <NAME> --repo <owner/name> [--command '<cmd>'] | secret import <file> --repo <owner/name>",
+    "  catalyst team <list|check|map|adopt|migrate|checklist> ...",
+    "  catalyst identity linear <status|options|set> [<linearUserId>] [--json]",
+    "  catalyst connections personal <linear|github> <start|status> [--wait <seconds>] [--json]",
     "",
     "Every verb takes --help. --json makes the output machine-readable.",
     "",
@@ -243,13 +243,13 @@ function maybePrintUpdateNotice(args: ParsedArgs, ctx: Ctx): void {
     refreshed = installSkills(skillsDir, { force: false, onlyExisting: true });
   } catch (err) {
     ctx.stderr(
-      `[catalyst-skills] could not refresh the skills at ${skillsDir} (${err instanceof Error ? err.message : String(err)}) — the ${manifest.version} skills are not installed yet; re-run the install command: ${INSTALL_COMMAND}`,
+      `[catalyst] could not refresh the skills at ${skillsDir} (${err instanceof Error ? err.message : String(err)}) — the ${manifest.version} skills are not installed yet; re-run the install command: ${INSTALL_COMMAND}`,
     );
     return;
   }
-  if (refreshed.installed.length > 0) say(`[catalyst-skills] refreshed ${refreshed.installed.join(", ")} at ${skillsDir} to ${manifest.version}`);
+  if (refreshed.installed.length > 0) say(`[catalyst] refreshed ${refreshed.installed.join(", ")} at ${skillsDir} to ${manifest.version}`);
   for (const s of refreshed.skipped) {
-    say(`[catalyst-skills] left "${s.name}" alone: ${skillsDir}/${s.name} was not installed by this package (catalyst-skills install --force to replace)`);
+    say(`[catalyst] left "${s.name}" alone: ${skillsDir}/${s.name} was not installed by this package (catalyst install --force to replace)`);
   }
   cfg.lastSkillBundleVersion = manifest.version;
   cfg.skillsDir = skillsDir;
@@ -347,11 +347,11 @@ export async function main(argv: string[], ctx: Ctx = defaultCtx(), deps: MainDe
       return 1;
     }
     if (err instanceof CliError) {
-      ctx.stderr(`catalyst-skills: ${err.message}`);
+      ctx.stderr(`catalyst: ${err.message}`);
       return err.exitCode;
     }
     if (err instanceof MeError) {
-      ctx.stderr(`catalyst-skills: ${err.message}`);
+      ctx.stderr(`catalyst: ${err.message}`);
       return 2;
     }
     throw err;
@@ -411,7 +411,7 @@ async function cmdLogin(args: ParsedArgs, ctx: Ctx, deps: MainDeps): Promise<num
     );
   } else {
     ctx.stderr(
-      `[catalyst-skills] this is the tenant's account key (a host credential), not your own — the skills work, but nothing your agent writes will carry your name and "what needs me" cannot mean you. Mint a personal key at Settings → API keys and log in with that.`,
+      `[catalyst] this is the tenant's account key (a host credential), not your own — the skills work, but nothing your agent writes will carry your name and "what needs me" cannot mean you. Mint a personal key at Settings → API keys and log in with that.`,
     );
   }
   ctx.stdout(
@@ -425,7 +425,7 @@ async function cmdLogin(args: ParsedArgs, ctx: Ctx, deps: MainDeps): Promise<num
     ctx.stdout(`Tenant contract ${loaded.doc.contractVersion} cached at ${loaded.path}`);
   } catch (err) {
     if (err instanceof CliError && (err.code === "contract-forbidden" || err.code === "contract-version")) {
-      ctx.stderr(`[catalyst-skills] ${err.message}`);
+      ctx.stderr(`[catalyst] ${err.message}`);
     } else {
       throw err;
     }
@@ -477,7 +477,7 @@ function cmdStatus(ctx: Ctx): number {
   ctx.stdout(cfg.auth ? `Credential: your login (expires ${relativeExpiry(cfg.auth.expiresAt, ctx.now())})` : "Credential: personal key");
   ctx.stdout(`Bundle: ${PACKAGE_NAME} ${manifest.version} (tenant contract range: ${manifest.tenantContractRange})`);
   if (cfg.cliPath) ctx.stdout(`CLI: ${cfg.cliPath}${existsSync(cfg.cliPath) ? "" : " (missing — re-run login)"}`);
-  ctx.stdout(`Contract: ${existsSync(contractPathFor(ctx.home)) ? contractPathFor(ctx.home) : "not cached (run: catalyst-skills contract --refresh)"}`);
+  ctx.stdout(`Contract: ${existsSync(contractPathFor(ctx.home)) ? contractPathFor(ctx.home) : "not cached (run: catalyst contract --refresh)"}`);
   return 0;
 }
 
