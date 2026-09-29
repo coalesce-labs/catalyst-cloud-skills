@@ -166,6 +166,16 @@ function unresolvedLine(u: { name: string; references: string[] }): string {
  *  identifier or a repository name, never a value, and nothing here reads a value. Any other check
  *  keeps the generic line. */
 function teamCheckFix(label: string, c: ContractReadinessCheck): string {
+  const automationRules: Record<string, string> = {
+    linear_automation_pr_open: "On PR open",
+    linear_automation_pr_review: "On PR review request or activity",
+    linear_automation_pr_ready: "On PR ready for merge",
+    linear_automation_pr_merge: "On PR merge",
+  };
+  const rule = automationRules[c.id];
+  if (rule) {
+    return `in Linear, open Settings → Teams → ${label} → Workflows & automations → Pull request and commit automations and set ${rule} to No action, including branch-specific overrides; then run catalyst team check ${label}`;
+  }
   const unresolved = unresolvedList(c.unresolved);
   const unresolvedNames = new Set(unresolved.map((u) => u.name));
   const names = nameList(c.names).filter((n) => !unresolvedNames.has(n));
