@@ -115,9 +115,10 @@ const TEAM_CHECK_IDS = [
 const SETTINGS_ROUTES = [
   "/settings/connections",
   "/settings/linear-teams",
-  "/settings/repositories",
-  "/settings/repositories/$repoId/merging",
-  "/settings/repositories/$repoId/code-reviews",
+  "/settings/projects",
+  "/settings/projects/$projectId/repositories/$repoId/environment/declaration",
+  "/settings/projects/$projectId/repositories/$repoId/merging",
+  "/settings/projects/$projectId/repositories/$repoId/code-reviews",
   "/settings/coding-accounts",
   "/settings/secrets",
   "/settings/environment",
@@ -1395,18 +1396,21 @@ describe("the settings reference names the screen, the route and the rule", () =
     "whats-happening/references/settings-and-where-they-live.md";
   const ROUTE_TOKEN = /\/settings\/[a-zA-Z0-9$/_-]*/g;
   const normalizeRoute = (route: string): string =>
-    route.replace(/^(\/settings\/repositories)\/[^/]+(\/.+)$/, "$1/$repoId$2");
+    route.replace(
+      /^(\/settings\/projects)\/[^/]+(\/repositories)\/[^/]+(\/.+)$/,
+      "$1/$projectId$2/$repoId$3",
+    );
   const routesIn = (text: string): string[] =>
     [...text.matchAll(ROUTE_TOKEN)].map((m) => normalizeRoute(m[0]));
 
   test("⭐ positive control: the route matcher extracts a settings route and normalises an id segment, on fixed strings", () => {
-    expect(routesIn("`<their cloud>/settings/repositories`")).toEqual([
-      "/settings/repositories",
+    expect(routesIn("`<their cloud>/settings/projects`" )).toEqual([
+      "/settings/projects",
     ]);
-    expect(routesIn("Settings → Repositories")).toEqual([]);
+    expect(routesIn("Settings → Your projects")).toEqual([]);
     expect(
-      routesIn("`<their cloud>/settings/repositories/$repoId/merging`"),
-    ).toEqual(["/settings/repositories/$repoId/merging"]);
+      routesIn("`<their cloud>/settings/projects/$projectId/repositories/$repoId/merging`"),
+    ).toEqual(["/settings/projects/$projectId/repositories/$repoId/merging"]);
   });
 
   test("the reference exists, is non-empty, and is linked from SKILL.md by its literal path", () => {
@@ -1434,9 +1438,8 @@ describe("the settings reference names the screen, the route and the rule", () =
       /binds to exactly one account/,
       /personal GitHub grant comes first/,
       /Removing the App on GitHub self-heals the registry/,
-      /One team, one repository/,
-      /only editable field is its name/,
-      /Re-registering the same team-plus-repo pair is refused/,
+      /Each Catalyst project pairs one Linear team with its registered GitHub repositories/,
+      /choose the team's default repository/,
       /Merge policy/,
       /Post review requests as/,
       // CTC-2014 validate attempt 10, code-review finding 4: this rule used to be pinned as the
@@ -1463,7 +1466,7 @@ describe("the settings reference names the screen, the route and the rule", () =
 // admin can set in settings". One bundle, two skills, opposite answers to "can I lower the cap for
 // this repo?", and the rule this same ticket added at `how-catalyst-works/SKILL.md` routes every
 // settings question to the settings page. The 2026-09-10 repository-settings research settles which
-// is false: `/settings/repositories/$repoId/runner` is READ-ONLY because no GET exists
+// is false: `/settings/projects/$projectId/repositories/$repoId/runner` is READ-ONLY because no GET exists
 // (`repo-runner-view.tsx`), and the only writes are the operator-only
 // `PUT|DELETE /admin/repos/concurrency-limit` (`repo-concurrency-routes.ts`), over
 // `DEFAULT_REPO_CONCURRENCY_LIMIT = 20` (`repo-concurrency-store.ts`), with a paused repo resolving
@@ -1675,20 +1678,23 @@ describe("readiness is pinned for both setup skills, and the flow-metrics gap is
 describe("every settings route in customer prose is on the vendored roster, and every roster entry is used", () => {
   const ROUTE_TOKEN = /\/settings\/[a-zA-Z0-9$/_-]*/g;
   const normalizeRoute = (route: string): string =>
-    route.replace(/^(\/settings\/repositories)\/[^/]+(\/.+)$/, "$1/$repoId$2");
+    route.replace(
+      /^(\/settings\/projects)\/[^/]+(\/repositories)\/[^/]+(\/.+)$/,
+      "$1/$projectId$2/$repoId$3",
+    );
   const mdFiles = [
     join(pkgRoot, "README.md"),
     ...walk(skillsRoot).filter((f) => f.endsWith(".md")),
   ];
 
   test("⭐ positive control: the route matcher reads a route and normalises an id segment, on fixed strings", () => {
-    expect(normalizeRoute("/settings/repositories/$repoId/merging")).toBe(
-      "/settings/repositories/$repoId/merging",
-    );
-    expect(normalizeRoute("/settings/repositories/abc123/merging")).toBe(
-      "/settings/repositories/$repoId/merging",
-    );
-    expect([..."Settings → Repositories".matchAll(ROUTE_TOKEN)]).toHaveLength(
+    expect(
+      normalizeRoute("/settings/projects/$projectId/repositories/$repoId/merging"),
+    ).toBe("/settings/projects/$projectId/repositories/$repoId/merging");
+    expect(
+      normalizeRoute("/settings/projects/abc123/repositories/xyz/merging"),
+    ).toBe("/settings/projects/$projectId/repositories/$repoId/merging");
+    expect([..."Settings → Your projects".matchAll(ROUTE_TOKEN)]).toHaveLength(
       0,
     );
     expect(

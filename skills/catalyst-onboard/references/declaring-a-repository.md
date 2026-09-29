@@ -7,7 +7,7 @@ The cloud containers build and test the repository and need the names of the var
 1. Start from what builds and tests the repository: the README's setup section, the scripts in `package.json` or its equivalent, and CI's build and test steps. A name none of them reads does not belong in the file.
 2. Tie each name to the file it came from: a `.env.example` (never `.env`, which holds live values), a CI secret in a workflow's `env:` block, or a platform binding. A name you cannot tie to a file is a guess; say so instead of listing it.
 3. Leave out platform bindings and deploy-only secrets, since containers build and test but never deploy, unless the person says the build needs one.
-4. Write the names into `.catalyst/catalyst.toml`, the only file the cloud reads, and open a pull request. Each merged change to it is proposed as a new revision, which an owner or admin approves at Settings → Repositories → the repository → Environment → Setup declaration → Approve this revision; the person enters values on that page's Environment variables and Secrets tabs.
+4. Write the names into `.catalyst/catalyst.toml`, the only file the cloud reads, and open a pull request. Each merged change to it is proposed as a new revision. An owner or admin approves it at Settings → Your projects → the project → Repositories → the repository → Environment → Setup declaration → Approve this revision. The person enters values on that page's Environment variables and Secrets tabs. The direct route is `/settings/projects/$projectId/repositories/$repoId/environment/declaration`; use the project and repository ids from Catalyst instead of guessing them.
 
 ## The file's shape
 

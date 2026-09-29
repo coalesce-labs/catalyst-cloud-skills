@@ -174,7 +174,7 @@ function teamCheckFix(label: string, c: ContractReadinessCheck): string {
   };
   const rule = automationRules[c.id];
   if (rule) {
-    return `in Linear, open Settings → Teams → ${label} → Workflows & automations → Pull request and commit automations and set ${rule} to No action, including branch-specific overrides; then run catalyst team check ${label}`;
+    return `in Linear, open Settings → Teams → ${label} → Workflow → Workflows & automations → Pull request and commit automations and set ${rule} to No action, including branch-specific overrides; then run catalyst team check ${label}`;
   }
   const unresolved = unresolvedList(c.unresolved);
   const unresolvedNames = new Set(unresolved.map((u) => u.name));
@@ -182,7 +182,7 @@ function teamCheckFix(label: string, c: ContractReadinessCheck): string {
   const parts: string[] = [];
   if (names.length > 0) {
     parts.push(
-      `set ${names.join(", ")} on the repository's Environment page under Settings → Repositories ` +
+      `set ${names.join(", ")} on the repository's Environment page under Settings → Your projects → the project → Repositories → the repository ` +
         `(team ${label}; ${names.length === 1 ? "it has" : "they have"} no value at repository or account scope)`,
     );
   }
