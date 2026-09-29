@@ -36,9 +36,9 @@ Say these two things plainly:
 
 The same page takes a Claude account's new credential. Its field is "Replacement setup token". `claude setup-token` mints a token for whichever Claude account the terminal is logged into, not for the slot. So first match them: read the slot's account on the AI accounts page (its label or email), then have the person run `claude` and `/status` to see the email the terminal is logged into. If they differ, stop, and log in to the slot's account first. Only then run `claude setup-token`, paste the token into that field, and press Replace credential. Then re-run the script.
 
-## An ended or cancelled account
+## A cancelled or ended account
 
-An account whose subscription is cancelled, or which has ended, is not a credential problem, and no token revives it. Retire it on the AI accounts page. Never replace its credential with a token from another account: that puts a working account's login onto a dead slot.
+An account whose subscription is cancelled, or which has ended, is not a credential problem, and no token revives it. It stays enrolled for reporting, is not used, and is not something to retire or delete. Never replace its credential with a token from another account: that puts a working account's login onto a dead slot. If the subscription is live again, the person reactivates it on its own page.
 
 ## Any other provider
 
