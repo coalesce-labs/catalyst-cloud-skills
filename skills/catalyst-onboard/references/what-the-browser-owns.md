@@ -8,7 +8,7 @@ Each is an authorization a person grants in their own session, so no command wil
 | -- | -- |
 | approving the login | the URL and short code `catalyst login` printed |
 | enrolling a coding account, or replacing its credential | the AI accounts page the script printed |
-| connecting the Linear integration, installing the GitHub App | `<their cloud>/settings/connections` |
+| connecting the Linear integration, installing the GitHub App | `<their cloud>/settings/connections` (Settings → Integrations) |
 | creating `<your GitHub org>/thoughts` and letting the App reach it | GitHub, then the App's installation page for that org: All repositories, or add `thoughts` (step 5 of `references/the-one-path.md`) |
 | connecting personal Linear, then personal GitHub | the URL `catalyst connections personal <linear\|github> start` printed |
 
@@ -18,7 +18,7 @@ Their routes take a browser session, not a key. Call them gaps, route the person
 
 | step | where |
 | -- | -- |
-| registering a repository and attaching it to a project | `<their cloud>/settings/repositories` |
+| registering a repository and attaching it to a project | `<their cloud>/settings/projects` (Settings → Your projects) |
 | approving one repository's declaration, and entering its values | that repository's Environment page (`references/declaring-a-repository.md`) |
 
 `catalyst environment` handles a workspace-wide declaration. ⛔ Only the CLI makes requests; if you find yourself building a URL for one of these, stop.
