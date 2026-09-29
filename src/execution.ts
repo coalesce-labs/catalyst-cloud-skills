@@ -47,6 +47,7 @@ export const EXCLUSION_REASONS: Record<string, string> = {
   round_threshold: "the ticket spent its lifetime repair budget; answering its ask or pushing a fix buys one more cycle",
   claim_storm: "this unit was claimed too many times in the last hour, so it waits out the hour; nothing to release",
   repo_at_capacity: "the repository's runner seats are all in use; it starts when one frees",
+  wip_limit: "the project is at its WIP limit (tickets in progress, counting blocked, parked and waiting ones); this new start waits until one of them finishes, and the tickets in progress keep running",
 };
 
 /** Every fail-closed unknown the evaluator names. */

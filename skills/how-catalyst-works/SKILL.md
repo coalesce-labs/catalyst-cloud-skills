@@ -30,7 +30,7 @@ Exit codes: 0 answered, 1 not found or a usage error, 2 this machine is not conn
 | "what are the phases, what does each produce, when is a ticket Done?" | `references/the-ladder.md` |
 | "which column is which, why does nothing dispatch, what is a slot?" | `references/stages-and-mapping.md` |
 | a phase FAILED, a card went to Remediate, a ticket is parked or on hold | `references/when-a-phase-fails.md` |
-| "what runs next, why not this one, what does this exclusion reason mean?" | `references/what-runs-next.md` |
+| "what runs next, why not this one, what does this exclusion reason mean?", "why does nothing start while nothing runs?" (the WIP limit) | `references/what-runs-next.md` |
 | "why is nothing running", walls, quarantine, which provider ran a phase | `references/coding-accounts.md` |
 
 ## Rules

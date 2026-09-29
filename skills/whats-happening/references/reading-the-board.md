@@ -14,7 +14,7 @@ Read a board by slot, never by name. Two teams can call the same slot different 
 
 The snapshot's `board` block groups open tickets by state name in slot order, drops terminal states, and lists any state name that maps to no slot at the end. Read it top to bottom:
 
-- **dispatch** holds what is ready and waiting for a container. A long dispatch column with nothing in flight is a capacity or eligibility question, not a work question: run `explain` on the first row.
+- **dispatch** holds what is ready and waiting for a container. A long dispatch column with nothing in flight is a capacity or eligibility question, not a work question: run `explain` on the first row. If it says `wip_limit`, the project is at its WIP limit (tickets in progress, counting blocked, parked and waiting ones, not containers): the work in progress is what is waiting, so read that column, not this one.
 - **intake** through **pr** are the ladder. A card advances one slot when the matching phase completes; a failed phase writes no board state, so a card that has not moved is either still running, retrying in place, or moved sideways to remediate.
 - **remediate** is an interrupt, not a step. A card there was moved by a failure and returns to its exact previous stage when a repair round succeeds. Count remediate cards separately; they are not progress.
 - Backlog-type states are not slots. A ticket there is parked or not yet chosen; nothing is offered for it and nothing is wrong with it.

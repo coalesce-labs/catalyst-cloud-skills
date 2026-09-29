@@ -157,8 +157,8 @@ describe("explain", () => {
     expect(await main(["explain", "nodash"], makeCtx(home))).toBe(1);
     expect(await main(["explain", "ENG-1"], makeCtx(tempHome()))).toBe(2);
   });
-  test("the reason table covers the thirty-seven exclusions and eleven unknowns", () => {
-    expect(Object.keys(EXCLUSION_REASONS)).toHaveLength(37);
+  test("the reason table covers the thirty-eight exclusions and eleven unknowns", () => {
+    expect(Object.keys(EXCLUSION_REASONS)).toHaveLength(38);
     expect(Object.keys(UNKNOWN_REASONS)).toHaveLength(11);
     expect(describeReason("blocked")).toMatch(/blocking relation/);
     expect(describeReason("ticket_unknown")).toMatch(/not in the mirror/);
@@ -477,7 +477,7 @@ describe("running / queue / accounts", () => {
     }
   });
   test("the reasons a release verb now clears are in the bundle's table, never printed raw", () => {
-    for (const reason of ["phase_parked", "human_owned_pr", "review_not_converging", "round_threshold", "claim_storm", "repo_at_capacity", "later_phase_lease_held"]) {
+    for (const reason of ["phase_parked", "human_owned_pr", "review_not_converging", "round_threshold", "claim_storm", "repo_at_capacity", "later_phase_lease_held", "wip_limit"]) {
       expect(describeReason(reason), reason).not.toMatch(/not in this bundle's table/);
     }
     expect(describeReason("phase_parked")).toMatch(/catalyst release/);
