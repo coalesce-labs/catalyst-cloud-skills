@@ -163,6 +163,7 @@ export const FLAG_TABLES: Record<string, FlagTable> = {
     rotate: { value: true, repeat: true, help: "import: replace this name if it is already set (repeatable)" },
   },
   identity: {},
+  capabilities: {},
   connections: {
     wait: { value: true, help: "start: wait up to this many seconds for browser approval (0-600)" },
   },
@@ -207,6 +208,7 @@ export const VERB_USAGE: Record<string, string> = {
   secret:
     "secret set <NAME> --repo <owner/name> [--command '<cmd>'] [--json]   (value from --command, stdin, or a hidden prompt) | secret import <file> --repo <owner/name> [--rotate NAME]... [--json]",
   identity: "identity linear <status|options|set> [<linearUserId>] [--json]",
+  capabilities: "capabilities [--json]",
   connections: "connections personal <linear|github> <start|status> [--wait <seconds>] [--json]",
   release:
     "release <ticket> --because <what changed> [--retry-unchanged] [--dry-run] [--json] | release --class <failure-class> --team <K> --because <what changed> [--retry-unchanged] [--dry-run] [--limit N] [--json]",
