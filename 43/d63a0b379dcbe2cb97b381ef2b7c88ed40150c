@@ -1,6 +1,1 @@
-Revision history for #167:
-
-rev 2 (rebase) 2026-09-29 23:39 UTC — Correct the PR description: this path-copy slice is standalone; project-specific deep links remain a follow-up contingent on the registry returning default repo ids.
-rev 1 (initial) 2026-09-29 23:39 UTC
-
-<!-- mergify-revision-data: {"schema_version":1,"pull_number":167,"entries":[{"number":1,"change_type":"initial","old_sha":null,"new_sha":"9d6f5f32e6646712b14f43aeb0fea9c018f670ad","timestamp_iso":"2026-09-29T23:39:54Z","reason":"","replay_sha":null,"compare_url":null},{"number":2,"change_type":"rebase","old_sha":"9d6f5f32e6646712b14f43aeb0fea9c018f670ad","new_sha":"d5a5d482d2439172b6024edbd9c7303a895af621","timestamp_iso":"2026-09-29T23:39:54Z","reason":"Correct the PR description: this path-copy slice is standalone; project-specific deep links remain a follow-up contingent on the registry returning default repo ids.","replay_sha":null,"compare_url":"https://github.com/coalesce-labs/catalyst-cloud-skills/compare/9d6f5f32e6646712b14f43aeb0fea9c018f670ad...d5a5d482d2439172b6024edbd9c7303a895af621"}]} -->
+fix CI: update the onboarding assertion to match the current Your projects registration copy
