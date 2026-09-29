@@ -94,7 +94,7 @@ export function validateSkillDir(dir: string): string[] {
   if (lines.length > MAX_SKILL_LINES) problems.push(`${name}: SKILL.md is ${lines.length} lines (max ${MAX_SKILL_LINES})`);
 
   const fm = parseFrontmatter(lines);
-  let mutatingFrontmatter = false;
+  let manualOnlyFrontmatter = false;
   if (!fm) problems.push(`${name}: SKILL.md must start with YAML frontmatter (---)`);
   else {
     if (fm.closeIndex === -1) problems.push(`${name}: SKILL.md is missing a closing frontmatter fence`);
@@ -102,7 +102,7 @@ export function validateSkillDir(dir: string): string[] {
     else if (fm.fields.name !== name) problems.push(`${name}: frontmatter name "${fm.fields.name}" must match the directory`);
     if (fm.fields.description === undefined || fm.fields.description.trim() === "") problems.push(`${name}: frontmatter is missing "description"`);
     else if (fm.fields.description.length > MAX_DESCRIPTION_CHARS) problems.push(`${name}: description is ${fm.fields.description.length} characters (max ${MAX_DESCRIPTION_CHARS})`);
-    mutatingFrontmatter = fm.fields["disable-model-invocation"] === "true";
+    manualOnlyFrontmatter = fm.fields["disable-model-invocation"] === "true";
     if (fm.closeIndex !== -1) {
       const after = lines[fm.closeIndex + 1] ?? "";
       if (!(after.startsWith("<!--") && after.includes(PROVENANCE_MARKER))) {
@@ -141,28 +141,38 @@ export function validateSkillDir(dir: string): string[] {
     }
   }
 
+  // Invocation is one choice written in three places: SKILL.md's `disable-model-invocation`, the
+  // OpenAI sidecar's `allow_implicit_invocation`, and portability's `invocation`. They must agree.
+  // Whether a skill writes (`mutating`) is a separate fact: a skill that writes can still be picked
+  // by the model, and its own scoped controls (a write budget, a preview) govern the write.
   const portability = join(dir, "agents", "portability.yaml");
   const openai = join(dir, "agents", "openai.yaml");
-  let mutating = false;
-  let implicitFalse = false;
+  let explicitPortability: boolean | null = null;
+  let implicitFalse: boolean | null = null;
   if (!existsSync(portability)) problems.push(`${name}: agents/portability.yaml is missing`);
   else {
     const y = readFileSync(portability, "utf8");
     if (!/^effects:\s*.*$/m.test(y)) problems.push(`${name}: agents/portability.yaml does not declare "effects"`);
     if (!/^exposure:\s*\[\s*"?catalog"?\s*\]\s*$/m.test(y)) problems.push(`${name}: agents/portability.yaml must declare exposure: [catalog]`);
-    mutating = /^mutating:\s*true\s*$/m.test(y);
+    const mutating = /^mutating:\s*true\s*$/m.test(y);
+    const effectsEmpty = /^effects:\s*\[\s*\]\s*$/m.test(y);
+    if (mutating && effectsEmpty) problems.push(`${name}: agents/portability.yaml says mutating: true but lists no effects`);
+    if (!mutating && /^effects:\s*\[\s*[^\]\s]/m.test(y)) problems.push(`${name}: agents/portability.yaml lists effects but lacks mutating: true`);
+    const inv = /^invocation:\s*(\w+)\s*$/m.exec(y)?.[1];
+    explicitPortability = inv === undefined ? null : inv === "explicit";
   }
   if (!existsSync(openai)) problems.push(`${name}: agents/openai.yaml is missing`);
   else {
     const y = readFileSync(openai, "utf8");
     if (!/^policy:\s*$/m.test(y)) problems.push(`${name}: agents/openai.yaml has no "policy:" block`);
     if (!/allow_implicit_invocation:\s*(true|false)/.test(y)) problems.push(`${name}: agents/openai.yaml does not set policy.allow_implicit_invocation`);
-    implicitFalse = /allow_implicit_invocation:\s*false/.test(y);
+    else implicitFalse = /allow_implicit_invocation:\s*false/.test(y);
   }
-  if (mutating || mutatingFrontmatter || implicitFalse) {
-    if (!mutating) problems.push(`${name}: disable-model-invocation / allow_implicit_invocation: false are set but agents/portability.yaml lacks mutating: true`);
-    if (!mutatingFrontmatter) problems.push(`${name}: is mutating but SKILL.md does not set disable-model-invocation: true`);
-    if (!implicitFalse) problems.push(`${name}: is mutating but agents/openai.yaml does not set policy.allow_implicit_invocation: false`);
+  const manualFlags = [manualOnlyFrontmatter, implicitFalse, explicitPortability].filter((v): v is boolean => v !== null);
+  if (new Set(manualFlags).size > 1) {
+    problems.push(
+      `${name}: the invocation fields disagree about whether the model may pick this skill (SKILL.md disable-model-invocation: ${manualOnlyFrontmatter}, agents/openai.yaml allow_implicit_invocation: ${implicitFalse === null ? "unset" : !implicitFalse}, agents/portability.yaml invocation: ${explicitPortability === null ? "unset" : explicitPortability ? "explicit" : "implicit"})`,
+    );
   }
 
   for (const p of walk(dir)) {

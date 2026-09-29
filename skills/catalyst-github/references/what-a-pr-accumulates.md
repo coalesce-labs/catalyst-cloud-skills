@@ -1,6 +1,6 @@
 # What a pull request accumulates as Catalyst moves a ticket
 
-Most of this page restates invariants: how Catalyst names branches, opens and rewrites pull requests, and what it pushes when. The parts that vary per tenant are read live from the contract's `merge` block and never restated here: the reviewer's login (`merge.reviewerLogin`), which clean-pass shapes are honoured (`merge.cleanPassShapes[]`), the four PR label names (`merge.prLabels`), the checks the cloud waits on (`merge.cloudRemediateRequiredChecks`, on a 1.x contract only), and the policy per repository (`merge.repositories[]`, else `merge.defaultPolicy`). `catalyst contract --path merge` prints them.
+How Catalyst names branches, opens and rewrites pull requests, and what it pushes when, is the same for every account. The parts that vary are read live from the contract's `merge` block and never restated here: the reviewer's login (`merge.reviewerLogin`), which clean-pass shapes are honoured (`merge.cleanPassShapes[]`), the four PR label names (`merge.prLabels`), the checks the cloud waits on (`merge.cloudRemediateRequiredChecks`, on a 1.x contract only), and the policy per repository (`merge.repositories[]`, else `merge.defaultPolicy`). `catalyst contract --path merge` prints them.
 
 ## The branch
 
@@ -29,7 +29,7 @@ Three phases rewrite history on the ticket branch: implement pushes fresh with f
 
 ## The reviewer signal
 
-An automated reviewer (login from the contract) reviews every PR. Its signal is one of four: clean, findings at the current head, findings at an earlier head, no review. A clean pass is a reaction, not a review object: a thumbs-up from the reviewer posted at or after the head commit's own timestamp. A second shape, a terse "no major issues" comment in place of review threads, exists as a documented convention; whether it is honoured is served on `cleanPassShapes[].honoured` and must be read there, never assumed. What counts under each policy is on `references/is-it-mergeable.md`.
+An automated reviewer (login from the contract) reviews every PR. Its signal is one of four: clean, findings at the current head, findings at an earlier head, no review. A clean pass is usually a 👍 reaction from the reviewer, which counts only if it was given after the current head commit was made; a GitHub review on that exact commit is the most reliable signal. A terse "no major issues" comment in place of review threads is a documented convention; whether it is honoured is served on `cleanPassShapes[].honoured` and must be read there, never assumed. What counts under each policy is on `references/is-it-mergeable.md`.
 
 ## Labels on the PR
 
@@ -42,7 +42,7 @@ Four labels matter, all named on `merge.prLabels`, all matched exactly (a queue'
 | `handStepsHold` | the cloud, automatically | the PR touches a path the queue configuration excludes (schema or migration paths, typically), so a person has to merge it by hand. |
 | `preview` | a human | "deploy me a preview and hold the merge until I have looked". Removing the label is the approval. |
 
-The mirror does not carry PR labels or reactions, so your key cannot read which holds a PR carries or whether the reviewer reacted; the scripts say so by name. GitHub's own page, or the tenant's settings, is where those live.
+The mirror does not carry PR labels or reactions, so your key cannot read which holds a PR carries or whether the reviewer reacted; the scripts say so by name. GitHub's own page, or the account's settings, is where those live.
 
 ## The queue is optional and opt-out
 

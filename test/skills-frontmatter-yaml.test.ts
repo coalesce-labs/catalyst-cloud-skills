@@ -188,8 +188,8 @@ describe("a description survives the round trip intact", () => {
   // dropped or truncated at — a fix that removed the colon would pass every other assertion here.
   test.each([
     ["catalyst-github", "Catalyst's GitHub: show a ticket's pull request"],
-    ["catalyst-setup", "in one verdict: what passes"],
-    ["how-catalyst-works", "as facts an agent loads on demand: the eight-phase ladder"],
+    ["catalyst-onboard", "one step at a time: the coding account"],
+    ["whats-happening", "rather than known. Reads the contract"],
   ])("%s keeps the colon-space that broke it", (name, fragment) => {
     const block = frontmatterOf(readFileSync(join(skillsRoot, name, "SKILL.md"), "utf8"));
     const parsed = (parseYaml(block) as Record<string, unknown>).description as string;

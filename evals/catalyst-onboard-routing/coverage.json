@@ -1,12 +1,18 @@
 {
   "skill": "catalyst-onboard",
-  "invocation": "explicit",
+  "invocation": "implicit",
   "exercised_phrase": "set me up",
   "promised_phrases": [
     "set me up",
     "onboard me",
     "I just signed up",
     "get me started",
-    "what do I do first"
+    "what do I do first",
+    "log me in",
+    "which account is this machine on",
+    "am I set up",
+    "what is missing",
+    "why does nothing happen",
+    "is the replica running"
   ]
 }

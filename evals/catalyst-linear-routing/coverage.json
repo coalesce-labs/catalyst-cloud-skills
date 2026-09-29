@@ -1,6 +1,6 @@
 {
   "skill": "catalyst-linear",
-  "invocation": "explicit",
+  "invocation": "implicit",
   "exercised_phrase": "show me the ticket",
   "promised_phrases": [
     "show me the ticket",

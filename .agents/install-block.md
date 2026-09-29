@@ -8,7 +8,7 @@ you change a command, change it here first.
 installs the same `skills/` tree as a managed bundle. Installing both leaves you with every skill twice,
 so every rendering of this block keeps the exclusivity sentence.
 
-**The packs have separate jobs.** This repository contains tenant setup and operation skills. A coding
+**The packs have separate jobs.** This repository contains cloud account setup and operation skills. A coding
 workstation also installs `coalesce-labs/catalyst-dev-skills` for research, planning, implementation and
 shipping. Neither pack comes from the deprecated `coalesce-labs/catalyst` local runtime.
 
@@ -76,7 +76,7 @@ copy of the intended pack or its symlink. Leave independent, changed, or uncerta
 Do not schedule raw add commands as an unattended refresh. After that check, re-run the Cloud add
 command above with `-g` for a workstation or without `-g` inside a project.
 
-### Then connect to your tenant
+### Then connect to your cloud account
 
 The skills call one CLI, and the CLI holds your credential. Install it once and connect this machine
 — the keyless way logs you in as yourself, with nothing to mint or paste:

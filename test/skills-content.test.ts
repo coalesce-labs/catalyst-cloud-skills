@@ -39,9 +39,6 @@ const ROSTER = [
   "catalyst-github",
   "catalyst-linear",
   "catalyst-onboard",
-  "catalyst-setup",
-  "connect-me",
-  "how-catalyst-works",
   "run-this-project",
   "unstick",
   "what-needs-me",
@@ -49,10 +46,11 @@ const ROSTER = [
   "whats-happening",
 ] as const;
 
-/** The skills whose scripts write something, or that drive a person through writes; they carry the
- *  mutating triple. `catalyst-onboard` is here because it connects the machine and walks a person
- *  through tenant setup: the person asks for it by name, an agent never starts it on its own. */
-const MUTATING = new Set(["catalyst-linear", "catalyst-onboard", "what-needs-me", "run-this-project", "connect-me", "unstick"]);
+/** The skills whose scripts write something, or that drive a person through writes; their
+ *  portability sidecar says `mutating: true` and lists the effects. Writing is not the same as being
+ *  manual-only: every skill here may be picked by the model, and each write is governed by the
+ *  product's own scoped controls (the write budget, a preview or dry run, the person's own login). */
+const MUTATING = new Set(["catalyst-linear", "catalyst-onboard", "what-needs-me", "run-this-project", "unstick"]);
 
 /** The per-team readiness checks the engine reports, in wire order. The bundle cannot import the
  *  engine's own READINESS_CHECK_IDS: it lives in @catalyst-cloud/types, which is not published and
@@ -176,19 +174,18 @@ describe("the customer skills ship, with provenance", () => {
       expect(lib, `${name} lib must name this package`).toContain("@catalyst-cloud/cli");
     });
 
-    test(`${name}: the mutating triple is ${MUTATING.has(name) ? "present as a set" : "absent as a set"}`, () => {
+    test(`${name}: the model may pick it, and it is ${MUTATING.has(name) ? "marked as writing" : "marked read-only"}`, () => {
       const md = skill(name);
       const portability = readFileSync(join(skillsRoot, name, "agents", "portability.yaml"), "utf8");
       const openai = readFileSync(join(skillsRoot, name, "agents", "openai.yaml"), "utf8");
       expect(portability).toMatch(/^effects:\s*\[.*\]\s*$/m);
       expect(portability).toMatch(/^exposure:\s*\[\s*"?catalog"?\s*\]\s*$/m);
       expect(openai).toMatch(/^policy:\s*$/m);
-      const triple = [
-        /^mutating:\s*true\s*$/m.test(portability),
-        /^disable-model-invocation:\s*true\s*$/m.test(md),
-        /allow_implicit_invocation:\s*false/.test(openai),
-      ];
-      expect(triple).toEqual(MUTATING.has(name) ? [true, true, true] : [false, false, false]);
+      // Invocation is not authorization: no Cloud skill is manual-only, in any of the three places.
+      expect(md).not.toMatch(/^disable-model-invocation:/m);
+      expect(openai).toMatch(/allow_implicit_invocation:\s*true/);
+      expect(portability).toMatch(/^invocation:\s*implicit\s*$/m);
+      expect(/^mutating:\s*true\s*$/m.test(portability)).toBe(MUTATING.has(name));
       if (MUTATING.has(name)) expect(portability).not.toMatch(/^effects:\s*\[\s*\]\s*$/m);
       else expect(portability).toMatch(/^effects:\s*\[\s*\]\s*$/m);
     });
@@ -242,14 +239,14 @@ describe("no internal name reaches a customer", () => {
     expect(offenders).toEqual([]);
   });
 
-  test("how-catalyst-works restates no tenant value: no state id and no team key from the contract fixture", () => {
+  test("the desk's fact references restate no account value: no state id and no team key from the contract fixture", () => {
     const contract = buildFixtureContract();
     const stateIds = contract.teams.flatMap((t) => Object.values(t.stages).map((s) => s.stateId));
     const teamKeys = contract.teams.map((t) => t.key);
     expect(stateIds.length).toBeGreaterThan(0);
     expect(teamKeys.length).toBeGreaterThan(0);
-    const text = referencesOf("how-catalyst-works")
-      .map((f) => readFileSync(join(skillsRoot, "how-catalyst-works", "references", f), "utf8"))
+    const text = referencesOf("whats-happening")
+      .map((f) => readFileSync(join(skillsRoot, "whats-happening", "references", f), "utf8"))
       .join("\n");
     for (const id of stateIds) expect(text).not.toContain(id);
     for (const key of teamKeys) expect(text).not.toMatch(new RegExp(`\\b${key}\\b`));
@@ -259,19 +256,16 @@ describe("no internal name reaches a customer", () => {
 
 describe("each skill's scripts spawn the catalyst verbs it teaches", () => {
   const verbs: Record<(typeof ROSTER)[number], RegExp[]> = {
-    "catalyst-setup": [/"ready"/, /"replica",\s*"status"/],
     // Each grain by its own instrument: the machine by `status` and `ready`, the person by `me`, and
     // the account, the projects and the repositories by three DIFFERENT `contract --path` reads. A
     // regression that folded any of these into one call would take this assertion with it.
     "catalyst-onboard": [/"status"/, /"ready",\s*"--json"/, /"replica",\s*"status",\s*"--probe",\s*"--json"/, /"events",\s*"status",\s*"--probe",\s*"--json"/, /"replica",\s*"start",\s*"--detach"/, /"me",\s*"--json"/, /"connections",\s*"personal"/, /"contract",\s*"--path",\s*"account"/, /"contract",\s*"--refresh",\s*"--path",\s*"teams"/, /"contract",\s*"--path",\s*"merge\.repositories"/, /"environment",\s*"read"/, /"accounts",\s*"--json"/, /"contract",\s*"--path",\s*"readinessChecks"/],
     "catalyst-github": [/"query",\s*"pull"/, /"contract"/, /"replica",\s*"status"/],
     "catalyst-linear": [/"query",\s*"issue"/, /"query",\s*"search"/, /"write",\s*"comment"/, /"write",\s*"state"/, /"write",\s*"label"/, /"write",\s*"create"/],
-    "how-catalyst-works": [/"explain"/, /"running"/, /"queue"/, /"accounts"/, /"contract",\s*"--path"/],
-    "connect-me": [/"status"/, /"contract",\s*"--path"/, /"replica",\s*"status"/],
     "run-this-project": [/"watch"/, /"write",\s*"state"/, /"write",\s*"comment"/],
     "what-needs-me": [/"ask",\s*"list"/, /"ask",\s*"raise"/, /"ask",\s*"accept"/],
     "what-this-repo-needs": [/"env",\s*"inventory"/, /"env",\s*"check"/],
-    "whats-happening": [/"contract"/, /"running"/, /"queue"/, /"ask",\s*"list"/, /"replica",\s*"status"/, /"explain"/],
+    "whats-happening": [/"contract"/, /"running"/, /"queue"/, /"ask",\s*"list"/, /"replica",\s*"status"/, /"explain"/, /"accounts"/, /"contract",\s*"--path"/],
     unstick: [/"explain"/, /"--history"/, /"release"/, /"--dry-run"/],
   };
   for (const name of ROSTER) {
@@ -311,13 +305,20 @@ describe("each skill's scripts spawn the catalyst verbs it teaches", () => {
     }
   });
 
-  test("the four asking skills point at the fact skills instead of restating them", () => {
-    expect(skill("whats-happening")).toContain("how-catalyst-works");
+  test("the asking skills point at their neighbours instead of restating them", () => {
+    expect(skill("whats-happening")).toContain("catalyst-onboard");
     expect(skill("whats-happening")).toContain("catalyst-linear");
     expect(skill("whats-happening")).toContain("catalyst-github");
     expect(skill("whats-happening")).toContain("what-needs-me");
-    expect(skill("connect-me")).toContain("catalyst-setup");
+    expect(skill("catalyst-onboard")).toContain("whats-happening");
     expect(skill("run-this-project")).toContain("what-needs-me");
+  });
+
+  test("no skill text names a retired skill", () => {
+    const RETIRED = /\b(?:connect-me|catalyst-setup|how-catalyst-works)\b/;
+    expect("run the `connect-me` skill").toMatch(RETIRED); // positive control
+    const offenders = walk(skillsRoot).filter((f) => RETIRED.test(readFileSync(f, "utf8"))).map((f) => relative(pkgRoot, f));
+    expect(offenders).toEqual([]);
   });
 });
 
@@ -365,7 +366,7 @@ describe("the install page (README) states what a customer needs, in the order t
     const envForm = "CATALYST_CLOUD_TOKEN=<your-personal-key> catalyst login";
     // "Beside the install commands" is the property: the connect step is a sub-heading of Install,
     // and the login command lands before the next top-level section starts.
-    const connect = readme.indexOf("\n### Then connect to your tenant\n");
+    const connect = readme.indexOf("\n### Then connect to your cloud account\n");
     expect(connect, "the connect step must be a ### inside ## Install").toBeGreaterThan(install);
     const nextSection = readme.indexOf("\n## ", install + 1);
     expect(nextSection).toBeGreaterThan(0);
@@ -373,7 +374,7 @@ describe("the install page (README) states what a customer needs, in the order t
     expect(readme.indexOf(keyless)).toBeLessThan(nextSection);
     expect(connect).toBeLessThan(nextSection);
     // The README claims to quote the canonical block; that claim has to be checkable.
-    expect(installBlock).toContain("### Then connect to your tenant");
+    expect(installBlock).toContain("### Then connect to your cloud account");
     expect(readme).toContain(keyless);
     expect(installBlock).toContain(keyless);
     expect(readme).toContain(envForm);
@@ -467,14 +468,14 @@ describe("the install page (README) states what a customer needs, in the order t
     expect(contributing).toContain("skills-bundle-v<version>");
   });
 
-  test("the setup reference explains that the writer stops after repeated snapshot failures", () => {
-    const ref = readFileSync(join(skillsRoot, "catalyst-setup", "references", "what-each-check-means.md"), "utf8");
+  test("the replica reference explains that the writer stops after repeated snapshot failures", () => {
+    const ref = readFileSync(join(skillsRoot, "catalyst-onboard", "references", "local-sync.md"), "utf8");
     expect(ref).toContain("consecutive snapshot failures");
     expect(ref).toContain("replica status");
   });
 
   test("the machine-check table documents every id ready can emit, including the version-drift notes", () => {
-    const ref = readFileSync(join(skillsRoot, "catalyst-setup", "references", "what-each-check-means.md"), "utf8");
+    const ref = readFileSync(join(skillsRoot, "catalyst-onboard", "references", "reading-ready.md"), "utf8");
     const start = ref.indexOf("\n## The machine checks the CLI adds\n");
     const end = ref.indexOf("\n## ", start + 1);
     const section = ref.slice(start, end === -1 ? undefined : end);
@@ -653,19 +654,19 @@ describe("the dispatch gate is the stage mapping, not git automation", () => {
   const read = (rel: string) => readFileSync(join(skillsRoot, rel), "utf8");
 
   test("stages-and-mapping no longer claims git automation deletes anything, and says nothing reads it", () => {
-    const text = read("how-catalyst-works/references/stages-and-mapping.md");
+    const text = read("whats-happening/references/stages-and-mapping.md");
     expect(text).not.toMatch(/can delete a team's own review automation/);
     expect(text).toMatch(/`teams\[\]\.gitAutomation`[^\n]*nothing reads it/);
   });
 
-  test("the stuck and runs-next references carve an unmapped team out of 'clears on the next pass'", () => {
-    for (const rel of ["whats-happening/references/why-is-it-stuck.md", "how-catalyst-works/references/what-runs-next.md"]) {
+  test("the reason table carves an unmapped team out of 'clears on the next pass'", () => {
+    for (const rel of ["whats-happening/references/why-is-it-stuck.md"]) {
       expect(read(rel)).toMatch(/`workflow_mapping_unknown`[^\n]*(does not|never) clear/);
     }
   });
 
-  test("catalyst-setup describes setting up one team as the pilot", () => {
-    const text = read("catalyst-setup/references/what-each-check-means.md");
+  test("the readiness guide describes setting up one team as the pilot", () => {
+    const text = read("catalyst-onboard/references/reading-ready.md");
     expect(text).toMatch(/one team/i);
     expect(text).toMatch(/no other team/i);
     expect(text).toContain("Map my stages");
@@ -679,8 +680,8 @@ describe("the dispatch gate is the stage mapping, not git automation", () => {
 // fifteenth check: nothing in this repository imports `READINESS_CHECK_IDS` (see the array's comment
 // at the top of this file), so a new check is one line there plus one documented row, by hand. That
 // is why the page itself names the contract's `readinessChecks[]` as the list of record.
-describe("what-each-check-means documents every readiness check, and no file counts them", () => {
-  const pagePath = "catalyst-setup/references/what-each-check-means.md";
+describe("the readiness guide documents every readiness check, and no file counts them", () => {
+  const pagePath = "catalyst-onboard/references/reading-ready.md";
   const page = () => readFileSync(join(skillsRoot, pagePath), "utf8");
   const HEADING = "## The checks";
 
@@ -777,12 +778,12 @@ describe("what-each-check-means documents every readiness check, and no file cou
 // missing one does; (2) every EXCLUSION_REASONS row on `why-is-it-stuck.md` names who acts, in the
 // ticket's own three-actor vocabulary plus the fourth honest answer, "no one acts".
 describe("the stuck-state catalogue is complete and every exclusion reason names who acts", () => {
-  const HOW = "how-catalyst-works/references/what-runs-next.md";
+  const HOW = "whats-happening/references/what-runs-next.md";
   const STUCK = "whats-happening/references/why-is-it-stuck.md";
   const read = (rel: string) => readFileSync(join(skillsRoot, rel), "utf8");
 
   const REASON_TOKEN = /`([a-z][a-z0-9]*(?:_[a-z0-9]+)+)`/g;
-  const ACTOR_VOCAB = /the person, with their own login|a tenant owner or admin, in settings|\ban operator\b|no one acts/;
+  const ACTOR_VOCAB = /the person, with their own login|a workspace owner or admin, in settings|\ban operator\b|no one acts/;
   // A routing outcome, not an eligibility exclusion reason: measured at `what-runs-next.md:40`. The
   // one documented allowance a stray reason string needs to be added deliberately, not by drift.
   const ALLOWED_NON_ROSTER = ["no_eligible_account_slot"];
@@ -792,17 +793,31 @@ describe("the stuck-state catalogue is complete and every exclusion reason names
     expect([..."| -- | -- |".matchAll(REASON_TOKEN)]).toHaveLength(0);
     expect([..."| reason | meaning |".matchAll(REASON_TOKEN)]).toHaveLength(0);
     expect(ACTOR_VOCAB.test("the person, with their own login, releases it")).toBe(true);
-    expect(ACTOR_VOCAB.test("a tenant owner or admin, in settings, maps the team")).toBe(true);
+    expect(ACTOR_VOCAB.test("a workspace owner or admin, in settings, maps the team")).toBe(true);
     expect(ACTOR_VOCAB.test("an operator resumes it")).toBe(true);
     expect(ACTOR_VOCAB.test("no one acts; it clears on its own")).toBe(true);
     expect(ACTOR_VOCAB.test("someone will look into it")).toBe(false);
   });
 
-  test("every reason the CLI can print has at least one row on each customer page", () => {
+  test("every reason the CLI can print has a row on the one reason table", () => {
     for (const [id] of [...Object.entries(EXCLUSION_REASONS), ...Object.entries(UNKNOWN_REASONS), ...Object.entries(ADVISORIES)]) {
-      expect({ id, onHow: read(HOW).includes(`\`${id}\``) }).toEqual({ id, onHow: true });
       expect({ id, onStuck: read(STUCK).includes(`\`${id}\``) }).toEqual({ id, onStuck: true });
     }
+  });
+
+  // One reason table: the desk's why-is-it-stuck reference. Any other page that tables the reasons
+  // row by row is the duplicate that drifted three ways before the consolidation.
+  test("no other page under skills/ tables the exclusion reasons row by row", () => {
+    const firstCellReasons = (text: string): number =>
+      text.split("\n").filter((l) => /^\|/.test(l) && [...(l.split("|")[1] ?? "").matchAll(REASON_TOKEN)].some((m) => m[1]! in EXCLUSION_REASONS)).length;
+    // ⭐ positive control on fixed strings: a planted five-row reason table is counted as five.
+    const planted = ["| `claim_storm` | x |", "| `lease_held` | x |", "| `retry_backoff` | x |", "| `wip_limit` | x |", "| `repo_paused` | x |", "| reason | x |"].join("\n");
+    expect(firstCellReasons(planted)).toBe(5);
+    const offenders = walk(skillsRoot)
+      .filter((f) => f.endsWith(".md") && !f.endsWith(join("whats-happening", "references", "why-is-it-stuck.md")))
+      .filter((f) => firstCellReasons(readFileSync(f, "utf8")) >= 5)
+      .map((f) => relative(pkgRoot, f));
+    expect(offenders, "point at whats-happening/references/why-is-it-stuck.md instead of repeating its rows").toEqual([]);
   });
 
   test("no page names a reason string the CLI cannot print", () => {
@@ -855,48 +870,6 @@ describe("the stuck-state catalogue is complete and every exclusion reason names
       const named = rows.some((l) => ACTOR_VOCAB.test(l));
       expect({ id, named }).toEqual({ id, named: true });
     }
-  });
-
-  // CTC-2014 validate attempt 10, code-review finding 3: the two gates above prove a reason id
-  // APPEARS on both pages, and neither can see that the two rows say OPPOSITE things about it.
-  // `human_owned_pr` shipped as "it releases itself" on the mechanism page while the human-facing
-  // page filed it under a lede opening "These do not release themselves" — one reason id, two
-  // skills, contradictory next actions depending on which reference the session had loaded. Row
-  // presence cannot catch that class of drift; agreement on the release claim itself can.
-  test("a reason the mechanism page says releases itself is filed as self-releasing on the human page", () => {
-    const SELF_RELEASING = /releases itself|clears itself|releases on its own/;
-    const SELF_SECTION = "\n## Reasons that release themselves\n";
-    const idsIn = (text: string): Set<string> => new Set([...text.matchAll(REASON_TOKEN)].map((m) => m[1]));
-    const sectionOf = (text: string, heading: string): string => {
-      const start = text.indexOf(heading);
-      expect(start, `heading "${heading.trim()}" must be present`).toBeGreaterThanOrEqual(0);
-      const end = text.indexOf("\n## ", start + heading.length);
-      return text.slice(start, end === -1 ? undefined : end);
-    };
-    const offendersIn = (how: string, selfReleasing: Set<string>): string[] =>
-      how
-        .split("\n")
-        .filter((l) => l.startsWith("|") && SELF_RELEASING.test(l))
-        .flatMap((l) => [...idsIn(l)])
-        .filter((id) => !selfReleasing.has(id));
-
-    // positive control, on fixed strings: a self-release claim for an id the human page files
-    // under a human-action section is caught; the same claim for an id filed as self-releasing
-    // is not.
-    const stuckFixture = [
-      "## Reasons that release themselves",
-      "| `good_reason` | means | the phase finishes | no one acts |",
-      "## Reasons that need a human",
-      "| `bad_reason` | means | the person, with their own login, does it |",
-    ].join("\n");
-    const howFixture = [
-      "| `good_reason` | it releases itself when the phase ends |",
-      "| `bad_reason` | it releases itself when the pull request closes |",
-    ].join("\n");
-    expect(offendersIn(howFixture, idsIn(sectionOf(`\n${stuckFixture}`, SELF_SECTION)))).toEqual(["bad_reason"]);
-
-    const offenders = offendersIn(read(HOW), idsIn(sectionOf(read(STUCK), SELF_SECTION)));
-    expect(offenders, "these rows claim the reason releases itself while the human-facing page says someone must act").toEqual([]);
   });
 
   // CTC-2014 remediate (validate attempt 10, code-review finding 1): `review_not_converging` and
@@ -961,7 +934,7 @@ describe("the stuck-state catalogue is complete and every exclusion reason names
 // concierge relaying from memory. `how-catalyst-works/references/settings-and-where-they-live.md`
 // carries the in-scope rules from the 2026-09-10 account/profile/repository-settings research.
 describe("the settings reference names the screen, the route and the rule", () => {
-  const SETTINGS_PAGE = "how-catalyst-works/references/settings-and-where-they-live.md";
+  const SETTINGS_PAGE = "whats-happening/references/settings-and-where-they-live.md";
   const ROUTE_TOKEN = /\/settings\/[a-zA-Z0-9$/_-]*/g;
   const normalizeRoute = (route: string): string => route.replace(/^(\/settings\/repositories)\/[^/]+(\/.+)$/, "$1/$repoId$2");
   const routesIn = (text: string): string[] => [...text.matchAll(ROUTE_TOKEN)].map((m) => normalizeRoute(m[0]));
@@ -973,7 +946,7 @@ describe("the settings reference names the screen, the route and the rule", () =
   });
 
   test("the reference exists, is non-empty, and is linked from SKILL.md by its literal path", () => {
-    expect(skill("how-catalyst-works")).toContain("references/settings-and-where-they-live.md");
+    expect(skill("whats-happening")).toContain("references/settings-and-where-they-live.md");
     const text = readFileSync(join(skillsRoot, SETTINGS_PAGE), "utf8");
     expect(text.length).toBeGreaterThan(500);
   });
@@ -1095,8 +1068,10 @@ describe("the identity is distinguished from the personal Linear grant", () => {
     expect(text).toContain("Connecting Linear personally does **not** set the identity");
   });
 
-  test("connect-me says connecting Linear personally does not set the identity", () => {
-    expect(skill("connect-me")).toMatch(/connecting Linear personally does not (set|match) the identity/);
+  test("the connect reference says connecting Linear personally does not set the identity, and the person matches it", () => {
+    const ref = readFileSync(join(skillsRoot, "catalyst-onboard", "references", "connecting-this-machine.md"), "utf8");
+    expect(ref).toMatch(/connecting Linear personally does not (set|match) the identity/i);
+    expect(ref).toContain("catalyst identity linear set");
   });
 });
 
@@ -1106,16 +1081,17 @@ describe("the identity is distinguished from the personal Linear grant", () => {
 // the current tree, converting an undefended fact into a defended one, and adds the one honest
 // health-signal sentence (flow metrics are not computed) the bundle was missing.
 describe("readiness is pinned for both setup skills, and the flow-metrics gap is named", () => {
-  test("catalyst-setup ends every answer with the verdict and the who-can-click-what list", () => {
-    expect(skill("catalyst-setup")).toMatch(/verdict and the who-can-click-what list/);
+  test("the onboarding skill ends every readiness answer with the verdict and the who-can-click-what list", () => {
+    expect(skill("catalyst-onboard")).toMatch(/verdict and the who-can-click-what list/);
+    expect(readFileSync(join(skillsRoot, "catalyst-onboard", "references", "reading-ready.md"), "utf8")).toMatch(/verdict and the who-can-click-what list/);
   });
 
-  test("connect-me routes the full readiness vector through the catalyst-setup skill", () => {
-    expect(skill("connect-me")).toMatch(/readiness vector[^\n|]*\|\s*the `catalyst-setup` skill/);
+  test("the onboarding skill routes a not-ready answer to its one readiness guide", () => {
+    expect(skill("catalyst-onboard")).toMatch(/not ready[^\n|]*\|\s*`references\/reading-ready\.md`/);
   });
 
   test("every readiness check id's row on the page names a non-empty who-clicks cell", () => {
-    const page = readFileSync(join(skillsRoot, "catalyst-setup", "references", "what-each-check-means.md"), "utf8");
+    const page = readFileSync(join(skillsRoot, "catalyst-onboard", "references", "reading-ready.md"), "utf8");
     const start = page.indexOf("\n## The checks\n");
     const end = page.indexOf("\n## ", start + 1);
     const section = page.slice(start, end);
@@ -1206,25 +1182,45 @@ describe("every settings route in customer prose is on the vendored roster, and 
 // `unstick` skill); the references that sent every park to an operator are rewritten, not left beside it.
 describe("releasing a park is a verb the person's agent runs, not an operator action", () => {
   const read = (rel: string) => readFileSync(join(skillsRoot, rel), "utf8");
+  // Every retired phrasing of "only an operator releases a park", checked against EVERY Markdown
+  // file under skills/, because the sentence survived in five places while a test watched one.
   const OPERATOR_ONLY = [
-    ["whats-happening/references/why-is-it-stuck.md", /your key has no unpark verb/],
-    ["run-this-project/references/stalls-and-escalation.md", /releasing the park is an operator action/],
-    ["run-this-project/references/making-work-ready.md", /releasing a cloud park is an operator action/],
-    ["whats-happening/SKILL.md", /a park is released only by an operator/],
-  ] as const;
+    /your key has no unpark verb/i,
+    /releasing (?:the|a cloud) park is an operator action/i,
+    /a park is released only by an operator/i,
+    /unparking a phase[^.]{0,120}\boperator actions?\b/i,
+    /an operator or a callback releases it/i,
+    /operator-only park release/i,
+    /an operator can release it directly/i,
+  ];
+  const RELEASE_NAMED = ["whats-happening/references/why-is-it-stuck.md", "run-this-project/references/stalls-and-escalation.md", "run-this-project/references/making-work-ready.md", "whats-happening/SKILL.md"];
 
-  test("positive control: the matchers find the old sentences in the text they were written against", () => {
-    expect("an operator unparks it; your key has no unpark verb, so").toMatch(OPERATOR_ONLY[0][1]);
-    expect("file an ask; releasing the park is an operator action").toMatch(OPERATOR_ONLY[1][1]);
-    expect("releasing a cloud park is an operator action, not a card move").toMatch(OPERATOR_ONLY[2][1]);
-    expect("PR labels and reactions are not mirrored, and a park is released only by an operator;").toMatch(OPERATOR_ONLY[3][1]);
+  test("positive control: the matchers find every old sentence in the text it was written against", () => {
+    const old = [
+      "an operator unparks it; your key has no unpark verb, so",
+      "file an ask; releasing the park is an operator action",
+      "releasing a cloud park is an operator action, not a card move",
+      "PR labels and reactions are not mirrored, and a park is released only by an operator;",
+      "unparking a phase, clearing a repair hold, resetting a validate budget and re-pinning a base are operator actions today",
+      "the offered phase is parked; an operator or a callback releases it, not a clock",
+      "(PR labels and reactions, which are not mirrored; an operator-only park release)",
+      "no one acts; an operator can release it directly if the callback stalls",
+    ];
+    for (const line of old) expect({ line, caught: OPERATOR_ONLY.some((re) => re.test(line)) }).toEqual({ line, caught: true });
   });
 
-  for (const [rel, re] of OPERATOR_ONLY) {
-    test(`${rel} no longer says release is an operator's, and names the release`, () => {
-      const text = read(rel);
-      expect(text).not.toMatch(re);
-      expect(text).toMatch(/`unstick`|catalyst release/);
+  test("no Markdown file under skills/ says releasing a park is an operator's", () => {
+    const offenders = walk(skillsRoot)
+      .filter((f) => f.endsWith(".md"))
+      .flatMap((f) => readFileSync(f, "utf8").split("\n").map((line, i) => ({ f, line, i })))
+      .filter(({ line }) => OPERATOR_ONLY.some((re) => re.test(line)))
+      .map(({ f, i }) => `${relative(pkgRoot, f)}:${i + 1}`);
+    expect(offenders).toEqual([]);
+  });
+
+  for (const rel of RELEASE_NAMED) {
+    test(`${rel} names the person's own release`, () => {
+      expect(read(rel)).toMatch(/`unstick`|catalyst release/);
     });
   }
 
@@ -1342,7 +1338,7 @@ describe("no customer-facing prose states a readiness check count", () => {
     // `{0,3}` because the stale wording put two qualifiers between the count and the noun ("ten
     // per-team readiness checks"). The positive control below is what caught a tighter first draft.
     /\b(one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|\d+)\s+(?:[a-z-]+\s+){0,3}checks\b/i;
-  const PAGES = ["catalyst-setup/SKILL.md", "catalyst-setup/references/what-each-check-means.md"] as const;
+  const PAGES = ["catalyst-onboard/SKILL.md", "catalyst-onboard/references/reading-ready.md"] as const;
   const read = (rel: string) => readFileSync(join(skillsRoot, rel), "utf8");
 
   test("⭐ positive control: the matcher finds every count this gate was written against", () => {
@@ -1367,7 +1363,7 @@ describe("no customer-facing prose states a readiness check count", () => {
   }
 
   test("the reference names the contract as the list of record, so a newer check reads as missing here rather than as a wrong total", () => {
-    const page = read("catalyst-setup/references/what-each-check-means.md");
+    const page = read("catalyst-onboard/references/reading-ready.md");
     expect(page).toContain("`readinessChecks[]` is the list of record");
     expect(page).toMatch(/newer than this page/);
     expect(page).toMatch(/severity/);
@@ -1401,7 +1397,7 @@ describe("no customer-facing prose states a readiness check count", () => {
    * parser read both tables and the equality below is what caught it.
    */
   const readinessSection = () => {
-    const page = read("catalyst-setup/references/what-each-check-means.md");
+    const page = read("catalyst-onboard/references/reading-ready.md");
     const start = page.indexOf("\n## The checks\n");
     if (start === -1) throw new Error("skills-content test: no `## The checks` section");
     const end = page.indexOf("\n## ", start + 1);
@@ -1719,16 +1715,17 @@ describe("no skill description names a readiness-check count the engine does not
     // real field fail: attribution read that bare "tenant" as the tenant population, so a true machine
     // count in the shipped description WAS reddened while this control stayed green (validate round 2,
     // code-review findings 1 and 2). A control built from `descriptionOf` cannot drift off its subject.
-    const shipped = descriptionOf("catalyst-setup");
-    const open = shipped.indexOf("(");
-    const close = shipped.indexOf(")", open + 1);
-    // The shape the splice needs. If the description loses its machine parenthetical, this control is
-    // no longer testing what it says it tests, and that must be a failure rather than a silent pass.
-    expect({ where: "catalyst-setup description", spliceable: open > 0 && close > open }).toEqual({
-      where: "catalyst-setup description",
+    // The readiness description is now catalyst-onboard's, which names the machine in its own clause.
+    const shipped = descriptionOf("catalyst-onboard");
+    const anchor = shipped.indexOf("logs this machine in");
+    // The shape the splice needs. If the description loses its machine clause, this control is no
+    // longer testing what it says it tests, and that must be a failure rather than a silent pass.
+    expect({ where: "catalyst-onboard description", spliceable: anchor > 0 && READINESS_CONTEXT.test(shipped) }).toEqual({
+      where: "catalyst-onboard description",
       spliceable: true,
     });
-    const machineCounted = `${shipped.slice(0, close)} — seven checks${shipped.slice(close)}`;
+    const at = anchor + "logs this machine in".length;
+    const machineCounted = `${shipped.slice(0, at)} (seven checks)${shipped.slice(at)}`;
     expect(machineCounted).toContain("seven checks)");
     expect(staleCount(machineCounted, TEAM_CHECK_IDS)).toBeNull();
     // And pinned independently of how the shipped field happens to be worded today: a machine clause

@@ -34,7 +34,7 @@ with no model and no credential, and fails — naming the skill and the phrase �
 - the skill's description no longer contains `exercised_phrase` verbatim (a scored case sending a
   phrase the description dropped would silently stop testing anything real);
 - `promised_phrases` no longer equals every phrase the live description quotes (this is the
-  zero-cost widening: all ~42 phrases across eleven skills are pinned this way, not just the eleven a
+  zero-cost widening: every quoted phrase across the roster is pinned this way, not just the one a
   scored case actually sends);
 - the case's `invocation` no longer matches the skill's own `disable-model-invocation` frontmatter;
 - a skill is added to or removed from the roster (`src/cli.ts`'s `CUSTOMER_SKILLS`) without its case
@@ -43,15 +43,9 @@ with no model and no credential, and fails — naming the skill and the phrase �
 This is what delivers Tier 2 today — a description edit that drops a trigger phrase fails CI by
 name, deterministically, in milliseconds, whether or not an eval credential ever exists.
 
-## Why the six explicit cases use the slash form
+## Why every case sends a natural sentence
 
-Six of the eleven skills (`catalyst-linear`, `catalyst-onboard`, `connect-me`, `run-this-project`,
-`unstick`, `what-needs-me`) carry `disable-model-invocation: true` — a model can never route to them
-on its own. Their cases send `/<skill-name> <sentence>`, the documented user-trigger for such a
-skill, instead of a bare natural-language sentence a model would have to choose to route on. If the
-slash form does not route to the skill under `-p`, the case fails — and that failure is the correct,
-intended outcome: a skill a user cannot trigger by name is exactly the defect class this ticket
-exists to catch. There is no exemption tag for these six.
+Every skill in the roster lets the model pick it: none carries `disable-model-invocation: true`. So each case sends a sentence a person would type, never `/<skill-name>`, and the case passes only if the model routes to the skill on its own. If a skill ever becomes manual-only again, `test/evals-suite.test.ts` requires its case to be marked `explicit` and to use the slash form, the documented user-trigger for such a skill.
 
 ## Why every grader sets `arm: both`
 
@@ -66,7 +60,7 @@ cannot regress unnoticed.
 ## Cost
 
 Every grader here is a structural `tool_used` grader — none is an `llm` grader — so the judge cost of
-running this whole suite is $0. A full run is 11 cases × `runs: 3` × 2 arms = 66 short, read-only
+running this whole suite is $0. A full run is one case per skill × `runs: 3` × 2 arms of short, read-only
 `claude -p` sessions, each capped at `max_turns: 6` and `timeout_seconds: 300`.
 
 ## The threshold is 1.0, and that is deliberate

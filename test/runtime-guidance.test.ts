@@ -23,7 +23,8 @@ const SCANNED = [
   "src/replica.ts",
   "README.md",
   ".agents/install-block.md",
-  "skills/catalyst-setup/references/what-each-check-means.md",
+  "skills/catalyst-onboard/references/reading-ready.md",
+  "skills/catalyst-onboard/references/local-sync.md",
 ];
 
 // Only prose files are checked for a LITERAL "1.4" next to "bun": source files build their bun
@@ -31,7 +32,7 @@ const SCANNED = [
 // "1.4" — the single-sourced design this ticket exists to build. The actual RENDERED text of every
 // source-built message is asserted against BUN_MIN directly in test/runtime.test.ts and
 // test/replica.test.ts, which is the check that cannot drift if BUN_MIN's value ever changes.
-const PROSE = ["README.md", ".agents/install-block.md", "skills/catalyst-setup/references/what-each-check-means.md"];
+const PROSE = ["README.md", ".agents/install-block.md", "skills/catalyst-onboard/references/reading-ready.md", "skills/catalyst-onboard/references/local-sync.md"];
 
 /** Group consecutive non-blank lines into one paragraph, so a sentence (or a wrapped prose comment
  *  block) that names bun on one line and the floor on the next still counts as naming it together. */
@@ -72,7 +73,7 @@ describe("every prose mention of bun carries the 1.4 floor nearby", () => {
 });
 
 test("the served reference's machine-checks table documents the `runtime` row, not a `node` row", () => {
-  const page = read("skills/catalyst-setup/references/what-each-check-means.md");
+  const page = read("skills/catalyst-onboard/references/reading-ready.md");
   const start = page.indexOf("## The machine checks the CLI adds");
   const end = page.indexOf("\n## ", start + 1);
   const table = page.slice(start, end === -1 ? undefined : end);

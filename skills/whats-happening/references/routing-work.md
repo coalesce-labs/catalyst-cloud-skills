@@ -1,36 +1,18 @@
 # Routing work
 
-This reference restates an invariant: what this skill does when the person asks for something to be done rather than known, and where a decision goes. Nothing here is tenant-specific.
+Your first sentence says which of three things the message is:
 
-## Three kinds of request
+1. **A question** ("where is X, why is Y stuck, what closed?"): answer it in the one-reply shape (`references/status-reply.md`).
+2. **A request for work** ("get X done, own this until it closes"): turn it into a project with an owner, in one pass, as below.
+3. **A decision only they can make**: raise it through `what-needs-me` before anyone proceeds on the default. `what-needs-me` owns what is and is not an ask.
 
-A message from the person is one of three things, and you decide which in the first sentence of your reply:
+A request containing a decision is both; do and say both.
 
-1. **A question.** "Where is X? Why is Y stuck? What closed today?" Answer it in the one-reply shape (`references/status-reply.md`). No routing.
-2. **A request for work.** "Get X done. Ship the Y change. Own this until it closes." Turn it into a project with an owner, in one pass, as below.
-3. **A decision only they can make**, surfaced by you or by the cloud. That is never answered here; it goes to `what-needs-me`.
+## A request becomes a project with an owner
 
-A request that contains a decision is both: route the work and raise the decision, and say in the reply that you did both.
+1. **Find the existing home** with `catalyst query projects` and `catalyst query search <terms>`. A request that fits an open project is a ticket there, never a duplicate project.
+2. **Scaffold when there is none:** the outcome in a sentence, the first ticket or two (through `catalyst-linear`), and the owner. The person creates a project in Linear; name it for them.
+3. **Name the owner:** a `run-this-project` session for that project, or a person. Give the one command that starts the owner session; long-running work belongs there, not at the desk.
+4. **Say what you did:** the identifiers created, the owner, and the next thing the person will see. Cite an identifier only after the create call returned it; a guessed number is usually a real, unrelated ticket.
 
-## A request becomes a project with an owner, in one pass
-
-You hold no authority over project owners. Your job is to make the work visible and hand it to a single-threaded owner, then get out of the way.
-
-1. **Find the existing home first.** `catalyst query projects` and `query search <terms>`. A request that fits an open project is a ticket in that project, not a new project. Duplicate projects split one goal's status across two places.
-2. **Scaffold when there is no home.** State the outcome in one sentence, the first ticket or two, and who owns it. Tickets are created through the `catalyst-linear` skill (the app actor, the team key from the contract); a project itself is created by the person in Linear, so name what you want it called and ask them to create it if none fits.
-3. **Name the owner.** The owner is a `run-this-project` session for that project, or a person. Say which, in the reply. Tell the person the one command that starts the owner session, and do not start long-running work inside this session: the desk answers questions; the owner reacts to events.
-4. **Say what you did.** The reply ends with the identifiers created, the owner named, and the next thing the person will see.
-
-Cite an identifier only after the create call returned it. A guessed number is usually a real, unrelated ticket.
-
-## What goes to what-needs-me
-
-Anything that gates active work on a choice only the human can make: a product call, a priority call between two things that cannot both go first, an approval, or an action only they can physically take (a click in settings, a credential). It is raised as an ask through the `what-needs-me` skill with the question, the options, the default that fires if they stay silent, and what it blocks, and it is raised **before** anyone proceeds on the default.
-
-Not an ask: brainstorming, a design back-and-forth, a question the person asked first, a retry-or-abandon call an owner can make, a provider outage (that is one status line, not a per-ticket question).
-
-## Three rules that bind this skill
-
-- **Never answer as the human.** You do not pick an option on an open ask, close one, or post in their voice. When their answer arrives in chat, it is recorded on the ask through `what-needs-me` so the record is complete, and it is recorded as the app actor, never as them.
-- **Escalate inward, never outward.** An instrument reports to the project owner; the owner asks the desk; the desk asks the human, as an ask. A single stuck ticket is never a page to the human. A system-level failure (provider down, out of capacity, rate-limited) is one line in the status reply, not a question per ticket.
-- **One door.** If the person needs a second place to look after your reply, add the missing block to the reply next time rather than pointing them at a dashboard.
+The human answers for themselves: pick no option on an open ask, close none, and post nothing in their voice. An answer they give in chat is recorded on the ask through `what-needs-me`, as the app actor. A system-level failure is one line in the status reply, not a question per ticket.

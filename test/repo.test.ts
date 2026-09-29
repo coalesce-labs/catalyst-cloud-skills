@@ -25,7 +25,7 @@ describe("the block", () => {
     expect(CATALYST_AGENTS_BLOCK.endsWith(BLOCK_END)).toBe(true);
     expect(CATALYST_AGENTS_BLOCK).toContain(`\`${BLOCK_PROCESS_SKILL}\``);
     expect(CATALYST_AGENTS_BLOCK).toContain(`\`${BLOCK_DECISION_SKILL}\``);
-    expect([BLOCK_PROCESS_SKILL, BLOCK_DECISION_SKILL]).toEqual(["how-catalyst-works", "catalyst-sop"]);
+    expect([BLOCK_PROCESS_SKILL, BLOCK_DECISION_SKILL]).toEqual(["whats-happening", "catalyst-sop"]);
     for (const f of FORBIDDEN_CONTENT) expect(CATALYST_AGENTS_BLOCK, f.name).not.toMatch(f.re);
     expect(CATALYST_AGENTS_BLOCK).not.toMatch(/\b20\d\d\b/);
     expect(CATALYST_AGENTS_BLOCK.split("\n").length).toBeLessThanOrEqual(6);

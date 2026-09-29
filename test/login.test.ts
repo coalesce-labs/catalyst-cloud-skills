@@ -275,7 +275,7 @@ describe("changelog + Tier 2 notice", () => {
 });
 
 describe("installSkills", () => {
-  test("installs all eight customer skills with their references, scripts and sidecars, idempotently", () => {
+  test("installs every customer skill with its references, scripts and sidecars, idempotently", () => {
     const target = join(home, "skills");
     const first = installSkills(target, {});
     expect(first.installed.sort()).toEqual([...CUSTOMER_SKILLS]);
@@ -584,13 +584,13 @@ describe("main — Codex P2: an update refreshes the copied skills before record
   test("a customer-authored skill dir is left alone and named; the bundle-owned ones still refresh", async () => {
     const skillsDir = defaultSkillsDirFor(home);
     seedStaleCopies(skillsDir);
-    writeFileSync(join(skillsDir, "connect-me", "SKILL.md"), "---\nname: connect-me\n---\nmine");
+    writeFileSync(join(skillsDir, "unstick", "SKILL.md"), "---\nname: unstick\n---\nmine");
     saveConfig(home, seededConfig());
     const code = await main(["notice"], ctx());
     expect(code).toBe(0);
-    expect(readFileSync(join(skillsDir, "connect-me", "SKILL.md"), "utf8")).toContain("mine");
+    expect(readFileSync(join(skillsDir, "unstick", "SKILL.md"), "utf8")).toContain("mine");
     expect(readFileSync(join(skillsDir, "whats-happening", "SKILL.md"), "utf8")).not.toContain("STALE COPY");
-    expect(out.join("\n")).toContain('left "connect-me" alone');
+    expect(out.join("\n")).toContain('left "unstick" alone');
     expect(readConfig().lastSkillBundleVersion).not.toBe("0.0.9");
   });
 
@@ -612,7 +612,7 @@ describe("main — Codex P2: an update refreshes the copied skills before record
     const code = await main(["status"], ctx());
     expect(code).toBe(0);
     expect(out.filter((l) => l.startsWith("[catalyst] updated"))).toHaveLength(0);
-    expect(readFileSync(join(skillsDir, "connect-me", "SKILL.md"), "utf8")).not.toContain("STALE COPY");
+    expect(readFileSync(join(skillsDir, "unstick", "SKILL.md"), "utf8")).not.toContain("STALE COPY");
     expect(readConfig().lastSkillBundleVersion).not.toBe("");
   });
 });
