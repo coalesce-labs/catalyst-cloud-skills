@@ -1,0 +1,6 @@
+Revision history for #161:
+
+rev 2 (content) 2026-09-29 16:34 UTC — Preserve the YAML round-trip wording and the Replace credential UI label required by full CI; keep all content and loaded size below 4000.
+rev 1 (initial) 2026-09-29 16:34 UTC
+
+<!-- mergify-revision-data: {"schema_version":1,"pull_number":161,"entries":[{"number":1,"change_type":"initial","old_sha":null,"new_sha":"65d4db1454a105f1630b57d4e60a61f14bf90af1","timestamp_iso":"2026-09-29T16:34:43Z","reason":"","replay_sha":null,"compare_url":null},{"number":2,"change_type":"content","old_sha":"65d4db1454a105f1630b57d4e60a61f14bf90af1","new_sha":"d7315ce721da0b0d3f923c4fe01061e63d4ba56e","timestamp_iso":"2026-09-29T16:34:43Z","reason":"Preserve the YAML round-trip wording and the Replace credential UI label required by full CI; keep all content and loaded size below 4000.","replay_sha":null,"compare_url":"https://github.com/coalesce-labs/catalyst-cloud-skills/compare/65d4db1454a105f1630b57d4e60a61f14bf90af1...d7315ce721da0b0d3f923c4fe01061e63d4ba56e"}]} -->
