@@ -1,0 +1,10 @@
+{
+  "skill": "what-this-repo-needs",
+  "invocation": "implicit",
+  "exercised_phrase": "what env vars does this repo need",
+  "promised_phrases": [
+    "what does catalyst.env.json mean",
+    "what env vars does this repo need",
+    "why does the container need this"
+  ]
+}

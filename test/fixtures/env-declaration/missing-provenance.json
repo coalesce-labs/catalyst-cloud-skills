@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "toolchains": [],
+  "systemPackages": [],
+  "setup": [],
+  "verify": [],
+  "services": [],
+  "environment": [],
+  "agentAssets": []
+}

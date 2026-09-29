@@ -56,6 +56,7 @@ import { cmdAsk } from "./ask.js";
 import { cmdMcp } from "./mcp.js";
 import { cmdRelease } from "./release.js";
 import { cmdEnvironment, type EnvironmentDeps } from "./environment.js";
+import { cmdEnv, type EnvDeps } from "./env.js";
 import { cmdSecret, type SecretDeps } from "./secret.js";
 import { cmdTeam, type TeamDeps } from "./team.js";
 import { cmdCapabilities } from "./capabilities.js";
@@ -107,6 +108,7 @@ export const CUSTOMER_SKILLS = [
   "run-this-project",
   "unstick",
   "what-needs-me",
+  "what-this-repo-needs",
   "whats-happening",
 ] as const;
 
@@ -138,7 +140,8 @@ export function usageText(): string {
     "  catalyst write <comment|state|label|create|reaction|attachment|session> ...",
     "  catalyst ask <raise|accept|list> ...",
     "  catalyst release <ticket> --because <what changed> [--retry-unchanged] [--dry-run] | release --class <c> --team <K> ...",
-    "  catalyst environment [read] | environment propose --file <path>|--stdin [--approve] | environment approve",
+    "  catalyst environment [read] | environment propose --file <path>|--stdin [--approve] | environment approve   (your account; needs login)",
+    "  catalyst env <inventory [path] | check <file>>   (this repository, offline — no login, no network)",
     "  catalyst secret set <NAME> --repo <owner/name> [--command '<cmd>'] | secret import <file> --repo <owner/name>",
     "  catalyst team <list|check|map|adopt|migrate|checklist> ...",
     "  catalyst capabilities [--json]   (what this CLI can do, the role each verb needs, and whether this cloud serves it)",
@@ -167,6 +170,7 @@ export interface MainDeps {
   watch?: WatchDeps;
   write?: WriteDeps;
   environment?: EnvironmentDeps;
+  env?: EnvDeps;
   secret?: SecretDeps;
   connections?: ConnectionsDeps;
   identity?: IdentityDeps;
@@ -329,6 +333,8 @@ export async function main(argv: string[], ctx: Ctx = defaultCtx(), deps: MainDe
         return await cmdRelease(args, ctx);
       case "environment":
         return await cmdEnvironment(args, ctx, deps.environment ?? {});
+      case "env":
+        return await cmdEnv(args, ctx, deps.env ?? {});
       case "secret":
         return await cmdSecret(args, ctx, deps.secret ?? {});
       case "team":
@@ -363,7 +369,7 @@ export async function main(argv: string[], ctx: Ctx = defaultCtx(), deps: MainDe
 }
 
 const VERB_HELP_KNOWN: Record<string, true> = Object.fromEntries(
-  ["login", "join", "install", "status", "notice", "me", "contract", "query", "replica", "runtime", "events", "explain", "running", "queue", "watch", "write", "ask", "ready", "accounts", "release", "secret", "environment", "connections", "identity", "mcp", "team", "capabilities"].map((v) => [v, true]),
+  ["login", "join", "install", "status", "notice", "me", "contract", "query", "replica", "runtime", "events", "explain", "running", "queue", "watch", "write", "ask", "ready", "accounts", "release", "secret", "env", "environment", "connections", "identity", "mcp", "team", "capabilities"].map((v) => [v, true]),
 );
 
 async function cmdLogin(args: ParsedArgs, ctx: Ctx, deps: MainDeps): Promise<number> {
