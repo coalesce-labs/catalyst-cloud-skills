@@ -20,6 +20,7 @@ const NOTES = [
   "`contract --path codingAccounts` and `accounts --json` (coding accounts, and which one needs a new credential), and each",
   "project's hosts_current check with its fixedWhere (host).",
   "Also runs `gh repo view <owner>/thoughts` for each registered repository's owner, as a note: it shows the repository exists, never that the GitHub App can reach it.",
+  "When the tenant serves a contract version this CLI refuses, runs `npm view @catalyst-cloud/cli version` once to say whether a newer CLI is published.",
   "Writes nothing and changes nothing. Runs before this machine is connected — that is one of the states it reports.",
 ];
 
@@ -45,8 +46,28 @@ let repositoryRegistered = false;
 // `blocking` is false for a finding that is real and reportable but does not stop the next step —
 // an unmatched Linear identity is the one that matters: it must be said, and it must not become the
 // thing the person is told to go and do before they can map a project.
-const add = (part, instrument, verdict, lines, owner = null, where = null, blocking = true) =>
-  parts.push({ part, instrument, verdict, lines, owner, where, blocking });
+const add = (part, instrument, verdict, lines, owner = null, where = null, blocking = true) => {
+  const p = { part, instrument, verdict, lines, owner, where, blocking };
+  parts.push(p);
+  return p;
+};
+
+// A tenant contract outside this CLI's range makes every contract read fail the same way. When that
+// happens, no part read from the contract can back a next step, and the only honest next step is the
+// version itself. The CLI's own hint says to update, which is wrong when no newer CLI is published.
+let contractMismatch = null;
+const noteMismatch = (text) => {
+  const m =
+    (text ?? "").match(/serves contract version (\S+) but this bundle accepts (\S+)/) ??
+    (text ?? "").match(/contract: version (\S+) is outside this bundle's range (\S+)/);
+  if (m !== null) contractMismatch ??= { served: m[1], accepts: m[2] };
+  return m !== null;
+};
+const readContract = (args) => {
+  const r = runCli(args);
+  noteMismatch(r.stderr);
+  return r;
+};
 
 // ── machine ───────────────────────────────────────────────────────────────────────────────────────
 const status = runCli(["status"]);
@@ -87,10 +108,13 @@ if (connected) {
     projectChecks = checks.filter((c) => typeof c.id === "string" && c.id.startsWith("team:"));
     const machineChecks = checks.filter((c) => !(typeof c.id === "string" && c.id.startsWith("team:")));
     const failed = machineChecks.filter((c) => !c.ok && !c.note);
-    for (const c of machineChecks) machineLines.push(`${c.note ? "note" : c.ok ? "ok  " : "FAIL"} ${c.line}${!c.ok && !c.note && c.fix ? ` — fix: ${c.fix}` : ""}`);
+    // A refused contract version is printed without the CLI's "update" fix: whether an update exists
+    // is checked below, once, against what npm has published.
+    const refused = (c) => !c.ok && !c.note && noteMismatch(c.line);
+    for (const c of machineChecks) machineLines.push(`${c.note ? "note" : c.ok ? "ok  " : "FAIL"} ${c.line}${!c.ok && !c.note && c.fix && !refused(c) ? ` — fix: ${c.fix}` : ""}`);
     if (failed.length > 0) {
       machineVerdict = "unfinished";
-      machineFix = failed.find((c) => typeof c.fix === "string")?.fix ?? null;
+      machineFix = failed.find((c) => typeof c.fix === "string" && !refused(c))?.fix ?? null;
     }
   }
   // Supplemental only: local caches are optional and do not change setup completion or --next.
@@ -122,7 +146,8 @@ if (!connected) {
   const doc = tryJson(me.stdout);
   const user = doc && typeof doc.user === "object" && doc.user !== null ? doc.user : null;
   if (doc === null) {
-    add("person", "catalyst-skills me", "unreadable", [`me could not be read (${(me.stderr || me.stdout).trim().split("\n")[0] ?? "no output"})`], null, null);
+    add("person", "catalyst-skills me", "unreadable", [`me could not be read (${(me.stderr || me.stdout).trim().split("\n")[0] ?? "no output"})`], null, null).next =
+      "run this again; catalyst-skills me could not be read, so no step after it can be named yet";
   } else if (user === null) {
     add(
       "person",
@@ -172,10 +197,11 @@ if (!connected) {
 if (!connected) {
   add("account", "catalyst-skills contract --path account", "unreadable", ["not readable until this machine is connected"], null, null);
 } else {
-  const acct = runCli(["contract", "--path", "account", "--json"]);
+  const acct = readContract(["contract", "--path", "account", "--json"]);
   const doc = tryJson(acct.stdout);
   if (doc === null) {
-    add("account", "catalyst-skills contract --path account", "unreadable", ["the account block could not be read — try: catalyst-skills contract --refresh"], null, null);
+    add("account", "catalyst-skills contract --path account", "unreadable", ["the account block could not be read — try: catalyst-skills contract --refresh"], null, null).next =
+      "refresh the contract (catalyst-skills contract --refresh), then run this again; the account could not be read, so no step after it can be named yet";
   } else {
     const workspace = typeof doc.linearWorkspaceSlug === "string" && doc.linearWorkspaceSlug !== "" ? doc.linearWorkspaceSlug : typeof doc.linearWorkspaceId === "string" && doc.linearWorkspaceId !== "" ? doc.linearWorkspaceId : null;
     workspaceResolved = workspace !== null;
@@ -216,12 +242,13 @@ let teamRows = null;
 if (!connected) {
   add("projects", "catalyst-skills contract --path teams", "unreadable", ["not readable until this machine is connected"], null, null);
 } else {
-  const teams = runCli(["contract", "--path", "teams", "--json"]);
+  const teams = readContract(["contract", "--path", "teams", "--json"]);
   const doc = tryJson(teams.stdout);
   const rows = Array.isArray(doc) ? doc : null;
   teamRows = rows;
   if (rows === null) {
-    add("projects", "catalyst-skills contract --path teams", "unreadable", ["the project list could not be read — try: catalyst-skills contract --refresh"], null, null);
+    add("projects", "catalyst-skills contract --path teams", "unreadable", ["the project list could not be read — try: catalyst-skills contract --refresh"], null, null).next =
+      "refresh the contract (catalyst-skills contract --refresh), then run this again; the project list could not be read, so no step after it can be named yet";
   } else {
     const lines = [`${rows.length} mapped`];
     for (const t of rows) {
@@ -262,11 +289,12 @@ function thoughtsNote(owner) {
 if (!connected) {
   add("repositories", "catalyst-skills contract --path merge.repositories", "unreadable", ["not readable until this machine is connected"], null, null);
 } else {
-  const repos = runCli(["contract", "--path", "merge.repositories", "--json"]);
+  const repos = readContract(["contract", "--path", "merge.repositories", "--json"]);
   const doc = tryJson(repos.stdout);
   const rows = Array.isArray(doc) ? doc : null;
   if (rows === null) {
-    add("repositories", "catalyst-skills contract --path merge.repositories", "unreadable", ["the repository list could not be read — try: catalyst-skills contract --refresh"], null, null);
+    add("repositories", "catalyst-skills contract --path merge.repositories", "unreadable", ["the repository list could not be read — try: catalyst-skills contract --refresh"], null, null).next =
+      "refresh the contract (catalyst-skills contract --refresh), then run this again; the repository list could not be read, so no step after it can be named yet";
   } else {
     const lines = [`${rows.length} registered`, ...rows.map((r) => `${r.owner ?? "?"}/${r.name ?? "?"}`)];
     repositoryRegistered = rows.length > 0;
@@ -285,14 +313,23 @@ let accountsNext = "enrol a coding account a phase can run on";
 // The contract counts accounts by declared rotation, so one healthy account can hide another whose
 // credential is dead. When it says `enrolled`, each account is read as well. An account needs a new
 // credential when it is quarantined, expired or revoked, or when its last polls failed on the
-// credential itself. The poll fields are read only when the cloud sends them.
-const CREDENTIAL_ERROR_CODES = new Set(["no_access_token", "no_credential", "http_401", "http_403", "usage_unauthorized", "usage_forbidden"]);
+// credential itself. The cloud's own verdict, `needsCredential`, wins when it is sent:
+// it leaves out ended and revoked accounts and usage-endpoint refusals, which are not verdicts on the
+// credential. Older clouds send only the poll fields, read with the same narrowed code list.
+const CREDENTIAL_ERROR_CODES = new Set(["no_access_token", "no_credential"]);
 const CREDENTIAL_FAILURE_STREAK = 3;
 // A cancelled subscription or an ended account is not a credential problem: no token brings it
 // back. It is retired, never re-credentialed, and it does not make setup unfinished.
 const isRetirable = (a) => a?.renewalStatus === "canceled" || a?.status === "ended" || a?.declaredState === "ended";
 const credentialProblem = (a) => {
   if (isRetirable(a)) return null;
+  if (typeof a?.needsCredential === "boolean") {
+    if (!a.needsCredential) return null;
+    if (a.quarantined === true) return `quarantined${typeof a.quarantineReason === "string" && a.quarantineReason !== "" ? `: ${a.quarantineReason}` : ""}`;
+    if (a.status === "expired-or-revoked") return "expired or revoked";
+    return typeof a.lastPollErrorCode === "string" ? `its last ${a.pollFailureCount} polls failed with ${a.lastPollErrorCode}` : "the cloud says it needs a new credential";
+  }
+  if (a?.status === "ended" || (a?.revokedAtMs ?? null) !== null) return null;
   if (a?.quarantined === true) return `quarantined${typeof a.quarantineReason === "string" && a.quarantineReason !== "" ? `: ${a.quarantineReason}` : ""}`;
   if (a?.status === "expired-or-revoked") return "expired or revoked";
   if (CREDENTIAL_ERROR_CODES.has(a?.lastPollErrorCode) && typeof a?.pollFailureCount === "number" && a.pollFailureCount >= CREDENTIAL_FAILURE_STREAK) {
@@ -309,7 +346,7 @@ const readAccountRows = () => {
 if (!connected) {
   add("coding accounts", "codingAccounts in catalyst-skills contract", "unreadable", ["not readable until this machine is connected"], null, null);
 } else {
-  const res = runCli(["contract", "--path", "codingAccounts", "--json"]);
+  const res = readContract(["contract", "--path", "codingAccounts", "--json"]);
   const ca = tryJson(res.stdout);
   const older = ca === null && /has nothing at/.test(res.stderr ?? "");
   const INSTRUMENT = "codingAccounts in catalyst-skills contract";
@@ -360,6 +397,7 @@ if (!connected) {
     const { rows, error } = readAccountRows();
     const olderLine = "this cloud is older than the bundle: its contract does not say whether a coding account is enrolled, so the account list is read instead";
     if (rows === null) {
+      accountsNext = "read the coding accounts again; the account list could not be read this time";
       add("coding accounts", "catalyst-skills accounts", "unreadable", [olderLine, `coding accounts could not be read (${error})`], null, null);
     } else {
       // An expired or revoked slot, or a quarantined one, cannot take work until an admin acts on it.
@@ -383,7 +421,7 @@ if (!connected) {
   add("host", "hosts_current in catalyst-skills contract --path teams", "unreadable", ["not readable until this machine is connected"], null, null);
 } else {
   const checks = (teamRows ?? []).flatMap((t) => (Array.isArray(t.readiness?.checks) ? t.readiness.checks : []).filter((c) => c.id === "hosts_current").map((c) => ({ ...c, team: t.key ?? t.id ?? "(unkeyed)" })));
-  const meta = tryJson(runCli(["contract", "--path", "readinessChecks", "--json"]).stdout);
+  const meta = tryJson(readContract(["contract", "--path", "readinessChecks", "--json"]).stdout);
   const row = Array.isArray(meta) ? meta.find((r) => r.id === "hosts_current") : null;
   const hc = checks.find((c) => c.state === "fail") ?? checks.find((c) => c.state === "unknown") ?? checks[0] ?? null;
   // The contract's printed line for this owner is written for a host that is behind. When no host is
@@ -399,7 +437,10 @@ if (!connected) {
   const how = fw === null ? null : link(fw.page);
   const howLines = fw?.command ? [`the owner runs: ${fw.command}`] : [];
   if (hc === null) {
-    add("host", "hosts_current in catalyst-skills contract --path teams", "unreadable", [teamRows === null ? "the project list could not be read, so the host check cannot be either" : "no project has a readiness check yet, so whether a host is connected cannot be read. Press Re-check on the projects page."], "a tenant owner or admin", link("/settings/linear-teams"));
+    add("host", "hosts_current in catalyst-skills contract --path teams", "unreadable", [teamRows === null ? "the project list could not be read, so the host check cannot be either" : "no project has a readiness check yet, so whether a host is connected cannot be read. Press Re-check on the projects page."], "a tenant owner or admin", link("/settings/linear-teams")).next =
+      teamRows === null
+        ? "refresh the contract (catalyst-skills contract --refresh), then run this again; the project list could not be read, so the host check cannot be either"
+        : "press Re-check on the projects page, then run this again";
   } else if (hc.state === "pass") {
     add("host", "hosts_current in catalyst-skills contract --path teams", "ok", [`hosts_current pass (read on ${hc.team})`]);
   } else {
@@ -441,10 +482,43 @@ if (personPart && personalGrantIncomplete && workspaceResolved) {
 }
 const blocked = parts.filter((p) => p.verdict !== "ok" && p.blocking);
 const stuck = blocked[0] ?? parts.find((p) => p.verdict !== "ok") ?? null;
-const next =
+// ⛔ AN UNREADABLE PART NEVER BORROWS ITS "UNFINISHED" ACTION. NEXT holds what to do when a part was
+// read and is not done. A part that could not be read has no such basis: its step is reading it
+// again, and the parts after it depend on it, so none of theirs is named either. Coding accounts set
+// their own unreadable step in `accountsNext`.
+const actionFor = (p) =>
+  p.verdict === "unreadable" && p.part !== "coding accounts"
+    ? (p.next ?? `run this again; the ${p.part} part could not be read, so no step after it can be named yet`)
+    : NEXT[p.part];
+let next =
   stuck === null
     ? null
-    : { part: stuck.part, action: NEXT[stuck.part], owner: stuck.owner, where: stuck.where, blocking: stuck.blocking };
+    : { part: stuck.part, action: actionFor(stuck), owner: stuck.owner, where: stuck.where, blocking: stuck.blocking };
+
+// A refused contract version outranks every step above: each of them was read from, or waits on, a
+// contract this CLI would not accept. Whether an update exists is asked of npm, once, and only here.
+function versionAdvice() {
+  const semver = (t) => (t ?? "").match(/\b(\d+)\.(\d+)\.(\d+)\b/);
+  const installed = semver(field("Bundle"));
+  const npm = spawnSync("npm", ["view", "@catalyst-cloud/cli", "version"], { encoding: "utf8", timeout: 10_000, shell: process.platform === "win32" });
+  const latest = npm.error || npm.status !== 0 ? null : semver(npm.stdout);
+  // The installer is the update path, not `catalyst-skills install`. Its command is on the app's
+  // setup page; this names the script it fetches rather than composing the request here.
+  const reinstall = `re-run the install command from the app's setup page (it installs from ${link("/install.sh")})`;
+  if (installed === null || latest === null) {
+    return { text: `Whether a newer Catalyst CLI is published could not be checked. You can ${reinstall}; if this still appears afterwards, tell the Catalyst team.`, owner: null };
+  }
+  const order = [1, 2, 3].map((i) => Math.sign(Number(installed[i]) - Number(latest[i]))).find((d) => d !== 0) ?? 0;
+  return order >= 0
+    ? { text: "A newer Catalyst CLI isn't published yet. Tell the Catalyst team; nothing on this machine needs to change.", owner: "the Catalyst team" }
+    : { text: `Update the CLI: ${reinstall}.`, owner: "you, on this machine" };
+}
+if (contractMismatch !== null && stuck !== null) {
+  const advice = versionAdvice();
+  const line = `the tenant serves contract ${contractMismatch.served} and this CLI accepts ${contractMismatch.accepts}. ${advice.text}`;
+  stuck.lines.push(line);
+  next = { part: stuck.part, action: line, owner: advice.owner, where: null, blocking: true };
+}
 const finished = parts.every((p) => p.verdict === "ok");
 
 if (flags.json) {

@@ -22,6 +22,14 @@ interface Scenario {
   accountsFail?: boolean;
   /** What the stand-in `gh` says about `<owner>/thoughts`; "absent" takes gh off PATH entirely. */
   thoughts?: "exists" | "missing" | "absent";
+  /** When set, every `contract --path` read fails with this stderr, as a refused contract version does. */
+  contractError?: string;
+  /** Replaces the machine checks `ready --json` prints. */
+  readyChecks?: unknown[];
+  /** The version `status` prints on its Bundle line; 0.9.1 when omitted. */
+  bundleVersion?: string;
+  /** What a stand-in `npm view … version` prints, or "fail". Omitted: no npm on PATH. */
+  npmLatest?: string;
   /** The contract's `codingAccounts`; omitted is an older cloud. */
   codingAccounts?: unknown;
   hostsCurrent: Check | null;
@@ -64,7 +72,7 @@ function answers(s: Scenario): Record<string, unknown> {
   const checks: Check[] = [{ id: "oauth_scope", state: "pass" }];
   if (s.hostsCurrent) checks.push(s.hostsCurrent);
   return {
-    "ready --json": { ready: true, checks: [{ id: "config", ok: true, line: "config: connected" }] },
+    "ready --json": { ready: true, checks: s.readyChecks ?? [{ id: "config", ok: true, line: "config: connected" }] },
     "me --json": { user: { label: "Pat Example", role: "owner", linearUserId: "lin-user-fixture" } },
     // CTC-3212 — both personal grants connected, so the person part is finished in these scenarios.
     "connections personal linear status --json": { outcome: "connected", status: 200 },
@@ -99,7 +107,9 @@ function connectedHome(s: Scenario): string {
     [
       `const answers = ${JSON.stringify(answers(s))};`,
       "const a = process.argv.slice(2).join(' ');",
-      'if (a === "status") { console.log("Tenant: example\\nAPI: https://cloud.example (ok)"); process.exit(0); }',
+      `if (a === "status") { console.log("Tenant: example\\nAPI: https://cloud.example (ok)\\nBundle: @catalyst-cloud/cli ${s.bundleVersion ?? "0.9.1"} (tenant contract range: 1.x)"); process.exit(0); }`,
+      `const contractError = ${JSON.stringify(s.contractError ?? null)};`,
+      'if (contractError !== null && a.startsWith("contract --path ")) { process.stderr.write(`contract: 2.2.0 from cloud\\n${contractError}\\n`); process.exit(2); }',
       "if (a in answers) { console.log(JSON.stringify(answers[a])); process.exit(0); }",
       // what the real CLI prints when the cached contract lacks the path (an older cloud)
       'if (a.startsWith("contract --path ")) { process.stderr.write(`contract: 1.22.0 from cache\\nthe contract has nothing at "${a.split(" ")[2]}"\\n`); process.exit(2); }',
@@ -118,6 +128,11 @@ function connectedHome(s: Scenario): string {
         : `#!/bin/sh\necho "GraphQL: Could not resolve to a Repository with the name '$3'." >&2\nexit 1\n`,
     );
     chmodSync(gh, 0o755);
+  }
+  if (s.npmLatest !== undefined) {
+    const npm = join(bin, "npm");
+    writeFileSync(npm, s.npmLatest === "fail" ? "#!/bin/sh\necho 'npm ERR! network request failed' >&2\nexit 1\n" : `#!/bin/sh\necho '${s.npmLatest}'\n`);
+    chmodSync(npm, 0o755);
   }
   mkdirSync(join(home, ".config", "catalyst-cloud"), { recursive: true });
   writeFileSync(
@@ -348,14 +363,28 @@ describe("where-am-i.mjs: an enrolled contract still checks each account's crede
   });
 
   test("every credential error the poller writes counts, once the streak reaches three", () => {
-    for (const code of ["no_access_token", "no_credential", "http_401", "http_403", "usage_unauthorized", "usage_forbidden"]) {
+    for (const code of ["no_access_token", "no_credential"]) {
       const doc = json(connectedHome({ codingAccounts: CA_ENROLLED, accounts: [codexFailing(3, code)], hostsCurrent: PASS }));
       expect(part(doc, "coding accounts").verdict, code).toBe("unfinished");
     }
   });
 
+  test("the cloud's needsCredential verdict wins over the poll fields, and an ended or revoked account is never flagged", () => {
+    const cases = [
+      [{ ...codexFailing(9), needsCredential: false }, "ok"],
+      [{ ...codexFailing(0), lastPollErrorCode: null, needsCredential: true }, "unfinished"],
+      [{ ...codexFailing(9), status: "ended" }, "ok"],
+      [{ ...codexFailing(9), revokedAtMs: 1 }, "ok"],
+    ];
+    for (const [row, verdict] of cases) {
+      const doc = json(connectedHome({ codingAccounts: CA_ENROLLED, accounts: [CLAUDE_OK, row], hostsCurrent: PASS }));
+      expect(part(doc, "coding accounts").verdict, JSON.stringify(row)).toBe(verdict);
+    }
+  });
+
   test("a streak below three, or a failure that is not about the credential, stays ok", () => {
-    for (const row of [codexFailing(2), codexFailing(9, "network_error"), codexFailing(9, "exception:TypeError")]) {
+    // CTC-4174: a usage-endpoint refusal is not a verdict on the credential.
+    for (const row of [codexFailing(2), codexFailing(9, "network_error"), codexFailing(9, "exception:TypeError"), codexFailing(9, "usage_unauthorized"), codexFailing(9, "usage_forbidden"), codexFailing(9, "http_403")]) {
       const doc = json(connectedHome({ codingAccounts: CA_ENROLLED, accounts: [CLAUDE_OK, row], hostsCurrent: PASS }));
       expect(part(doc, "coding accounts").verdict, JSON.stringify(row)).toBe("ok");
     }
@@ -488,5 +517,60 @@ describe("the onboarding guide walks a dead credential and the thoughts reposito
     const facts = readFileSync(join(here, "..", "skills", "how-catalyst-works", "references", "coding-accounts.md"), "utf8");
     expect(facts).not.toContain("only an operator clears it");
     expect(facts).toContain("Replace credential on the account's page clears it");
+  });
+});
+
+describe("where-am-i.mjs: no next step without a basis", () => {
+  const REFUSED = "the tenant serves contract version 2.2.0 but this bundle accepts 1.x — update the bundle (npm install -g @catalyst-cloud/cli@latest && catalyst-skills login) or ask your tenant admin which version is live";
+  const READY_REFUSED = [
+    { id: "config", ok: true, line: "config: connected" },
+    { id: "contract", ok: false, line: "contract: version 2.2.0 is outside this bundle's range 1.x", fix: "npm install -g @catalyst-cloud/cli@latest && catalyst-skills login", who: "you" },
+  ];
+  const refusedHome = (npmLatest?: string, bundleVersion?: string) =>
+    connectedHome({ contractError: REFUSED, readyChecks: READY_REFUSED, hostsCurrent: PASS, npmLatest, bundleVersion });
+  const NOT_PUBLISHED = "A newer Catalyst CLI isn't published yet. Tell the Catalyst team; nothing on this machine needs to change.";
+
+  test("a refused contract names no Linear or GitHub step, and no update the CLI suggested", () => {
+    const home = refusedHome("0.9.1");
+    const doc = json(home);
+    expect(part(doc, "account").verdict).toBe("unreadable");
+    expect(doc.finished).toBe(false);
+    expect(doc.next).not.toBeNull();
+    for (const text of [doc.next!.action, run(home, ["--next"]).stdout, run(home, []).stdout.split("\n").find((l) => l.startsWith("next:"))!]) {
+      expect(text).not.toMatch(/linear|github/i);
+      expect(text).not.toContain("npm install -g");
+      expect(text).toContain("the tenant serves contract 2.2.0 and this CLI accepts 1.x");
+    }
+  });
+
+  test("an unreadable account block, with no version refusal, says to read it again rather than connect Linear", () => {
+    const home = connectedHome({ contractError: "network error: could not reach https://cloud.example", hostsCurrent: PASS });
+    const doc = json(home);
+    expect(doc.next?.part).toBe("account");
+    expect(doc.next?.action).toMatch(/^refresh the contract/);
+    expect(doc.next?.action).not.toMatch(/connect Linear|GitHub App/);
+  });
+
+  test("installed CLI is npm's latest: a newer CLI is not published yet, and nothing here changes", () => {
+    const doc = json(refusedHome("0.9.1", "0.9.1"));
+    expect(doc.next?.action).toContain(NOT_PUBLISHED);
+    expect(doc.next?.owner).toBe("the Catalyst team");
+    expect(doc.next?.action).not.toMatch(/re-run the install command/);
+  });
+
+  test("installed CLI is older than npm's latest: re-run the install command", () => {
+    const doc = json(refusedHome("0.10.0", "0.9.1"));
+    expect(doc.next?.action).toContain("Update the CLI: re-run the install command from the app's setup page (it installs from https://cloud.example/install.sh).");
+    expect(doc.next?.action).not.toContain(NOT_PUBLISHED);
+    expect(doc.next?.action).not.toContain("catalyst-skills install");
+  });
+
+  test("npm cannot be asked: a neutral hint, never a claim either way", () => {
+    for (const npmLatest of ["fail", undefined]) {
+      const action = json(refusedHome(npmLatest)).next?.action ?? "";
+      expect(action, String(npmLatest)).toContain("Whether a newer Catalyst CLI is published could not be checked.");
+      expect(action).not.toContain(NOT_PUBLISHED);
+      expect(action).not.toContain("Update the CLI:");
+    }
   });
 });
