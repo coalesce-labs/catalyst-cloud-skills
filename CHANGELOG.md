@@ -1,6 +1,8 @@
 # Changelog
 
-## 0.9.6
+## 0.13.0
+
+Catalyst's released pieces now share one version line, 0.13: `@catalyst-cloud/cli` and the deprecated `@catalyst-cloud/catalyst-skills` name, these skills, `@catalyst-cloud/sdk`, the installer, and the schema, replicate and read-model libraries. A CLI on 0.13.x belongs with a cloud whose tenant contract names `releaseLine` 0.13. The CLI moves from 0.9 straight to 0.13 and runs on `@catalyst-cloud/sdk` 0.13. The tenant contract keeps its own version, which tracks the document's shape.
 
 Ask your agent what a setting does and where it is set, and it names the screen, the route and the rule instead of guessing: connecting Linear, installing the GitHub App, registering a repository, the merge policy and its reviewers, secrets versus environment variables, and why routing has no write route yet all have a home in `how-catalyst-works`. `whats-happening` now maps every reason a ticket can be held to a next action and who takes it — the person with their own login, a tenant owner or admin in settings, an operator, or "no one acts" when it is genuinely just waiting — and three reasons that were missing from the stuck-state table (a live container holding a later phase, too many claims in an hour, and a repository at capacity) are documented for the first time. Connecting your own Linear account and being matched as a Linear identity are now explained as two different, sometimes disagreeing, facts, so "I connected Linear, why am I still not getting asks?" has a real answer. And the README says plainly what it still does not know: flow metrics — cycle time, throughput, how long a pull request has been open — are not computed yet, rather than counting something else and calling it that.
 
