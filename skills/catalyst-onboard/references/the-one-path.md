@@ -48,11 +48,11 @@ Each step states: what it is for, what you ask or run or hand over, **what you r
 
 **For:** the project. A project is one Linear team plus the repositories registered to it. Until a project's stages are mapped, a card moved into it does nothing at all; this is the single most common reason a new workspace sees no activity.
 
-**You hand over:** `<their cloud>/settings/linear-teams`. They pick one team and press **Map my stages**, or **Adopt the Catalyst workflow** if they want Catalyst's stages created for them.
+**You run:** `catalyst-skills team list` to see the teams without checking readiness. Have the person choose one team key. Then `catalyst-skills team map <KEY>`, or `catalyst-skills team adopt <KEY>` if they want Catalyst's stages created for them: each prints a preview; show it, and pass `--yes --plan-hash <hash>` only after they approve that exact plan. Run `catalyst-skills team check <KEY>` only for the selected team when you need its verdict. The same steps exist on `<their cloud>/settings/linear-teams` (**Map my stages**, **Adopt the Catalyst workflow**) for a person who prefers the page.
 
-**Read back:** re-run the script and read the `projects` line. A project that now appears with a readiness verdict is proof it was saved. Read them the verdict and any failing checks by name.
+For manual setup, `catalyst-skills team checklist <KEY>` prints the same lines as the browser. If it cannot read the live stages, fix the Linear connection and retry. Moving tickets out of old stages is a separate decision: preview with `team migrate <KEY>`, review source and destination ids and counts, then confirm with `--yes --plan-hash <hash>` from that preview. Retiring emptied source stages requires a later `team migrate <KEY> --retire` preview and a separate approval using its preview hash. `team adopt <KEY> --undo` likewise previews the exact stages previously created by Adopt before asking for confirmation.
 
-**Owner:** a workspace owner or admin. ⛔ Listing the projects and saving a mapping are settings-page work today; a key cannot do either yet. Say that plainly; it is a gap in the product, not something they did wrong.
+**Owner:** a workspace owner or admin, with their own login. You run the commands; the person picks the team and approves each write after seeing its preview. A run that exits 3 stopped before applying anything.
 
 ⭐ **One project at a time is safe, and lead with this.** Mapping one project changes no other project's stages and moves no other project's tickets. Encourage a pilot: the project they care least about breaking.
 
