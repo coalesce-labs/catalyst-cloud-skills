@@ -61,6 +61,8 @@ describe("the table itself", () => {
     expect(needs["team list"]).toBe("member");
     expect(needs["ready"]).toBe("member");
     expect(needs["environment approve"]).toBe("admin");
+    expect(needs["project wip-limit get"]).toBe("member");
+    expect(needs["project wip-limit set"]).toBe("admin");
   });
 });
 

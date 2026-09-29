@@ -26,6 +26,9 @@ export interface GetOptions {
   query?: Record<string, string | number | undefined>;
   /** Statuses to return instead of throwing (304 for a conditional GET, 404 for a probe). */
   accept?: number[];
+  /** Parse an accepted status's JSON body too (a refusal that carries `error` and `message`);
+   *  default off, so a 304 or a bare probe 404 keeps answering `body: undefined`. */
+  parseAccepted?: boolean;
 }
 
 export class ApiClient {
@@ -53,7 +56,15 @@ export class ApiClient {
     const url = this.url(path, opts.query);
     const res = await this.send(url, { method: "GET", headers });
     if (opts.accept?.includes(res.status)) {
-      return { status: res.status, body: undefined as T, headers: res.headers };
+      let body = undefined as T;
+      if (opts.parseAccepted) {
+        try {
+          body = (await res.json()) as T;
+        } catch {
+          body = undefined as T;
+        }
+      }
+      return { status: res.status, body, headers: res.headers };
     }
     await this.refuseIfNotOk(res, `GET ${path}`);
     return { status: res.status, body: await this.parseBody<T>(res, `GET ${path}`), headers: res.headers };
@@ -105,6 +116,22 @@ export class ApiClient {
     });
     if (!opts.accept?.includes(res.status)) await this.refuseIfNotOk(res, `POST ${path}`);
     return { status: res.status, body: await this.parseBody<T>(res, `POST ${path}`), headers: res.headers };
+  }
+
+  /** PUT a JSON body. Same contract as {@link postJson}: `accept` lists statuses returned as replies. */
+  async putJson<T = unknown>(path: string, body: unknown, opts: { accept?: number[] } = {}): Promise<JsonResponse<T>> {
+    const url = this.url(path);
+    const res = await this.send(url, {
+      method: "PUT",
+      headers: {
+        authorization: `Bearer ${await this.credential()}`,
+        accept: "application/json",
+        "content-type": "application/json",
+      },
+      body: JSON.stringify(body),
+    });
+    if (!opts.accept?.includes(res.status)) await this.refuseIfNotOk(res, `PUT ${path}`);
+    return { status: res.status, body: await this.parseBody<T>(res, `PUT ${path}`), headers: res.headers };
   }
 
   private async send(url: string, init: RequestInit): Promise<Response> {
