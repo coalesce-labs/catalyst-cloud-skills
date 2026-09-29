@@ -442,7 +442,7 @@ const readinessMeta = () => {
   }
   return readinessMetaCache;
 };
-// Linear's own Git automation rules, by check id, as the Settings → Workflows & automations → Pull request and commit automations screen
+// Linear's own Git automation rules, by check id, as the Settings → Teams → <team> → Workflow → Workflows & automations screen
 // names them. A rule that moves a card is a conflict with the stage Catalyst manages, and no Catalyst
 // key can change a Linear automation rule: the fix is in Linear, by a Linear admin.
 const LINEAR_AUTOMATION_RULES = {
@@ -526,7 +526,7 @@ if (!connected) {
         : "a workspace owner or admin";
       const how = [
         rules.length > 0
-          ? `in Linear, open Settings → Teams → ${key} → Workflows & automations → Pull request and commit automations and set ${rules.join(", ")} to No action (Catalyst does not yet offer to change these rules)`
+          ? `in Linear, open Settings → Teams → ${key} → Workflow → Workflows & automations → Pull request and commit automations and set ${rules.join(", ")} to No action (Catalyst does not yet offer to change these rules)`
           : null,
         others.length > 0 ? `${others.join(", ")}: ${owner}` : null,
       ]
@@ -652,7 +652,7 @@ if (!connected) {
       rows.length > 0 ? "ok" : "unfinished",
       lines,
       "a workspace owner or admin",
-      link("/settings/repositories"),
+      link("/settings/projects"),
     );
   }
 }
@@ -1031,7 +1031,7 @@ const DECL_REASONS = {
   no_team_repo_default: {
     text: "no repository is the project's default yet: register one and make it the default",
     who: "a workspace owner or admin",
-    page: "/settings/repositories",
+    page: "/settings/projects",
   },
   no_environment_declaration: {
     text: "no .catalyst/catalyst.toml on its default branch yet: write it with the person (names only, never a value), open a pull request, merge it",
@@ -1049,9 +1049,9 @@ const DECL_REASONS = {
     page: null,
   },
   declaration_awaiting_approval: {
-    text: "the declaration is proposed and waits for approval: Settings → Repositories → the repository → Environment → Setup declaration → Approve this revision",
+    text: "the declaration is proposed and waits for approval: Settings → Your projects → the project → Repositories → the repository → Environment → Setup declaration → Approve this revision",
     who: "a workspace owner or admin",
-    page: "/settings/repositories",
+    page: "/settings/projects",
   },
 };
 const DECL_DO =
@@ -1124,7 +1124,7 @@ if (!connected) {
     DECL_REASONS[reason] ?? {
       text: `environment_declared ${reason ?? "failed"} (a reason this bundle does not know; read it on the page)`,
       who: "a workspace owner or admin",
-      page: "/settings/repositories",
+      page: "/settings/projects",
     };
   const flag = (team, repo, reason) => {
     const r = describe(reason);
@@ -1285,7 +1285,7 @@ const NEXT = {
         ? "install the tenant GitHub App and register its repository before connecting your personal GitHub account"
         : "get this person's seat and Linear identity sorted",
   account:
-    "connect the Linear integration on the Connections page (the GitHub App comes later, with the repository)",
+    "connect the Linear integration on the Integrations page (the GitHub App comes later, with the repository)",
   projects:
     blockedProjects.length > 0
       ? blockedProjects.map((b) => b.action).join("; and ")
@@ -1295,7 +1295,7 @@ const NEXT = {
           ? "a workspace owner or admin maps ONE project: catalyst team map <KEY>, or Map my stages on the projects page"
           : "pick ONE project and map its stages (or adopt the Catalyst workflow)",
   repositories:
-    "install the GitHub App on the Connections page, granting it the repository you want worked; registering that repository on the Repositories page, attached to the project, is the step right after",
+    "install the GitHub App on the Integrations page, granting it the repository you want worked; register it on Your projects and attach it to the project before continuing",
   "coding accounts": accountsNext,
   "repository declarations": declNext,
   "repository agent setup": repoNext ?? "read the checkout's agent setup again",

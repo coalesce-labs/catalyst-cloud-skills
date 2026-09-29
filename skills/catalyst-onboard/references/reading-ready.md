@@ -46,7 +46,7 @@ A team is `ready`, `degraded`, `blocked` or `unchecked` (no pass yet, a note). S
 | `hosts_current` | no connected host runs an older mapping | `references/what-a-phase-needs.md`; `no_host_connected` is waiting | whoever runs that host |
 | `environment_declared` | the default repository's `.catalyst/catalyst.toml` is ingested, valid and approved | the reason names the step: register a default repository, commit or fix the file, or approve it (`references/declaring-a-repository.md`) | owner or admin, except committing the file, which is whoever can push |
 | `tools_resolvable` | every MCP server and CLI the declaration names resolves | `tool_reference_unresolved`: add the secret or fix the declaration; `toolchain_cli_missing` is not self-service | owner or admin, in the declaration or Settings → Environment |
-| `reviewer_required` | the repository can merge under its policy | a strict policy with no reviewer: configure one at Settings → Repositories → Code reviews, or relax the policy; only the merge waits | owner or admin, in settings |
+| `reviewer_required` | the repository can merge under its policy | a strict policy with no reviewer: configure one at Settings → Your projects → the project → Repositories → the repository → Code reviews, or relax the policy; only the merge waits | owner or admin, in settings |
 | `reviewer_configured` | a code reviewer is configured at all | configure one there; a fail never blocks or degrades | owner or admin, in settings; nobody is required when it fails |
 
 ## The machine checks the CLI adds

@@ -152,7 +152,7 @@ describe("ready", () => {
     expect(await main(["ready"], plain)).toBe(1);
     for (const [id, rule] of rules) {
       const fix = report.checks.find((check) => check.id === `team:ENG:${id}`)?.fix;
-      expect(fix).toBe(`in Linear, open Settings → Teams → ENG → Workflows & automations → Pull request and commit automations and set ${rule} to No action, including branch-specific overrides; then run catalyst team check ENG`);
+      expect(fix).toBe(`in Linear, open Settings → Teams → ENG → Workflow → Workflows & automations → Pull request and commit automations and set ${rule} to No action, including branch-specific overrides; then run catalyst team check ENG`);
       expect(plain.out.join("\n")).toContain(`fix: ${fix}`);
     }
   });
@@ -169,7 +169,7 @@ describe("ready", () => {
     const text = ctx.out.join("\n");
     expect(text).toMatch(/^FAIL {2}team ENG: required_values is fail/m);
     expect(text).toContain(
-      "fix: set DATABASE_URL, STRIPE_KEY on the repository's Environment page under Settings → Repositories (team ENG; they have no value at repository or account scope)",
+      "fix: set DATABASE_URL, STRIPE_KEY on the repository's Environment page under Settings → Your projects → the project → Repositories → the repository (team ENG; they have no value at repository or account scope)",
     );
     expect(text).not.toContain("sk_live_never_printed");
     expect(text).not.toContain("resolve required_values");
@@ -181,7 +181,7 @@ describe("ready", () => {
     writeFileSync(contractPathFor(home), JSON.stringify(cache));
     const r = await readyReport(ctx, { skillNames: CUSTOMER_SKILLS, offline: true });
     expect(r.checks.find((c) => c.id === "team:ENG:required_values")!.fix).toBe(
-      "set DATABASE_URL on the repository's Environment page under Settings → Repositories (team ENG; it has no value at repository or account scope)",
+      "set DATABASE_URL on the repository's Environment page under Settings → Your projects → the project → Repositories → the repository (team ENG; it has no value at repository or account scope)",
     );
   });
   test("CTC-3561: a team check without names, or with an empty list, keeps today's fix line", async () => {
@@ -232,7 +232,7 @@ describe("ready", () => {
     writeFileSync(contractPathFor(home), JSON.stringify(cache));
     const r = await readyReport(ctx, { skillNames: CUSTOMER_SKILLS, offline: true });
     expect(r.checks.find((c) => c.id === "team:ENG:required_values")!.fix).toBe(
-      "set API_URL on the repository's Environment page under Settings → Repositories (team ENG; it has no value at repository or account scope). " +
+      "set API_URL on the repository's Environment page under Settings → Your projects → the project → Repositories → the repository (team ENG; it has no value at repository or account scope). " +
         "DATABASE_URL references DB_SECRET, DB_HOST, which have no value; the checkout refuses it before work starts. " +
         "acme/billing is missing STRIPE_KEY. " +
         "in acme/web, SENTRY_DSN references SENTRY_TOKEN, which has no value; the checkout refuses it before work starts",

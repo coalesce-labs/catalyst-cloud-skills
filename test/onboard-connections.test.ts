@@ -121,7 +121,7 @@ describe("onboarding personal grants", () => {
     const beforeInstall = readOnboard("connected", "absent", false);
     expect(beforeInstall.doc.next?.part).not.toBe("person");
     expect(beforeInstall.doc.next?.action).toMatch(
-      /install the GitHub App.*registering that repository/,
+      /install the GitHub App.*register it on Your projects/,
     );
 
     const afterInstall = readOnboard("connected", "absent", true);
