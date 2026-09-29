@@ -13,7 +13,7 @@ workstation also installs `coalesce-labs/catalyst-dev-skills` for research, plan
 shipping. Neither pack comes from the deprecated `coalesce-labs/catalyst` local runtime.
 
 **The credential is separate from the install.** No install command carries a key. The person's own
-personal key enters once, through `catalyst-skills login`, and lands in a `0600` config file. Keep the connect step
+personal key enters once, through `catalyst login`, and lands in a `0600` config file. Keep the connect step
 beside the install commands, never inside them.
 
 ---
@@ -82,27 +82,27 @@ The skills call one CLI, and the CLI holds your credential. Install it once and 
 — the keyless way logs you in as yourself, with nothing to mint or paste:
 
 ```sh
-npm install -g @catalyst-cloud/catalyst-skills
-catalyst-skills login
-catalyst-skills ready
+npm install -g @catalyst-cloud/cli
+catalyst login
+catalyst ready
 ```
 
-`catalyst-skills login` with no key opens a device-code login: it prints a short code and a URL, you
+`catalyst login` with no key opens a device-code login: it prints a short code and a URL, you
 approve in your browser (or from your phone on a machine with no browser), and this machine connects
-as you. The short-lived session refreshes silently afterwards. `npx @catalyst-cloud/catalyst-skills login`
+as you. The short-lived session refreshes silently afterwards. `npx -p @catalyst-cloud/cli catalyst login`
 works without the global install.
 
 Prefer a key? Mint a **personal key** at Settings → API keys (every member can; no admin needed) and
 pass it — the environment form keeps it out of your shell history:
 
 ```sh
-CATALYST_CLOUD_TOKEN=<your-personal-key> catalyst-skills login
+CATALYST_CLOUD_TOKEN=<your-personal-key> catalyst login
 ```
 
 `--key <your-personal-key>` is the third form, for a script.
 
-If `catalyst-skills ready` reports the runtime as unsupported (Node older than 22.15, or bun older
-than 1.4), run `npx -y @catalyst-cloud/catalyst-skills runtime install` — it installs a pinned Node
+If `catalyst ready` reports the runtime as unsupported (Node older than 22.15, or bun older
+than 1.4), run `npx -y -p @catalyst-cloud/cli catalyst runtime install` — it installs a pinned Node
 under this CLI's own cache and uses it from then on, without changing your machine's default Node.
 
 The connect step is a `###` under `## Install`, never its own top-level section. It has to sit

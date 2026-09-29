@@ -130,7 +130,7 @@ export async function cmdEvents(
     if (controller.signal.aborted) return sub === "wait-for" ? 1 : 0;
     if ((error as { code?: string }).code === "ENOENT")
       throw new CliError(
-        `event cache is absent at ${directory} — start it with: catalyst-skills replica start --detach`,
+        `event cache is absent at ${directory} — start it with: catalyst replica start --detach`,
         "events-absent",
         3,
       );

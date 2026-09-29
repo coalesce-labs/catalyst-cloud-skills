@@ -30,13 +30,13 @@ const PLATFORM_ARCH: Record<string, readonly string[]> = {
 export function tarballFor(version: string, platform: string, arch: string): Tarball {
   if (platform === "win32") {
     throw new CliError(
-      "catalyst-skills runtime install does not support Windows yet — supported: darwin (arm64, x64) and linux (x64, arm64). Use whatever Node 22.15+ or bun 1.4+ you already have on Windows.",
+      "catalyst runtime install does not support Windows yet — supported: darwin (arm64, x64) and linux (x64, arm64). Use whatever Node 22.15+ or bun 1.4+ you already have on Windows.",
       "runtime-unsupported-platform",
     );
   }
   const arches = PLATFORM_ARCH[platform];
   if (!arches || !arches.includes(arch)) {
-    throw new CliError(`catalyst-skills runtime install does not support ${platform}/${arch} — supported: darwin (arm64, x64) and linux (x64, arm64)`, "runtime-unsupported-platform");
+    throw new CliError(`catalyst runtime install does not support ${platform}/${arch} — supported: darwin (arm64, x64) and linux (x64, arm64)`, "runtime-unsupported-platform");
   }
   const file = `node-v${version}-${platform}-${arch}.tar.gz`;
   return { file, url: `https://nodejs.org/dist/v${version}/${file}`, shasums: `https://nodejs.org/dist/v${version}/SHASUMS256.txt` };

@@ -91,11 +91,11 @@ describe("ready", () => {
       expect(c.fix, `${c.id} must name a fix`).toBeTruthy();
       expect(c.who, `${c.id} must name who`).toBeTruthy();
     }
-    expect(report.checks.find((c) => c.id === "config")?.fix).toContain("npx @catalyst-cloud/catalyst-skills login");
+    expect(report.checks.find((c) => c.id === "config")?.fix).toContain("npx -p @catalyst-cloud/cli catalyst login");
     expect(report.checks.find((c) => c.id === "sdk")?.line).toContain("no registerHooks");
     expect(await main(["ready"], ctx)).toBe(1);
     expect(ctx.out.join("\n")).toMatch(/NOT READY$/);
-    expect(ctx.out.join("\n")).toMatch(/fix: npx @catalyst-cloud\/catalyst-skills login/);
+    expect(ctx.out.join("\n")).toMatch(/fix: npx -p @catalyst-cloud\/cli catalyst login/);
   });
   test("a missing cliPath heals to the running launcher; an out-of-range contract and a corrupt config each fail by name", async () => {
     await seedJoined(home, server, { config: { cliPath: `${home}/nope.js` } });
@@ -109,7 +109,7 @@ describe("ready", () => {
     expect(text).toMatch(/^FAIL {2}contract: version 3\.0\.0 is outside/m);
     // The out-of-range fix must pin @latest (`npm update -g` never crosses a caret below 1.0.0) AND
     // re-login so the new global bin rewrites customer.json.cliPath.
-    expect(text).toContain("fix: npm install -g @catalyst-cloud/cli@latest && catalyst-skills login");
+    expect(text).toContain("fix: npm install -g @catalyst-cloud/cli@latest && catalyst login");
     expect(text).not.toContain("npm update");
     writeFileSync(`${home}/.config/catalyst-cloud/customer.json`, "{corrupt");
     const c2 = makeCtx(home);
@@ -324,7 +324,7 @@ describe("more ready branches", () => {
     const note = j.checks.find((c) => c.id === "bundle");
     expect(note).toMatchObject({ note: true });
     expect(note!.line).toContain("9.9.9");
-    expect(note!.line).toContain("npm install -g @catalyst-cloud/cli@latest && catalyst-skills login");
+    expect(note!.line).toContain("npm install -g @catalyst-cloud/cli@latest && catalyst login");
     expect(note!.line).not.toContain("npm update");
   });
   test("no bundle note when the installed bundle meets the contract's minimum", async () => {
@@ -403,7 +403,7 @@ describe("ready never recommends starting the replica (CTC-2499)", () => {
     seedWriterState(home, {
       consecutiveFailures: 5,
       lastError: "/snapshot 503",
-      stopped: { at: 1_700_000_000_000, reason: "5 consecutive snapshot failures", restartWith: "catalyst-skills replica start --detach" },
+      stopped: { at: 1_700_000_000_000, reason: "5 consecutive snapshot failures", restartWith: "catalyst replica start --detach" },
     });
     expect(await main(["ready", "--json"], ctx)).toBe(0); // still a note, never a failure
     const j = JSON.parse(ctx.out.join("\n")) as {
@@ -433,13 +433,13 @@ describe("ready never recommends starting the replica (CTC-2499)", () => {
     seedWriterState(home, {
       consecutiveFailures: 5,
       lastError: "/snapshot 503",
-      stopped: { at: 1_700_000_000_000, reason: "5 consecutive snapshot failures", restartWith: "catalyst-skills replica start --detach" },
+      stopped: { at: 1_700_000_000_000, reason: "5 consecutive snapshot failures", restartWith: "catalyst replica start --detach" },
     });
     await main(["ready"], ctx);
     const text = ctx.out.join("\n");
     expect(text).toContain("5 consecutive snapshot failures");
     expect(text).toContain("/snapshot 503");
-    expect(text).toContain("catalyst-skills replica start --detach");
+    expect(text).toContain("catalyst replica start --detach");
     expect(text.split("\n").filter((l) => l.startsWith("note  replica:"))).toHaveLength(1);
   });
 });
@@ -624,7 +624,7 @@ describe("ready reports when the installed skill bundle or CLI is behind the pub
     expect(note).toMatchObject({ ok: false, note: true });
     expect(note.line).toContain(readManifest().version);
     expect(note.line).toContain("9.9.9");
-    expect(note.line).toContain("npm install -g @catalyst-cloud/cli@latest && catalyst-skills login");
+    expect(note.line).toContain("npm install -g @catalyst-cloud/cli@latest && catalyst login");
     expect(note.line).not.toContain("npm update");
   });
 

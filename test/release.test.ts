@@ -1,4 +1,4 @@
-// release.test.ts — `catalyst-skills release`: a person's release of a parked or held ticket (or one
+// release.test.ts — `catalyst release`: a person's release of a parked or held ticket (or one
 // failure class on one team) through the contract's route, against the fixture cloud. The route path
 // comes from the contract (the fixture serves it under an unusual prefix, so a hard-coded path fails
 // here); a refusal exits 1 and prints every refusal's human action; nothing releases without a
@@ -107,7 +107,7 @@ describe("release <ticket>", () => {
   test("nothing held is exit 0 and points at explain", async () => {
     server.release = { status: 200, body: { ticket: "ENG-1", outcome: "nothing-held", dryRun: false, released: [], refused: [], warnings: [], auditId: null } };
     expect(await main(["release", "ENG-1", "--because", "x"], ctx)).toBe(0);
-    expect(ctx.out.join("\n")).toContain("ENG-1: nothing holds this ticket — run `catalyst-skills explain ENG-1` for why it is not running");
+    expect(ctx.out.join("\n")).toContain("ENG-1: nothing holds this ticket — run `catalyst explain ENG-1` for why it is not running");
   });
 
   test("warnings are printed", async () => {

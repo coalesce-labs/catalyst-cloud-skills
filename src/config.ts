@@ -171,7 +171,7 @@ export const INSTALL_COMMAND = "curl -fsSL https://staging.catalystcloud.dev/ins
 /** The one upgrade command every hint prints: update the installed package, then log in again so
  *  customer.json records the new launcher path. */
 export function upgradeCommand(root?: string): string {
-  return `npm install -g ${updatePackageName(root)}@latest && catalyst-skills login`;
+  return `npm install -g ${updatePackageName(root)}@latest && catalyst login`;
 }
 
 /**

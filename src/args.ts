@@ -323,7 +323,7 @@ export function flagInt(args: ParsedArgs, name: string, fallback: number): numbe
 
 /** The help text for one verb: usage line, then every flag in its table and the global ones. */
 export function verbHelp(verb: string): string {
-  const lines = [`Usage: catalyst-skills ${VERB_USAGE[verb] ?? verb}`, ""];
+  const lines = [`Usage: catalyst ${VERB_USAGE[verb] ?? verb}`, ""];
   const table = FLAG_TABLES[verb] ?? {};
   const names = Object.keys(table);
   if (names.length > 0) {

@@ -79,7 +79,7 @@ export function renderTicketRelease(ticket: string, r: TicketReleaseResult): str
   const lines: string[] = [];
   const dry = r.dryRun === true;
   if (r.outcome === "nothing-held") {
-    lines.push(`${ticket}: nothing holds this ticket — run \`catalyst-skills explain ${ticket}\` for why it is not running`);
+    lines.push(`${ticket}: nothing holds this ticket — run \`catalyst explain ${ticket}\` for why it is not running`);
   } else if (r.outcome === "refused") {
     lines.push(dry ? `${ticket} (dry run): would be refused — nothing would be released:` : `${ticket}: refused — nothing was released:`);
     for (const x of r.refused ?? []) lines.push(refusalLine(x));
