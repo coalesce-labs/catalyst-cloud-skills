@@ -177,6 +177,7 @@ export const FLAG_TABLES: Record<string, FlagTable> = {
     write: { value: false, help: "agents-block: write or update the block in AGENTS.md (working tree only)" },
     apply: { value: false, help: "agent-setup: perform the portable-layout plan in the working tree" },
     "with-check": { value: false, help: "agent-setup: also write scripts/agents-md-check.mjs, a CI check for the layout" },
+    reason: { value: true, help: "pause: why (required, kept with who and when); resume: optional" },
   },
   connections: {
     wait: { value: true, help: "start: wait up to this many seconds for browser approval (0-600)" },
@@ -225,7 +226,7 @@ export const VERB_USAGE: Record<string, string> = {
   identity: "identity linear <status|options|set> [<linearUserId>] [--json]",
   capabilities: "capabilities [--json]",
   project: "project wip-limit <get|set <n>|set default> [--team K] [--json]",
-  repo: "repo <agents-block <path> [--write]|agent-setup <path> [--apply] [--with-check]> [--json]",
+  repo: "repo <status|pause <owner/name> --reason <text>|resume <owner/name>|agents-block <path> [--write]|agent-setup <path> [--apply] [--with-check]> [--json]",
   legacy: "legacy [--remove [--data] [--yes]] [--json]",
   connections: "connections personal <linear|github> <start|status> [--wait <seconds>] [--json]",
   release:
