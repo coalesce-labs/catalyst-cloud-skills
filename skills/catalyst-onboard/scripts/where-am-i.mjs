@@ -14,6 +14,7 @@ import { runLocalSync } from "./local-sync.mjs";
 const SPEC = {
   next: { help: "print only the single next step" },
   json: { help: "one JSON document instead of the report" },
+  repo: { value: true, help: "a checkout of a mapped repository on this machine: its agent setup (AGENTS.md block, portable layout) is read and reported, never changed" },
 };
 const NOTES = [
   "Reads, in this order: `status` (machine), `ready --json` (machine checks and project checks, kept apart),",
@@ -22,6 +23,7 @@ const NOTES = [
   "`contract --path codingAccounts` and `accounts --json` (coding accounts, and which one needs a new credential), and each",
   "project's hosts_current check with its fixedWhere (host), and each project's environment_declared check with its per-repository notes (repository declarations). The teams read is refreshed, so a mapping just saved reads back mapped.",
   "Reads `capabilities --json` once: when the installed CLI can run a step for this person's role (`team check`, `team map`), the next step is that command; otherwise the page, with who can.",
+  "With --repo <path>, reads `repo agent-setup <path> --json` (a read; nothing changes) and adds a `repository agent setup` part that never blocks: the Catalyst block in AGENTS.md and the portable layout, with the writes named for the person to approve.",
   "Also runs `gh repo view <owner>/thoughts` for each registered repository's owner, as a note: it shows the repository exists, never that the GitHub App can reach it.",
   "When the tenant serves a contract version this CLI refuses, runs `npm view @catalyst-cloud/cli version` once to say whether a newer CLI is published.",
   "Writes nothing and changes nothing. Runs before this machine is connected — that is one of the states it reports.",
@@ -29,7 +31,7 @@ const NOTES = [
 
 const { help, flags, positionals } = parseFlags(process.argv.slice(2), SPEC);
 if (help) {
-  printHelp("node scripts/where-am-i.mjs [--next] [--json]", SPEC, NOTES);
+  printHelp("node scripts/where-am-i.mjs [--next] [--json] [--repo <path>]", SPEC, NOTES);
   process.exit(0);
 }
 if (positionals.length > 0) {
@@ -593,6 +595,45 @@ if (!connected) {
   }
 }
 
+// ── repository agent setup (only with --repo) ─────────────────────────────────────────────────────
+// A checkout the person named. Read through the CLI's own verb, never by this script opening files:
+// the verb is the one place that knows the block's words and the portable layout. Never blocking:
+// a repository that is not portable still runs; this is an offer, and the writes wait for a yes.
+let repoNote = null;
+let repoNext = null;
+if (typeof flags.repo === "string" && flags.repo !== "") {
+  const REPO_INSTRUMENT = `repo agent-setup ${flags.repo} --json`;
+  if (!connected) {
+    add("repository agent setup", REPO_INSTRUMENT, "unreadable", ["not readable until this machine is connected"], null, null, false);
+  } else if (!verbAvailable("repo agent-setup")) {
+    add("repository agent setup", REPO_INSTRUMENT, "unreadable", ["this CLI has no repo agent-setup verb; update the CLI to read a checkout's agent setup"], null, null, false).next =
+      "update the CLI (it lacks repo agent-setup); the checkout's agent setup cannot be read until then (does not block anything)";
+  } else {
+    const res = runCli(["repo", "agent-setup", flags.repo, "--json"]);
+    const doc = tryJson(res.stdout);
+    if (doc === null) {
+      add("repository agent setup", REPO_INSTRUMENT, "unreadable", [`the checkout could not be read (${(res.stderr || res.stdout).trim().split("\n")[0] || "no output"})`], null, null, false).next =
+        `run this again with the checkout's real path; ${flags.repo} could not be read`;
+    } else {
+      const block = doc.agentsMd?.block ?? "unknown";
+      const verdict = doc.verdict ?? "unknown";
+      const ok = verdict === "portable" && block === "current";
+      const lines = [
+        `AGENTS.md: ${doc.agentsMd?.present ? `present; Catalyst block ${block}` : "absent"}`,
+        `CLAUDE.md: ${doc.claudeMd?.present ? (doc.claudeMd.importsAgentsMd ? "imports AGENTS.md" : `${doc.claudeMd.otherLines ?? "?"} lines of its own guidance, no @AGENTS.md import`) : "absent"}`,
+        `layout: ${verdict}${Array.isArray(doc.plan) && doc.plan.length ? ` — ${doc.plan.join("; ")}` : ""}${Array.isArray(doc.blockers) && doc.blockers.length ? ` — by hand: ${doc.blockers.join("; ")}` : ""}`,
+      ];
+      const offers = [];
+      if (block !== "current") offers.push(`the Catalyst block for AGENTS.md (catalyst repo agents-block ${flags.repo} --write)`);
+      if (verdict === "convertible") offers.push(`the portable layout (catalyst repo agent-setup ${flags.repo} --apply)`);
+      if (verdict === "needs_hand_merge") offers.push("a hand merge first (the layout line names what)");
+      repoNext = ok ? null : `say in one clause what the checkout holds, then offer ${offers.join(" and ")}, each after a yes, on a branch for the pull request the person opens`;
+      add("repository agent setup", REPO_INSTRUMENT, ok ? "ok" : "unfinished", lines, ok ? null : "you, after the person's yes, in their checkout; the pull request is theirs", ok ? null : `catalyst repo agent-setup ${flags.repo}`, false);
+      if (!ok) repoNote = `repository ${flags.repo}: Catalyst block ${block}, layout ${verdict} — offer ${offers.join(" and ")} after a yes (references/repository-agent-setup.md)`;
+    }
+  }
+}
+
 // ── the single next step ──────────────────────────────────────────────────────────────────────────
 // The machine's next action is not one sentence: an unconnected machine needs the login, and a
 // connected one needs whatever check failed — and `ready` already printed that check's own fix, so
@@ -620,6 +661,7 @@ const NEXT = {
   repositories: "install the GitHub App on the Connections page, granting it the repository you want worked; registering that repository on the Repositories page, attached to the project, is the step right after",
   "coding accounts": accountsNext,
   "repository declarations": declNext,
+  "repository agent setup": repoNext ?? "read the checkout's agent setup again",
   host: "connect a Catalyst host",
 };
 // The parts are read in the order their data allows and reported in the order a person can act on
@@ -627,7 +669,7 @@ const NEXT = {
 // workspace's Linear integration, the project, the GitHub App with its repository, the person's own
 // connected accounts (personal GitHub after the repository proves the App), the repository's
 // declaration, and last the host. `--next` is the first unfinished part in this order.
-const ORDER = ["machine", "coding accounts", "account", "projects", "repositories", "person", "repository declarations", "host"];
+const ORDER = ["machine", "coding accounts", "account", "projects", "repositories", "person", "repository declarations", "repository agent setup", "host"];
 parts.sort((a, b) => ORDER.indexOf(a.part) - ORDER.indexOf(b.part));
 // A personal Linear grant cannot start until the tenant's Linear workspace exists. Once that account
 // connection is present, a missing personal grant becomes the next member step before project setup.
@@ -680,9 +722,9 @@ if (contractMismatch !== null && stuck !== null) {
 const finished = parts.every((p) => p.verdict === "ok");
 
 if (flags.json) {
-  console.log(JSON.stringify({ cli: via, connected, cloud, personalConnections, parts, localSync, next, finished, notes: retireNote === null ? [] : [retireNote] }));
+  console.log(JSON.stringify({ cli: via, connected, cloud, personalConnections, parts, localSync, next, finished, notes: [retireNote, repoNote].filter((n) => n !== null) }));
 } else if (flags.next) {
-  process.on("exit", () => { if (retireNote !== null) console.log(`note: ${retireNote}`); });
+  process.on("exit", () => { for (const n of [retireNote, repoNote]) if (n !== null) console.log(`note: ${n}`); });
   if (next === null) console.log("nothing left: every part is finished, a coding account is enrolled and the host check passes. Move one card into the project's start stage (usually Todo).");
   else console.log(`${next.part}: ${next.action}${next.blocking ? "" : " (does not block the steps below)"}${next.owner ? ` — who: ${next.owner}` : ""}${next.where ? ` — ${next.where.startsWith("http") ? "where" : "do"}: ${next.where}` : ""}`);
 } else {

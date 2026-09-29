@@ -18,12 +18,19 @@
 //                         has team check: the guide runs `team check ENG` itself, not the Re-check button
 //   project-no-toml       a mapped project whose default repository has no .catalyst/catalyst.toml:
 //                         the repository's settings file is next
+//   repo-claude-only      like project-no-toml, with the repository checked out at ~/repos/app holding a
+//                         CLAUDE.md full of guidance, no AGENTS.md and a real .claude/skills: the guide reads
+//                         the agent setup, says what it found, and asks before changing anything
 //   all-ready             every part is finished: run `ready`, then move one ticket
 import { chmodSync, mkdirSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
-const STATES = ["nothing-connected", "claude-only", "api-key-only", "cancelled-account", "no-project", "project-unchecked", "project-no-toml", "all-ready"];
+const STATES = ["nothing-connected", "claude-only", "api-key-only", "cancelled-account", "no-project", "project-unchecked", "project-no-toml", "repo-claude-only", "all-ready"];
+// The real CLI, for the verbs that are local logic on a checkout (`repo …`): the stand-in cannot fake
+// those honestly, so it hands them to the bin of the checkout this scaffold lives in (dist must be built).
+const REAL_CLI = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..", "bin", "catalyst.js");
 const args = process.argv.slice(2);
 const state = args[0];
 const homeFlag = args.indexOf("--home");
@@ -49,6 +56,8 @@ const CAPABILITIES = { cli: { name: "catalyst", version: "0.9.5" }, contract: { 
   { verb: "team check", does: "run a project's readiness check now", needs: "admin", routes: [], since: "0.9.5", availability: "available", missing: [] },
   { verb: "team map", does: "map a project's stages", needs: "admin", routes: [], since: "0.9.5", availability: "available", missing: [] },
   { verb: "team adopt", does: "adopt the workflow", needs: "admin", routes: [], since: "0.9.5", availability: "available", missing: [] },
+  { verb: "repo agents-block", does: "add or refresh the Catalyst block in a checkout's AGENTS.md", needs: "member", routes: [], since: "0.13.1", availability: "available", missing: [] },
+  { verb: "repo agent-setup", does: "read a checkout's agent setup and make it portable on request", needs: "member", routes: [], since: "0.13.1", availability: "available", missing: [] },
 ] };
 const NO_TOML = [{ id: "oauth_scope", state: "pass" }, { id: "hosts_current", state: "pass" }, { id: "environment_declared", state: "fail", reason: "no_environment_declaration" }];
 const READINESS_CHECKS = [
@@ -84,6 +93,7 @@ function answers(s) {
       return { ...base, ...person("absent", "absent"), ...workspace(true), "contract --path teams --json": [], "contract --path merge.repositories --json": [], "contract --path codingAccounts --json": enrolled(1), "accounts --json": { accounts: [CLAUDE] } };
     case "project-unchecked":
       return { ...base, ...person("connected", "connected"), ...workspace(true), "contract --path teams --json": team(UNCHECKED), "contract --path merge.repositories --json": [{ owner: "example", name: "app" }], "contract --path codingAccounts --json": enrolled(1), "accounts --json": { accounts: [CLAUDE] } };
+    case "repo-claude-only":
     case "project-no-toml":
       return { ...base, ...person("connected", "connected"), ...workspace(true), "contract --path teams --json": team(NO_TOML), "contract --path merge.repositories --json": [{ owner: "example", name: "app" }], "contract --path codingAccounts --json": enrolled(1), "accounts --json": { accounts: [CLAUDE] } };
     case "all-ready":
@@ -101,7 +111,9 @@ writeFileSync(
   cli,
   [
     "#!/usr/bin/env node",
-    "import { existsSync, writeFileSync } from 'node:fs'; import { homedir } from 'node:os'; import { join } from 'node:path';",
+    "import { existsSync, writeFileSync } from 'node:fs'; import { homedir } from 'node:os'; import { join } from 'node:path'; import { spawnSync } from 'node:child_process';",
+    // `repo …` is local logic on a checkout: the real CLI answers it, under the ambient runtime.
+    `if (process.argv[2] === "repo") { const r = spawnSync(process.execPath, [${JSON.stringify(REAL_CLI)}, ...process.argv.slice(2)], { stdio: "inherit", env: { ...process.env, CATALYST_SKILLS_RUNTIME: "ambient" } }); process.exit(r.status ?? 1); }`,
     `const answers = ${JSON.stringify(answers(state))};`,
     `const connected = ${connected};`,
     "const a = process.argv.slice(2).join(' ');",
@@ -147,4 +159,15 @@ for (const name of ["catalyst", "catalyst-skills"]) {
 }
 writeFileSync(join(bin, "gh"), "#!/bin/sh\necho 'GraphQL: Could not resolve to a Repository' >&2\nexit 1\n");
 chmodSync(join(bin, "gh"), 0o755);
+// The repo-claude-only state: a checkout of the mapped project's repository with a Claude-only layout.
+if (state === "repo-claude-only") {
+  const repo = join(home, "repos", "app");
+  mkdirSync(join(repo, ".claude", "skills", "deploy"), { recursive: true });
+  mkdirSync(join(repo, "src"), { recursive: true });
+  writeFileSync(join(repo, "CLAUDE.md"), "# app\n\nRun `npm test` before opening a pull request. Migrations live in `src/db/`; never edit a shipped one.\n\nUse conventional commits.\n");
+  writeFileSync(join(repo, ".claude", "skills", "deploy", "SKILL.md"), "---\nname: deploy\ndescription: Deploy the app to staging.\n---\n\nRun `npm run deploy:staging`.\n");
+  writeFileSync(join(repo, "package.json"), JSON.stringify({ name: "app", private: true, scripts: { test: "node --test", "deploy:staging": "echo deploy" } }, null, 2));
+  writeFileSync(join(repo, "src", "index.js"), "export const ok = true;\n");
+  console.log(`repository checkout at ${repo} (CLAUDE.md, .claude/skills, no AGENTS.md)`);
+}
 console.log(`state ${state}: stand-in CLI at ${cli}; config at ${join(configDir, "customer.json")}; add ${bin} to PATH`);

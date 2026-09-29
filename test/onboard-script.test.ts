@@ -36,6 +36,8 @@ interface Scenario {
   readinessStatus?: string;
   /** Extra failing checks on the project (a blocked team's Linear automation conflicts, say). */
   blockingChecks?: Check[];
+  /** What `repo agent-setup <path> --json` answers for any path; omitted, the verb is unknown. */
+  repoSetup?: unknown;
   hostFixedWhere?: { page: string; command: string | null } | null;
   /** The person's role on `me --json`; owner when omitted. */
   role?: string;
@@ -137,6 +139,8 @@ function connectedHome(s: Scenario): string {
       `const contractError = ${JSON.stringify(s.contractError ?? null)};`,
       'if (contractError !== null && a.startsWith("contract --path ")) { process.stderr.write(`contract: 2.2.0 from cloud\\n${contractError}\\n`); process.exit(2); }',
       "if (a in answers) { console.log(JSON.stringify(answers[a])); process.exit(0); }",
+      `const repoSetup = ${JSON.stringify(s.repoSetup ?? null)};`,
+      'if (a.startsWith("repo agent-setup ")) { if (repoSetup === null) { process.stderr.write("unknown verb: repo\\n"); process.exit(9); } console.log(JSON.stringify(repoSetup)); process.exit(0); }',
       // what the real CLI prints when the cached contract lacks the path (an older cloud)
       'if (a.startsWith("contract --path ")) { process.stderr.write(`contract: 1.22.0 from cache\\nthe contract has nothing at "${a.split(" ")[2]}"\\n`); process.exit(2); }',
       "process.stderr.write(`unknown verb: ${a}\\n`); process.exit(9);",
@@ -180,8 +184,8 @@ function run(home: string, args: string[]) {
 const NO_HOST: Check = { id: "hosts_current", state: "unknown", reason: "no_host_connected" };
 const ENROLLED = [{ accountSlot: "slot-1", provider: "claude", status: "active" }];
 
-type Part = { part: string; verdict: string; lines: string[]; owner: string | null; where: string | null };
-type Doc = { parts: Part[]; next: { part: string; action: string; owner: string | null; where: string | null } | null; finished: boolean };
+type Part = { part: string; verdict: string; lines: string[]; owner: string | null; where: string | null; blocking?: boolean };
+type Doc = { parts: Part[]; next: { part: string; action: string; owner: string | null; where: string | null; blocking?: boolean } | null; finished: boolean };
 const json = (home: string) => JSON.parse(run(home, ["--json"]).stdout) as Doc;
 const part = (doc: Doc, name: string) => doc.parts.find((p) => p.part === name)!;
 const PASS: Check = { id: "hosts_current", state: "pass" };
@@ -719,6 +723,51 @@ describe("where-am-i.mjs: a logged-out machine keeps its installed CLI", () => {
     // the keyless login alone, by the installed CLI's own name: no npx line for a machine that holds the
     // CLI, and no key form for a person who has not said they hold one
     expect(doc.next?.where).toBe("catalyst login");
+  });
+});
+
+describe("where-am-i.mjs --repo: the checkout's agent setup, read through the CLI, never blocking", () => {
+  const CAPS = { capabilities: [{ verb: "repo agent-setup", needs: "member", availability: "available" }, { verb: "repo agents-block", needs: "member", availability: "available" }] };
+  const convertible = { path: "/tmp/app", agentsMd: { present: false, block: "absent" }, claudeMd: { present: true, importsAgentsMd: false, otherLines: 3 }, verdict: "convertible", plan: ["create AGENTS.md from CLAUDE.md's content and leave CLAUDE.md as the thin importer (`@AGENTS.md`)"], blockers: [] };
+  const portable = { path: "/tmp/app", agentsMd: { present: true, block: "current" }, claudeMd: { present: true, importsAgentsMd: true, otherLines: 0 }, verdict: "portable", plan: [], blockers: [] };
+  const ready = { codingAccounts: CA_ENROLLED, hostsCurrent: PASS, environmentDeclared: { id: "environment_declared", state: "pass" }, capabilities: CAPS };
+
+  test("a convertible checkout is an unfinished, non-blocking part with the offers named, a note on --next, and the part's do line", () => {
+    const home = connectedHome({ ...ready, repoSetup: convertible });
+    const out = spawnSync(process.execPath, [script, "--json", "--repo", "/tmp/app"], { encoding: "utf8", timeout: 20_000, env: { ...process.env, CATALYST_SKILLS_HOME: home, HOME: home, PATH: "/usr/bin:/bin" } });
+    const doc = JSON.parse(out.stdout) as Doc & { notes: string[] };
+    const p = part(doc, "repository agent setup");
+    expect(p.verdict).toBe("unfinished");
+    expect(p.blocking).toBe(false);
+    expect(p.lines).toEqual(["AGENTS.md: absent", "CLAUDE.md: 3 lines of its own guidance, no @AGENTS.md import", "layout: convertible — create AGENTS.md from CLAUDE.md's content and leave CLAUDE.md as the thin importer (`@AGENTS.md`)"]);
+    expect(p.where).toBe("catalyst repo agent-setup /tmp/app");
+    expect(doc.notes).toEqual(["repository /tmp/app: Catalyst block absent, layout convertible — offer the Catalyst block for AGENTS.md (catalyst repo agents-block /tmp/app --write) and the portable layout (catalyst repo agent-setup /tmp/app --apply) after a yes (references/repository-agent-setup.md)"]);
+    // everything else is done, so this is the next step, and it says it does not block
+    expect(doc.next?.part).toBe("repository agent setup");
+    expect(doc.next?.blocking).toBe(false);
+    expect(doc.next?.action).toMatch(/^say in one clause what the checkout holds, then offer the Catalyst block for AGENTS\.md .* and the portable layout .*, each after a yes, on a branch for the pull request the person opens$/);
+    const next = spawnSync(process.execPath, [script, "--next", "--repo", "/tmp/app"], { encoding: "utf8", timeout: 20_000, env: { ...process.env, CATALYST_SKILLS_HOME: home, HOME: home, PATH: "/usr/bin:/bin" } });
+    expect(next.stdout).toMatch(/\(does not block the steps below\)/);
+    expect(next.stdout).toMatch(/^note: repository \/tmp\/app: Catalyst block absent/m);
+  });
+
+  test("a portable checkout with the block current is ok, with no note; without --repo the part does not exist", () => {
+    const home = connectedHome({ ...ready, repoSetup: portable });
+    const env = { ...process.env, CATALYST_SKILLS_HOME: home, HOME: home, PATH: "/usr/bin:/bin" };
+    const doc = JSON.parse(spawnSync(process.execPath, [script, "--json", "--repo", "/tmp/app"], { encoding: "utf8", timeout: 20_000, env }).stdout) as Doc & { notes: string[] };
+    expect(part(doc, "repository agent setup").verdict).toBe("ok");
+    expect(doc.notes).toEqual([]);
+    const plain = JSON.parse(spawnSync(process.execPath, [script, "--json"], { encoding: "utf8", timeout: 20_000, env }).stdout) as Doc;
+    expect(plain.parts.find((p) => p.part === "repository agent setup")).toBeUndefined();
+  });
+
+  test("an older CLI without the verb reads unreadable and non-blocking, naming the update", () => {
+    const home = connectedHome({ ...ready, capabilities: { capabilities: [] } });
+    const doc = JSON.parse(spawnSync(process.execPath, [script, "--json", "--repo", "/tmp/app"], { encoding: "utf8", timeout: 20_000, env: { ...process.env, CATALYST_SKILLS_HOME: home, HOME: home, PATH: "/usr/bin:/bin" } }).stdout) as Doc;
+    const p = part(doc, "repository agent setup");
+    expect(p.verdict).toBe("unreadable");
+    expect(p.blocking).toBe(false);
+    expect(p.lines[0]).toContain("update the CLI");
   });
 });
 
