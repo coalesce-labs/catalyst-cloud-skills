@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.13.1
+
+The Cloud pack now has eight skills. catalyst-onboard includes connection and setup, and whats-happening includes the guide to how Catalyst works. The guides use the catalyst command and call a tenant your cloud account. They explain asks, holds and the 48-hour fallback from the running code. Install and refresh remove retired Cloud-pack skills that carry the pack's provenance.
+
+The CLI adds project wip-limit get and set, repo agents-block and agent-setup, and legacy. These commands inspect or change a project's WIP limit, check or install repository agent guidance, and find old local runtime files. Legacy cleanup requires consent. The CLI now depends on SDK 0.13.1.
+
 ## 0.13.0
 
 Catalyst's released pieces now share one version line, 0.13: `@catalyst-cloud/cli` and the deprecated `@catalyst-cloud/catalyst-skills` name, these skills, `@catalyst-cloud/sdk`, the installer, and the schema, replicate and read-model libraries. A CLI on 0.13.x belongs with a cloud whose tenant contract names `releaseLine` 0.13. The CLI moves from 0.9 straight to 0.13 and runs on `@catalyst-cloud/sdk` 0.13. The tenant contract keeps its own version, which tracks the document's shape.
