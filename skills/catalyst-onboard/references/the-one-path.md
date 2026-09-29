@@ -18,7 +18,7 @@ Each step states: what it is for, what you ask or run or hand over, **what you r
 
 **For:** giving this machine a credential, so every later read is the person's own. The installer normally did this; you are here only when the script says the machine is not connected.
 
-**You ask:** "Shall I start the login now?" On a yes, run `catalyst-skills login`. It prints a short code and a URL. The person approves it in a browser, from a phone if this machine has none. Do not offer the key form; it exists for a person who already holds a personal key and says so.
+**You ask:** "Shall I start the login now?" On a yes, run `catalyst login`. It prints a short code and a URL. The person approves it in a browser, from a phone if this machine has none. Do not offer the key form; it exists for a person who already holds a personal key and says so.
 
 **Read back:** the `Connected to …` and `Connected as …` lines, then the script again so the machine part flips.
 
@@ -40,7 +40,7 @@ Each step states: what it is for, what you ask or run or hand over, **what you r
 
 **You hand over:** `<their cloud>/settings/connections` (the Integrations page; Settings labels it Connections today), and say: connect Linear. It sends them to Linear to authorise and brings them back.
 
-**Read back:** after they say it is done, re-run the script and read them the `account` line. A resolved workspace is proof. If it still reads unresolved, run `catalyst-skills contract --refresh` and read it again.
+**Read back:** after they say it is done, re-run the script and read them the `account` line. A resolved workspace is proof. If it still reads unresolved, run `catalyst contract --refresh` and read it again.
 
 **Owner:** a workspace owner or admin, in a browser. **Browser by construction**: it is an authorization grant, and no key can perform one.
 
@@ -48,9 +48,11 @@ Each step states: what it is for, what you ask or run or hand over, **what you r
 
 **For:** the project. A project is one Linear team plus the repositories registered to it. Until a project's stages are mapped, a card moved into it does nothing at all; this is the single most common reason a new workspace sees no activity.
 
-**You run:** `catalyst-skills team list` to see the teams without checking readiness. Have the person choose one team key. Then `catalyst-skills team map <KEY>`, or `catalyst-skills team adopt <KEY>` if they want Catalyst's stages created for them: each prints a preview; show it, and pass `--yes --plan-hash <hash>` only after they approve that exact plan. Run `catalyst-skills team check <KEY>` only for the selected team when you need its verdict. The same steps exist on `<their cloud>/settings/linear-teams` (**Map my stages**, **Adopt the Catalyst workflow**) for a person who prefers the page.
+**You run:** `catalyst team list` to see the teams without checking readiness. Have the person choose one team key. Then `catalyst team map <KEY>`, or `catalyst team adopt <KEY>` if they want Catalyst's stages created for them: each prints a preview; show it, and pass `--yes --plan-hash <hash>` only after they approve that exact plan. Run `catalyst team check <KEY>` only for the selected team when you need its verdict. The same steps exist on `<their cloud>/settings/linear-teams` (**Map my stages**, **Adopt the Catalyst workflow**) for a person who prefers the page.
 
-For manual setup, `catalyst-skills team checklist <KEY>` prints the same lines as the browser. If it cannot read the live stages, fix the Linear connection and retry. Moving tickets out of old stages is a separate decision: preview with `team migrate <KEY>`, review source and destination ids and counts, then confirm with `--yes --plan-hash <hash>` from that preview. Retiring emptied source stages requires a later `team migrate <KEY> --retire` preview and a separate approval using its preview hash. `team adopt <KEY> --undo` likewise previews the exact stages previously created by Adopt before asking for confirmation.
+**Read back:** re-run the script and read the `projects` line: the verdict and any failing checks by name. A project that reads `blocked` is not set up whatever its gate says; the script names the blocking checks and their owner. Three of them are Linear's own Git automation rules (in Linear: Settings → Teams → the team → Workflow → Git automation, set the named rule to No action). No Catalyst key can change those, so say so, hand it over, and afterwards run `catalyst team check <KEY>`.
+
+For manual setup, `catalyst team checklist <KEY>` prints the same lines as the browser. If it cannot read the live stages, fix the Linear connection and retry. Moving tickets out of old stages is a separate decision: preview with `team migrate <KEY>`, review source and destination ids and counts, then confirm with `--yes --plan-hash <hash>` from that preview. Retiring emptied source stages requires a later `team migrate <KEY> --retire` preview and a separate approval using its preview hash. `team adopt <KEY> --undo` likewise previews the exact stages previously created by Adopt before asking for confirmation.
 
 **Owner:** a workspace owner or admin, with their own login. You run the commands; the person picks the team and approves each write after seeing its preview. A run that exits 3 stopped before applying anything.
 
@@ -80,9 +82,9 @@ For manual setup, `catalyst-skills team checklist <KEY>` prints the same lines a
 
 **For:** the person. The integrations serve the whole workspace; a connected account is this person's own Linear or GitHub login, so that what Catalyst does for them is attributed to them, and asks assigned to them can be told apart from everyone else's.
 
-**You run:** `catalyst-skills connections personal linear start`. It prints a short-lived URL and tries to open it; if the browser does not open, hand them the URL. Then `catalyst-skills connections personal linear status`. Do GitHub the same way, with `github`, only after the GitHub App is installed and the repository is registered: `catalyst-skills connections personal github start`, then `status`.
+**You run:** `catalyst connections personal linear start`. It prints a short-lived URL and tries to open it; if the browser does not open, hand them the URL. Then `catalyst connections personal linear status`. Do GitHub the same way, with `github`, only after the GitHub App is installed and the repository is registered: `catalyst connections personal github start`, then `status`.
 
-**Read back:** each `status`, and the script's `person` part: their label and role, whether their Linear identity is matched, and each grant. A URL opening is not proof a grant landed. If Linear identity stays unmatched after consent, `catalyst-skills identity linear status`, then `options`; the person picks their own listed identity and you run `catalyst-skills identity linear set <linearUserId>`. An already-resolved or claimed identity, and an inactive seat, need an owner or admin.
+**Read back:** each `status`, and the script's `person` part: their label and role, whether their Linear identity is matched, and each grant. A URL opening is not proof a grant landed. If Linear identity stays unmatched after consent, `catalyst identity linear status`, then `options`; the person picks their own listed identity and you run `catalyst identity linear set <linearUserId>`. An already-resolved or claimed identity, and an inactive seat, need an owner or admin.
 
 **Owner:** you start and check; the person approves in a browser.
 
@@ -90,7 +92,7 @@ For manual setup, `catalyst-skills team checklist <KEY>` prints the same lines a
 
 **For:** the repository's own settings, in `.catalyst/catalyst.toml` on its default branch: the Linear team it belongs to, the names of the variables and secrets its build needs, and its setup commands. Names leave the machine; values are entered once, by them, in the app.
 
-**You ask:** one thing at a time. First: "Shall I draft it from your repository's own build files?" On a yes, ask where the repository is checked out on this machine; if it is not, write the file here for them to add. Then `references/declaring-a-repository.md`: the inventory, the file's shape, the pull request. Say what happens after the merge as context, not as a second task for now. After the merge, an owner or admin approves the revision on the repository's Environment page (Settings → Repositories → the repository → Environment → Setup declaration → Approve this revision) and enters the values on the same page. A workspace-wide declaration, if they want one, goes through `catalyst-skills environment` (read, propose, `--approve`), the one setup write you can perform.
+**You ask:** one thing at a time. First: "Shall I draft it from your repository's own build files?" On a yes, ask where the repository is checked out on this machine; if it is not, write the file here for them to add. Then `references/declaring-a-repository.md`: the inventory, the file's shape, the pull request. Say what happens after the merge as context, not as a second task for now. After the merge, an owner or admin approves the revision on the repository's Environment page (Settings → Repositories → the repository → Environment → Setup declaration → Approve this revision) and enters the values on the same page. A workspace-wide declaration, if they want one, goes through `catalyst environment` (read, propose, `--approve`), the one setup write you can perform.
 
 **Read back:** the script's `repository declarations` part, read from each project's `environment_declared` check: no file yet, invalid, awaiting approval, or in effect, per repository. Names only, never a value.
 
@@ -100,9 +102,9 @@ For manual setup, `catalyst-skills team checklist <KEY>` prints the same lines a
 
 **For:** the only thing that proves setup worked.
 
-**You run:** `catalyst-skills ready`. Its READY does not cover the coding account or the host; the script does. Read them the verdict and every failing line with its own fix and owner. If it says NOT READY, go to `references/who-fixes-what.md` before you touch anything.
+**You run:** `catalyst team check <KEY>` first when the script's next step names it (an owner or admin whose CLI has the verb), then `catalyst ready`. Its READY does not cover the coding account or the host; the script does. Read them the verdict and every failing line with its own fix and owner. If it says NOT READY, go to `references/who-fixes-what.md` before you touch anything.
 
-**Then:** ask them to move one card into the project's start stage (usually Todo) and tell you which ticket it was. That is the whole question; do not offer to explain the pipeline or to search the backlog instead. Then watch. `catalyst-skills explain <ticket>` says why it is or is not about to run. If they opted into local sync, use the optional first-event check in `references/local-sync.md`.
+**Then:** one question, worded like this: "Move one ticket into ENG's start stage (usually Todo) and tell me its id." Nothing else in that turn: no offer to explain the pipeline, to look at the board, or to pick one for them. Then watch. `catalyst explain <ticket>` says why it is or is not about to run. If they opted into local sync, use the optional first-event check in `references/local-sync.md`.
 
 **Read back:** what `explain` actually said, and the first comment the agent leaves on the ticket. If `explain` says the ticket cannot start, the reason it names is the answer; use the `how-catalyst-works` skill for what it means, then `unstick` if something is holding it.
 

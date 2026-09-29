@@ -29,13 +29,13 @@ Enrolling is a browser step, by construction: the person pastes a credential int
 
 1. Hand over the page the script printed for the part (Settings → AI accounts). Say: "Choose the provider, give the account a label you will recognise, and paste the credential the page asks for. Nothing on this side sees it."
 2. Wait. Do not run anything while they are on the page.
-3. When they say it is saved, run `node scripts/where-am-i.mjs` and read them the `coding accounts` part. An enrolled and active account, named by its label, is proof. If the part still says none is enrolled, refresh the contract once (`catalyst-skills contract --refresh`) and read it again.
+3. When they say it is saved, run `node scripts/where-am-i.mjs` and read them the `coding accounts` part. An enrolled and active account, named by its label, is proof. If the part still says none is enrolled, refresh the contract once (`catalyst contract --refresh`) and read it again.
 
 Only a workspace owner or admin can enrol one (the page still says "tenant" in places). If the person is neither, say who can, and stop this step there.
 
 ## Naming accounts
 
-Call an account what the page calls it: its label, else its email, else its slot. `catalyst-skills accounts --json` carries this as `displayName`. Never call one "the first account" or "account 2", and never read out a credential.
+Call an account what the page calls it: its label, else its email, else its slot. `catalyst accounts --json` carries this as `displayName`. Never call one "the first account" or "account 2", and never read out a credential.
 
 ## An account that already exists
 

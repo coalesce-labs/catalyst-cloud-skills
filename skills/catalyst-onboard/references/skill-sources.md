@@ -23,7 +23,7 @@ The `npx skills add --all` command replaces existing same-named directories and 
 
 ## Is each pack there
 
-`catalyst-skills ready` checks the Cloud pack only. Check `catalyst-onboard/SKILL.md` (Cloud pack) and `research-codebase/SKILL.md` (development pack) in the intended directory. If both are there, have the person type `/catalyst-onboard` (`$catalyst-onboard` in Codex).
+`catalyst ready` checks the Cloud pack only. Check `catalyst-onboard/SKILL.md` (Cloud pack) and `research-codebase/SKILL.md` (development pack) in the intended directory. If both are there, have the person type `/catalyst-onboard` (`$catalyst-onboard` in Codex).
 
 ## Migrate an existing installation
 
