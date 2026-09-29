@@ -149,6 +149,7 @@ export function usageText(): string {
     "  catalyst team <list|check|map|adopt|migrate|checklist> ...",
     "  catalyst capabilities [--json]   (what this CLI can do, the role each verb needs, and whether this cloud serves it)",
     "  catalyst project wip-limit <get|set <n>|set default> [--team K]   (a project's new-start WIP limit; members read, owners and admins set)",
+    "  catalyst repo status | repo pause <owner/name> --reason <text> | repo resume <owner/name>   (which repositories are paused, by whom, when and why; owners and admins pause or resume)",
     "  catalyst repo <agents-block <path> [--write]|agent-setup <path> [--apply] [--with-check]>   (a checkout's AGENTS.md block and portable agent layout; working tree only)",
     "  catalyst legacy [--remove [--data] [--yes]]   (leftovers of the old local Catalyst runtime: list them; remove them only on a yes)",
     "  catalyst identity linear <status|options|set> [<linearUserId>] [--json]",

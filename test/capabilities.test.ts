@@ -65,6 +65,8 @@ describe("the table itself", () => {
     expect(needs["project wip-limit set"]).toBe("admin");
     expect(needs["repo agents-block"]).toBe("member");
     expect(needs["repo agent-setup"]).toBe("member");
+    expect(needs["repo status"]).toBe("member");
+    expect(needs["repo pause|resume"]).toBe("admin");
   });
 });
 
