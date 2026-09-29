@@ -21,6 +21,7 @@ const NOTES = [
   "`me --json` and personal connection statuses (person), `contract --path …` for the account, the projects and the repositories,",
   "`contract --path codingAccounts` and `accounts --json` (coding accounts, and which one needs a new credential), and each",
   "project's hosts_current check with its fixedWhere (host), and each project's environment_declared check with its per-repository notes (repository declarations). The teams read is refreshed, so a mapping just saved reads back mapped.",
+  "Reads `capabilities --json` once: when the installed CLI can run a step for this person's role (`team check`, `team map`), the next step is that command; otherwise the page, with who can.",
   "Also runs `gh repo view <owner>/thoughts` for each registered repository's owner, as a note: it shows the repository exists, never that the GitHub App can reach it.",
   "When the tenant serves a contract version this CLI refuses, runs `npm view @catalyst-cloud/cli version` once to say whether a newer CLI is published.",
   "Writes nothing and changes nothing. Runs before this machine is connected — that is one of the states it reports.",
@@ -45,6 +46,15 @@ let personalGithubIncomplete = false;
 let personalNext = null;
 let workspaceResolved = false;
 let repositoryRegistered = false;
+// what the installed CLI can do, read once from `capabilities --json` (an older CLI has no
+// such verb and reads as "nothing known"), and the person's role from `me`. Together they decide
+// whether a next step is a command this person can run or a page for the person who can.
+let capabilities = null;
+let personRole = null;
+const canManage = () => personRole === "admin" || personRole === "owner";
+const capability = (verb) => (Array.isArray(capabilities) ? capabilities.find((c) => c && c.verb === verb) : undefined);
+const verbAvailable = (verb) => { const c = capability(verb); return c?.availability === "available" && (c.needs === "member" || canManage()); };
+const verbAdminOnly = (verb) => { const c = capability(verb); return c?.availability === "available" && c.needs === "admin" && !canManage(); };
 // `blocking` is false for a finding that is real and reportable but does not stop the next step —
 // an unmatched Linear identity is the one that matters: it must be said, and it must not become the
 // thing the person is told to go and do before they can map a project.
@@ -75,7 +85,7 @@ const readContract = (args) => {
 const status = runCli(["status"]);
 if (!status.ran) {
   process.stderr.write(`${status.stderr}\n`);
-  process.stderr.write(`the catalyst-skills CLI could not be started. Install it, then run this again.\n`);
+  process.stderr.write(`the catalyst CLI could not be started. Install it, then run this again.\n`);
   process.exit(2);
 }
 const statusLines = status.stdout.split("\n").map((l) => l.trim()).filter(Boolean);
@@ -128,33 +138,38 @@ if (connected) {
   localSync = {
     assessment: { verdict: "unknown", current: false, reason: "connect this machine before local freshness can be checked" },
     started: false,
-    recovery: "catalyst-skills login",
+    recovery: "catalyst login",
   };
 }
 add(
   "machine",
-  "catalyst-skills status, and the non-team checks of catalyst-skills ready",
+  "catalyst status, and the non-team checks of catalyst ready",
   machineVerdict,
   machineLines,
   "you, on this machine",
-  // The keyless login alone: a person who holds a personal key already knows the key form.
-  connected ? null : CONNECT_LINE.split(" (or")[0],
+  // The keyless login alone: a person who holds a personal key already knows the key form. A machine
+  // that holds the CLI is told its own command; only one with no CLI at all gets the npx line.
+  connected ? null : cliTarget().recorded ? "catalyst login" : CONNECT_LINE.split(" (or")[0],
 );
+if (connected) {
+  const capDoc = tryJson(runCli(["capabilities", "--json"]).stdout);
+  capabilities = Array.isArray(capDoc?.capabilities) ? capDoc.capabilities : null;
+}
 
 // ── person ────────────────────────────────────────────────────────────────────────────────────────
 if (!connected) {
-  add("person", "catalyst-skills me", "unreadable", ["not readable until this machine is connected"], null, null);
+  add("person", "catalyst me", "unreadable", ["not readable until this machine is connected"], null, null);
 } else {
   const me = runCli(["me", "--json"]);
   const doc = tryJson(me.stdout);
   const user = doc && typeof doc.user === "object" && doc.user !== null ? doc.user : null;
   if (doc === null) {
-    add("person", "catalyst-skills me", "unreadable", [`me could not be read (${(me.stderr || me.stdout).trim().split("\n")[0] ?? "no output"})`], null, null).next =
-      "run this again; catalyst-skills me could not be read, so no step after it can be named yet";
+    add("person", "catalyst me", "unreadable", [`me could not be read (${(me.stderr || me.stdout).trim().split("\n")[0] ?? "no output"})`], null, null).next =
+      "run this again; catalyst me could not be read, so no step after it can be named yet";
   } else if (user === null) {
     add(
       "person",
-      "catalyst-skills me",
+      "catalyst me",
       "unfinished",
       ["this credential names no person — it is a host credential, so nothing an agent writes will carry a name"],
       "you: connect again with your own login",
@@ -162,6 +177,7 @@ if (!connected) {
     );
   } else {
     const matched = typeof user.linearUserId === "string" && user.linearUserId !== "";
+    personRole = typeof user.role === "string" ? user.role : null;
     const grantLines = [];
     for (const provider of ["linear", "github"]) {
       const read = runCli(["connections", "personal", provider, "status", "--json"]);
@@ -180,17 +196,17 @@ if (!connected) {
         personalGrantIncomplete = true;
         if (provider === "linear") personalLinearIncomplete = true;
         else personalGithubIncomplete = true;
-        grantLines.push(`personal ${provider}: ${outcome === "unavailable" ? "temporarily unavailable; grant state unknown" : "could not be checked; update the catalyst-skills CLI or inspect its status output"}`);
+        grantLines.push(`personal ${provider}: ${outcome === "unavailable" ? "temporarily unavailable; grant state unknown" : "could not be checked; update the catalyst CLI or inspect its status output"}`);
         if (provider === "linear") personalNext ??= "re-check your personal linear connection";
       }
     }
     add(
       "person",
-      "catalyst-skills me, and catalyst-skills connections personal <provider> status --json",
+      "catalyst me, and catalyst connections personal <provider> status --json",
       matched && !personalGrantIncomplete ? "ok" : "unfinished",
-      [`${user.label ?? "(unnamed)"} (${user.role ?? "role unknown"})`, matched ? "Linear identity matched" : "Linear identity NOT matched — asks assigned to you cannot be told apart from everyone else's. It blocks nothing below. Run catalyst-skills identity linear options for self-service recovery; personal Linear consent normally binds its viewer automatically.", ...grantLines],
+      [`${user.label ?? "(unnamed)"} (${user.role ?? "role unknown"})`, matched ? "Linear identity matched" : "Linear identity NOT matched — asks assigned to you cannot be told apart from everyone else's. It blocks nothing below. Run catalyst identity linear options for self-service recovery; personal Linear consent normally binds its viewer automatically.", ...grantLines],
       personalGrantIncomplete ? "you" : matched ? null : "a workspace owner or admin",
-      personalGrantIncomplete ? "catalyst-skills connections personal <provider> start or status" : matched ? null : link("/settings/account"),
+      personalGrantIncomplete ? "catalyst connections personal <provider> start or status" : matched ? null : link("/settings/account"),
       false,
     );
   }
@@ -198,13 +214,13 @@ if (!connected) {
 
 // ── account ───────────────────────────────────────────────────────────────────────────────────────
 if (!connected) {
-  add("account", "catalyst-skills contract --path account", "unreadable", ["not readable until this machine is connected"], null, null);
+  add("account", "catalyst contract --path account", "unreadable", ["not readable until this machine is connected"], null, null);
 } else {
   const acct = readContract(["contract", "--path", "account", "--json"]);
   const doc = tryJson(acct.stdout);
   if (doc === null) {
-    add("account", "catalyst-skills contract --path account", "unreadable", ["the account block could not be read — try: catalyst-skills contract --refresh"], null, null).next =
-      "refresh the contract (catalyst-skills contract --refresh), then run this again; the account could not be read, so no step after it can be named yet";
+    add("account", "catalyst contract --path account", "unreadable", ["the account block could not be read — try: catalyst contract --refresh"], null, null).next =
+      "refresh the contract (catalyst contract --refresh), then run this again; the account could not be read, so no step after it can be named yet";
   } else {
     const workspace = typeof doc.linearWorkspaceSlug === "string" && doc.linearWorkspaceSlug !== "" ? doc.linearWorkspaceSlug : typeof doc.linearWorkspaceId === "string" && doc.linearWorkspaceId !== "" ? doc.linearWorkspaceId : null;
     workspaceResolved = workspace !== null;
@@ -216,7 +232,7 @@ if (!connected) {
     if (envDoc === null) {
       envLines.push(`environment: not readable (${(env.stderr || env.stdout).trim().split("\n")[0] ?? "no output"})`);
     } else if (envDoc.current === null || envDoc.current === undefined) {
-      envLines.push("environment: nothing declared yet — declare it with `catalyst-skills environment propose --file <path> --approve`");
+      envLines.push("environment: nothing declared yet — declare it with `catalyst environment propose --file <path> --approve`");
     } else {
       envLines.push(`environment: revision ${envDoc.current.revision} (${envDoc.current.canonicalHash}), ${envDoc.isApproved ? "approved" : "NOT approved — a proposal nobody approved changes nothing"}`);
       envLines.push(envDoc.delivered ? `environment delivered to phases: revision ${envDoc.delivered.revision}` : "environment delivered to phases: nothing yet");
@@ -225,7 +241,7 @@ if (!connected) {
     }
     add(
       "account",
-      "catalyst-skills contract --path account, and catalyst-skills environment read",
+      "catalyst contract --path account, and catalyst environment read",
       workspace === null ? "unfinished" : "ok",
       [
         `${doc.name ?? "(unnamed tenant)"} (${doc.slug ?? "?"})`,
@@ -241,9 +257,30 @@ if (!connected) {
 
 // The host part reads the same rows, so they are kept rather than read twice.
 let teamRows = null;
+// The contract's readinessChecks metadata (severity and owner per check id), read once and shared by
+// the projects, host and declarations parts. An older cloud that has none answers [].
+let readinessMetaCache;
+const readinessMeta = () => {
+  if (readinessMetaCache === undefined) {
+    const m = tryJson(readContract(["contract", "--path", "readinessChecks", "--json"]).stdout);
+    readinessMetaCache = Array.isArray(m) ? m : [];
+  }
+  return readinessMetaCache;
+};
+// Linear's own Git automation rules, by check id, as the Settings → Workflow → Git automation screen
+// names them. A rule that moves a card is a conflict with the stage Catalyst manages, and no Catalyst
+// key can change a Linear automation rule: the fix is in Linear, by a Linear admin.
+const LINEAR_AUTOMATION_RULES = {
+  linear_automation_pr_open: "On PR open",
+  linear_automation_pr_review: "On PR review request or activity",
+  linear_automation_pr_ready: "On PR ready for merge",
+  linear_automation_pr_merge: "On PR merge",
+};
+let blockedProjects = [];
+
 // ── projects (a project is one Linear team) ───────────────────────────────────────────────────────
 if (!connected) {
-  add("projects", "catalyst-skills contract --path teams", "unreadable", ["not readable until this machine is connected"], null, null);
+  add("projects", "catalyst contract --path teams", "unreadable", ["not readable until this machine is connected"], null, null);
 } else {
   // The mapping write updates the cloud before the cached contract's dispatchGate projection.
   // Revalidate this one read so a successful save does not appear unmapped on the next step.
@@ -252,8 +289,8 @@ if (!connected) {
   const rows = Array.isArray(doc) ? doc : null;
   teamRows = rows;
   if (rows === null) {
-    add("projects", "catalyst-skills contract --path teams", "unreadable", ["the project list could not be read — try: catalyst-skills contract --refresh"], null, null).next =
-      "refresh the contract (catalyst-skills contract --refresh), then run this again; the project list could not be read, so no step after it can be named yet";
+    add("projects", "catalyst contract --path teams", "unreadable", ["the project list could not be read — try: catalyst contract --refresh"], null, null).next =
+      "refresh the contract (catalyst contract --refresh), then run this again; the project list could not be read, so no step after it can be named yet";
   } else {
     const lines = [`${rows.length} mapped`];
     for (const t of rows) {
@@ -263,19 +300,42 @@ if (!connected) {
       lines.push(`${key}: ${readiness.status ?? "unknown"}${bad.length ? ` — ${bad.map((c) => `${c.id} ${c.state}`).join(", ")}` : ""}`);
     }
     for (const c of projectChecks) lines.push(`${c.ok ? "note" : "FAIL"} ${c.line}${c.who ? ` — who: ${c.who}` : ""}`);
-    lines.push("MAPPED projects only. An empty list means nothing is mapped yet, NOT that there are no projects. Run catalyst-skills team list to inspect the live list without checking readiness.");
+    lines.push("MAPPED projects only. An empty list means nothing is mapped yet, NOT that there are no projects. Run catalyst team list to inspect the live list without checking readiness.");
     // A project is set up when its dispatch gate is open (its stages are mapped), or when its
     // readiness reads ready. Readiness alone kept `--next` on "map its stages" for a tenant whose
     // gates were open: readiness stays "unchecked" until someone presses Re-check, and a new team
     // stays "degraded" until a repository is attached, which is the step AFTER this one.
-    const setUp = (t) => t.dispatchGate?.status === "open" || (t.readiness?.status ?? "unchecked") === "ready";
+    // ⛔ A team whose readiness reads `blocked` is NOT set up, whatever its gate says: a blocking
+    // check (a Linear automation that moves cards off Catalyst's stages, a missing OAuth scope) breaks
+    // every run in it. The step is that check's own fix, by its own owner, then a re-check.
+    const isBlocking = (c) => readinessMeta().length === 0 || readinessMeta().find((r) => r.id === c.id)?.severity === "blocking";
+    for (const t of rows.filter((r) => r.readiness?.status === "blocked")) {
+      const key = t.key ?? t.id ?? "(unkeyed)";
+      const fails = (Array.isArray(t.readiness?.checks) ? t.readiness.checks : []).filter((c) => c.state === "fail" && isBlocking(c));
+      const ids = fails.map((c) => c.id);
+      const rules = ids.filter((id) => id in LINEAR_AUTOMATION_RULES).map((id) => LINEAR_AUTOMATION_RULES[id]);
+      const others = ids.filter((id) => !(id in LINEAR_AUTOMATION_RULES));
+      const ownerRow = fails.map((c) => readinessMeta().find((r) => r.id === c.id)).find((r) => r && typeof r.fixedByLine === "string");
+      const owner = ownerRow ? ownerRow.fixedByLine : "a workspace owner or admin";
+      const how = [
+        rules.length > 0 ? `in Linear, open Settings → Teams → ${key} → Workflow → Git automation and set ${rules.join(", ")} to No action (no Catalyst key can change a Linear automation rule)` : null,
+        others.length > 0 ? `${others.join(", ")}: ${owner}` : null,
+      ].filter(Boolean).join("; ");
+      lines.push(`${key}: BLOCKED — ${ids.length > 0 ? ids.join(", ") : "a blocking check failed"}; ${how || `owner: ${owner}`}`);
+      blockedProjects.push({ key, action: `fix ${key}'s blocking check${ids.length === 1 ? "" : "s"} (${ids.join(", ") || "see the projects lines"}): ${how || owner}; then run catalyst team check ${key} (or press Re-check) and run this again`, owner });
+    }
+    const setUp = (t) => t.readiness?.status !== "blocked" && (t.dispatchGate?.status === "open" || (t.readiness?.status ?? "unchecked") === "ready");
     for (const t of rows) {
       if (t.dispatchGate?.status === "open" && (t.readiness?.status ?? "unchecked") === "unchecked") {
-        lines.push(`${t.key ?? t.id ?? "(unkeyed)"}: stages mapped; readiness not checked yet: run catalyst-skills team check ${t.key ?? t.id} to see the rest`);
+        lines.push(`${t.key ?? t.id ?? "(unkeyed)"}: stages mapped; readiness not checked yet: run catalyst team check ${t.key ?? t.id} to see the rest`);
       }
     }
     const ready = rows.length > 0 && rows.every(setUp);
-    add("projects", "catalyst-skills contract --path teams, and the team: checks of ready", ready ? "ok" : "unfinished", lines, "a workspace owner or admin", link("/settings/linear-teams"));
+    const mapOwner = verbAvailable("team map") ? "you, with your own login" : "a workspace owner or admin";
+    const mapWhere = verbAvailable("team map") ? "catalyst team list" : link("/settings/linear-teams");
+    const projectOwner = blockedProjects.length > 0 ? blockedProjects[0].owner : mapOwner;
+    const projectWhere = blockedProjects.length > 0 ? null : mapWhere;
+    add("projects", "catalyst contract --path teams, and the team: checks of ready", ready ? "ok" : "unfinished", lines, projectOwner, projectWhere);
   }
 }
 
@@ -292,20 +352,20 @@ function thoughtsNote(owner) {
   return `note ${repo}: gh could not see it (${why}). It does not exist, or this GitHub login cannot see it. Create or confirm it (step 5a).`;
 }
 if (!connected) {
-  add("repositories", "catalyst-skills contract --path merge.repositories", "unreadable", ["not readable until this machine is connected"], null, null);
+  add("repositories", "catalyst contract --path merge.repositories", "unreadable", ["not readable until this machine is connected"], null, null);
 } else {
   const repos = readContract(["contract", "--path", "merge.repositories", "--json"]);
   const doc = tryJson(repos.stdout);
   const rows = Array.isArray(doc) ? doc : null;
   if (rows === null) {
-    add("repositories", "catalyst-skills contract --path merge.repositories", "unreadable", ["the repository list could not be read — try: catalyst-skills contract --refresh"], null, null).next =
-      "refresh the contract (catalyst-skills contract --refresh), then run this again; the repository list could not be read, so no step after it can be named yet";
+    add("repositories", "catalyst contract --path merge.repositories", "unreadable", ["the repository list could not be read — try: catalyst contract --refresh"], null, null).next =
+      "refresh the contract (catalyst contract --refresh), then run this again; the repository list could not be read, so no step after it can be named yet";
   } else {
     const lines = [`${rows.length} registered`, ...rows.map((r) => `${r.owner ?? "?"}/${r.name ?? "?"}`)];
     repositoryRegistered = rows.length > 0;
     lines.push("⛔ REGISTRATION only. This carries no status and no project attachment, so it never proves a repository can be dispatched into.");
     for (const owner of [...new Set(rows.map((r) => r.owner).filter((o) => typeof o === "string" && o !== ""))]) lines.push(thoughtsNote(owner));
-    add("repositories", "catalyst-skills contract --path merge.repositories", rows.length > 0 ? "ok" : "unfinished", lines, "a workspace owner or admin", link("/settings/repositories"));
+    add("repositories", "catalyst contract --path merge.repositories", rows.length > 0 ? "ok" : "unfinished", lines, "a workspace owner or admin", link("/settings/repositories"));
   }
 }
 
@@ -352,18 +412,18 @@ const readAccountRows = () => {
   return { rows, error: rows === null ? (acc.stderr || acc.stdout).trim().split("\n")[0] || "no output" : null };
 };
 if (!connected) {
-  add("coding accounts", "codingAccounts in catalyst-skills contract", "unreadable", ["not readable until this machine is connected"], null, null);
+  add("coding accounts", "codingAccounts in catalyst contract", "unreadable", ["not readable until this machine is connected"], null, null);
 } else {
   const res = readContract(["contract", "--path", "codingAccounts", "--json"]);
   const ca = tryJson(res.stdout);
   const older = ca === null && /has nothing at/.test(res.stderr ?? "");
-  const INSTRUMENT = "codingAccounts in catalyst-skills contract";
+  const INSTRUMENT = "codingAccounts in catalyst contract";
   if (ca !== null && typeof ca === "object" && typeof ca.state === "string") {
     const line = typeof ca.line === "string" ? ca.line : `state ${ca.state}`;
     const owner = typeof ca.enrolledByLine === "string" ? ca.enrolledByLine : null;
     const where = typeof ca.page === "string" ? link(ca.page) : null;
     if (ca.state === "enrolled" || ca.state === "needs_credential") {
-      const DETAIL = `${INSTRUMENT}, and catalyst-skills accounts`;
+      const DETAIL = `${INSTRUMENT}, and catalyst accounts`;
       const head = [line, `${ca.activeCount ?? "?"} active`];
       const { rows, error } = readAccountRows();
       const dead = rows === null ? [] : rows.filter((a) => credentialProblem(a) !== null);
@@ -407,31 +467,40 @@ if (!connected) {
     const olderLine = "this cloud is older than the bundle: its contract does not say whether a coding account is enrolled, so the account list is read instead";
     if (rows === null) {
       accountsNext = "read the coding accounts again; the account list could not be read this time";
-      add("coding accounts", "catalyst-skills accounts", "unreadable", [olderLine, `coding accounts could not be read (${error})`], null, null);
+      add("coding accounts", "catalyst accounts", "unreadable", [olderLine, `coding accounts could not be read (${error})`], null, null);
     } else {
       // An expired or revoked slot, or a quarantined one, cannot take work until an admin acts on it.
       const usable = rows.filter((a) => a?.status !== "expired-or-revoked" && a?.quarantined !== true);
       const lines = [olderLine, `${rows.length} enrolled, ${usable.length} able to take work`];
       for (const a of rows) lines.push(`${a.accountSlot ?? "?"}: ${a.provider ?? "?"}, ${a.status ?? "status unknown"}${a.quarantined ? ", quarantined" : ""}`);
       if (usable.length === 0) lines.push("no phase can start until one is enrolled and able to take work");
-      add("coding accounts", "catalyst-skills accounts", usable.length > 0 ? "ok" : "unfinished", lines, "a workspace owner or admin", link("/settings/coding-accounts"));
+      add("coding accounts", "catalyst accounts", usable.length > 0 ? "ok" : "unfinished", lines, "a workspace owner or admin", link("/settings/coding-accounts"));
     }
   } else {
     accountsNext = "read the coding accounts again; the contract could not be read";
-    add("coding accounts", INSTRUMENT, "unreadable", [`the contract could not be read (${(res.stderr || res.stdout).trim().split("\n").pop() || "no output"}); try: catalyst-skills contract --refresh`], null, null);
+    add("coding accounts", INSTRUMENT, "unreadable", [`the contract could not be read (${(res.stderr || res.stdout).trim().split("\n").pop() || "no output"}); try: catalyst contract --refresh`], null, null);
   }
 }
+
+// the Re-check step, as a command when this person can run it, else as the page with the
+// person who can. `team check` is the CLI twin of the page's Re-check button (admin or owner).
+const mappedKeys = () => (teamRows ?? []).map((t) => t.key ?? t.id).filter((k) => typeof k === "string" && k !== "");
+const recheckStep = () => {
+  const cmds = mappedKeys().map((k) => `catalyst team check ${k}`);
+  if (cmds.length > 0 && verbAvailable("team check")) return { action: `run ${cmds.join(" and ")}, then run this again`, owner: "you, the assistant: run it now with the person's login, without asking", where: cmds[0] };
+  if (cmds.length > 0 && verbAdminOnly("team check")) return { action: `a workspace owner or admin runs ${cmds.join(" and ")} (or presses Re-check on the projects page); then run this again`, owner: "a workspace owner or admin", where: link("/settings/linear-teams") };
+  return { action: "press Re-check on the projects page, then run this again", owner: "a workspace owner or admin", where: link("/settings/linear-teams") };
+};
 
 // ── host ──────────────────────────────────────────────────────────────────────────────────────────
 // Read off the contract, never assumed: each checked project carries a hosts_current check, and the
 // contract says who owns it. The check is account-wide, so any one project's reading is the answer.
 // A tenant that runs no host of its own reads `pass` here, and then nothing is asked of anyone.
 if (!connected) {
-  add("host", "hosts_current in catalyst-skills contract --path teams", "unreadable", ["not readable until this machine is connected"], null, null);
+  add("host", "hosts_current in catalyst contract --path teams", "unreadable", ["not readable until this machine is connected"], null, null);
 } else {
   const checks = (teamRows ?? []).flatMap((t) => (Array.isArray(t.readiness?.checks) ? t.readiness.checks : []).filter((c) => c.id === "hosts_current").map((c) => ({ ...c, team: t.key ?? t.id ?? "(unkeyed)" })));
-  const meta = tryJson(readContract(["contract", "--path", "readinessChecks", "--json"]).stdout);
-  const row = Array.isArray(meta) ? meta.find((r) => r.id === "hosts_current") : null;
+  const row = readinessMeta().find((r) => r.id === "hosts_current") ?? null;
   const hc = checks.find((c) => c.state === "fail") ?? checks.find((c) => c.state === "unknown") ?? checks[0] ?? null;
   // The contract's printed line for this owner is written for a host that is behind. When no host is
   // connected there is nothing behind, so the owner is named by its id instead of by that sentence.
@@ -446,15 +515,16 @@ if (!connected) {
   const how = fw === null ? null : link(fw.page);
   const howLines = fw?.command ? [`the owner runs: ${fw.command}`] : [];
   if (hc === null) {
-    add("host", "hosts_current in catalyst-skills contract --path teams", "unreadable", [teamRows === null ? "the project list could not be read, so the host check cannot be either" : "no project has a readiness check yet, so whether a host is connected cannot be read. Press Re-check on the projects page."], "a workspace owner or admin", link("/settings/linear-teams")).next =
+    const step = recheckStep();
+    add("host", "hosts_current in catalyst contract --path teams", "unreadable", [teamRows === null ? "the project list could not be read, so the host check cannot be either" : "no project has a readiness check yet, so whether a host is connected cannot be read."], teamRows === null ? "a workspace owner or admin" : step.owner, teamRows === null ? link("/settings/linear-teams") : step.where).next =
       teamRows === null
-        ? "refresh the contract (catalyst-skills contract --refresh), then run this again; the project list could not be read, so the host check cannot be either"
-        : "press Re-check on the projects page, then run this again";
+        ? "refresh the contract (catalyst contract --refresh), then run this again; the project list could not be read, so the host check cannot be either"
+        : step.action;
   } else if (hc.state === "pass") {
-    add("host", "hosts_current in catalyst-skills contract --path teams", "ok", [`hosts_current pass (read on ${hc.team})`]);
+    add("host", "hosts_current in catalyst contract --path teams", "ok", [`hosts_current pass (read on ${hc.team})`]);
   } else {
     const detail = hc.reason === "no_host_connected" ? "no Catalyst host is connected" : hc.reason === "hosts_behind" ? "a connected host runs an older mapping" : hc.reason === "hosts_unreported" ? "a host is connected but has not reported what it loaded" : `state ${hc.state}`;
-    add("host", "hosts_current in catalyst-skills contract --path teams", "unfinished", [`hosts_current ${hc.state}${hc.reason ? ` (${hc.reason})` : ""} on ${hc.team}: ${detail}`, ...howLines], owner, how);
+    add("host", "hosts_current in catalyst contract --path teams", "unfinished", [`hosts_current ${hc.state}${hc.reason ? ` (${hc.reason})` : ""} on ${hc.team}: ${detail}`, ...howLines], owner, how);
   }
 }
 
@@ -463,7 +533,7 @@ if (!connected) {
 // default repository has one in effect is the contract's `environment_declared` check; the project's
 // other repositories appear under that check's `repos`. Names only: nothing here reads a value, and
 // nothing here reads a file on this machine. A cloud that sends no such check has nothing to read.
-const DECL_INSTRUMENT = "environment_declared in catalyst-skills contract --path teams";
+const DECL_INSTRUMENT = "environment_declared in catalyst contract --path teams";
 const DECL_REASONS = {
   no_team_repo_default: { text: "no repository is the project's default yet: register one and make it the default", who: "a workspace owner or admin", page: "/settings/repositories" },
   no_environment_declaration: { text: "no .catalyst/catalyst.toml on its default branch yet: write it with the person (names only, never a value), open a pull request, merge it", who: "the person, in the repository, with your help", page: null },
@@ -477,15 +547,15 @@ if (!connected) {
   add("repository declarations", DECL_INSTRUMENT, "unreadable", ["not readable until this machine is connected"], null, null);
 } else if (teamRows === null) {
   add("repository declarations", DECL_INSTRUMENT, "unreadable", ["the project list could not be read, so no repository declaration can be either"], null, null).next =
-    "refresh the contract (catalyst-skills contract --refresh), then run this again; the project list could not be read, so no repository declaration can be either";
+    "refresh the contract (catalyst contract --refresh), then run this again; the project list could not be read, so no repository declaration can be either";
 } else if (teamRows.length === 0) {
   add("repository declarations", DECL_INSTRUMENT, "unreadable", ["no project is mapped yet, so there is no repository whose declaration could be read"], null, null).next =
     "map a project first; a repository declaration is read per project";
 } else if (teamRows.every((t) => !Array.isArray(t.readiness?.checks) || t.readiness.checks.length === 0)) {
   // Mapped, never checked: the contract carries no checks at all until someone presses Re-check, and
   // that silence is not "nothing to declare".
-  add("repository declarations", DECL_INSTRUMENT, "unreadable", ["no project has a readiness check yet, so whether its repository is declared cannot be read. Press Re-check on the projects page."], "a workspace owner or admin", link("/settings/linear-teams")).next =
-    "press Re-check on the projects page, then run this again";
+  const step = recheckStep();
+  add("repository declarations", DECL_INSTRUMENT, "unreadable", ["no project has a readiness check yet, so whether its repository is declared cannot be read."], step.owner, step.where).next = step.action;
 } else {
   const found = teamRows.flatMap((t) => (Array.isArray(t.readiness?.checks) ? t.readiness.checks : []).filter((c) => c.id === "environment_declared").map((c) => ({ ...c, team: t.key ?? t.id ?? "(unkeyed)" })));
   const lines = [];
@@ -510,12 +580,13 @@ if (!connected) {
     else if (c.state === "fail") flag(c.team, null, c.reason);
     else {
       unknown = true;
-      lines.push(`${c.team}: environment_declared could not be read${c.reason ? ` (${c.reason})` : ""}; press Re-check on the projects page`);
+      lines.push(`${c.team}: environment_declared could not be read${c.reason ? ` (${c.reason})` : ""}; a re-check is needed`);
     }
     for (const note of Array.isArray(c.repos) ? c.repos : []) if (typeof note?.repo === "string" && note.reason) flag(c.team, note.repo, note.reason);
   }
   if (unknown && verdict === "ok") {
-    add("repository declarations", DECL_INSTRUMENT, "unreadable", lines, "a workspace owner or admin", link("/settings/linear-teams")).next = "press Re-check on the projects page, then run this again";
+    const step = recheckStep();
+    add("repository declarations", DECL_INSTRUMENT, "unreadable", lines, step.owner, step.where).next = step.action;
   } else {
     if (verdict !== "ok") lines.push("Names only: a value never passes through this script or the file. The person enters values on the repository's Environment page.");
     add("repository declarations", DECL_INSTRUMENT, verdict, lines, verdict === "ok" ? null : owner, verdict === "ok" ? null : where);
@@ -539,7 +610,13 @@ const NEXT = {
         ? "install the tenant GitHub App and register its repository before connecting your personal GitHub account"
         : "get this person's seat and Linear identity sorted",
   account: "connect the Linear integration on the Connections page (the GitHub App comes later, with the repository)",
-  projects: "pick ONE project and map its stages (or adopt the Catalyst workflow)",
+  projects: blockedProjects.length > 0
+    ? blockedProjects.map((b) => b.action).join("; and ")
+    : verbAvailable("team map")
+    ? "pick ONE project: run catalyst team list, then catalyst team map <KEY> (or team adopt <KEY>) and approve its preview"
+    : verbAdminOnly("team map")
+      ? "a workspace owner or admin maps ONE project: catalyst team map <KEY>, or Map my stages on the projects page"
+      : "pick ONE project and map its stages (or adopt the Catalyst workflow)",
   repositories: "install the GitHub App on the Connections page, granting it the repository you want worked; registering that repository on the Repositories page, attached to the project, is the step right after",
   "coding accounts": accountsNext,
   "repository declarations": declNext,
@@ -583,7 +660,7 @@ function versionAdvice() {
   const installed = semver(field("Bundle"));
   const npm = spawnSync("npm", ["view", "@catalyst-cloud/cli", "version"], { encoding: "utf8", timeout: 10_000, shell: process.platform === "win32" });
   const latest = npm.error || npm.status !== 0 ? null : semver(npm.stdout);
-  // The installer is the update path, not `catalyst-skills install`. Its command is on the app's
+  // The installer is the update path, not `catalyst install`. Its command is on the app's
   // setup page; this names the script it fetches rather than composing the request here.
   const reinstall = `re-run the install command from the app's setup page (it installs from ${link("/install.sh")})`;
   if (installed === null || latest === null) {

@@ -8,7 +8,7 @@ import { cliTarget } from "./lib/cli.mjs";
 const STATUS_COMMAND = ["replica", "status", "--probe", "--json"];
 const EVENTS_COMMAND = ["events", "status", "--probe", "--json"];
 const START_COMMAND = ["replica", "start", "--detach"];
-const RECOVERY_COMMAND = "catalyst-skills replica start --detach";
+const RECOVERY_COMMAND = "catalyst replica start --detach";
 
 function defaultRun(args) {
   const target = cliTarget();
@@ -105,7 +105,7 @@ function readStatus(run) {
         current: false,
         reason: `replica status is unknown: ${replicaResult.error || replicaResult.stderr.trim() || "invalid JSON"}`,
       },
-      recovery: replicaResult.code === 2 ? "catalyst-skills login" : "catalyst-skills replica status --probe --json",
+      recovery: replicaResult.code === 2 ? "catalyst login" : "catalyst replica status --probe --json",
     };
   }
   const eventsResult = run(EVENTS_COMMAND);
@@ -120,7 +120,7 @@ function readStatus(run) {
         current: false,
         reason: `event freshness is unknown: ${eventsResult.error || eventsResult.stderr.trim() || "invalid JSON"}`,
       },
-      recovery: "catalyst-skills events status --probe --json",
+      recovery: "catalyst events status --probe --json",
     };
   }
   return { status, events, assessment: assessLocalSync(status, events) };
@@ -140,12 +140,12 @@ export async function runLocalSync({
   if (reading.assessment.current || !start)
     return { ...reading, started: false, recovery: reading.recovery ?? RECOVERY_COMMAND };
   if (!reading.status)
-    return { ...reading, started: false, recovery: reading.recovery ?? "catalyst-skills replica status --probe --json" };
+    return { ...reading, started: false, recovery: reading.recovery ?? "catalyst replica status --probe --json" };
   if (
     reading.status?.verdict === "not-configured" ||
     reading.status?.dbPath == null
   ) {
-    return { ...reading, started: false, recovery: "catalyst-skills login" };
+    return { ...reading, started: false, recovery: "catalyst login" };
   }
   let started = false;
   if (reading.status.writerAlive !== true && ["absent", "stale"].includes(reading.assessment.verdict)) {
@@ -177,7 +177,7 @@ export async function runLocalSync({
     recovery: reading.assessment.verdict === "unknown"
       ? "node scripts/local-sync.mjs --json"
       : reading.status?.writerAlive
-        ? "catalyst-skills replica stop && catalyst-skills replica start --detach"
+        ? "catalyst replica stop && catalyst replica start --detach"
         : RECOVERY_COMMAND,
   };
 }

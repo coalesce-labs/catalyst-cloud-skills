@@ -6,7 +6,7 @@ A person can finish every other step and still see nothing run. A phase needs tw
 
 **For:** a phase runs on one of the tenant's own enrolled coding accounts. With none active, no phase can start.
 
-**Instrument:** `codingAccounts` in `catalyst-skills contract`. It carries a `state`, a printable `line`, who enrolls an account (`enrolledByLine`) and the `page`. The script prints all of them. It never shows a credential or an email. When the state is `enrolled`, the script also reads `catalyst-skills accounts` to check each account's credential.
+**Instrument:** `codingAccounts` in `catalyst contract`. It carries a `state`, a printable `line`, who enrolls an account (`enrolledByLine`) and the `page`. The script prints all of them. It never shows a credential or an email. When the state is `enrolled`, the script also reads `catalyst accounts` to check each account's credential.
 
 **What each state means:**
 
@@ -19,13 +19,13 @@ A person can finish every other step and still see nothing run. A phase needs tw
 
 **Owner:** the one the contract names. The person does it in the browser. Never ask for the credential, and never handle it. A key cannot enrol one. Which kinds of account exist, what each asks for, and what to do with an ended or cancelled one are in `references/choosing-a-coding-account.md`; it is step 2 of the path, the first thing asked.
 
-**Older cloud:** if the contract has no `codingAccounts`, the script says the cloud is older and reads `catalyst-skills accounts` instead. That list counts the accounts enrolled and the ones able to take work. An expired, revoked or quarantined account does not count. The owner is then a tenant owner or admin, at `<their cloud>/settings/coding-accounts`.
+**Older cloud:** if the contract has no `codingAccounts`, the script says the cloud is older and reads `catalyst accounts` instead. That list counts the accounts enrolled and the ones able to take work. An expired, revoked or quarantined account does not count. The owner is then a tenant owner or admin, at `<their cloud>/settings/coding-accounts`.
 
 ## Host
 
 **For:** the contract carries this as the `hosts_current` readiness check on each project. It reads the same on every project, because it is about the whole account.
 
-**Instrument:** the `hosts_current` check in `catalyst-skills contract --path teams`, and its owner in `catalyst-skills contract --path readinessChecks`.
+**Instrument:** the `hosts_current` check in `catalyst contract --path teams`, and its owner in `catalyst contract --path readinessChecks`.
 
 **What each reading means:**
 
@@ -35,11 +35,11 @@ A person can finish every other step and still see nothing run. A phase needs tw
 | `unknown`, `no_host_connected` | no Catalyst host is connected | name the owner and stop |
 | `unknown`, `hosts_unreported` | a host is connected but has not said which mapping it loaded | name the owner; it clears when the host reconnects |
 | `fail`, `hosts_behind` | a connected host runs an older mapping | name the owner |
-| the part reads `unreadable` | no project has been checked yet | press Re-check on the projects page, then read it again |
+| the part reads `unreadable` | no project has been checked yet | run `catalyst team check <KEY>` when the script names it (it does when the CLI has the verb and the person is an owner or admin); otherwise press Re-check on the projects page; then read it again |
 
 **Owner:** the contract names the owner of `hosts_current`, and where they act in its `fixedWhere`. When `fixedWhere` has a page, the script prints it, and the command too when there is one. When it is null, which it is today, the script prints the owner sentence alone. Then there is no page, so do not invent one. Say who owns it and that they connect it.
 
-⛔ `catalyst-skills ready` treats this check as a note, so it can print READY while no host is connected. READY there is not proof a phase can run. The `host` part is.
+⛔ `catalyst ready` treats this check as a note, so it can print READY while no host is connected. READY there is not proof a phase can run. The `host` part is.
 
 ## Saying it is ready
 

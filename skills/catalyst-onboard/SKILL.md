@@ -1,9 +1,9 @@
 ---
 name: catalyst-onboard
 description: >-
-  Walk a person from nothing to their first Catalyst Cloud ticket running, one step at a time, hand-held. Use when someone says "set me up", "onboard me", "I just signed up", "get me started", "what do I do first", or when they have the Catalyst Cloud skills installed and nothing else. Starts with the coding account, then the project, the integrations and the person's connected accounts, each repository's settings file, and ends with one real ticket moving. Reads each part of the setup with the instrument that owns it, does every step a key can do through the catalyst-skills CLI, and for the steps only a browser can do hands over the exact page and says what to come back with. Never claims a step it did not watch succeed.
+  Walk a person from nothing to their first Catalyst Cloud ticket running, one step at a time, hand-held. Use when someone says "set me up", "onboard me", "I just signed up", "get me started", "what do I do first", or when they have the Catalyst Cloud skills installed and nothing else. Starts with the coding account, then the project, the integrations and the person's connected accounts, each repository's settings file, and ends with one real ticket moving. Reads each part of the setup with the instrument that owns it, does every step a key can do through the catalyst CLI, and for the steps only a browser can do hands over the exact page and says what to come back with. Never claims a step it did not watch succeed.
 disable-model-invocation: true
-allowed-tools: Bash(catalyst-skills:*) Bash(npx @catalyst-cloud/catalyst-skills:*)
+allowed-tools: Bash(catalyst:*) Bash(npx -p @catalyst-cloud/cli catalyst:*) Bash(npx @catalyst-cloud/catalyst-skills:*)
 ---
 <!-- vendored-from: @catalyst-cloud/catalyst-skills@0.9.4 — written in this repository for customer tenants -->
 
@@ -17,9 +17,9 @@ The path has five stops, in this order: a **coding account** the work will run o
 
 1. Run `node scripts/where-am-i.mjs --next` and read the one line it prints. If a `note:` line follows it, say the note in one clause in the same turn (a cancelled account is kept for reporting, not used, never re-tokened); it is information, not a task.
 2. Say, in one or two sentences, what that step is for. The person should always know why they are doing it.
-3. Ask one question, or do one thing. If it is a command a key can run, run it and show the lines it printed. If it needs a browser, hand over one link, one action named the way the page names it, and say what you will check when they are back.
+3. Ask one question, or do one thing. If it is a command a key can run (the script's `do:` line), run it now without asking whether to, and show the lines it printed. If it needs a browser, hand over one link, one action named the way the page names it, and say what you will check when they are back.
 4. Stop. Wait for their answer.
-5. When they answer, run the script again and read them the part that should have changed. If it changed, say so and move on. If it did not, refresh the contract once (`catalyst-skills contract --refresh`) and read it again; if it still did not, say what the page told them and what the instrument says, and ask what they saw.
+5. When they answer, run the script again and read them the part that should have changed. If it changed, say so and move on. If it did not, refresh the contract once (`catalyst contract --refresh`) and read it again; if it still did not, say what the page told them and what the instrument says, and ask what they saw.
 
 Two or three short sentences per turn is the right size. A turn that lists every part's verdict is a wall of status, not help. The full report exists for you to read, not to paste.
 
@@ -67,8 +67,8 @@ Use the product's words, and name the page label Settings shows today when it di
 - **Not ready is a question about who.** Name which check, who can fix it, and where. If the owner is not the person in front of you, say so and stop.
 - **Never invent a count or a list.** Every number and every name comes from what a command printed.
 - **Provider consent belongs to the person in a browser.** Login approval, the workspace's Linear connection and GitHub App install, and the person's own connected accounts. Give the printed URL, then check `status`. Never claim a grant succeeded because a browser opened.
-- **Team setup is CLI work now; two steps still are not.** `team list`, `team check`, `team map`, `team adopt`, `team migrate` and `team checklist` run with the person's own login: show each preview, and pass `--yes --plan-hash` only after they approve that exact plan. Registering a repository and approving one repository's settings file are settings-page work today; route those through the browser and say plainly that it is a gap, not the design. Never guess at a route.
-- **The workspace-wide environment declaration is the one setup write you can perform.** `catalyst-skills environment` reads it, proposes it and approves it.
+- **Team setup is CLI work now; two steps still are not.** `team list`, `team check`, `team map`, `team adopt`, `team migrate` and `team checklist` run with the person's own login: show each preview, and pass `--yes --plan-hash` only after they approve that exact plan. `catalyst capabilities` says what this CLI can do on this cloud, and the script consults it and the person's role before it names a command or a page. Registering a repository and approving one repository's settings file are settings-page work today; route those through the browser and say plainly that it is a gap, not the design. Never guess at a route.
+- **The workspace-wide environment declaration is the one setup write you can perform.** `catalyst environment` reads it, proposes it and approves it.
 - **Local sync is opt-in.** API-backed skills work without it. Ask before running `local-sync.mjs --start`; a detached process starting is not evidence of freshness. See `references/local-sync.md`.
 - **A cancelled or ended coding account is kept, not retired.** It stays for reporting, is not used, and is never given a new token; a token minted from a live login must never land on it. Reactivating it is the person's call if the subscription comes back. Never tell anyone to retire or delete it.
 - **Their workspace, as them.** Everything goes through the CLI and the person's own login. You never name another workspace, never ask for a key you could avoid, and never see a credential or a secret's value.

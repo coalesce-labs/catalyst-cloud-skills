@@ -262,7 +262,7 @@ describe("each skill's scripts spawn the catalyst-skills verbs it teaches", () =
     expect(onboard).toContain("Local sync is opt-in");
     expect(onboard).toContain("references/local-sync.md");
     expect(path).toContain("optional first-event check in `references/local-sync.md`");
-    expect(localSync).toContain("catalyst-skills events wait-for --ticket <ticket-identifier> --after <cursor-before-move> --timeout 300");
+    expect(localSync).toContain("catalyst events wait-for --ticket <ticket-identifier> --after <cursor-before-move> --timeout 300");
     const cursorCapture = localSync.indexOf("record its `cursor`");
     const cardMove = localSync.indexOf("Move the card");
     const eventWait = localSync.indexOf("events wait-for --ticket");
