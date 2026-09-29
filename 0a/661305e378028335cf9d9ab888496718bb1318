@@ -1,0 +1,8 @@
+Revision history for #165:
+
+rev 2 (content) 2026-09-29 23:15 UTC — Add project-list responses and Linear team stage mappings to the onboarding CLI fixtures; the previous CI run failed because the mocks did not support the new inventory read.
+rev 1 (initial) 2026-09-29 23:15 UTC
+
+<!-- mergify-revision-data: {"schema_version":1,"pull_number":165,"entries":[{"number":1,"change_type":"initial","old_sha":null,"new_sha":"49e9010c6e0620c1ddb54468564c5c58d0d20269","timestamp_iso":"2026-09-29T23:15:24Z","reason":"","replay_sha":null,"compare_url":null},{"number":2,"change_type":"content","old_sha":"49e9010c6e0620c1ddb54468564c5c58d0d20269","new_sha":"720e933f0aa53354dbb4c45632171f161b5f03b3","timestamp_iso":"2026-09-29T23:15:24Z","reason":"Add project-list responses and Linear team stage mappings to the onboarding CLI fixtures; the previous CI run failed because the mocks did not support the new inventory read.","replay_sha":null,"compare_url":"https://github.com/coalesce-labs/catalyst-cloud-skills/compare/49e9010c6e0620c1ddb54468564c5c58d0d20269...720e933f0aa53354dbb4c45632171f161b5f03b3"}]} -->
+
+Retain the exact onboarding routing phrase in the skill description; CI eval coverage requires the user wording even though this slice updates the declaration format.
