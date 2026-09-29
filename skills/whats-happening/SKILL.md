@@ -4,7 +4,7 @@ description: >-
   The desk for a Catalyst Cloud account, and the facts behind it. Use when the person asks "what's happening?", "where are we?", "why is that stuck?", "what closed?", "what's next?", "how does this work?", "why did it do that?", "how does it prioritise?" or "what does this setting do, where is it set?", or asks for something to be done rather than known. Reads the contract, what is running and queued, the eligibility explainer, the coding accounts and the open asks through the catalyst CLI, and answers in one reply with ticket ids. Explains the ladder, the stage map, failures, parks and holds, the queue order and every reason a ticket is excluded. Routes work to a project owner and decisions to what-needs-me. Read-only: never composes a URL, never polls, never answers as the human.
 allowed-tools: Bash(catalyst:*) Bash(npx -p @catalyst-cloud/cli catalyst:*)
 ---
-<!-- vendored-from: @catalyst-cloud/catalyst-skills@0.13.0 — written in this repository for customer accounts -->
+<!-- vendored-from: @catalyst-cloud/catalyst-skills@0.13.1 — written in this repository for customer accounts -->
 
 # What's happening
 
