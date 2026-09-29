@@ -32,14 +32,24 @@ import { CliError, MeError, UsageError } from "./errors.js";
 import { fetchMe } from "./transport.js";
 import { bearerFor, deviceFlowLogin, type OauthAuth } from "./oauth.js";
 import { openBrowser as defaultOpenBrowser } from "./browser.js";
-import { cmdAccounts, cmdExplain, cmdHistory, cmdQueue, cmdRunning } from "./execution.js";
+import {
+  cmdAccounts,
+  cmdExplain,
+  cmdHistory,
+  cmdQueue,
+  cmdRunning,
+} from "./execution.js";
 import { cmdQuery } from "./query.js";
 import { cmdReady } from "./ready.js";
 import { cmdReplica, type ReplicaDeps } from "./replica.js";
 import { cmdRuntime, type RuntimeVerbDeps } from "./runtime-verb.js";
 import { cmdEvents, type EventDeps } from "./events.js";
 import { stdinIsTty } from "./prompt.js";
-import { FIRST_STAMPED_VERSION, PROVENANCE_MARKER, parseProvenanceVersion } from "./skill-shape.js";
+import {
+  FIRST_STAMPED_VERSION,
+  PROVENANCE_MARKER,
+  parseProvenanceVersion,
+} from "./skill-shape.js";
 import {
   installedBundleVersion,
   installSkills,
@@ -99,7 +109,13 @@ export {
   updateNoticeLine,
   writeConfig,
 };
-export type { Ctx, CustomerConfig, MeIdentity, ParsedArgs, SkillsInstallResult };
+export type {
+  Ctx,
+  CustomerConfig,
+  MeIdentity,
+  ParsedArgs,
+  SkillsInstallResult,
+};
 
 export const CUSTOMER_SKILLS = [
   "catalyst-github",
@@ -132,7 +148,7 @@ export function usageText(): string {
     "  catalyst mcp add|list|remove (vault references only)",
     "  catalyst contract [--refresh] [--path <a.b.c>]",
     "  catalyst query <issues|issue <id>|pulls|pull <id>|projects|cycles|search <terms>|changes --since <cursor|head>>",
-    "  catalyst replica <start [--detach]|stop|status [--probe]|sql \"<select>\"|schema [table]>",
+    '  catalyst replica <start [--detach]|stop|status [--probe]|sql "<select>"|schema [table]>',
     "  catalyst runtime <status [--json]|install|path|uninstall>   (a pinned Node this CLI manages itself)",
     "  catalyst events <tail|wait-for|query|status [--probe]> [--type NAME] [--ticket CTC-N] [--after SEQUENCE]",
     "  catalyst explain <ticket> | history <ticket> | running [--ticket T --phase P] | queue [--team K]",
@@ -145,6 +161,7 @@ export function usageText(): string {
     "  catalyst secret set <NAME> --repo <owner/name> [--command '<cmd>'] | secret import <file> --repo <owner/name>",
     "  catalyst team <list|check|map|adopt|migrate|checklist> ...",
     "  catalyst capabilities [--json]   (what this CLI can do, the role each verb needs, and whether this cloud serves it)",
+    "  catalyst project list [--json]   (all tenant projects, including those with no stage mapping)",
     "  catalyst project wip-limit <get|set <n>|set default> [--team K]   (a project's new-start WIP limit; members read, owners and admins set)",
     "  catalyst repo <agents-block <path> [--write]|agent-setup <path> [--apply] [--with-check]>   (a checkout's AGENTS.md block and portable agent layout; working tree only)",
     "  catalyst legacy [--remove [--data] [--yes]]   (leftovers of the old local Catalyst runtime: list them; remove them only on a yes)",
@@ -206,7 +223,12 @@ function migrateLegacyCliPath(ctx: Ctx): void {
   // An upgrade from @catalyst-cloud/catalyst-skills to @catalyst-cloud/cli removes the old package
   // folder, so the recorded launcher no longer exists and has no sibling. Point it at the launcher
   // that is running now, so `ready` and every skill script work without another login.
-  if (next === null && typeof cfg.cliPath === "string" && cfg.cliPath !== "" && !existsSync(cfg.cliPath)) {
+  if (
+    next === null &&
+    typeof cfg.cliPath === "string" &&
+    cfg.cliPath !== "" &&
+    !existsSync(cfg.cliPath)
+  ) {
     next = cliPath();
   }
   if (next === null || next === cfg.cliPath) return;
@@ -257,21 +279,36 @@ function maybePrintUpdateNotice(args: ParsedArgs, ctx: Ctx): void {
     );
     return;
   }
-  if (refreshed.installed.length > 0) say(`[catalyst] refreshed ${refreshed.installed.join(", ")} at ${skillsDir} to ${manifest.version}`);
-  if (refreshed.removed.length > 0) say(`[catalyst] removed retired skills ${refreshed.removed.join(", ")} from ${skillsDir}; their work moved into the skills this bundle ships`);
+  if (refreshed.installed.length > 0)
+    say(
+      `[catalyst] refreshed ${refreshed.installed.join(", ")} at ${skillsDir} to ${manifest.version}`,
+    );
+  if (refreshed.removed.length > 0)
+    say(
+      `[catalyst] removed retired skills ${refreshed.removed.join(", ")} from ${skillsDir}; their work moved into the skills this bundle ships`,
+    );
   for (const s of refreshed.skipped) {
-    say(`[catalyst] left "${s.name}" alone: ${skillsDir}/${s.name} was not installed by this package (catalyst install --force to replace)`);
+    say(
+      `[catalyst] left "${s.name}" alone: ${skillsDir}/${s.name} was not installed by this package (catalyst install --force to replace)`,
+    );
   }
   cfg.lastSkillBundleVersion = manifest.version;
   cfg.skillsDir = skillsDir;
   saveConfig(ctx.home, cfg);
 }
 
-export async function main(argv: string[], ctx: Ctx = defaultCtx(), deps: MainDeps = {}): Promise<number> {
+export async function main(
+  argv: string[],
+  ctx: Ctx = defaultCtx(),
+  deps: MainDeps = {},
+): Promise<number> {
   let args: ParsedArgs;
   try {
-    args = parseArgs(argv.map((a, i) => (i === 0 && VERB_ALIASES[a] ? VERB_ALIASES[a] : a)));
-    if (args.command && VERB_ALIASES[args.command]) args.command = VERB_ALIASES[args.command];
+    args = parseArgs(
+      argv.map((a, i) => (i === 0 && VERB_ALIASES[a] ? VERB_ALIASES[a] : a)),
+    );
+    if (args.command && VERB_ALIASES[args.command])
+      args.command = VERB_ALIASES[args.command];
   } catch (err) {
     ctx.stderr(err instanceof Error ? err.message : String(err));
     ctx.stderr(usageText());
@@ -279,7 +316,9 @@ export async function main(argv: string[], ctx: Ctx = defaultCtx(), deps: MainDe
   }
   const manifest = readManifest();
   if (args.version) {
-    ctx.stdout(`${PACKAGE_NAME} ${manifest.version} (tenant contract range: ${manifest.tenantContractRange})`);
+    ctx.stdout(
+      `${PACKAGE_NAME} ${manifest.version} (tenant contract range: ${manifest.tenantContractRange})`,
+    );
     return 0;
   }
   if (args.command === null) {
@@ -307,7 +346,9 @@ export async function main(argv: string[], ctx: Ctx = defaultCtx(), deps: MainDe
       case "contract":
         return await cmdContract(args, ctx);
       case "query":
-        return await cmdQuery(args, ctx, { engineDeps: deps.replica?.engineDeps });
+        return await cmdQuery(args, ctx, {
+          engineDeps: deps.replica?.engineDeps,
+        });
       case "replica":
         return await cmdReplica(args, ctx, deps.replica);
       case "runtime":
@@ -329,7 +370,11 @@ export async function main(argv: string[], ctx: Ctx = defaultCtx(), deps: MainDe
       case "ask":
         return await cmdAsk(args, ctx);
       case "ready":
-        return await cmdReady(args, ctx, { skillNames: CUSTOMER_SKILLS, loadSdk: deps.loadSdk, offline: args.flags.offline === true });
+        return await cmdReady(args, ctx, {
+          skillNames: CUSTOMER_SKILLS,
+          loadSdk: deps.loadSdk,
+          offline: args.flags.offline === true,
+        });
       case "mcp":
         return await cmdMcp(args, ctx);
       case "accounts":
@@ -364,7 +409,11 @@ export async function main(argv: string[], ctx: Ctx = defaultCtx(), deps: MainDe
   } catch (err) {
     if (err instanceof UsageError) {
       ctx.stderr(err.message);
-      ctx.stderr(args.command && args.command in VERB_HELP_KNOWN ? verbHelp(args.command) : usageText());
+      ctx.stderr(
+        args.command && args.command in VERB_HELP_KNOWN
+          ? verbHelp(args.command)
+          : usageText(),
+      );
       return 1;
     }
     if (err instanceof CliError) {
@@ -380,13 +429,51 @@ export async function main(argv: string[], ctx: Ctx = defaultCtx(), deps: MainDe
 }
 
 const VERB_HELP_KNOWN: Record<string, true> = Object.fromEntries(
-  ["login", "join", "install", "status", "notice", "me", "contract", "query", "replica", "runtime", "events", "explain", "running", "queue", "watch", "write", "ask", "ready", "accounts", "release", "secret", "env", "environment", "connections", "identity", "mcp", "team", "capabilities", "project", "repo", "legacy"].map((v) => [v, true]),
+  [
+    "login",
+    "join",
+    "install",
+    "status",
+    "notice",
+    "me",
+    "contract",
+    "query",
+    "replica",
+    "runtime",
+    "events",
+    "explain",
+    "running",
+    "queue",
+    "watch",
+    "write",
+    "ask",
+    "ready",
+    "accounts",
+    "release",
+    "secret",
+    "env",
+    "environment",
+    "connections",
+    "identity",
+    "mcp",
+    "team",
+    "capabilities",
+    "project",
+    "repo",
+    "legacy",
+  ].map((v) => [v, true]),
 );
 
-async function cmdLogin(args: ParsedArgs, ctx: Ctx, deps: MainDeps): Promise<number> {
+async function cmdLogin(
+  args: ParsedArgs,
+  ctx: Ctx,
+  deps: MainDeps,
+): Promise<number> {
   const manifest = readManifest();
   const key = (args.key ?? ctx.env.CATALYST_CLOUD_TOKEN ?? "").trim();
-  const baseUrl = normalizeBaseUrl(args.baseUrl ?? ctx.env.CATALYST_CLOUD_BASE_URL ?? DEFAULT_BASE_URL);
+  const baseUrl = normalizeBaseUrl(
+    args.baseUrl ?? ctx.env.CATALYST_CLOUD_BASE_URL ?? DEFAULT_BASE_URL,
+  );
   // Keyless is the preferred rail: with no key in flag or env, run the WorkOS device flow and log in
   // as the person. A key (flag or CATALYST_CLOUD_TOKEN) still takes the token rail unchanged.
   let auth: OauthAuth | undefined;
@@ -427,7 +514,9 @@ async function cmdLogin(args: ParsedArgs, ctx: Ctx, deps: MainDeps): Promise<num
   if (me.user) {
     ctx.stdout(
       `Connected as ${me.user.label} (${me.user.role})${
-        me.user.linearUserId ? "" : " — your Linear identity is not matched yet, so \"what needs me\" will show everyone's asks until an admin matches it in Settings"
+        me.user.linearUserId
+          ? ""
+          : ' — your Linear identity is not matched yet, so "what needs me" will show everyone\'s asks until an admin matches it in Settings'
       }`,
     );
   } else {
@@ -437,15 +526,22 @@ async function cmdLogin(args: ParsedArgs, ctx: Ctx, deps: MainDeps): Promise<num
   }
   ctx.stdout(
     `Config written to ${written.path} (mode ${formatMode(written.mode)}, holds your ${auth ? "login session" : "key"} and the CLI path)${
-      written.mode === CONFIG_MODE ? "" : ` — expected ${formatMode(CONFIG_MODE)}; chmod it by hand`
+      written.mode === CONFIG_MODE
+        ? ""
+        : ` — expected ${formatMode(CONFIG_MODE)}; chmod it by hand`
     }`,
   );
   ctx.stdout(`Tenant contract range: ${manifest.tenantContractRange}`);
   try {
     const loaded = await loadContract(ctx, config, { refresh: true });
-    ctx.stdout(`Tenant contract ${loaded.doc.contractVersion} cached at ${loaded.path}`);
+    ctx.stdout(
+      `Tenant contract ${loaded.doc.contractVersion} cached at ${loaded.path}`,
+    );
   } catch (err) {
-    if (err instanceof CliError && (err.code === "contract-forbidden" || err.code === "contract-version")) {
+    if (
+      err instanceof CliError &&
+      (err.code === "contract-forbidden" || err.code === "contract-version")
+    ) {
       ctx.stderr(`[catalyst] ${err.message}`);
     } else {
       throw err;
@@ -456,10 +552,14 @@ async function cmdLogin(args: ParsedArgs, ctx: Ctx, deps: MainDeps): Promise<num
     ctx.stdout(updateNoticeLine(previous, manifest.version, entry));
   }
   if (args.flags["start-replica"] === true) {
-    const code = await cmdReplica(parseArgs(["replica", "start", "--detach"]), ctx, {
-      ...deps.replica,
-      argv: deps.replica?.argv ?? [cliPath(), "replica", "start"],
-    });
+    const code = await cmdReplica(
+      parseArgs(["replica", "start", "--detach"]),
+      ctx,
+      {
+        ...deps.replica,
+        argv: deps.replica?.argv ?? [cliPath(), "replica", "start"],
+      },
+    );
     if (code !== 0) return code;
   }
   return 0;
@@ -480,9 +580,14 @@ function cmdInstall(args: ParsedArgs, ctx: Ctx): number {
       : `No skills installed — ${skillsDir} already had them`,
   );
   for (const s of result.skipped) {
-    ctx.stdout(`Skipped "${s.name}": ${skillsDir}/${s.name} exists and was not installed by this package (use --force to replace)`);
+    ctx.stdout(
+      `Skipped "${s.name}": ${skillsDir}/${s.name} exists and was not installed by this package (use --force to replace)`,
+    );
   }
-  if (result.removed.length > 0) ctx.stdout(`Removed retired skills from ${skillsDir}: ${result.removed.join(", ")}`);
+  if (result.removed.length > 0)
+    ctx.stdout(
+      `Removed retired skills from ${skillsDir}: ${result.removed.join(", ")}`,
+    );
   return 0;
 }
 
@@ -490,16 +595,33 @@ function cmdStatus(ctx: Ctx): number {
   const manifest = readManifest();
   const cfg = loadConfig(ctx.home);
   if (!cfg) {
-    ctx.stdout(`Not connected yet — run: npx ${LEGACY_PACKAGE_NAME} login (keyless; or pass --key / set CATALYST_CLOUD_TOKEN)`);
+    ctx.stdout(
+      `Not connected yet — run: npx ${LEGACY_PACKAGE_NAME} login (keyless; or pass --key / set CATALYST_CLOUD_TOKEN)`,
+    );
     return 0;
   }
   ctx.stdout(`Tenant: ${cfg.name} (${cfg.slug}) — account ${cfg.account}`);
   ctx.stdout(`API: ${cfg.baseUrl} (principal: ${cfg.principal})`);
-  ctx.stdout(cfg.user ? `As: ${cfg.user.label} (${cfg.user.role})` : "As: the tenant's account key (a host credential — no person)");
-  ctx.stdout(cfg.auth ? `Credential: your login (expires ${relativeExpiry(cfg.auth.expiresAt, ctx.now())})` : "Credential: personal key");
-  ctx.stdout(`Bundle: ${PACKAGE_NAME} ${manifest.version} (tenant contract range: ${manifest.tenantContractRange})`);
-  if (cfg.cliPath) ctx.stdout(`CLI: ${cfg.cliPath}${existsSync(cfg.cliPath) ? "" : " (missing — re-run login)"}`);
-  ctx.stdout(`Contract: ${existsSync(contractPathFor(ctx.home)) ? contractPathFor(ctx.home) : "not cached (run: catalyst contract --refresh)"}`);
+  ctx.stdout(
+    cfg.user
+      ? `As: ${cfg.user.label} (${cfg.user.role})`
+      : "As: the tenant's account key (a host credential — no person)",
+  );
+  ctx.stdout(
+    cfg.auth
+      ? `Credential: your login (expires ${relativeExpiry(cfg.auth.expiresAt, ctx.now())})`
+      : "Credential: personal key",
+  );
+  ctx.stdout(
+    `Bundle: ${PACKAGE_NAME} ${manifest.version} (tenant contract range: ${manifest.tenantContractRange})`,
+  );
+  if (cfg.cliPath)
+    ctx.stdout(
+      `CLI: ${cfg.cliPath}${existsSync(cfg.cliPath) ? "" : " (missing — re-run login)"}`,
+    );
+  ctx.stdout(
+    `Contract: ${existsSync(contractPathFor(ctx.home)) ? contractPathFor(ctx.home) : "not cached (run: catalyst contract --refresh)"}`,
+  );
   return 0;
 }
 
@@ -520,8 +642,13 @@ async function cmdMe(args: ParsedArgs, ctx: Ctx): Promise<number> {
   if (args.json) ctx.stdout(JSON.stringify(me));
   else {
     ctx.stdout(`${me.name} (${me.slug}) — account ${me.account}`);
-    ctx.stdout(`principal: ${me.principal}; permissions: ${me.permissions ? me.permissions.join(", ") : "unrestricted"}`);
-    if (me.user) ctx.stdout(`user: ${me.user.label} (${me.user.role}); linear: ${me.user.linearUserId ?? "unmatched"}`);
+    ctx.stdout(
+      `principal: ${me.principal}; permissions: ${me.permissions ? me.permissions.join(", ") : "unrestricted"}`,
+    );
+    if (me.user)
+      ctx.stdout(
+        `user: ${me.user.label} (${me.user.role}); linear: ${me.user.linearUserId ?? "unmatched"}`,
+      );
   }
   return 0;
 }
@@ -529,13 +656,27 @@ async function cmdMe(args: ParsedArgs, ctx: Ctx): Promise<number> {
 async function cmdContract(args: ParsedArgs, ctx: Ctx): Promise<number> {
   const cfg = requireConfig(ctx);
   const [sub] = positionals(args);
-  if (sub) throw new UsageError(`contract takes no positional argument (got "${sub}"); use --path <a.b.c>`);
+  if (sub)
+    throw new UsageError(
+      `contract takes no positional argument (got "${sub}"); use --path <a.b.c>`,
+    );
   const refresh = args.flags.refresh === true;
   const loaded = await loadContract(ctx, cfg, { refresh });
-  ctx.stderr(`contract: ${loaded.doc.contractVersion} from ${loaded.source}${loaded.source === "cache" ? ` (${loaded.ageSeconds}s old)` : ""}`);
-  const path = typeof args.flags.path === "string" ? args.flags.path : undefined;
+  ctx.stderr(
+    `contract: ${loaded.doc.contractVersion} from ${loaded.source}${loaded.source === "cache" ? ` (${loaded.ageSeconds}s old)` : ""}`,
+  );
+  const path =
+    typeof args.flags.path === "string" ? args.flags.path : undefined;
   const value = path ? pickPath(loaded.doc, path) : loaded.doc;
-  if (path && value === undefined) throw new CliError(`the contract has nothing at "${path}"`, "contract-path");
-  ctx.stdout(typeof value === "string" ? value : JSON.stringify(value, null, args.json ? 0 : 2));
+  if (path && value === undefined)
+    throw new CliError(
+      `the contract has nothing at "${path}"`,
+      "contract-path",
+    );
+  ctx.stdout(
+    typeof value === "string"
+      ? value
+      : JSON.stringify(value, null, args.json ? 0 : 2),
+  );
   return 0;
 }

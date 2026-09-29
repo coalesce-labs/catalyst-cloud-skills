@@ -32,22 +32,41 @@ export type FlagTable = Record<string, FlagSpec>;
 
 const GLOBAL_FLAGS: FlagTable = {
   key: { value: true, help: "your personal key (or CATALYST_CLOUD_TOKEN)" },
-  "base-url": { value: true, help: "Catalyst Cloud origin (or CATALYST_CLOUD_BASE_URL)" },
-  "skills-dir": { value: true, help: "where the skills are copied (default ~/.claude/skills)" },
-  force: { value: false, help: "replace a skill directory this package did not install" },
+  "base-url": {
+    value: true,
+    help: "Catalyst Cloud origin (or CATALYST_CLOUD_BASE_URL)",
+  },
+  "skills-dir": {
+    value: true,
+    help: "where the skills are copied (default ~/.claude/skills)",
+  },
+  force: {
+    value: false,
+    help: "replace a skill directory this package did not install",
+  },
   json: { value: false, help: "machine-readable output" },
 };
 
 /** Per-verb flag tables. A verb absent here accepts only the global flags. */
 export const FLAG_TABLES: Record<string, FlagTable> = {
   login: {
-    "start-replica": { value: false, help: "run `replica start --detach` after connecting" },
+    "start-replica": {
+      value: false,
+      help: "run `replica start --detach` after connecting",
+    },
   },
   mcp: {
     url: { value: true, help: "add: the upstream HTTPS endpoint" },
     auth: { value: true, help: "add: none for an unauthenticated upstream" },
-    bearer: { value: true, help: "add: vault secret NAME for a bearer token, never its value" },
-    header: { value: true, repeat: true, help: "add: HEADER_NAME=VAULT_SECRET_NAME (repeatable)" },
+    bearer: {
+      value: true,
+      help: "add: vault secret NAME for a bearer token, never its value",
+    },
+    header: {
+      value: true,
+      repeat: true,
+      help: "add: HEADER_NAME=VAULT_SECRET_NAME (repeatable)",
+    },
   },
   install: {},
   status: {},
@@ -61,63 +80,148 @@ export const FLAG_TABLES: Record<string, FlagTable> = {
     team: { value: true, help: "team key filter" },
     project: { value: true, help: "project id filter" },
     state: { value: true, help: "state name filter" },
-    limit: { value: true, help: "max rows (default 50); one page only unless --all" },
+    limit: {
+      value: true,
+      help: "max rows (default 50); one page only unless --all",
+    },
     since: { value: true, help: "changes: the cursor to read after" },
-    source: { value: true, help: "replica | api (default: replica when fresh, else api)" },
+    source: {
+      value: true,
+      help: "replica | api (default: replica when fresh, else api)",
+    },
     ticket: { value: true, help: "pulls: only PRs linked to this ticket" },
-    all: { value: false, help: "issues/pulls: follow the cloud's page cursor to the end of the scope" },
+    all: {
+      value: false,
+      help: "issues/pulls: follow the cloud's page cursor to the end of the scope",
+    },
   },
   replica: {
-    detach: { value: false, help: "start: run the writer in the background and write a pidfile" },
+    detach: {
+      value: false,
+      help: "start: run the writer in the background and write a pidfile",
+    },
     db: { value: true, help: "replica file path (default from customer.json)" },
-    probe: { value: false, help: "status: also fetch the cloud head and print the lag" },
-    "stale-ms": { value: true, help: "status: heartbeat age that counts as stale (default 15000)" },
+    probe: {
+      value: false,
+      help: "status: also fetch the cloud head and print the lag",
+    },
+    "stale-ms": {
+      value: true,
+      help: "status: heartbeat age that counts as stale (default 15000)",
+    },
   },
   events: {
-    probe: { value: false, help: "status: compare the local event cursor with the cloud event head" },
+    probe: {
+      value: false,
+      help: "status: compare the local event cursor with the cloud event head",
+    },
     type: { value: true, help: "exact event type" },
-    ticket: { value: true, help: "ticket identifier found in the event payload" },
-    after: { value: true, help: "event sequence to read after (tail/wait default to local head)" },
+    ticket: {
+      value: true,
+      help: "ticket identifier found in the event payload",
+    },
+    after: {
+      value: true,
+      help: "event sequence to read after (tail/wait default to local head)",
+    },
     limit: { value: true, help: "query: maximum matching events (default 50)" },
-    timeout: { value: true, help: "wait-for: bounded wait in seconds (default 300)" },
-    directory: { value: true, help: "event cache directory (default: SDK XDG path)" },
+    timeout: {
+      value: true,
+      help: "wait-for: bounded wait in seconds (default 300)",
+    },
+    directory: {
+      value: true,
+      help: "event cache directory (default: SDK XDG path)",
+    },
   },
   explain: {
-    history: { value: false, help: "per-ticket execution history instead of the eligibility reason" },
+    history: {
+      value: false,
+      help: "per-ticket execution history instead of the eligibility reason",
+    },
   },
   history: {},
   running: {
-    ticket: { value: true, help: "with --phase: also the lease attributions for this (ticket, phase)" },
-    phase: { value: true, help: "with --ticket: the phase whose lease attributions to read" },
+    ticket: {
+      value: true,
+      help: "with --phase: also the lease attributions for this (ticket, phase)",
+    },
+    phase: {
+      value: true,
+      help: "with --ticket: the phase whose lease attributions to read",
+    },
   },
   queue: {
-    team: { value: true, help: "team key (default: every team the tenant contract names)" },
+    team: {
+      value: true,
+      help: "team key (default: every team the tenant contract names)",
+    },
   },
   watch: {
     team: { value: true, help: "scope: a team key" },
-    ticket: { value: true, repeat: true, help: "scope: a ticket identifier (repeatable)" },
+    ticket: {
+      value: true,
+      repeat: true,
+      help: "scope: a ticket identifier (repeatable)",
+    },
     project: { value: true, help: "scope: a project id" },
-    exec: { value: true, help: "run this shell command per frame with the frame on stdin" },
-    "cursor-file": { value: true, help: "cursor file path (default ~/.config/catalyst-cloud/watch-cursor.json)" },
+    exec: {
+      value: true,
+      help: "run this shell command per frame with the frame on stdin",
+    },
+    "cursor-file": {
+      value: true,
+      help: "cursor file path (default ~/.config/catalyst-cloud/watch-cursor.json)",
+    },
     from: { value: true, help: "cursor | head (default cursor)" },
   },
   write: {
     body: { value: true, help: "comment: the body text" },
-    stdin: { value: false, help: "comment: read the body from stdin; create: read the description from stdin" },
+    stdin: {
+      value: false,
+      help: "comment: read the body from stdin; create: read the description from stdin",
+    },
     parent: { value: true, help: "comment: reply under this comment id" },
-    bookkeeping: { value: false, help: "comment: prefix the contract's bookkeeping marker" },
-    "as-user": { value: false, help: "post with the personal identity instead of the app actor" },
+    bookkeeping: {
+      value: false,
+      help: "comment: prefix the contract's bookkeeping marker",
+    },
+    "as-user": {
+      value: false,
+      help: "post with the personal identity instead of the app actor",
+    },
     slot: { value: true, help: "state: the workflow slot to move to" },
     "state-id": { value: true, help: "state: an explicit Linear state id" },
-    "state-type": { value: true, help: "state: the first state of this type on the ticket's team (e.g. backlog)" },
-    add: { value: true, repeat: true, help: "label: label name or id to add (repeatable)" },
-    remove: { value: true, repeat: true, help: "label: label name or id to remove (repeatable)" },
+    "state-type": {
+      value: true,
+      help: "state: the first state of this type on the ticket's team (e.g. backlog)",
+    },
+    add: {
+      value: true,
+      repeat: true,
+      help: "label: label name or id to add (repeatable)",
+    },
+    remove: {
+      value: true,
+      repeat: true,
+      help: "label: label name or id to remove (repeatable)",
+    },
     team: { value: true, help: "create: team key" },
     title: { value: true, help: "create/attachment/session: title" },
-    description: { value: true, help: "create: the ticket description (markdown)" },
-    label: { value: true, repeat: true, help: "create: label name or id (repeatable)" },
+    description: {
+      value: true,
+      help: "create: the ticket description (markdown)",
+    },
+    label: {
+      value: true,
+      repeat: true,
+      help: "create: label name or id (repeatable)",
+    },
     priority: { value: true, help: "create: Linear priority 0-4" },
-    comment: { value: true, help: "reaction: react to this comment id instead of the ticket" },
+    comment: {
+      value: true,
+      help: "reaction: react to this comment id instead of the ticket",
+    },
     emoji: { value: true, help: "reaction: the emoji" },
     url: { value: true, help: "attachment/session: the URL" },
     "plan-file": { value: true, help: "session: a JSON file holding the plan" },
@@ -127,72 +231,168 @@ export const FLAG_TABLES: Record<string, FlagTable> = {
     team: { value: true, help: "raise: team key" },
     title: { value: true, help: "raise: the question" },
     context: { value: true, help: "raise: context paragraph" },
-    option: { value: true, repeat: true, help: "raise: an option (repeatable)" },
+    option: {
+      value: true,
+      repeat: true,
+      help: "raise: an option (repeatable)",
+    },
     default: { value: true, help: "raise: the default if silent" },
-    blocks: { value: true, repeat: true, help: "raise: a ticket this decision blocks (repeatable)" },
-    "nothing-to-block": { value: false, help: "raise: declare that nothing is blocked" },
-    anyone: { value: false, help: "list: every open ask in the tenant, not only the ones assigned to you" },
+    blocks: {
+      value: true,
+      repeat: true,
+      help: "raise: a ticket this decision blocks (repeatable)",
+    },
+    "nothing-to-block": {
+      value: false,
+      help: "raise: declare that nothing is blocked",
+    },
+    anyone: {
+      value: false,
+      help: "list: every open ask in the tenant, not only the ones assigned to you",
+    },
     "ask-key": { value: true, help: "raise: idempotency key" },
     answer: { value: true, help: "accept: the answering comment id" },
     role: { value: true, help: "accept: the role recording the answer" },
   },
   ready: {
-    offline: { value: false, help: "skip the published-release check (no network)" },
+    offline: {
+      value: false,
+      help: "skip the published-release check (no network)",
+    },
   },
   accounts: {},
   env: {},
   team: {
     all: { value: false, help: "check every team, one request at a time" },
-    stage: { value: true, repeat: true, help: "map a role to a live Linear state name (role=StateName)" },
-    choice: { value: true, repeat: true, help: "migrate a source state to a destination (sourceId=destinationId)" },
-    yes: { value: false, help: "apply the plan you have reviewed with the person" },
-    "plan-hash": { value: true, help: "apply only the exact preview hash the person reviewed" },
-    undo: { value: false, help: "adopt: preview or archive stages a prior adoption created" },
-    retire: { value: false, help: "migrate: separately preview or retire emptied source stages" },
+    stage: {
+      value: true,
+      repeat: true,
+      help: "map a role to a live Linear state name (role=StateName)",
+    },
+    choice: {
+      value: true,
+      repeat: true,
+      help: "migrate a source state to a destination (sourceId=destinationId)",
+    },
+    yes: {
+      value: false,
+      help: "apply the plan you have reviewed with the person",
+    },
+    "plan-hash": {
+      value: true,
+      help: "apply only the exact preview hash the person reviewed",
+    },
+    undo: {
+      value: false,
+      help: "adopt: preview or archive stages a prior adoption created",
+    },
+    retire: {
+      value: false,
+      help: "migrate: separately preview or retire emptied source stages",
+    },
   },
   environment: {
     file: { value: true, help: "propose: a JSON file holding the declaration" },
     stdin: { value: false, help: "propose: read the declaration from stdin" },
-    "expect-revision": { value: true, help: "propose: refuse unless the stored declaration is still at this revision" },
-    approve: { value: false, help: "propose: approve exactly the revision the propose returned" },
-    revision: { value: true, help: "approve: the revision to approve (with --hash; default is whatever read returns)" },
-    hash: { value: true, help: "approve: the canonical hash to approve (with --revision)" },
+    "expect-revision": {
+      value: true,
+      help: "propose: refuse unless the stored declaration is still at this revision",
+    },
+    approve: {
+      value: false,
+      help: "propose: approve exactly the revision the propose returned",
+    },
+    revision: {
+      value: true,
+      help: "approve: the revision to approve (with --hash; default is whatever read returns)",
+    },
+    hash: {
+      value: true,
+      help: "approve: the canonical hash to approve (with --revision)",
+    },
   },
   secret: {
     repo: { value: true, help: "the repository, as owner/name (required)" },
-    command: { value: true, help: "set: run this command on this machine and store its output (e.g. 'op read op://Vault/item/field'); the command text is audited, so never put a value in it" },
-    rotate: { value: true, repeat: true, help: "import: replace this name if it is already set (repeatable)" },
+    command: {
+      value: true,
+      help: "set: run this command on this machine and store its output (e.g. 'op read op://Vault/item/field'); the command text is audited, so never put a value in it",
+    },
+    rotate: {
+      value: true,
+      repeat: true,
+      help: "import: replace this name if it is already set (repeatable)",
+    },
   },
   identity: {},
   capabilities: {},
   project: {
-    team: { value: true, help: "the project's team key (default: the only mapped project)" },
+    team: {
+      value: true,
+      help: "the project's team key (default: the only mapped project)",
+    },
   },
   legacy: {
-    remove: { value: false, help: "remove what was found, after one question (or --yes)" },
-    data: { value: false, help: "with --remove: delete the old runtime's data folders too" },
-    yes: { value: false, help: "with --remove: answer the question yes (a run with no terminal only reports otherwise)" },
+    remove: {
+      value: false,
+      help: "remove what was found, after one question (or --yes)",
+    },
+    data: {
+      value: false,
+      help: "with --remove: delete the old runtime's data folders too",
+    },
+    yes: {
+      value: false,
+      help: "with --remove: answer the question yes (a run with no terminal only reports otherwise)",
+    },
   },
   repo: {
-    write: { value: false, help: "agents-block: write or update the block in AGENTS.md (working tree only)" },
-    apply: { value: false, help: "agent-setup: perform the portable-layout plan in the working tree" },
-    "with-check": { value: false, help: "agent-setup: also write scripts/agents-md-check.mjs, a CI check for the layout" },
+    write: {
+      value: false,
+      help: "agents-block: write or update the block in AGENTS.md (working tree only)",
+    },
+    apply: {
+      value: false,
+      help: "agent-setup: perform the portable-layout plan in the working tree",
+    },
+    "with-check": {
+      value: false,
+      help: "agent-setup: also write scripts/agents-md-check.mjs, a CI check for the layout",
+    },
   },
   connections: {
-    wait: { value: true, help: "start: wait up to this many seconds for browser approval (0-600)" },
+    wait: {
+      value: true,
+      help: "start: wait up to this many seconds for browser approval (0-600)",
+    },
   },
   release: {
-    because: { value: true, help: "what changed since the ticket was held (required unless --dry-run)" },
-    "retry-unchanged": { value: false, help: "release even though nothing the mirror can see changed (say what did in --because)" },
-    "dry-run": { value: false, help: "show what a release would clear and refuse, and change nothing" },
-    class: { value: true, help: "release every ticket on --team parked under this failure class" },
+    because: {
+      value: true,
+      help: "what changed since the ticket was held (required unless --dry-run)",
+    },
+    "retry-unchanged": {
+      value: false,
+      help: "release even though nothing the mirror can see changed (say what did in --because)",
+    },
+    "dry-run": {
+      value: false,
+      help: "show what a release would clear and refuse, and change nothing",
+    },
+    class: {
+      value: true,
+      help: "release every ticket on --team parked under this failure class",
+    },
     team: { value: true, help: "with --class: the team key" },
-    limit: { value: true, help: "with --class: at most this many tickets (the cloud caps it at 25)" },
+    limit: {
+      value: true,
+      help: "with --class: at most this many tickets (the cloud caps it at 25)",
+    },
   },
 };
 
 export const VERB_USAGE: Record<string, string> = {
-  login: "login [--base-url <url>] [--start-replica]   (keyless; or --key <personal-key> / CATALYST_CLOUD_TOKEN)",
+  login:
+    "login [--base-url <url>] [--start-replica]   (keyless; or --key <personal-key> / CATALYST_CLOUD_TOKEN)",
   install: "install [--skills-dir <dir>] [--force]",
   status: "status",
   notice: "notice",
@@ -201,7 +401,7 @@ export const VERB_USAGE: Record<string, string> = {
   query:
     "query <issues|issue <id>|pulls|pull <id>|projects|cycles|search <terms>|changes --since <cursor|head>> [--team K] [--project P] [--state S] [--limit N] [--all] [--source replica|api] [--json]",
   replica:
-    "replica <start [--detach]|stop|status [--probe] [--json]|sql \"<select>\"|schema [table]> [--db <path>]",
+    'replica <start [--detach]|stop|status [--probe] [--json]|sql "<select>"|schema [table]> [--db <path>]',
   runtime: "runtime <status [--json]|install|path|uninstall>",
   events:
     "events <tail|wait-for|query|status [--probe] [--json]> [--type NAME] [--ticket CTC-N] [--after SEQUENCE] [--limit N] [--timeout SECONDS] [--directory PATH]",
@@ -209,7 +409,8 @@ export const VERB_USAGE: Record<string, string> = {
   history: "history <ticket> [--json]",
   running: "running [--ticket T --phase P] [--json]",
   queue: "queue [--team K] [--json]",
-  watch: "watch [--team K] [--ticket T]... [--project P] [--exec CMD] [--cursor-file <path>] [--from cursor|head]",
+  watch:
+    "watch [--team K] [--ticket T]... [--project P] [--exec CMD] [--cursor-file <path>] [--from cursor|head]",
   write:
     "write <comment <ticket> --body|--stdin [--parent] [--bookkeeping] [--as-user] | state <ticket> --slot|--state-id|--state-type | label <ticket> --add... --remove... | create --team --title [--description|--stdin] [--label] [--priority] | reaction <ticket>|--comment <id> --emoji <e> | attachment <ticket> --title --url | session <ticket> [--title] [--plan-file] [--activity]>",
   ask: "ask <raise --team --title [--context] [--option]... [--default] --blocks <ticket>...|--nothing-to-block [--ask-key] | accept <askTicket> --answer <commentId> --role <role> | list [--anyone] [--json]>",
@@ -224,10 +425,12 @@ export const VERB_USAGE: Record<string, string> = {
     "secret set <NAME> --repo <owner/name> [--command '<cmd>'] [--json]   (value from --command, stdin, or a hidden prompt) | secret import <file> --repo <owner/name> [--rotate NAME]... [--json]",
   identity: "identity linear <status|options|set> [<linearUserId>] [--json]",
   capabilities: "capabilities [--json]",
-  project: "project wip-limit <get|set <n>|set default> [--team K] [--json]",
+  project:
+    "project <list [--json] | wip-limit <get|set <n>|set default> [--team K] [--json]>",
   repo: "repo <agents-block <path> [--write]|agent-setup <path> [--apply] [--with-check]> [--json]",
   legacy: "legacy [--remove [--data] [--yes]] [--json]",
-  connections: "connections personal <linear|github> <start|status> [--wait <seconds>] [--json]",
+  connections:
+    "connections personal <linear|github> <start|status> [--wait <seconds>] [--json]",
   release:
     "release <ticket> --because <what changed> [--retry-unchanged] [--dry-run] [--json] | release --class <failure-class> --team <K> --because <what changed> [--retry-unchanged] [--dry-run] [--limit N] [--json]",
 };
@@ -272,7 +475,9 @@ export function parseArgs(argv: string[]): ParsedArgs {
       const spec = table[name];
       if (!spec) {
         throw new UsageError(
-          out.command ? `unknown option for ${out.command}: --${name}` : `unknown option: --${name}`,
+          out.command
+            ? `unknown option for ${out.command}: --${name}`
+            : `unknown option: --${name}`,
         );
       }
       if (spec.value) {
@@ -284,12 +489,14 @@ export function parseArgs(argv: string[]): ParsedArgs {
           out.flags[name] = v;
         }
       } else {
-        if (inlineValue !== undefined) throw new UsageError(`--${name} takes no value`);
+        if (inlineValue !== undefined)
+          throw new UsageError(`--${name} takes no value`);
         out.flags[name] = true;
       }
       continue;
     }
-    if (a.startsWith("-") && a.length > 1) throw new UsageError(`unknown option: ${a}`);
+    if (a.startsWith("-") && a.length > 1)
+      throw new UsageError(`unknown option: ${a}`);
     positionals.push(a);
     if (positionals.length === 1) {
       out.command = a;
@@ -300,8 +507,10 @@ export function parseArgs(argv: string[]): ParsedArgs {
   out.subcommand = positionals[1] ?? null;
   out.rest = positionals.slice(2);
   if (typeof out.flags.key === "string") out.key = out.flags.key;
-  if (typeof out.flags["base-url"] === "string") out.baseUrl = out.flags["base-url"];
-  if (typeof out.flags["skills-dir"] === "string") out.skillsDir = out.flags["skills-dir"];
+  if (typeof out.flags["base-url"] === "string")
+    out.baseUrl = out.flags["base-url"];
+  if (typeof out.flags["skills-dir"] === "string")
+    out.skillsDir = out.flags["skills-dir"];
   out.force = out.flags.force === true;
   out.json = out.flags.json === true;
   return out;
@@ -309,7 +518,8 @@ export function parseArgs(argv: string[]): ParsedArgs {
 
 function requireValue(argv: string[], i: number, flag: string): string {
   const v = argv[i];
-  if (v === undefined || v === "") throw new UsageError(`${flag} requires a value`);
+  if (v === undefined || v === "")
+    throw new UsageError(`${flag} requires a value`);
   return v;
 }
 
@@ -333,11 +543,16 @@ export function flagBool(args: ParsedArgs, name: string): boolean {
   return args.flags[name] === true;
 }
 
-export function flagInt(args: ParsedArgs, name: string, fallback: number): number {
+export function flagInt(
+  args: ParsedArgs,
+  name: string,
+  fallback: number,
+): number {
   const v = flagString(args, name);
   if (v === undefined) return fallback;
   const n = Number(v);
-  if (!Number.isInteger(n)) throw new UsageError(`--${name} must be an integer`);
+  if (!Number.isInteger(n))
+    throw new UsageError(`--${name} must be an integer`);
   return n;
 }
 
@@ -348,12 +563,17 @@ export function verbHelp(verb: string): string {
   const names = Object.keys(table);
   if (names.length > 0) {
     lines.push("Options:");
-    for (const name of names) lines.push(`  --${name}${table[name]!.value ? " <value>" : ""}  ${table[name]!.help}`);
+    for (const name of names)
+      lines.push(
+        `  --${name}${table[name]!.value ? " <value>" : ""}  ${table[name]!.help}`,
+      );
     lines.push("");
   }
   lines.push("Global options:");
   for (const name of Object.keys(GLOBAL_FLAGS)) {
-    lines.push(`  --${name}${GLOBAL_FLAGS[name]!.value ? " <value>" : ""}  ${GLOBAL_FLAGS[name]!.help}`);
+    lines.push(
+      `  --${name}${GLOBAL_FLAGS[name]!.value ? " <value>" : ""}  ${GLOBAL_FLAGS[name]!.help}`,
+    );
   }
   lines.push("  -h, --help  this text", "  -V, --version  the bundle version");
   return lines.join("\n");

@@ -1,7 +1,7 @@
 ---
 name: what-this-repo-needs
 description: >-
-  What environment variable names does this repository need, and where does each one come from? Scans the repository offline (no login, no network) and lists the names in three groups (build/test, deploy-only, bindings), each with where it was found, what uses it, and where a local value would come from. Never reads or prints a value. Also validates a catalyst.env.json file the same way the cloud does. Use when someone asks "what does catalyst.env.json mean", "what env vars does this repo need", "why does the container need this", or before reviewing or writing a repository's environment declaration.
+  What environment variable names does this repository need, and where does each one come from? Scans the repository offline (no login, no network) and lists the names in three groups (build/test, deploy-only, bindings), each with where it was found, what uses it, and where a local value would come from. Never reads a value or prints one. Also checks the environment variable table in `.catalyst/catalyst.toml` offline. Use when someone asks "what does catalyst.env.json mean", "what env vars does this repo need", "why does the container need this", or before reviewing or writing the declaration.
 allowed-tools: Bash(catalyst:*) Bash(npx -p @catalyst-cloud/cli catalyst:*)
 ---
 <!-- vendored-from: @catalyst-cloud/catalyst-skills@0.13.1 — written in this repository for customer accounts -->
@@ -13,7 +13,7 @@ Say this first, in your own words, before you scan: the fleet builds and tests t
 ## Run first
 
 - `node scripts/inventory.mjs [path] --help`: scans the repository (default: here) and prints the names in three groups: build/test, deploy-only, bindings. Each name shows where it was found (file:line), what uses it, and where a local value would come from: a `.env` file, your shell, a CI secret, or a Cloudflare binding. `--json` gives the same data in machine form.
-- `node scripts/check.mjs <file> --help`: validates an existing `catalyst.env.json` offline with the cloud's rules, and never prints a value from it either.
+- `node scripts/check.mjs [path] --help`: checks TOML syntax and the environment variable table in `.catalyst/catalyst.toml` (default) or the repo-relative path you name. It never reads or prints a variable value. The old root JSON declaration is not read by the cloud.
 
 Then ask the person to review the grouped list: for each name, keep it, drop it, or move it to a different group. Keep your own reasoning short; the list is the point.
 
@@ -25,7 +25,7 @@ Then ask the person to review the grouped list: for each name, keep it, drop it,
 
 ## Rules
 
-- Report only. This tool writes no `catalyst.env.json` and proposes nothing.
+- Report only. This tool writes no `.catalyst/catalyst.toml` and proposes nothing.
 - Print names only: never a `.env` value, a secret, or a committed `wrangler.toml [vars]` value. Give the name, where it was found, and where a local value would come from.
 - A Cloudflare (or other platform) binding is not an environment value; keep the two apart.
 - This reads the repository only, with no login and no network call. The account-scope `catalyst environment` verb reads your cloud account's own declaration.
