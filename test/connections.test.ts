@@ -42,7 +42,7 @@ describe("connections personal", () => {
     const code = await main(["connections", "personal", "linear", "start"], ctx, {
       connections: {
         createClient: (options) => {
-          keys.push(options.key);
+          if (options.key !== undefined) keys.push(options.key);
           return fakeClient([{ outcome: "absent", status: 200 }]);
         },
         openBrowser: (url) => opened.push(url),

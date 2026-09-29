@@ -505,7 +505,7 @@ describe("the package manifest", () => {
     // its own. `test/smoke-publish.test.ts` packs and installs the real tarball, so this is exercised
     // end to end, not just asserted here.
     expect(manifest.dependencies).toEqual({
-      "@catalyst-cloud/sdk": expect.stringMatching(/^\^0\.12\./),
+      "@catalyst-cloud/sdk": expect.stringMatching(/^\^0\.13\./),
       yaml: expect.stringMatching(/^\^2\./),
     });
   });
@@ -593,11 +593,11 @@ describe("CTC-2158: CI derives its Node matrix and exercises bun in both directi
     expect(md).toContain("--all");
   });
 
-  test("the version matches the CHANGELOG's top entry, which is 0.9.6", () => {
+  test("the version matches the CHANGELOG's top entry, which is 0.13.0", () => {
     const changelog = readFileSync(join(pkgRoot, "CHANGELOG.md"), "utf8");
     expect(changelog).toContain(`## ${manifest.version}\n`);
-    expect(changelog.indexOf("## 0.9.6")).toBe(changelog.indexOf("## "));
-    expect(manifest.version).toBe("0.9.6");
+    expect(changelog.indexOf("## 0.13.0")).toBe(changelog.indexOf("## "));
+    expect(manifest.version).toBe("0.13.0");
   });
 
   test("every shipped skill stamps the package version on its provenance line", () => {
