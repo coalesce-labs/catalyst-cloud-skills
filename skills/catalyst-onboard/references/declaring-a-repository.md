@@ -2,6 +2,8 @@
 
 The cloud containers build and test the repository. They need the names of the variables and secrets it reads. You write the names; the person enters the values in the app. Never read or print a value.
 
+This is step 8 of `references/the-one-path.md`. Offer to draft the file from the repository's own build files, say which files you will read and what you will write, and wait for a yes before you write anything. If the repository already has one, verify it against the inventory below instead of rewriting it.
+
 ## The inventory, in order
 
 1. Start from the commands that already build and test the repository: the README's setup section, the scripts in `package.json` or its equivalent, and the build and test steps in CI. Those are what the container runs. A name they never read does not belong in the file.
@@ -41,4 +43,4 @@ run = ["npm", "ci"]
 
 ## After the merge
 
-`catalyst-skills ready` reports `environment_declared` for the team's default repository and names the next step: commit the file, fix it, or approve it. The `catalyst-setup` check table has each reason. The account-wide declaration is separate; `catalyst-skills environment` handles it (step 7 of `references/the-one-path.md`).
+`catalyst-skills ready` reports `environment_declared` for the team's default repository and names the next step: commit the file, fix it, or approve it. The `catalyst-setup` check table has each reason. The workspace-wide declaration is separate; `catalyst-skills environment` handles it (also step 8 of `references/the-one-path.md`).

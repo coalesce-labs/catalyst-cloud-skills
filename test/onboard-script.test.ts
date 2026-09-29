@@ -35,6 +35,11 @@ interface Scenario {
   hostsCurrent: Check | null;
   readinessStatus?: string;
   hostFixedWhere?: { page: string; command: string | null } | null;
+  /** No project mapped yet: `contract --path teams` answers `[]`. */
+  noProject?: boolean;
+  /** The project's `environment_declared` check. Omitted, the contract carries no such check (an
+   *  older cloud, or a project never checked), which is not a failing declaration. */
+  environmentDeclared?: Check & { repos?: { repo: string; reason?: string }[] };
 }
 
 const ENROLLER = "A tenant owner or admin, in Catalyst settings.";
@@ -71,6 +76,7 @@ function readinessChecks(hostFixedWhere: Scenario["hostFixedWhere"]) {
 function answers(s: Scenario): Record<string, unknown> {
   const checks: Check[] = [{ id: "oauth_scope", state: "pass" }];
   if (s.hostsCurrent) checks.push(s.hostsCurrent);
+  if (s.environmentDeclared) checks.push(s.environmentDeclared);
   return {
     "ready --json": { ready: true, checks: s.readyChecks ?? [{ id: "config", ok: true, line: "config: connected" }] },
     "me --json": { user: { label: "Pat Example", role: "owner", linearUserId: "lin-user-fixture" } },
@@ -79,13 +85,15 @@ function answers(s: Scenario): Record<string, unknown> {
     "connections personal github status --json": { outcome: "connected", status: 200 },
     "contract --path account --json": { name: "Example Co", slug: "example", linearWorkspaceSlug: "example-ws" },
     "environment read --json": { current: null },
-    "contract --path teams --json": [
-      {
-        key: "ENG",
-        dispatchGate: { status: "open" },
-        readiness: { status: s.readinessStatus ?? "degraded", checks: s.readinessStatus === "unchecked" ? [] : checks },
-      },
-    ],
+    "contract --path teams --json": s.noProject
+      ? []
+      : [
+          {
+            key: "ENG",
+            dispatchGate: { status: "open" },
+            readiness: { status: s.readinessStatus ?? "degraded", checks: s.readinessStatus === "unchecked" ? [] : checks },
+          },
+        ],
     "contract --path merge.repositories --json": [{ owner: "example", name: "app" }],
     "contract --path readinessChecks --json": readinessChecks(s.hostFixedWhere),
     ...(s.accountsFail
@@ -543,12 +551,16 @@ describe("where-am-i.mjs: no next step without a basis", () => {
     }
   });
 
-  test("an unreadable account block, with no version refusal, says to read it again rather than connect Linear", () => {
+  test("an unreadable contract, with no version refusal, says to read it again rather than connect Linear", () => {
     const home = connectedHome({ contractError: "network error: could not reach https://cloud.example", hostsCurrent: PASS });
     const doc = json(home);
-    expect(doc.next?.part).toBe("account");
-    expect(doc.next?.action).toMatch(/^refresh the contract/);
+    // Every contract read failed. The first part in the person's order is the coding account, and its
+    // unreadable step is reading it again; no part after it names a Linear or GitHub step.
+    expect(doc.next?.part).toBe("coding accounts");
+    expect(doc.next?.action).toMatch(/read the coding accounts again/);
     expect(doc.next?.action).not.toMatch(/connect Linear|GitHub App/);
+    expect(part(doc, "account").verdict).toBe("unreadable");
+    for (const p of doc.parts.filter((x) => x.verdict === "unreadable")) expect(p.lines.join("\n")).not.toMatch(/connect Linear|install the GitHub App/);
   });
 
   test("installed CLI is npm's latest: a newer CLI is not published yet, and nothing here changes", () => {
@@ -572,5 +584,103 @@ describe("where-am-i.mjs: no next step without a basis", () => {
       expect(action).not.toContain(NOT_PUBLISHED);
       expect(action).not.toContain("Update the CLI:");
     }
+  });
+});
+
+describe("where-am-i.mjs: the steps come in the order a person can act on them", () => {
+  const ORDER = ["machine", "coding accounts", "account", "projects", "repositories", "person", "repository declarations", "host"];
+
+  test("nothing beyond the machine is done: the coding account is the first question, not the project", () => {
+    const doc = json(connectedHome({ codingAccounts: NONE_ENROLLED, noProject: true, hostsCurrent: null }));
+    expect(doc.parts.map((p) => p.part)).toEqual(ORDER);
+    expect(doc.next?.part).toBe("coding accounts");
+    expect(doc.finished).toBe(false);
+  });
+
+  test("an account enrolled and no project mapped: the project is next, and nothing after it is named", () => {
+    const home = connectedHome({ codingAccounts: CA_ENROLLED, noProject: true, hostsCurrent: null });
+    const doc = json(home);
+    expect(doc.next?.part).toBe("projects");
+    expect(run(home, ["--next"]).stdout).toMatch(/^projects: pick ONE project/);
+    // the declaration and the host wait on a project; neither is called a failure of its own
+    expect(part(doc, "repository declarations").verdict).toBe("unreadable");
+    expect(part(doc, "repository declarations").lines[0]).toMatch(/no project is mapped yet/);
+  });
+
+  test("the report prints the parts in that order", () => {
+    const report = run(connectedHome({ codingAccounts: CA_ENROLLED, hostsCurrent: PASS }), []).stdout;
+    const at = (name: string) => report.indexOf(`${name}  [`);
+    for (let i = 1; i < ORDER.length; i++) expect(at(ORDER[i]!), `${ORDER[i - 1]} before ${ORDER[i]}`).toBeGreaterThan(at(ORDER[i - 1]!));
+  });
+});
+
+describe("where-am-i.mjs: the repository declaration is read from the project's environment_declared check", () => {
+  type Note = { repo: string; reason?: string };
+  const decl = (state: string, reason?: string, repos?: Note[]) => ({ id: "environment_declared", state, ...(reason ? { reason } : {}), ...(repos ? { repos } : {}) });
+  const REPOS = "https://cloud.example/settings/repositories";
+
+  test("no declaration committed yet: unfinished, names .catalyst/catalyst.toml, and is the next step", () => {
+    const home = connectedHome({ codingAccounts: CA_ENROLLED, hostsCurrent: PASS, environmentDeclared: decl("fail", "no_environment_declaration") });
+    const doc = json(home);
+    const d = part(doc, "repository declarations");
+    expect(d.verdict).toBe("unfinished");
+    expect(d.lines.join("\n")).toContain("ENG: no .catalyst/catalyst.toml on its default branch yet");
+    expect(d.lines.join("\n")).toContain("never a value");
+    expect(d.where).toBe("write .catalyst/catalyst.toml with references/declaring-a-repository.md, then open a pull request");
+    expect(doc.next).toMatchObject({ part: "repository declarations", blocking: true });
+    expect(doc.next?.action).toMatch(/catalyst\.toml/);
+    expect(doc.finished).toBe(false);
+    // a command gets "do", a page gets "where"
+    expect(run(home, []).stdout).toMatch(/^ {2}do: write \.catalyst\/catalyst\.toml/m);
+  });
+
+  test("awaiting approval: names Approve this revision and the repositories page, owned by an owner or admin", () => {
+    const d = part(json(connectedHome({ codingAccounts: CA_ENROLLED, hostsCurrent: PASS, environmentDeclared: decl("fail", "declaration_awaiting_approval") })), "repository declarations");
+    expect(d.verdict).toBe("unfinished");
+    expect(d.lines.join("\n")).toContain("Approve this revision");
+    expect(d.owner).toBe("a tenant owner or admin");
+    expect(d.where).toBe(REPOS);
+  });
+
+  test("an invalid file names the fix, not the approval", () => {
+    const doc = json(connectedHome({ codingAccounts: CA_ENROLLED, hostsCurrent: PASS, environmentDeclared: decl("fail", "declaration_invalid") }));
+    expect(doc.next?.action).toMatch(/fix the file/);
+    expect(doc.next?.action).not.toMatch(/Approve/);
+  });
+
+  test("no default repository: register one first, on the repositories page", () => {
+    const doc = json(connectedHome({ codingAccounts: CA_ENROLLED, hostsCurrent: PASS, environmentDeclared: decl("fail", "no_team_repo_default") }));
+    expect(doc.next?.action).toMatch(/register one and make it the default/);
+    expect(doc.next?.where).toBe(REPOS);
+  });
+
+  test("the project's other repositories are read per repository, off the check's own notes", () => {
+    const d = part(json(connectedHome({ codingAccounts: CA_ENROLLED, hostsCurrent: PASS, environmentDeclared: decl("pass", undefined, [{ repo: "example/api", reason: "no_environment_declaration" }]) })), "repository declarations");
+    expect(d.verdict).toBe("unfinished");
+    expect(d.lines[0]).toBe("ENG: a declaration is in effect for the project's default repository");
+    expect(d.lines[1]).toMatch(/^ENG, example\/api: no \.catalyst\/catalyst\.toml/);
+  });
+
+  test("in effect: ok, and setup can finish", () => {
+    const doc = json(connectedHome({ codingAccounts: CA_ENROLLED, hostsCurrent: PASS, environmentDeclared: decl("pass") }));
+    expect(part(doc, "repository declarations")).toMatchObject({ verdict: "ok", owner: null, where: null });
+    expect(doc.finished).toBe(true);
+  });
+
+  test("unknown: unreadable, never ok, and the step is a re-check, not a file", () => {
+    const home = connectedHome({ codingAccounts: CA_ENROLLED, hostsCurrent: PASS, environmentDeclared: decl("unknown", "declaration_unread") });
+    const doc = json(home);
+    expect(part(doc, "repository declarations").verdict).toBe("unreadable");
+    expect(doc.finished).toBe(false);
+    expect(doc.next?.action).toMatch(/Re-check/);
+    expect(doc.next?.action).not.toMatch(/catalyst\.toml/);
+  });
+
+  test("a cloud that carries no such check: nothing is read, said so, and it does not block", () => {
+    const doc = json(connectedHome({ codingAccounts: CA_ENROLLED, hostsCurrent: PASS }));
+    const d = part(doc, "repository declarations");
+    expect(d.verdict).toBe("ok");
+    expect(d.lines[0]).toMatch(/reports no repository declaration check/);
+    expect(doc.finished).toBe(true);
   });
 });

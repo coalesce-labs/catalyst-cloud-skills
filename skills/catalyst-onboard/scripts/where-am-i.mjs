@@ -1,5 +1,7 @@
 #!/usr/bin/env node
-// where-am-i.mjs — how far has setup got? SEVEN PARTS, EACH READ BY THE INSTRUMENT THAT OWNS IT, and
+// where-am-i.mjs — how far has setup got? EIGHT PARTS, EACH READ BY THE INSTRUMENT THAT OWNS IT, and
+// reported in the order a person can act on them (coding account first, then the integrations, the
+// project, its repository, the person's own connected accounts, the repository's declaration, the host);
 // each finding labelled with the part it belongs to. The whole point of this script is that no part
 // answers for another: a project that is not ready is reported as a project finding with a tenant
 // owner's name on it, never as something the person at this keyboard can fix by running anything.
@@ -18,7 +20,7 @@ const NOTES = [
   "`replica status --probe --json` and `events status --probe --json` (optional local freshness),",
   "`me --json` and personal connection statuses (person), `contract --path …` for the account, the projects and the repositories,",
   "`contract --path codingAccounts` and `accounts --json` (coding accounts, and which one needs a new credential), and each",
-  "project's hosts_current check with its fixedWhere (host).",
+  "project's hosts_current check with its fixedWhere (host), and each project's environment_declared check with its per-repository notes (repository declarations).",
   "Also runs `gh repo view <owner>/thoughts` for each registered repository's owner, as a note: it shows the repository exists, never that the GitHub App can reach it.",
   "When the tenant serves a contract version this CLI refuses, runs `npm view @catalyst-cloud/cli version` once to say whether a newer CLI is published.",
   "Writes nothing and changes nothing. Runs before this machine is connected — that is one of the states it reports.",
@@ -449,6 +451,65 @@ if (!connected) {
   }
 }
 
+// ── repository declarations ───────────────────────────────────────────────────────────────────────
+// A repository's own settings live in its committed `.catalyst/catalyst.toml`. Whether the project's
+// default repository has one in effect is the contract's `environment_declared` check; the project's
+// other repositories appear under that check's `repos`. Names only: nothing here reads a value, and
+// nothing here reads a file on this machine. A cloud that sends no such check has nothing to read.
+const DECL_INSTRUMENT = "environment_declared in catalyst-skills contract --path teams";
+const DECL_REASONS = {
+  no_team_repo_default: { text: "no repository is the project's default yet: register one and make it the default", who: "a tenant owner or admin", page: "/settings/repositories" },
+  no_environment_declaration: { text: "no .catalyst/catalyst.toml on its default branch yet: write it with the person (names only, never a value), open a pull request, merge it", who: "the person, in the repository, with your help", page: null },
+  declaration_invalid: { text: "the committed .catalyst/catalyst.toml did not validate: fix the file (the ingest names the error) and merge the fix", who: "the person, in the repository, with your help", page: null },
+  declaration_read_failed: { text: "the committed .catalyst/catalyst.toml could not be read: fix the file (the ingest names the error) and merge the fix", who: "the person, in the repository, with your help", page: null },
+  declaration_awaiting_approval: { text: "the declaration is proposed and waits for approval: Settings → Repositories → the repository → Environment → Setup declaration → Approve this revision", who: "a tenant owner or admin", page: "/settings/repositories" },
+};
+const DECL_DO = "write .catalyst/catalyst.toml with references/declaring-a-repository.md, then open a pull request";
+let declNext = "commit .catalyst/catalyst.toml to the repository and have an owner or admin approve it";
+if (!connected) {
+  add("repository declarations", DECL_INSTRUMENT, "unreadable", ["not readable until this machine is connected"], null, null);
+} else if (teamRows === null) {
+  add("repository declarations", DECL_INSTRUMENT, "unreadable", ["the project list could not be read, so no repository declaration can be either"], null, null).next =
+    "refresh the contract (catalyst-skills contract --refresh), then run this again; the project list could not be read, so no repository declaration can be either";
+} else if (teamRows.length === 0) {
+  add("repository declarations", DECL_INSTRUMENT, "unreadable", ["no project is mapped yet, so there is no repository whose declaration could be read"], null, null).next =
+    "map a project first; a repository declaration is read per project";
+} else {
+  const found = teamRows.flatMap((t) => (Array.isArray(t.readiness?.checks) ? t.readiness.checks : []).filter((c) => c.id === "environment_declared").map((c) => ({ ...c, team: t.key ?? t.id ?? "(unkeyed)" })));
+  const lines = [];
+  let verdict = "ok";
+  let owner = null;
+  let where = null;
+  let unknown = false;
+  const describe = (reason) => DECL_REASONS[reason] ?? { text: `environment_declared ${reason ?? "failed"} (a reason this bundle does not know; read it on the page)`, who: "a tenant owner or admin", page: "/settings/repositories" };
+  const flag = (team, repo, reason) => {
+    const r = describe(reason);
+    lines.push(`${team}${repo ? `, ${repo}` : ""}: ${r.text}`);
+    if (verdict === "ok") declNext = `${repo ? `${repo}: ` : ""}${r.text}`;
+    verdict = "unfinished";
+    owner ??= r.who;
+    where ??= r.page === null ? DECL_DO : link(r.page);
+  };
+  if (found.length === 0) {
+    lines.push("this cloud reports no repository declaration check for the mapped projects, so there is nothing to read here; the repository's Environment page is where one would show");
+  }
+  for (const c of found) {
+    if (c.state === "pass") lines.push(`${c.team}: a declaration is in effect for the project's default repository`);
+    else if (c.state === "fail") flag(c.team, null, c.reason);
+    else {
+      unknown = true;
+      lines.push(`${c.team}: environment_declared could not be read${c.reason ? ` (${c.reason})` : ""}; press Re-check on the projects page`);
+    }
+    for (const note of Array.isArray(c.repos) ? c.repos : []) if (typeof note?.repo === "string" && note.reason) flag(c.team, note.repo, note.reason);
+  }
+  if (unknown && verdict === "ok") {
+    add("repository declarations", DECL_INSTRUMENT, "unreadable", lines, "a tenant owner or admin", link("/settings/linear-teams")).next = "press Re-check on the projects page, then run this again";
+  } else {
+    if (verdict !== "ok") lines.push("Names only: a value never passes through this script or the file. The person enters values on the repository's Environment page.");
+    add("repository declarations", DECL_INSTRUMENT, verdict, lines, verdict === "ok" ? null : owner, verdict === "ok" ? null : where);
+  }
+}
+
 // ── the single next step ──────────────────────────────────────────────────────────────────────────
 // The machine's next action is not one sentence: an unconnected machine needs the login, and a
 // connected one needs whatever check failed — and `ready` already printed that check's own fix, so
@@ -469,8 +530,16 @@ const NEXT = {
   projects: "pick ONE project and map its stages (or adopt the Catalyst workflow)",
   repositories: "register the repository, attaching it to the project you mapped",
   "coding accounts": accountsNext,
+  "repository declarations": declNext,
   host: "connect a Catalyst host",
 };
+// The parts are read in the order their data allows and reported in the order a person can act on
+// them: the coding account first (nothing runs without one, and it needs no other step), then the
+// workspace's Linear integration, the project, the GitHub App with its repository, the person's own
+// connected accounts (personal GitHub after the repository proves the App), the repository's
+// declaration, and last the host. `--next` is the first unfinished part in this order.
+const ORDER = ["machine", "coding accounts", "account", "projects", "repositories", "person", "repository declarations", "host"];
+parts.sort((a, b) => ORDER.indexOf(a.part) - ORDER.indexOf(b.part));
 // A personal Linear grant cannot start until the tenant's Linear workspace exists. Once that account
 // connection is present, a missing personal grant becomes the next member step before project setup.
 const personPart = parts.find((p) => p.part === "person");
