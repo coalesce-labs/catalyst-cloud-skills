@@ -43,6 +43,12 @@ export const FLAG_TABLES: Record<string, FlagTable> = {
   login: {
     "start-replica": { value: false, help: "run `replica start --detach` after connecting" },
   },
+  mcp: {
+    url: { value: true, help: "add: the upstream HTTPS endpoint" },
+    auth: { value: true, help: "add: none for an unauthenticated upstream" },
+    bearer: { value: true, help: "add: vault secret NAME for a bearer token, never its value" },
+    header: { value: true, repeat: true, help: "add: HEADER_NAME=VAULT_SECRET_NAME (repeatable)" },
+  },
   install: {},
   status: {},
   notice: {},
@@ -68,6 +74,7 @@ export const FLAG_TABLES: Record<string, FlagTable> = {
     "stale-ms": { value: true, help: "status: heartbeat age that counts as stale (default 15000)" },
   },
   events: {
+    probe: { value: false, help: "status: compare the local event cursor with the cloud event head" },
     type: { value: true, help: "exact event type" },
     ticket: { value: true, help: "ticket identifier found in the event payload" },
     after: { value: true, help: "event sequence to read after (tail/wait default to local head)" },
@@ -96,7 +103,7 @@ export const FLAG_TABLES: Record<string, FlagTable> = {
   },
   write: {
     body: { value: true, help: "comment: the body text" },
-    stdin: { value: false, help: "comment: read the body from stdin" },
+    stdin: { value: false, help: "comment: read the body from stdin; create: read the description from stdin" },
     parent: { value: true, help: "comment: reply under this comment id" },
     bookkeeping: { value: false, help: "comment: prefix the contract's bookkeeping marker" },
     "as-user": { value: false, help: "post with the personal identity instead of the app actor" },
@@ -107,6 +114,7 @@ export const FLAG_TABLES: Record<string, FlagTable> = {
     remove: { value: true, repeat: true, help: "label: label name or id to remove (repeatable)" },
     team: { value: true, help: "create: team key" },
     title: { value: true, help: "create/attachment/session: title" },
+    description: { value: true, help: "create: the ticket description (markdown)" },
     label: { value: true, repeat: true, help: "create: label name or id (repeatable)" },
     priority: { value: true, help: "create: Linear priority 0-4" },
     comment: { value: true, help: "reaction: react to this comment id instead of the ticket" },
@@ -132,7 +140,19 @@ export const FLAG_TABLES: Record<string, FlagTable> = {
     offline: { value: false, help: "skip the published-release check (no network)" },
   },
   accounts: {},
+<<<<<<< HEAD
   env: {},
+=======
+  team: {
+    all: { value: false, help: "check every team, one request at a time" },
+    stage: { value: true, repeat: true, help: "map a role to a live Linear state name (role=StateName)" },
+    choice: { value: true, repeat: true, help: "migrate a source state to a destination (sourceId=destinationId)" },
+    yes: { value: false, help: "apply the plan you have reviewed with the person" },
+    "plan-hash": { value: true, help: "apply only the exact preview hash the person reviewed" },
+    undo: { value: false, help: "adopt: preview or archive stages a prior adoption created" },
+    retire: { value: false, help: "migrate: separately preview or retire emptied source stages" },
+  },
+>>>>>>> 46df57dfe613bf06403b918e65924ab95fc33d16
   environment: {
     file: { value: true, help: "propose: a JSON file holding the declaration" },
     stdin: { value: false, help: "propose: read the declaration from stdin" },
@@ -140,6 +160,16 @@ export const FLAG_TABLES: Record<string, FlagTable> = {
     approve: { value: false, help: "propose: approve exactly the revision the propose returned" },
     revision: { value: true, help: "approve: the revision to approve (with --hash; default is whatever read returns)" },
     hash: { value: true, help: "approve: the canonical hash to approve (with --revision)" },
+  },
+  secret: {
+    repo: { value: true, help: "the repository, as owner/name (required)" },
+    command: { value: true, help: "set: run this command on this machine and store its output (e.g. 'op read op://Vault/item/field'); the command text is audited, so never put a value in it" },
+    rotate: { value: true, repeat: true, help: "import: replace this name if it is already set (repeatable)" },
+  },
+  identity: {},
+  capabilities: {},
+  connections: {
+    wait: { value: true, help: "start: wait up to this many seconds for browser approval (0-600)" },
   },
   release: {
     because: { value: true, help: "what changed since the ticket was held (required unless --dry-run)" },
@@ -162,21 +192,34 @@ export const VERB_USAGE: Record<string, string> = {
     "query <issues|issue <id>|pulls|pull <id>|projects|cycles|search <terms>|changes --since <cursor|head>> [--team K] [--project P] [--state S] [--limit N] [--all] [--source replica|api] [--json]",
   replica:
     "replica <start [--detach]|stop|status [--probe] [--json]|sql \"<select>\"|schema [table]> [--db <path>]",
+  runtime: "runtime <status [--json]|install|path|uninstall>",
   events:
-    "events <tail|wait-for|query> [--type NAME] [--ticket CTC-N] [--after SEQUENCE] [--limit N] [--timeout SECONDS] [--directory PATH]",
+    "events <tail|wait-for|query|status [--probe] [--json]> [--type NAME] [--ticket CTC-N] [--after SEQUENCE] [--limit N] [--timeout SECONDS] [--directory PATH]",
   explain: "explain <ticket> [--history] [--json]",
   history: "history <ticket> [--json]",
   running: "running [--ticket T --phase P] [--json]",
   queue: "queue [--team K] [--json]",
   watch: "watch [--team K] [--ticket T]... [--project P] [--exec CMD] [--cursor-file <path>] [--from cursor|head]",
   write:
-    "write <comment <ticket> --body|--stdin [--parent] [--bookkeeping] [--as-user] | state <ticket> --slot|--state-id|--state-type | label <ticket> --add... --remove... | create --team --title [--label] [--priority] | reaction <ticket>|--comment <id> --emoji <e> | attachment <ticket> --title --url | session <ticket> [--title] [--plan-file] [--activity]>",
+    "write <comment <ticket> --body|--stdin [--parent] [--bookkeeping] [--as-user] | state <ticket> --slot|--state-id|--state-type | label <ticket> --add... --remove... | create --team --title [--description|--stdin] [--label] [--priority] | reaction <ticket>|--comment <id> --emoji <e> | attachment <ticket> --title --url | session <ticket> [--title] [--plan-file] [--activity]>",
   ask: "ask <raise --team --title [--context] [--option]... [--default] --blocks <ticket>...|--nothing-to-block [--ask-key] | accept <askTicket> --answer <commentId> --role <role> | list [--anyone] [--json]>",
   ready: "ready [--json] [--offline]",
   accounts: "accounts [--json]",
+<<<<<<< HEAD
   env: "env <inventory [path] | check <file>> [--json]   (THIS repository, offline — no login, no network)",
   environment:
     "environment [read] [--json] | environment propose --file <path>|--stdin [--expect-revision N] [--approve] [--json] | environment approve [--revision N --hash H] [--json]   (your ACCOUNT's declaration; needs login)",
+=======
+  mcp: "mcp <add <name> --url URL <--auth none|--bearer SECRET_NAME|--header NAME=SECRET_NAME...>|list|remove <name>> [--json]",
+  team: "team <list|check <KEY>|check --all|map <KEY> [--stage role=StateName]... [--yes --plan-hash H]|adopt <KEY> [--undo] [--yes --plan-hash H]|migrate <KEY> [--choice sourceId=destinationId]... [--retire] [--yes --plan-hash H]|checklist <KEY>> [--json]",
+  environment:
+    "environment [read] [--json] | environment propose --file <path>|--stdin [--expect-revision N] [--approve] [--json] | environment approve [--revision N --hash H] [--json]",
+  secret:
+    "secret set <NAME> --repo <owner/name> [--command '<cmd>'] [--json]   (value from --command, stdin, or a hidden prompt) | secret import <file> --repo <owner/name> [--rotate NAME]... [--json]",
+  identity: "identity linear <status|options|set> [<linearUserId>] [--json]",
+  capabilities: "capabilities [--json]",
+  connections: "connections personal <linear|github> <start|status> [--wait <seconds>] [--json]",
+>>>>>>> 46df57dfe613bf06403b918e65924ab95fc33d16
   release:
     "release <ticket> --because <what changed> [--retry-unchanged] [--dry-run] [--json] | release --class <failure-class> --team <K> --because <what changed> [--retry-unchanged] [--dry-run] [--limit N] [--json]",
 };
@@ -292,7 +335,7 @@ export function flagInt(args: ParsedArgs, name: string, fallback: number): numbe
 
 /** The help text for one verb: usage line, then every flag in its table and the global ones. */
 export function verbHelp(verb: string): string {
-  const lines = [`Usage: catalyst-skills ${VERB_USAGE[verb] ?? verb}`, ""];
+  const lines = [`Usage: catalyst ${VERB_USAGE[verb] ?? verb}`, ""];
   const table = FLAG_TABLES[verb] ?? {};
   const names = Object.keys(table);
   if (names.length > 0) {

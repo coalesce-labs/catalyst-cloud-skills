@@ -1,5 +1,63 @@
 # Changelog
 
+## 0.9.5
+
+The CLI calls itself `catalyst` everywhere: usage lines, every verb's `--help`, hints, remedies and errors. `catalyst-skills` still works as a deprecated alias. The npx form is `npx -p @catalyst-cloud/cli catalyst …`, because bare `npx @catalyst-cloud/cli` cannot pick a binary. A replica read on the `node:sqlite` fallback no longer prints a notice every time; `CATALYST_DEBUG=1` still shows it.
+
+`catalyst team` sets up a Linear team as a Catalyst project from the terminal: `list`, `check`, `map`, `adopt`, `migrate` and `checklist`. Writes need a reviewed plan and the cloud's mapping, adoption or migration hash.
+
+`catalyst capabilities` lists what this CLI can do, the role each verb needs (member or admin), and whether this cloud serves the route. It reads only the cached contract, so it never touches the network.
+
+`/catalyst-onboard` runs `team check` and `team map` itself for an admin, where it used to send you to a page. It tells a member which role can run a step. With an older CLI or cloud it keeps the page, as before. A project whose readiness reads blocked is no longer counted as set up: the guide names the blocking checks and who fixes each.
+
+The how-catalyst-works and whats-happening skills explain the WIP limit as the code applies it. The limit is per Catalyst project (the project's setting, else the tenant-wide value, else 12; 0 holds every new start). It holds only new starts, and a ticket already in progress keeps getting phases. `catalyst explain` prints the `wip_limit` reason in words.
+
+## 0.9.4
+
+`/catalyst-onboard` walks a new member through setup one step at a time, in the order a person can act on it: coding account, Linear integration, project, GitHub App and repository, connected accounts, the repository's `.catalyst/catalyst.toml` declaration, then the host, ending with one ticket moving. Each turn asks one question, says why in a line, and checks the result after. A new reference covers choosing a coding account (a Claude setup token, a Codex `auth.json`, or a GLM or Qwen API key), and it says plainly that a plain Anthropic or OpenAI API key cannot be enrolled today. Accounts are named by their label. The skills use the product's own nouns (workspace, project, repository, integration, connected account).
+
+An ended or cancelled coding account is kept for reporting and not used. Onboarding no longer tells you to retire or delete it, and never to put another login's credential on it; reactivate it only if its subscription is live again. `catalyst accounts` marks it "subscription canceled — kept for reporting, not used".
+
+The onboarding step engine never names a next step it cannot back with a check, and it says when a newer CLI is announced but not yet published.
+
+## 0.9.3
+
+A machine the Catalyst installer moved from `@catalyst-cloud/catalyst-skills` to `@catalyst-cloud/cli` works without logging in again. The recorded launcher pointed into the removed package, so `ready` failed its CLI-path check and skill scripts could not start the CLI; any command now repoints it at the launcher that is running. The CLI also leaves the installer's skills alone: it never writes through a symlinked skill folder, and when the installer owns skill placement it does not refresh skills at all. When a refresh does fail, it tells you to re-run the install command.
+
+Onboarding no longer tells you to re-credential an ended or cancelled coding account: it says to retire it on the AI accounts page, and such an account no longer leaves setup unfinished. Before you mint a replacement token, it has you check that your terminal is logged into the account the slot belongs to. `catalyst accounts` names each account by its label, else its email, with the slot id second, adds `displayName` to `--json`, and marks a cancelled subscription "subscription canceled — retire on the AI accounts page".
+
+## 0.9.2
+
+The CLI works against a tenant serving contract 2.x. Catalyst Cloud's tenant contract moved to 2.0.0 when it removed `merge.cloudRemediateRequiredChecks`, and every earlier bundle accepted only 1.x, so `ready`, onboarding and most commands stopped with "the tenant serves contract version 2.2.0 but this bundle accepts 1.x". This bundle accepts `1.x || 2.x`. The one place that read the removed field already treated it as absent.
+
+## 0.9.1
+
+Onboarding now teaches `.catalyst/catalyst.toml`, the only file the cloud reads a repository's settings from. The skills still described `catalyst.env.json`, which the cloud has ignored since 2026-09-27, so a declaration written from them was silently dropped. The repository reference shows the file's shape (`[project]` with `linear_team`, then `[[environment.variables]]` and `[[environment.setup]]`) and the approval step: an owner or admin opens the repository's Environment page, goes to the Setup declaration tab, and clicks Approve this revision.
+
+A ticket filed through the catalyst-linear skill now carries a description: `catalyst write create` takes `--description <text>` or `--stdin`, where before it could file only a title. The skill content never asks for a personal Linear token or a direct Linear API call.
+
+## 0.9.0
+
+Onboarding now guides your own Linear and GitHub consent. `catalyst connections personal <linear|github> start` opens the provider's consent page in your browser and `status` confirms the grant landed; the tenant's own Linear connection and GitHub App install stay separate, and personal GitHub waits until the App is installed and a repository is registered.
+
+An unmatched Linear identity can be fixed from the terminal: `catalyst identity linear status`, `options` and `set <linearUserId>` choose your Linear user from the roster and read the choice back. An existing match is never replaced.
+
+The local replica and event cache report whether they are current. `catalyst replica status --probe` and `catalyst events status --probe` compare each local feed with its cloud head and require a live writer; onboarding starts the writer only when you opt in, and a missing local cache never blocks setup.
+
+Register, list and remove MCP servers with `catalyst mcp`, using vault-secret names for authentication. Custom HTTPS servers wait for account-admin approval; query strings, userinfo and fragments are refused. The cloud side shipped on 2026-09-28; registration does not yet make a server callable through the portal.
+
+This release needs `@catalyst-cloud/sdk` 0.12. `@catalyst-cloud/catalyst-skills` is deprecated in favour of `@catalyst-cloud/cli`; it still installs and forwards to this version.
+
+## 0.8.0
+
+`catalyst-skills ready` loads the SDK on Node 26, the current Homebrew default, and has since 0.7.0: the type-stripping loader tries Node's `strip` mode before `transform`, because Node 26 accepts only `strip`. The 0.7.0 entry did not say so. If you saw `sdk: could not load` on Node 26 on 0.5.0 or earlier, updating is the fix.
+
+The supported runtime range is now declared in one place and every message names it accurately: Node 22.15 or newer (22.15 is where `node:module.registerHooks` arrives, which the SDK's TypeScript dependencies need), or bun 1.4 or newer (1.4 is where `node:sqlite` arrives, which the replica needs). The old advice to "run under Node 22.15 or newer, or under bun" was wrong for any bun older than 1.4: that bun has no `node:sqlite` at all and could not run this CLI, so the suggestion sent you to a runtime that could not even start. No message in this package recommends bun any more without saying which version.
+
+The CLI itself no longer dies part-way through loading on a runtime it does not support. `node:sqlite` used to be imported at the top of a module every verb loads, so a bun without it aborted the whole process before `ready` ever got a chance to explain why — you saw a raw `ResolveMessage`, not a fix. The engine now loads on first use, and its absence becomes a named `runtime` check with the one command that fixes it, on every runtime, every time.
+
+That one command is `catalyst-skills runtime install`. It downloads a pinned Node release into this CLI's own cache, verifies it against that release's published checksum before unpacking anything, and uses it from then on — without touching your machine's default Node and without admin rights. Run it any time `ready` reports the runtime as unsupported, or ahead of time if you would rather not manage your system Node at all.
+
 ## 0.7.0
 
 `catalyst-skills env inventory [path]` scans a repository offline — no login, no network — and lists

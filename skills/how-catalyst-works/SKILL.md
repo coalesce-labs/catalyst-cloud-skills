@@ -4,7 +4,7 @@ description: >-
   How Catalyst Cloud runs a ticket on the customer's own tenant, as facts an agent loads on demand: the eight-phase ladder and what each phase produces, the eleven board slots and this team's live stage map, what happens when a phase fails (retry, backoff, Remediate, park), how the queue is ordered and routed and every reason a ticket is excluded, and the coding-account model. Use when a person asks "how does this work?", "why did it do that?", "why is this stuck?", "what runs next?" or "how does it prioritise?". Read-only; its scripts explain one ticket's eligibility in plain English, show what is running and queued, and print the tenant's stage map and thresholds straight from the contract.
 allowed-tools: Bash(catalyst-skills:*) Bash(npx @catalyst-cloud/catalyst-skills:*)
 ---
-<!-- vendored-from: @catalyst-cloud/catalyst-skills@0.7.0 — written in this repository for customer tenants -->
+<!-- vendored-from: @catalyst-cloud/catalyst-skills@0.9.5 — written in this repository for customer tenants -->
 
 # How Catalyst works
 
@@ -26,10 +26,11 @@ Exit codes: 0 answered, 1 not found or a usage error, 2 this machine is not conn
 
 | when | read |
 | -- | -- |
+| "what is Catalyst Cloud?", "what changes for me?" | `references/what-catalyst-is.md` |
 | "what are the phases, what does each produce, when is a ticket Done?" | `references/the-ladder.md` |
 | "which column is which, why does nothing dispatch, what is a slot?" | `references/stages-and-mapping.md` |
 | a phase FAILED, a card went to Remediate, a ticket is parked or on hold | `references/when-a-phase-fails.md` |
-| "what runs next, why not this one, what does this exclusion reason mean?" | `references/what-runs-next.md` |
+| "what runs next, why not this one, what does this exclusion reason mean?", "why does nothing start while nothing runs?" (the WIP limit) | `references/what-runs-next.md` |
 | "why is nothing running", walls, quarantine, which provider ran a phase | `references/coding-accounts.md` |
 
 ## Rules

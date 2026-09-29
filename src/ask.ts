@@ -151,9 +151,9 @@ async function list(args: ParsedArgs, ctx: Ctx, doc: TenantContract, api: ApiCli
     return 0;
   }
   if (scope.kind === "unmatched") {
-    ctx.stderr(`[catalyst-skills] your Linear identity is not matched yet (an admin matches it in Settings → Members), so this is every open ask, not only yours`);
+    ctx.stderr(`[catalyst] your Linear identity is not matched yet (an admin matches it in Settings → Members), so this is every open ask, not only yours`);
   } else if (scope.kind === "no-person") {
-    ctx.stderr(`[catalyst-skills] connected with the tenant's account key, which names no person — this is every open ask; log in with your personal key to see only yours`);
+    ctx.stderr(`[catalyst] connected with the tenant's account key, which names no person — this is every open ask; log in with your personal key to see only yours`);
   }
   if (ranked.length === 0) {
     ctx.stdout(scope.kind === "mine" ? `no open asks assigned to ${scope.label} (${all.length} open in the tenant — add --anyone to see them)` : "no open asks");

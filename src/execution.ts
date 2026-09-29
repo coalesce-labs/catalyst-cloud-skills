@@ -39,14 +39,15 @@ export const EXCLUSION_REASONS: Record<string, string> = {
   retry_backoff: "the failed phase is retrying in place and waiting out its backoff",
   routing_unavailable: "the unit was claimed and refused at kickoff (no route, no eligible coding-account slot, or the provider is unavailable)",
   repo_paused: "an operator paused the repository",
-  remediate_parked: "the remediate phase is parked, so the failing phase has nowhere to be repaired; `catalyst-skills release <ticket>` releases the park once its cause is fixed",
-  phase_parked: "the offered phase is parked after repeated failures or the repair-round cap; `catalyst-skills release <ticket>` releases it once its cause is fixed",
+  remediate_parked: "the remediate phase is parked, so the failing phase has nowhere to be repaired; `catalyst release <ticket>` releases the park once its cause is fixed",
+  phase_parked: "the offered phase is parked after repeated failures or the repair-round cap; `catalyst release <ticket>` releases it once its cause is fixed",
   later_phase_lease_held: "an earlier phase is offered while a live container still holds a later phase of this ticket",
   human_owned_pr: "a person's own pull request holds this ticket; it releases itself when that PR closes or merges",
   review_not_converging: "review and repair kept finding new problems without converging; a person reads the findings and comments on the ticket to resume",
   round_threshold: "the ticket spent its lifetime repair budget; answering its ask or pushing a fix buys one more cycle",
   claim_storm: "this unit was claimed too many times in the last hour, so it waits out the hour; nothing to release",
   repo_at_capacity: "the repository's runner seats are all in use; it starts when one frees",
+  wip_limit: "the project is at its WIP limit (tickets in progress, counting blocked, parked and waiting ones); this new start waits until one of them finishes, and the tickets in progress keep running",
 };
 
 /** Every fail-closed unknown the evaluator names. */
@@ -357,7 +358,7 @@ export async function cmdQueue(args: ParsedArgs, ctx: Ctx): Promise<number> {
 
 /** The five status words `/api/v1/coding-accounts` reports, in the words a customer reads. */
 export const ACCOUNT_STATUS: Record<string, string> = {
-  "expired-or-revoked": "expired or revoked — re-enrol it before it can take work",
+  "expired-or-revoked": "expired or revoked — replace its credential on the AI accounts page (Settings → AI accounts → the account → Replace credential) before it can take work",
   walled: "walled — the provider's usage limit is spent for now",
   active: "active — observed working",
   attested: "attested — healthy at last check, no work observed since",
@@ -373,6 +374,9 @@ export interface CodingAccount {
   walled?: boolean;
   quarantined?: boolean;
   quarantineReason?: string | null;
+  renewalStatus?: string | null;
+  email?: string | null;
+  displayName?: string;
   bindingWindow?: string | null;
   bindingUsedPercent?: number | null;
   bindingResetsAtMs?: number | null;
@@ -381,12 +385,21 @@ export interface CodingAccount {
   [k: string]: unknown;
 }
 
+/** The name a person or agent calls an account by: its label, else its email, else its slot id. */
+export function accountDisplayName(a: CodingAccount): string {
+  for (const v of [a.label, a.email]) if (typeof v === "string" && v.trim() !== "") return v.trim();
+  return a.accountSlot ?? "?";
+}
+
 /** One slot as a line a human reads: who it is, what state it is in, and what it is spending on. */
 export function renderAccount(a: CodingAccount): string {
-  const name = a.label ? `${a.accountSlot ?? "?"} (${a.label})` : (a.accountSlot ?? "?");
+  const display = accountDisplayName(a);
+  const name = display === (a.accountSlot ?? "?") ? display : `${display} (${a.accountSlot ?? "?"})`;
   const harness = a.harness ? `/${a.harness}` : "";
   const status = a.status ? (ACCOUNT_STATUS[a.status] ?? a.status) : "status unknown";
   const bits = [`${name}  ${a.provider ?? "?"}${harness}  ${status}`];
+  // CTC-4199: a cancelled subscription is kept for reporting and not used; never re-credential it (Ryan, 2026-09-29).
+  if (a.renewalStatus === "canceled") bits.push("subscription canceled — kept for reporting, not used");
   if (typeof a.bindingUsedPercent === "number") {
     const resets = typeof a.bindingResetsAtMs === "number" ? `, resets ${new Date(a.bindingResetsAtMs).toISOString()}` : "";
     bits.push(`usage ${a.bindingUsedPercent}% of the ${a.bindingWindow ?? "binding"} window${resets}`);
@@ -422,7 +435,8 @@ export async function cmdAccounts(args: ParsedArgs, ctx: Ctx): Promise<number> {
   if (res.status === 404) throw needsNewerCloud("coding-account status", cfg);
   const accounts = Array.isArray(res.body) ? res.body : (res.body?.accounts ?? []);
   if (args.json) {
-    ctx.stdout(JSON.stringify(res.body));
+    const named = accounts.map((a) => ({ ...a, displayName: accountDisplayName(a) }));
+    ctx.stdout(JSON.stringify(Array.isArray(res.body) ? named : { ...res.body, accounts: named }));
     return 0;
   }
   if (accounts.length === 0) {

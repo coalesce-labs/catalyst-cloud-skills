@@ -1,9 +1,9 @@
 // skills.ts — copying the bundled skills into the user's skills directory, and the one-line update
 // notice a new version prints on its next session.
-import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { cpSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { PACKAGE_NAME, defaultSkillsDirFor, type Ctx, type CustomerConfig } from "./config.js";
+import { defaultSkillsDirFor, upgradeCommand, type Ctx, type CustomerConfig } from "./config.js";
 import { semverOlder } from "./semver.js";
 import { PROVENANCE_MARKER, parseFrontmatter, parseProvenanceVersion } from "./skill-shape.js";
 
@@ -41,6 +41,9 @@ export function installSkills(
     const src = join(sourceDir, name);
     if (!existsSync(join(src, "SKILL.md"))) continue;
     const dst = join(targetDir, name);
+    // A symlinked entry belongs to whoever linked it (the Catalyst installer links its skills in);
+    // this package never writes through one, and says nothing about it.
+    if (isSymlink(dst)) continue;
     const existingMd = join(dst, "SKILL.md");
     if (opts.onlyExisting && !existsSync(existingMd)) continue;
     if (existsSync(existingMd) && !opts.force) {
@@ -55,6 +58,14 @@ export function installSkills(
     result.installed.push(name);
   }
   return result;
+}
+
+function isSymlink(path: string): boolean {
+  try {
+    return lstatSync(path).isSymbolicLink();
+  } catch {
+    return false;
+  }
 }
 
 export function resolveSkillsDir(args: { skillsDir?: string }, ctx: Ctx, cfg: CustomerConfig | null): string {
@@ -142,5 +153,5 @@ export function updateNoticeLine(previous: string, current: string, entry: strin
   // minor — so it never crosses 0.2.x → 0.3.0. Pin @latest via `npm install`, THEN re-run login: the
   // install alone does not rewrite customer.json.cliPath, so the skill helpers would keep spawning the
   // stale recorded bundle and repeat this notice forever; the new global bin records its own path.
-  return `[catalyst-skills] updated ${previous} → ${current}: ${summary} · update with: npm install -g ${PACKAGE_NAME}@latest && catalyst-skills login`;
+  return `[catalyst] updated ${previous} → ${current}: ${summary} · update with: ${upgradeCommand()}`;
 }

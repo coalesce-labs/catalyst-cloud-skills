@@ -15,6 +15,7 @@ import { parse as parseYaml } from "yaml";
 
 import { CUSTOMER_SKILLS, PROVENANCE_MARKER } from "../src/cli";
 import { FORBIDDEN_CONTENT, MAX_REFERENCE_LINES, MAX_SKILL_LINES, parseProvenanceVersion, validateSkillDir } from "../src/skill-shape";
+import { parseNodeFloor } from "../src/runtime";
 import { buildFixtureContract } from "./fixture-contract";
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -27,7 +28,7 @@ const manifest = JSON.parse(readFileSync(join(pkgRoot, "package.json"), "utf8"))
   files: string[];
   engines: { node: string };
   publishConfig: { access: string };
-  catalystCloud?: { tenantContractRange?: string };
+  catalystCloud?: { tenantContractRange?: string; pinnedNode?: string };
   dependencies?: Record<string, string>;
 };
 
@@ -194,7 +195,7 @@ describe("no internal name reaches a customer", () => {
     const planted = join(dir, "planted.md");
     writeFileSync(
       planted,
-      ["tenant-0", "coalesce-labs/catalyst", "thoughts/shared", "CTC-1", "CTL-22", "Linearis", "catalyst-replica"].join("\n"),
+      ["tenant-0", "coalesce-labs/catalyst", "thoughts/shared", "CTC-1", "CTL-22", "Linearis", "catalyst-replica", "LINEAR_API_TOKEN", "https://api.linear.app/graphql"].join("\n"),
     );
     const text = readFileSync(planted, "utf8");
     const hits = FORBIDDEN_CONTENT.filter((f) => f.re.test(text)).map((f) => f.name);
@@ -237,7 +238,7 @@ describe("each skill's scripts spawn the catalyst-skills verbs it teaches", () =
     // Each grain by its own instrument: the machine by `status` and `ready`, the person by `me`, and
     // the account, the projects and the repositories by three DIFFERENT `contract --path` reads. A
     // regression that folded any of these into one call would take this assertion with it.
-    "catalyst-onboard": [/"status"/, /"ready",\s*"--json"/, /"me",\s*"--json"/, /"contract",\s*"--path",\s*"account"/, /"contract",\s*"--path",\s*"teams"/, /"contract",\s*"--path",\s*"merge\.repositories"/, /"environment",\s*"read"/],
+    "catalyst-onboard": [/"status"/, /"ready",\s*"--json"/, /"replica",\s*"status",\s*"--probe",\s*"--json"/, /"events",\s*"status",\s*"--probe",\s*"--json"/, /"replica",\s*"start",\s*"--detach"/, /"me",\s*"--json"/, /"connections",\s*"personal"/, /"contract",\s*"--path",\s*"account"/, /"contract",\s*"--refresh",\s*"--path",\s*"teams"/, /"contract",\s*"--path",\s*"merge\.repositories"/, /"environment",\s*"read"/, /"accounts",\s*"--json"/, /"contract",\s*"--path",\s*"readinessChecks"/],
     "catalyst-github": [/"query",\s*"pull"/, /"contract"/, /"replica",\s*"status"/],
     "catalyst-linear": [/"query",\s*"issue"/, /"query",\s*"search"/, /"write",\s*"comment"/, /"write",\s*"state"/, /"write",\s*"label"/, /"write",\s*"create"/],
     "how-catalyst-works": [/"explain"/, /"running"/, /"queue"/, /"accounts"/, /"contract",\s*"--path"/],
@@ -255,6 +256,27 @@ describe("each skill's scripts spawn the catalyst-skills verbs it teaches", () =
       expect(src, "every script passes --json to the CLI for machine-read output").toContain("--json");
     });
   }
+
+  test("onboarding keeps local sync optional and waits for the first ticket event honestly", () => {
+    const onboard = skill("catalyst-onboard");
+    const path = readFileSync(join(skillsRoot, "catalyst-onboard", "references", "the-one-path.md"), "utf8");
+    const localSync = readFileSync(join(skillsRoot, "catalyst-onboard", "references", "local-sync.md"), "utf8");
+    expect(onboard).toContain("Local sync is opt-in");
+    expect(onboard).toContain("references/local-sync.md");
+    expect(path).toContain("optional first-event check in `references/local-sync.md`");
+    expect(localSync).toContain("catalyst events wait-for --ticket <ticket-identifier> --after <cursor-before-move> --timeout 300");
+    const cursorCapture = localSync.indexOf("record its `cursor`");
+    const cardMove = localSync.indexOf("Move the card");
+    const eventWait = localSync.indexOf("events wait-for --ticket");
+    expect(cursorCapture).toBeGreaterThanOrEqual(0);
+    expect(cardMove).toBeGreaterThan(cursorCapture);
+    expect(eventWait).toBeGreaterThan(cardMove);
+    expect(localSync).toContain("Exit 1 means no matching cached event arrived within five minutes");
+    expect(localSync).toContain("without inferring a cloud or webhook failure");
+    expect(localSync).toContain("replica status --probe --json");
+    expect(localSync).toContain("events status --probe --json");
+    expect(localSync).toContain("replica freshness alone does not prove event freshness");
+  });
 
   test("skills that write move cards by slot or state type, never by a stage name literal", () => {
     for (const name of ["catalyst-linear", "run-this-project", "what-needs-me"]) {
@@ -298,7 +320,7 @@ describe("the install page (README) states what a customer needs, in the order t
       "npx skills@latest add coalesce-labs/catalyst-cloud-skills -a codex",
       "npx skills@latest add coalesce-labs/catalyst-cloud-skills -a cursor",
       "npx skills@latest add coalesce-labs/catalyst-cloud-skills",
-      "npx skills update -y",
+      "npx skills@latest add coalesce-labs/catalyst-cloud-skills --all -g",
     ]) {
       expect(readme, `the install block must carry ${cmd}`).toContain(cmd);
       expect(installBlock, `.agents/install-block.md must carry ${cmd}`).toContain(cmd);
@@ -314,8 +336,8 @@ describe("the install page (README) states what a customer needs, in the order t
   test("the credential step sits inside the install block, named login, keyless first and the key forms second", () => {
     const install = readme.indexOf("\n## Install\n");
     // Keyless is the preferred rail: the bare `catalyst-skills login` triple leads.
-    const keyless = "npm install -g @catalyst-cloud/catalyst-skills\ncatalyst-skills login\ncatalyst-skills ready";
-    const envForm = "CATALYST_CLOUD_TOKEN=<your-personal-key> catalyst-skills login";
+    const keyless = "npm install -g @catalyst-cloud/cli\ncatalyst login\ncatalyst ready";
+    const envForm = "CATALYST_CLOUD_TOKEN=<your-personal-key> catalyst login";
     // "Beside the install commands" is the property: the connect step is a sub-heading of Install,
     // and the login command lands before the next top-level section starts.
     const connect = readme.indexOf("\n### Then connect to your tenant\n");
@@ -338,7 +360,7 @@ describe("the install page (README) states what a customer needs, in the order t
     );
     // The 0.1 verb must not lead, and `install` is a repair path that never appears as a headline step.
     expect(readme).not.toMatch(/^.*catalyst-skills join\b/m);
-    expect(readme.indexOf("catalyst-skills install"), "install is a repair path, never part of the install headline").toBe(-1);
+    expect(readme.indexOf("catalyst install"), "install is a repair path, never part of the install headline").toBe(-1);
   });
 
   test("tenant discovery from the key alone via GET /api/v1/me; config path, mode and the contract cache stated", () => {
@@ -367,7 +389,7 @@ describe("the install page (README) states what a customer needs, in the order t
   });
 
   test("states the pinned tenant contract range in present tense, with no internal ticket ids anywhere", () => {
-    expect(readme).toContain("`1.x`");
+    expect(readme).toContain("`1.x || 2.x`");
     expect(readme).not.toContain("`0.x`");
     expect(readme).toContain("tenantContractRange");
     expect(readme, "a customer README names no internal ticket").not.toMatch(/\bC[TL]C-\d+\b/);
@@ -376,11 +398,13 @@ describe("the install page (README) states what a customer needs, in the order t
 
   test("says what has to be running: nothing by default, the optional replica with its four exit codes, the watch", () => {
     expect(readme).toMatch(/^## What has to be running$/m);
-    expect(readme).toContain("catalyst-skills replica start");
+    expect(readme).toContain("catalyst replica start");
     expect(readme).toContain("--detach");
-    expect(readme).toContain("catalyst-skills replica status");
+    expect(readme).toContain("catalyst replica status");
+    expect(readme).toContain("catalyst events status --probe");
+    expect(readme).toContain("A fresh replica does not prove event freshness");
     expect(readme).toMatch(/`0` for fresh, `1` for present but stale, `2` for not connected, `3` for absent/);
-    expect(readme).toContain("catalyst-skills watch");
+    expect(readme).toContain("catalyst watch");
     expect(readme).toContain("seven days or 256 MiB");
   });
 
@@ -389,7 +413,7 @@ describe("the install page (README) states what a customer needs, in the order t
     expect(readme).toContain("settings/coding-accounts");
     expect(readme).toContain("explain --history");
     // A person releases a park themselves now; the README names the verb and the skill, never an operator.
-    expect(readme).toContain("catalyst-skills release");
+    expect(readme).toContain("catalyst release");
     expect(readme).not.toMatch(/Release a park\. When a ticket is parked after repeated failures, an operator releases it/);
     expect(readme).toContain("setup skill");
     expect(readme).toContain("the only connect step a customer runs");
@@ -404,10 +428,10 @@ describe("the install page (README) states what a customer needs, in the order t
   });
 
   test("documents the one-line update notice and the uninstall of everything it wrote; the publish secret lives in CONTRIBUTING", () => {
-    expect(readme).toContain("[catalyst-skills] updated");
-    expect(readme).toContain("npm install -g @catalyst-cloud/catalyst-skills@latest");
+    expect(readme).toContain("[catalyst] updated");
+    expect(readme).toContain("npm install -g @catalyst-cloud/cli@latest");
     // The install alone does not rewrite customer.json.cliPath — the re-login step must be documented.
-    expect(readme).toMatch(/npm install -g @catalyst-cloud\/catalyst-skills@latest && catalyst-skills login/);
+    expect(readme).toMatch(/npm install -g @catalyst-cloud\/cli@latest && catalyst login/);
     expect(readme).not.toMatch(/npm update -g/);
     for (const name of CUSTOMER_SKILLS) expect(readme, `uninstall must name ${name}`).toContain(`\`${name}\``);
     for (const f of ["customer.json", "contract.json", "published.json", "replica.db", "replica.db.pid", "replica.db.writer.lock", "replica.db.writer.state", "watch-cursor.json"]) {
@@ -429,13 +453,25 @@ describe("the install page (README) states what a customer needs, in the order t
     const start = ref.indexOf("\n## The machine checks the CLI adds\n");
     const end = ref.indexOf("\n## ", start + 1);
     const section = ref.slice(start, end === -1 ? undefined : end);
-    for (const id of ["node", "config", "contract", "bundle", "cliPath", "skills", "cliRelease", "skillsRelease", "sdk", "replica"]) {
+    for (const id of ["runtime", "config", "contract", "bundle", "cliPath", "skills", "cliRelease", "skillsRelease", "sdk", "replica"]) {
       expect(section, `the machine table must document ${id}`).toMatch(new RegExp(`\`${id}\``));
     }
   });
 });
 
+test("onboarding inventories teams without running every team's readiness check", () => {
+  const guide = readFileSync(join(skillsRoot, "catalyst-onboard", "references", "the-one-path.md"), "utf8");
+  const reporter = readFileSync(join(skillsRoot, "catalyst-onboard", "scripts", "where-am-i.mjs"), "utf8");
+  expect(guide).toContain("team list");
+  expect(guide).toContain("only for the selected team");
+  expect(guide).not.toContain("team check --all` to list teams");
+  expect(guide).toContain("--yes --plan-hash <hash>");
+  expect(reporter).toContain("team list to inspect the live list without checking readiness");
+  expect(reporter).not.toContain("team check --all to inspect the live list");
+});
+
 describe("the package manifest", () => {
+<<<<<<< HEAD
   test("is the documented name, public, and carries the SDK plus yaml (env inventory's workflow reader) as its runtime dependencies", () => {
     expect(manifest.name).toBe("@catalyst-cloud/catalyst-skills");
     expect(manifest.publishConfig.access).toBe("public");
@@ -448,16 +484,59 @@ describe("the package manifest", () => {
       "@catalyst-cloud/sdk": expect.stringMatching(/^\^0\.10\./),
       yaml: expect.stringMatching(/^\^2\./),
     });
+=======
+  test("is the documented name, public, and carries exactly the SDK as its runtime dependency", () => {
+    expect(manifest.name).toBe("@catalyst-cloud/cli");
+    expect(manifest.publishConfig.access).toBe("public");
+    expect(manifest.dependencies).toEqual({ "@catalyst-cloud/sdk": expect.stringMatching(/^\^0\.12\./) });
+>>>>>>> 46df57dfe613bf06403b918e65924ab95fc33d16
   });
 
   test("bin, shipped files, engines, and the pinned contract range are wired", () => {
+    expect(manifest.bin.catalyst).toBe("bin/catalyst.js");
     expect(manifest.bin["catalyst-skills"]).toBe("bin/catalyst-skills.js");
     for (const f of ["bin", "dist", "skills", "README.md", "CHANGELOG.md", "LICENSE"]) {
       expect(manifest.files).toContain(f);
     }
-    expect(existsSync(join(pkgRoot, manifest.bin["catalyst-skills"]!))).toBe(true);
-    expect(manifest.engines.node).toBe(">=22");
-    expect(manifest.catalystCloud?.tenantContractRange).toBe("1.x");
+    for (const file of Object.values(manifest.bin)) expect(existsSync(join(pkgRoot, file))).toBe(true);
+    // CTC-2158: the floor is 22.15, not 22. Measured: Node 22.14.0 has no node:module.registerHooks,
+    // so `ready` reported `ok node: 22` on a runtime where `sdk` could not load. `>=22` was a promise
+    // this package does not keep.
+    expect(manifest.engines.node).toBe(">=22.15");
+    expect(manifest.catalystCloud?.tenantContractRange).toBe("1.x || 2.x");
+    expect(manifest.catalystCloud?.pinnedNode).toMatch(/^\d+\.\d+\.\d+$/);
+  });
+
+  test("the pinned runtime satisfies the declared engines range", () => {
+    const floor = parseNodeFloor(manifest.engines.node);
+    const [maj, min, pat] = manifest.catalystCloud!.pinnedNode!.split(".").map(Number);
+    expect(maj! > floor.major || (maj === floor.major && (min! > floor.minor || (min === floor.minor && pat! >= floor.patch)))).toBe(true);
+  });
+});
+
+describe("CTC-2158: CI derives its Node matrix and exercises bun in both directions", () => {
+  const ci = readFileSync(join(pkgRoot, ".github", "workflows", "ci.yml"), "utf8");
+  const publish = readFileSync(join(pkgRoot, ".github", "workflows", "publish.yml"), "utf8");
+
+  test("ci.yml derives its Node matrix from the script and hard-codes no Node major", () => {
+    expect(ci).toContain("scripts/node-support-matrix.mjs");
+    // CTC-2158/D9: a literal list is exactly what the recorded decision says not to repeat.
+    expect(ci).not.toMatch(/node-version:\s*\[/);
+    expect(ci).toMatch(/matrix\.node/);
+    expect(ci).not.toMatch(/node-version:\s*22\b/);
+  });
+
+  test("ci.yml runs the built CLI under a real bun, in both directions", () => {
+    expect(ci).toMatch(/bun-version:\s*1\.3\.14/); // the version that must FAIL FRIENDLY
+    expect(ci).toMatch(/bun-version:\s*(\$\{\{\s*matrix\.bun\s*\}\}|latest)/); // the version that must LOAD THE SDK
+    expect(ci).toMatch(/bin\/catalyst-skills\.js ready/);
+    expect(ci).toMatch(/friendly-refusal/);
+    expect(ci).toMatch(/sdk-loads/);
+  });
+
+  test("publish.yml derives its Node from engines too, not a literal major", () => {
+    expect(publish).not.toMatch(/node-version:\s*22\b/);
+    expect(publish).toMatch(/node-version-file:\s*package\.json/);
   });
 
   test("the plugin manifests make this repository its own marketplace, at the package's version", () => {
@@ -496,11 +575,11 @@ describe("the package manifest", () => {
     expect(md).toContain("--all");
   });
 
-  test("the version matches the CHANGELOG's top entry, which is 0.7.0", () => {
+  test("the version matches the CHANGELOG's top entry, which is 0.9.5", () => {
     const changelog = readFileSync(join(pkgRoot, "CHANGELOG.md"), "utf8");
     expect(changelog).toContain(`## ${manifest.version}\n`);
-    expect(changelog.indexOf("## 0.7.0")).toBe(changelog.indexOf("## "));
-    expect(manifest.version).toBe("0.7.0");
+    expect(changelog.indexOf("## 0.9.5")).toBe(changelog.indexOf("## "));
+    expect(manifest.version).toBe("0.9.5");
   });
 
   test("every shipped skill stamps the package version on its provenance line", () => {
@@ -537,6 +616,16 @@ describe("the package manifest", () => {
     const r = spawnSync(process.execPath, [join(root, "scripts", "sync-plugin-version.mjs"), "--check"], { encoding: "utf8" });
     expect(r.status, r.stdout + r.stderr).toBe(0);
     expect(r.stderr).not.toContain("ENOENT");
+  });
+
+  test("CTC-2158: the 0.8.0 changelog entry records the Node 26 fix and the runtime contract", () => {
+    const changelog = readFileSync(join(pkgRoot, "CHANGELOG.md"), "utf8");
+    const top = changelog.split(/^## /m).find((entry) => entry.startsWith("0.8.0\n"))!;
+    expect(top).toMatch(/^0\.8\.0/);
+    expect(top).toMatch(/Node 26/);
+    expect(top).toMatch(/22\.15/);
+    expect(top).toMatch(/bun/);
+    expect(top).toMatch(/runtime install/);
   });
 });
 

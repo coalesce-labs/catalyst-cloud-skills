@@ -34,9 +34,23 @@ export function tryLoadConfig() {
   }
 }
 
+/** The recorded CLI path, credential or no credential: a machine that was connected once and is now
+ *  logged out still has its CLI, and `status` on it is the honest first reading. Null when the config
+ *  is absent or unreadable. */
+function recordedCliPath() {
+  try {
+    const raw = JSON.parse(readFileSync(configPath(), "utf8"));
+    return typeof raw.cliPath === "string" && existsSync(raw.cliPath) ? raw.cliPath : null;
+  } catch {
+    return null;
+  }
+}
+
 /** Where the CLI is on this machine: the path login recorded when it still exists, else npx. */
 export function cliTarget(cfg = tryLoadConfig()) {
-  const recorded = cfg !== null && typeof cfg.cliPath === "string" && existsSync(cfg.cliPath);
+  const recordedPath = cfg !== null && typeof cfg.cliPath === "string" && existsSync(cfg.cliPath) ? cfg.cliPath : recordedCliPath();
+  if (recordedPath !== null) cfg = { ...(cfg ?? {}), cliPath: recordedPath };
+  const recorded = recordedPath !== null;
   return recorded
     ? { command: process.execPath, prefix: [cfg.cliPath], via: `node ${cfg.cliPath}`, recorded: true }
     : { command: "npx", prefix: [PACKAGE], via: `npx ${PACKAGE}`, recorded: false };

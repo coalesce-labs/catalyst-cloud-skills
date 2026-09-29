@@ -3,7 +3,7 @@
 // is read from here; no verb carries a literal fallback for any of them.
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
-import { contractPathFor, readManifest, type Ctx, type CustomerConfig } from "./config.js";
+import { contractPathFor, readManifest, upgradeCommand, type Ctx, type CustomerConfig } from "./config.js";
 import type { ContractTeam, TenantContract, WorkflowSlot } from "./contract-types.js";
 import { CliError, MeError } from "./errors.js";
 import { apiClient } from "./transport.js";
@@ -45,8 +45,14 @@ export function writeContractCache(home: string, cache: ContractCache): string {
   return path;
 }
 
-/** `1.x` → major 1; `1.2.3` → exact; `unpinned` → anything. Returns null when the range is unparseable. */
+/** `1.x` → major 1; `1.2.3` → exact; `unpinned` → anything; `1.x || 2.x` → any alternative matches.
+ *  Returns null when the range (or any alternative) is unparseable. */
 export function contractVersionInRange(version: string, range: string): boolean | null {
+  if (range.includes("||")) {
+    const results = range.split("||").map((part) => contractVersionInRange(version, part.trim()));
+    if (results.some((r) => r === null)) return null;
+    return results.some((r) => r === true);
+  }
   if (range === "unpinned") return true;
   const major = /^(\d+)\.x$/.exec(range);
   if (major) return version.split(".")[0] === major[1];
@@ -59,7 +65,7 @@ export function assertContractRange(version: string, range: string): void {
   if (ok === null) throw new CliError(`tenantContractRange "${range}" in package.json is not a range this CLI understands`, "contract-range");
   if (!ok) {
     throw new CliError(
-      `the tenant serves contract version ${version} but this bundle accepts ${range} — update the bundle (npm install -g @catalyst-cloud/catalyst-skills@latest && catalyst-skills login) or ask your tenant admin which version is live`,
+      `the tenant serves contract version ${version} but this bundle accepts ${range} — update the bundle (${upgradeCommand()}) or ask your tenant admin which version is live`,
       "contract-version",
     );
   }

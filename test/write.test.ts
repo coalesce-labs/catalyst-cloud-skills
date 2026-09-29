@@ -208,6 +208,15 @@ describe("more write branches", () => {
     expect(await fetchWorkflowStates(fake({ teams: [{ id: "t3", stages: [{ id: "c", type: "started" }] }, { team_id: "t4", states: [{ nope: 1 }] }] }))).toEqual([{ id: "c", name: "", type: "started", teamId: "t3" }]);
     expect(await fetchWorkflowStates(fake("nonsense"))).toEqual([]);
   });
+  test("create carries a description from --description or --stdin, and refuses both or an empty stdin", async () => {
+    expect(await main(["write", "create", "--team", "ENG", "--title", "T", "--description", "Given a\nThen b"], ctx)).toBe(0);
+    expect(server.writes[0]!.body).toEqual({ teamId: "team-eng", title: "T", description: "Given a\nThen b" });
+    expect(await main(["write", "create", "--team", "ENG", "--title", "T", "--stdin"], makeCtx(home), { write: { readStdin: async () => "## Why\n\nbody\n\n" } })).toBe(0);
+    expect(server.writes[1]!.body).toEqual({ teamId: "team-eng", title: "T", description: "## Why\n\nbody" });
+    expect(await main(["write", "create", "--team", "ENG", "--title", "T", "--description", "x", "--stdin"], makeCtx(home), { write: { readStdin: async () => "y" } })).toBe(1);
+    expect(await main(["write", "create", "--team", "ENG", "--title", "T", "--stdin"], makeCtx(home), { write: { readStdin: async () => "  \n" } })).toBe(1);
+    expect(server.writes).toHaveLength(2);
+  });
   test("create without options, session with only the ticket, and reaction --as-user post minimal bodies", async () => {
     expect(await main(["write", "create", "--team", "ENG", "--title", "Bare"], ctx)).toBe(0);
     expect(server.writes[0]!.body).toEqual({ teamId: "team-eng", title: "Bare" });

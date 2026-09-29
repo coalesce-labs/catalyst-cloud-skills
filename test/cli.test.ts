@@ -30,7 +30,7 @@ beforeEach(() => {
 describe("dispatcher", () => {
   test("--version and bare usage", async () => {
     expect(await main(["--version"], ctx)).toBe(0);
-    expect(ctx.out[0]).toMatch(/^@catalyst-cloud\/catalyst-skills \d+\.\d+\.\d+ \(tenant contract range: /);
+    expect(ctx.out[0]).toMatch(/^@catalyst-cloud\/cli \d+\.\d+\.\d+ \(tenant contract range: /);
     const c2 = makeCtx(home);
     expect(await main([], c2)).toBe(0);
     expect(c2.out.join("\n")).toContain("Usage:");
@@ -41,12 +41,12 @@ describe("dispatcher", () => {
   test("the update notice goes to stderr for a machine-read verb and to stdout for a human one", async () => {
     saveConfig(home, joinedConfig(server, { lastSkillBundleVersion: "0.0.1" }));
     expect(await main(["me"], ctx)).toBe(0);
-    expect(ctx.out.some((l) => l.startsWith("[catalyst-skills]"))).toBe(false);
-    expect(ctx.err.some((l) => l.startsWith("[catalyst-skills] updated 0.0.1"))).toBe(true);
+    expect(ctx.out.some((l) => l.startsWith("[catalyst]"))).toBe(false);
+    expect(ctx.err.some((l) => l.startsWith("[catalyst] updated 0.0.1"))).toBe(true);
     saveConfig(home, joinedConfig(server, { lastSkillBundleVersion: "0.0.1" }));
     const c2 = makeCtx(home);
     expect(await main(["notice"], c2)).toBe(0);
-    expect(c2.out.some((l) => l.startsWith("[catalyst-skills] updated 0.0.1"))).toBe(true);
+    expect(c2.out.some((l) => l.startsWith("[catalyst] updated 0.0.1"))).toBe(true);
   });
   test("status names the credential: 'personal key' for a key config, 'your login (expires …)' for an oauth one", async () => {
     await seedJoined(home, server, { config: { user: undefined } });
@@ -81,13 +81,15 @@ describe("dispatcher", () => {
     await seedJoined(home, server);
     expect(await main(["status"], ctx)).toBe(0);
     const text = ctx.out.join("\n");
-    expect(text).toMatch(/^CLI: .*bin\/catalyst-skills\.js$/m);
+    expect(text).toMatch(/^CLI: .*bin\/catalyst\.js$/m);
     expect(text).toContain(`Contract: ${contractPathFor(home)}`);
     const home2 = tempHome();
     await seedJoined(home2, server, { contract: false, config: { cliPath: `${home2}/gone.js` } });
     const c2 = makeCtx(home2);
     expect(await main(["status"], c2)).toBe(0);
-    expect(c2.out.join("\n")).toContain("(missing — re-run login)");
+    // 0.9.3: a recorded launcher that no longer exists heals to the running one, so status shows it.
+    expect(c2.out.join("\n")).not.toContain("(missing — re-run login)");
+    expect(c2.out.join("\n")).toMatch(/^CLI: .*bin\/catalyst\.js$/m);
     expect(c2.out.join("\n")).toContain("not cached");
   });
   test("install places the skills and names a skipped foreign dir", async () => {
@@ -113,15 +115,15 @@ describe("dispatcher", () => {
     });
     expect(code).toBe(0);
     expect(spawned).toHaveLength(1);
-    expect(spawned[0]![0]).toMatch(/bin\/catalyst-skills\.js$/);
+    expect(spawned[0]![0]).toMatch(/bin\/catalyst\.js$/);
     expect(spawned[0]!.slice(1)).toEqual(["replica", "start"]);
     expect(existsSync(`${defaultReplicaDbFor(home)}.pid`)).toBe(true);
     expect(ctx.out.join("\n")).toContain("replica writer started in the background");
   });
   test("login against a contract outside the range still connects and says so on stderr", async () => {
-    server.contractVersion = "2.0.0";
+    server.contractVersion = "3.0.0";
     expect(await main(["login", "--key", "fixture-key", "--base-url", server.url], ctx)).toBe(0);
-    expect(ctx.err.join("\n")).toMatch(/2\.0\.0 but this bundle accepts 1\.x/);
+    expect(ctx.err.join("\n")).toMatch(/3\.0\.0 but this bundle accepts 1\.x \|\| 2\.x/);
     expect(existsSync(contractPathFor(home))).toBe(false);
     // The config is still written, so the customer can update the bundle and re-read the contract.
     expect(existsSync(configPathFor(home))).toBe(true);
@@ -156,6 +158,9 @@ describe("sdk loader", () => {
       throw new Error("ERR_SOMETHING: nope\nsecond line");
     }).catch((e: unknown) => e)) as Error;
     expect(err.message).toMatch(/could not be loaded on Node .*: ERR_SOMETHING: nope — this verb needs the SDK/);
+    expect(err.message).toContain("22.15");
+    expect(err.message).toContain("npx -y -p @catalyst-cloud/cli catalyst runtime install");
+    expect(err.message).not.toMatch(/or under bun/);
     resetSdkCache();
     expect(typeof (await loadSdk()).nodeSqliteEngine).toBe("function");
     expect(await loadSdk()).toBe(await loadSdk());

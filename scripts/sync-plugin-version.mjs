@@ -11,8 +11,8 @@ import { fileURLToPath } from "node:url";
 
 const HELP = `Usage: node scripts/sync-plugin-version.mjs [--check]
 
-Copies the version in package.json into .claude-plugin/plugin.json and stamps it onto every
-skills/*/SKILL.md provenance line.
+Copies the version in package.json into .claude-plugin/plugin.json and the forwarder package
+(packages/catalyst-skills), and stamps it onto every skills/*/SKILL.md provenance line.
 
 Options:
   --check  do not write; exit 1 when anything is out of sync
@@ -48,6 +48,29 @@ if (plugin.version === pkg.version) {
   plugin.version = pkg.version;
   writeFileSync(pluginUrl, `${JSON.stringify(plugin, null, 2)}\n`);
   console.log(`plugin.json ${fileURLToPath(pluginUrl)} set to ${pkg.version}`);
+}
+
+// CTC-3479 — the forwarder that keeps the old package name publishing. It ships at the package's
+// version and depends on exactly that version of the renamed package, so a machine that still
+// installs the old name gets the same release. A tree without it (a scratch copy) is skipped.
+const forwarderPath = join(root, "packages", "catalyst-skills", "package.json");
+if (existsSync(forwarderPath)) {
+  const forwarder = JSON.parse(readFileSync(forwarderPath, "utf8"));
+  forwarder.dependencies ??= {};
+  const pinned = forwarder.dependencies[pkg.name];
+  if (forwarder.version === pkg.version && pinned === pkg.version) {
+    console.log(`packages/catalyst-skills is at ${forwarder.version}, pinning ${pkg.name}@${pinned}`);
+  } else if (check) {
+    console.error(
+      `packages/catalyst-skills is at ${forwarder.version} pinning ${pkg.name}@${pinned} but package.json is at ${pkg.version}. Run: npm run version:sync`,
+    );
+    drift += 1;
+  } else {
+    forwarder.version = pkg.version;
+    forwarder.dependencies[pkg.name] = pkg.version;
+    writeFileSync(forwarderPath, `${JSON.stringify(forwarder, null, 2)}\n`);
+    console.log(`packages/catalyst-skills set to ${pkg.version}, pinning ${pkg.name}@${pkg.version}`);
+  }
 }
 
 // The provenance marker every skill already carries; PROVENANCE_VERSION_RE mirrors

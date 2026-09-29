@@ -1,7 +1,7 @@
 {
-  "name": "@catalyst-cloud/catalyst-skills",
-  "version": "0.7.0",
-  "description": "Customer skill bundle for Catalyst Cloud, named from the executive's seat — get set up, see what is happening, see what needs you, run a project, unstick what is stuck — plus the catalyst-skills CLI that reads through the Catalyst Cloud SDK, writes through the agent proxy, and connects your machine to your tenant with one command. The skills directory is the roster; this line never counts it.",
+  "name": "@catalyst-cloud/cli",
+  "version": "0.9.5",
+  "description": "Customer skill bundle for Catalyst Cloud, named from the executive's seat — get set up, see what is happening, see what needs you, run a project, unstick what is stuck — plus the catalyst CLI that reads through the Catalyst Cloud SDK, writes through the agent proxy, and connects your machine to your tenant with one command. The skills directory is the roster; this line never counts it.",
   "license": "MIT",
   "type": "module",
   "publishConfig": {
@@ -16,9 +16,10 @@
     "url": "https://github.com/coalesce-labs/catalyst-cloud-skills/issues"
   },
   "engines": {
-    "node": ">=22"
+    "node": ">=22.15"
   },
   "bin": {
+    "catalyst": "bin/catalyst.js",
     "catalyst-skills": "bin/catalyst-skills.js"
   },
   "files": [
@@ -27,10 +28,12 @@
     "skills",
     "README.md",
     "CHANGELOG.md",
-    "LICENSE"
+    "LICENSE",
+    "vendor"
   ],
   "catalystCloud": {
-    "tenantContractRange": "1.x"
+    "tenantContractRange": "1.x || 2.x",
+    "pinnedNode": "24.21.0"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
@@ -41,11 +44,16 @@
     "version:sync": "node scripts/sync-plugin-version.mjs",
     "skill-lib:sync": "node scripts/sync-skill-lib.mjs",
     "skills:scan": "node scripts/scan-skills.mjs",
-    "evals": "node scripts/run-evals.mjs"
+    "evals": "node scripts/run-evals.mjs",
+    "paths:check": "node scripts/vendor-paths.mjs --check"
   },
   "dependencies": {
+<<<<<<< HEAD
     "@catalyst-cloud/sdk": "^0.10.0",
     "yaml": "^2.9.0"
+=======
+    "@catalyst-cloud/sdk": "^0.12.0"
+>>>>>>> 46df57dfe613bf06403b918e65924ab95fc33d16
   },
   "devDependencies": {
     "@types/node": "^26.3.0",

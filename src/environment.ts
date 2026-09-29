@@ -196,7 +196,7 @@ export async function cmdEnvironment(args: ParsedArgs, ctx: Ctx, deps: Environme
         ctx.stdout(`refused (${res.status}): ${body.message ?? body.error ?? "no reason given"}`);
         if (body.reason) ctx.stdout(`  reason: ${body.reason}`);
         if (body.currentRevision !== undefined) {
-          ctx.stdout(`  the declaration is now at revision ${body.currentRevision} — run \`catalyst-skills environment read\` and propose again from that`);
+          ctx.stdout(`  the declaration is now at revision ${body.currentRevision} — run \`catalyst environment read\` and propose again from that`);
         }
       }
       return 1;
@@ -205,14 +205,14 @@ export async function cmdEnvironment(args: ParsedArgs, ctx: Ctx, deps: Environme
     if (!args.json) for (const line of renderState(body.state, body.status === "unchanged" ? "unchanged" : `${body.status ?? "proposed"}`)) ctx.stdout(line);
     if (!approveToo) {
       if (args.json) ctx.stdout(JSON.stringify(body));
-      else if (body.status !== "unchanged") ctx.stdout("not delivered until it is approved: catalyst-skills environment approve");
+      else if (body.status !== "unchanged") ctx.stdout("not delivered until it is approved: catalyst environment approve");
       return 0;
     }
     // ⭐ Approve exactly what propose just returned. The whole point of the CAS is that the approver
     // saw the revision they are approving, and nothing here has to be copied by a human or a model.
     const state = body.state;
     if (!state) {
-      ctx.stderr("the cloud returned no state to approve — run: catalyst-skills environment read");
+      ctx.stderr("the cloud returned no state to approve — run: catalyst environment read");
       return 1;
     }
     const approved = await approveExact(api, routes, state.revision, state.canonicalHash);
@@ -234,7 +234,7 @@ export async function cmdEnvironment(args: ParsedArgs, ctx: Ctx, deps: Environme
   if (revision === undefined || hash === undefined) {
     const current = (await readState(api, routes)).current;
     if (current === null || current === undefined) {
-      ctx.stdout("there is no declaration to approve — propose one first: catalyst-skills environment propose --file <path>");
+      ctx.stdout("there is no declaration to approve — propose one first: catalyst environment propose --file <path>");
       return 1;
     }
     revision = current.revision;

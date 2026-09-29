@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { CustomerConfig } from "../src/config";
 import { loadConfig, writeConfig } from "../src/config";
 import { CliError } from "../src/errors";
-import { authStrategyFor, bearerFor, deviceFlowLogin, fetchDiscovery, resetDiscoveryCache, type OauthAuth } from "../src/oauth";
+import { authStrategyFor, bearerFor, deviceFlowLogin, fetchDiscovery, MAX_DEVICE_CODES, resetDiscoveryCache, type OauthAuth } from "../src/oauth";
 import { startMeFixture, type FixtureServer } from "./fixture";
 import { makeCtx, tempHome, type TestCtx } from "./helpers";
 
@@ -107,6 +107,89 @@ describe("deviceFlowLogin", () => {
     const err = await deviceFlowLogin(ctx, server.url, { isTty: () => false, sleep }).catch((e: unknown) => e);
     expect(err).toBeInstanceOf(CliError);
     expect((err as CliError).code).toBe("login-expired");
+  });
+
+  describe("CTC-2136: an expired code is replaced, up to MAX_DEVICE_CODES in one login", () => {
+    it("⭐ the first code expires, a fresh one is minted and printed in the same call, and approving it logs in", async () => {
+      server.oauth.expireNextCodes = 1;
+      const { sleep } = fakeSleep();
+      const auth = await deviceFlowLogin(ctx, server.url, { isTty: () => false, sleep });
+      expect(auth.kind).toBe("oauth");
+      expect(auth.refreshToken).toBe("refresh-1");
+      expect(server.oauth.deviceAuthorizeCount).toBe(2);
+      const printed = ctx.out.join("\n");
+      expect(printed).toContain("WXYZ-1234");
+      expect(printed).toContain("That code expired. Here is a new one (2 of 3):");
+      expect(printed).toContain("WXYZ-1235");
+      expect(printed).not.toContain("(3 of 3)");
+      // the new code is printed after the notice, so the person reads the right one
+      expect(printed.indexOf("WXYZ-1235")).toBeGreaterThan(printed.indexOf("(2 of 3)"));
+    });
+
+    it("⭐ after the third code expires it stops with login-expired and the plain resume line, having minted exactly 3", async () => {
+      expect(MAX_DEVICE_CODES).toBe(3);
+      server.oauth.expireNextCodes = 3;
+      const { sleep } = fakeSleep();
+      const err = await deviceFlowLogin(ctx, server.url, { isTty: () => false, sleep }).catch((e: unknown) => e);
+      expect(err).toBeInstanceOf(CliError);
+      expect((err as CliError).code).toBe("login-expired");
+      expect((err as CliError).exitCode).toBe(2);
+      expect((err as CliError).message).toBe("The sign-in code expired 3 times. Run the same command again when you are ready to approve.");
+      expect(server.oauth.deviceAuthorizeCount).toBe(3);
+      const printed = ctx.out.join("\n");
+      expect(printed).toContain("That code expired. Here is a new one (2 of 3):");
+      expect(printed).toContain("That code expired. Here is a new one (3 of 3):");
+      expect(printed).not.toContain("(4 of 3)");
+    });
+
+    it("prints the one-click verification_uri_complete link on every round when the server sends it", async () => {
+      server.oauth.expireNextCodes = 1;
+      const { sleep } = fakeSleep();
+      await deviceFlowLogin(ctx, server.url, { isTty: () => false, sleep });
+      const printed = ctx.out.join("\n");
+      expect(printed).toContain(`Or open this link, which fills the code in: ${server.url}/activate?user_code=WXYZ-1234`);
+      expect(printed).toContain(`Or open this link, which fills the code in: ${server.url}/activate?user_code=WXYZ-1235`);
+    });
+
+    it("omits the one-click line when the server sends no verification_uri_complete, and a TTY opens the plain URL", async () => {
+      server.oauth.omitVerificationUriComplete = true;
+      const opened: string[] = [];
+      const { sleep } = fakeSleep();
+      await deviceFlowLogin(ctx, server.url, { isTty: () => true, openBrowser: (u) => opened.push(u), sleep });
+      const printed = ctx.out.join("\n");
+      expect(printed).not.toContain("Or open this link");
+      expect(printed).toContain(`${server.url}/activate`);
+      expect(opened).toEqual([`${server.url}/activate`]);
+    });
+
+    it("re-opens the browser on each new round when it opened on the first", async () => {
+      server.oauth.expireNextCodes = 2;
+      const opened: string[] = [];
+      const { sleep } = fakeSleep();
+      await deviceFlowLogin(ctx, server.url, { isTty: () => true, openBrowser: (u) => opened.push(u), sleep });
+      expect(opened).toEqual([
+        `${server.url}/activate?user_code=WXYZ-1234`,
+        `${server.url}/activate?user_code=WXYZ-1235`,
+        `${server.url}/activate?user_code=WXYZ-1236`,
+      ]);
+    });
+
+    it("never opens a browser on a later round when none opened on the first (no TTY)", async () => {
+      server.oauth.expireNextCodes = 2;
+      const opened: string[] = [];
+      const { sleep } = fakeSleep();
+      await deviceFlowLogin(ctx, server.url, { isTty: () => false, openBrowser: (u) => opened.push(u), sleep });
+      expect(opened).toEqual([]);
+    });
+
+    it("access_denied still ends the login at once, with no second code", async () => {
+      server.oauth.denied = true;
+      const { sleep } = fakeSleep();
+      const err = await deviceFlowLogin(ctx, server.url, { isTty: () => false, sleep }).catch((e: unknown) => e);
+      expect((err as CliError).code).toBe("login-denied");
+      expect(server.oauth.deviceAuthorizeCount).toBe(1);
+      expect(ctx.out.join("\n")).not.toContain("That code expired");
+    });
   });
 
   it("reads the token lifetime from the JWT `exp`, never a hard-coded 300/900 (probe: 300s today, 900s soon)", async () => {
@@ -235,7 +318,7 @@ describe("bearerFor — the silent refresh", () => {
     const err = await bearerFor(ctx, cfg).catch((e: unknown) => e);
     expect(err).toBeInstanceOf(CliError);
     expect((err as CliError).code).toBe("session-expired");
-    expect((err as CliError).message).toContain("catalyst-skills login");
+    expect((err as CliError).message).toContain("catalyst login");
     expect(server.oauth.refreshCount).toBe(1);
     // the stored tokens are NOT discarded
     const { loadConfig } = await import("../src/config");

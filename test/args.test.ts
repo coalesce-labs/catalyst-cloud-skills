@@ -47,7 +47,7 @@ describe("every verb's --help", () => {
       const code = await main([verb, "--help"], ctx);
       expect(code).toBe(0);
       const text = ctx.out.join("\n");
-      expect(text).toContain(`catalyst-skills ${VERB_USAGE[verb]}`);
+      expect(text).toContain(`catalyst ${VERB_USAGE[verb]}`);
       for (const flag of Object.keys(FLAG_TABLES[verb] ?? {})) expect(text, `${verb} help must mention --${flag}`).toContain(`--${flag}`);
       expect(text).toContain("--json");
       expect(verbHelp(verb)).toBe(text);

@@ -4,11 +4,13 @@ description: >-
   Am I set up? Machine readiness (Node, the tenant connection, the cached contract, the CLI path, the skills, the SDK, the optional replica) plus tenant readiness from the contract's per-team checks, in one verdict: what passes, what is blocked, what is merely waiting, and who can click what. Use when someone asks "am I set up", "what is missing", "why does nothing happen", "is the replica running", or right after connecting a new machine. Reports; never repairs.
 allowed-tools: Bash(catalyst-skills:*) Bash(npx @catalyst-cloud/catalyst-skills:*)
 ---
-<!-- vendored-from: @catalyst-cloud/catalyst-skills@0.7.0 — written in this repository for customer tenants -->
+<!-- vendored-from: @catalyst-cloud/catalyst-skills@0.9.5 — written in this repository for customer tenants -->
 
 # Am I set up?
 
 You answer one question with one verdict and one list. The verdict is READY or NOT READY. The list is who can click what: the fixes only the person at the keyboard can make, the fixes only a tenant owner or admin can make in settings, and the checks that are simply waiting for the first event. The live check ids, severities, states and the people who can answer come from the contract; the scripts print them, you never restate them.
+
+This readiness skill is part of `catalyst-cloud-skills` and checks tenant setup and operation. Coding workflow skills are a separate pack, `catalyst-dev-skills`. Do not direct a person to the deprecated local runtime or its `catalyst-dev@catalyst` plugin.
 
 ## Run first
 
@@ -20,6 +22,7 @@ You answer one question with one verdict and one list. The verdict is READY or N
 | when | read |
 | -- | -- |
 | any check is red, unknown or waiting and the person asks what it proves, how to fix it, or who can | `references/what-each-check-means.md` |
+| the person asks how to install, update, or migrate Catalyst skills | `../catalyst-onboard/references/skill-sources.md` |
 
 ## Rules
 
@@ -29,4 +32,5 @@ You answer one question with one verdict and one list. The verdict is READY or N
 - Not connected (exit 2) means the connect step, not a retry: `npx @catalyst-cloud/catalyst-skills login`, which logs the person in keyless in their browser; with a personal key from Settings → API keys instead, prefix it with `CATALYST_CLOUD_TOKEN=<your personal key>`. Never guess a tenant; the login (or the key) is the only selector.
 - Waiting is not failing. "No write observed", "no delivery observed" and "no host connected" clear themselves the first time the thing happens; say that instead of raising them.
 - Unknown is not a pass. A check the engine could not run is reported as such, never rounded up.
+- **Give numbers and a time.** Say how many are `pass`, `fail` and `unknown`, and when the team verdicts were computed: `readiness.checkedAt` per team on the contract, null when no pass has run.
 - Never run a check in a loop. If the person wants to know when a waiting check clears, that is the project-running skill's watch.

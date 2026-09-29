@@ -11,11 +11,15 @@ import {
   classifyStartError,
   clearWriterState,
   engineFor,
+  loadSqlite,
   pidfilePath,
   readWriterState,
   replicaStatus,
+  resetSqliteCache,
   writerStatePath,
 } from "../src/replica";
+import { BUN_MIN, FIX_COMMAND } from "../src/runtime";
+import { CliError } from "../src/errors";
 import { loadSdk } from "../src/sdk";
 import { startMeFixture, type FixtureServer } from "./fixture";
 import { makeCtx, seedJoined, seedReplica, seedWriterState, tempHome, waitFor, type TestCtx } from "./helpers";
@@ -128,14 +132,14 @@ describe("the replica writer state file", () => {
     seedWriterState(home, {
       consecutiveFailures: 5,
       lastError: "/snapshot 503",
-      stopped: { at: 1_700_000_000_000, reason: "5 consecutive snapshot failures", restartWith: "catalyst-skills replica start --detach" },
+      stopped: { at: 1_700_000_000_000, reason: "5 consecutive snapshot failures", restartWith: "catalyst replica start --detach" },
     });
     expect(await main(["replica", "status"], c2)).toBe(0);
     const text = c2.out.join("\n");
     expect(text).toContain("stopped");
     expect(text).toContain("5 consecutive snapshot failures");
     expect(text).toContain("/snapshot 503");
-    expect(text).toContain("catalyst-skills replica start --detach");
+    expect(text).toContain("catalyst replica start --detach");
   });
 });
 
@@ -200,10 +204,10 @@ describe("replica start backs off and stops after repeated snapshot failures", (
     expect(st.stopped).not.toBeNull();
     expect(st.consecutiveFailures).toBe(5);
     expect(st.lastError).toContain("503");
-    expect(st.stopped!.restartWith).toBe("catalyst-skills replica start --detach");
+    expect(st.stopped!.restartWith).toBe("catalyst replica start --detach");
     expect(existsSync(pidfilePath(dbPath))).toBe(false);
     const out = ctx.out.join("\n");
-    expect(out).toContain("catalyst-skills replica start --detach");
+    expect(out).toContain("catalyst replica start --detach");
     expect(out).toContain("optional");
   });
 
@@ -264,7 +268,7 @@ describe("replica start backs off and stops after repeated snapshot failures", (
     const dbPath = seedWriterState(home, {
       consecutiveFailures: 5,
       lastError: "/snapshot 503",
-      stopped: { at: 1, reason: "5 consecutive snapshot failures", restartWith: "catalyst-skills replica start --detach" },
+      stopped: { at: 1, reason: "5 consecutive snapshot failures", restartWith: "catalyst replica start --detach" },
     });
     server.headCursor = 21;
     const sockets: { onopen: ((ev: unknown) => void) | null }[] = [];
@@ -460,7 +464,7 @@ describe("the supervisor separates a stopped replica from a failed snapshot (CTC
 });
 
 describe("engineFor", () => {
-  test("falls back to node:sqlite when better-sqlite3 is absent, with exactly one stderr line", async () => {
+  test("falls back to node:sqlite when better-sqlite3 is absent, and says nothing (CTC-4272)", async () => {
     const sdk = await loadSdk();
     const dbPath = `${home}/x.db`;
     const engine = await engineFor(sdk, dbPath, ctx, {
@@ -468,13 +472,12 @@ describe("engineFor", () => {
         throw new Error("Cannot find module 'better-sqlite3'");
       },
     });
-    expect(ctx.err).toHaveLength(1);
-    expect(ctx.err[0]).toMatch(/better-sqlite3 unavailable .*using node:sqlite/);
+    expect(ctx.err).toHaveLength(0);
     engine.exec("CREATE TABLE t (x)");
     engine.close();
     expect(existsSync(dbPath)).toBe(true);
   });
-  test("falls back when the driver constructor throws (an ABI mismatch), with exactly one stderr line", async () => {
+  test("falls back when the driver constructor throws (an ABI mismatch), and says nothing (CTC-4272)", async () => {
     const sdk = await loadSdk();
     const engine = await engineFor(sdk, `${home}/y.db`, ctx, {
       requireDriver: () =>
@@ -482,8 +485,7 @@ describe("engineFor", () => {
           throw new Error("NODE_MODULE_VERSION 115 mismatch");
         },
     });
-    expect(ctx.err).toHaveLength(1);
-    expect(ctx.err[0]).toContain("NODE_MODULE_VERSION 115 mismatch");
+    expect(ctx.err).toHaveLength(0);
     engine.close();
   });
 });
@@ -637,7 +639,13 @@ describe("replica start (foreground, in-process against the fixture)", () => {
     const sdk = await loadSdk();
     const engine = await engineFor(sdk, `${home}/z.db`, ctx);
     engine.close();
-    expect(ctx.err).toHaveLength(1);
+    // CTC-4272: node:sqlite is the supported path, so a working fallback prints nothing...
+    expect(ctx.err).toHaveLength(0);
+    // ...and CATALYST_DEBUG=1 still names it (the positive control that the fallback ran).
+    const dbg = { ...makeCtx(home), env: { ...makeCtx(home).env, CATALYST_DEBUG: "1" } };
+    (await engineFor(sdk, `${home}/z2.db`, dbg)).close();
+    expect(dbg.err).toHaveLength(1);
+    expect(dbg.err[0]).toMatch(/better-sqlite3 unavailable .*using node:sqlite/);
     writeFileSync(`${home}/../nothing`, "");
     const c2 = makeCtx(home);
     const { mkdirSync } = await import("node:fs");
@@ -658,5 +666,33 @@ describe("replica start (foreground, in-process against the fixture)", () => {
     expect(await main(["replica", "sql", "", "--db", other], c5)).toBe(1);
     const c6 = makeCtx(home);
     expect(await main(["replica", "wat"], c6)).toBe(1);
+  });
+});
+
+describe("loadSqlite — CTC-2158: node:sqlite is loaded on first use, not at module load", () => {
+  beforeEach(() => resetSqliteCache());
+
+  test("a runtime that has node:sqlite loads it, and caches the module", () => {
+    const mod = loadSqlite();
+    expect(typeof mod.DatabaseSync).toBe("function");
+    expect(loadSqlite()).toBe(mod);
+  });
+
+  test("a runtime without node:sqlite raises a named CliError, never a raw ResolveMessage", () => {
+    resetSqliteCache();
+    let caught: unknown;
+    try {
+      loadSqlite(() => {
+        throw new Error("No such built-in module: node:sqlite");
+      });
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeInstanceOf(CliError);
+    const message = (caught as CliError).message;
+    expect(message).toContain("node:sqlite");
+    expect(message).toContain(BUN_MIN);
+    expect(message).toContain(FIX_COMMAND);
+    expect(message).not.toContain("ResolveMessage");
   });
 });

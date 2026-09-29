@@ -8,9 +8,13 @@ These will never be a command, on any release. Each is an authorization a person
 
 | step | where | what you say |
 | -- | -- | -- |
-| approving the login | the URL and short code that `catalyst-skills login` printed | "I have started the login. It printed this code and this URL — approve it in your browser, or on your phone, and tell me when it is done." |
-| connecting Linear | `<their cloud>/settings/connections` | "Open this page and connect Linear. It will send you to Linear to authorize it and bring you back." |
-| installing the GitHub App | `<their cloud>/settings/connections` | "Open the same page and install the GitHub App, granting it the repository you want worked." |
+| approving the login | the URL and short code that `catalyst login` printed | "I have started the login. It printed this code and this URL — approve it in your browser, or on your phone, and tell me when it is done." |
+| enrolling a coding account, or replacing its credential | the AI accounts page the script printed for the `coding accounts` part | "Choose the provider, give the account a label you will recognise, and paste the credential the page asks for. Nothing on this side sees it. Tell me when it is saved and I will read it back." |
+| connecting the Linear integration | `<their cloud>/settings/connections` (the Integrations page; Settings labels it Connections today) | "Open this page and connect Linear. It will send you to Linear to authorize it and bring you back." |
+| installing the GitHub App | `<their cloud>/settings/connections` | "Open the same page and install the GitHub App, granting it the repository you want worked and `<your GitHub org>/thoughts`." |
+| creating or confirming `<your GitHub org>/thoughts`, and letting the GitHub App reach it | GitHub, then the GitHub App's installation page for that org | "Catalyst's cloud phases write their notes to `<your GitHub org>/thoughts`, in the org that owns the code repository. Check it exists. If not, create a private repository named `thoughts`, initialized with a README. Then, on the GitHub App's installation page for that org, choose All repositories, or add `thoughts` to the selected repositories." |
+| connecting personal Linear | the URL printed by `catalyst connections personal linear start` | "Approve your own Linear account in this browser. I will check the grant status afterward." |
+| connecting personal GitHub, after the tenant GitHub App is installed and its repository is registered | the URL printed by `catalyst connections personal github start` | "Approve your own GitHub account in this browser. I will check the grant status afterward." |
 
 Say **by construction**, not "not supported yet". A person who thinks it is a missing feature will wait for it.
 
@@ -20,17 +24,14 @@ These are settings pages today because the routes behind them take a browser ses
 
 | step | where | what you say |
 | -- | -- | -- |
-| seeing every project they could set up | `<their cloud>/settings/linear-teams` | "I can read the projects that are already mapped, but the full list is only on this page today. Open it and tell me the ones you see." |
-| checking a project's readiness, or re-checking it | the same page | "I can read the verdict your tenant last stored, from the contract. Asking for a fresh check is on that page." |
-| mapping stages, or adopting the workflow | the same page, per project | "Pick one project, then **Map my stages** — or **Adopt the Catalyst workflow** if you want Catalyst's stages created for you." |
 | registering a repository | `<their cloud>/settings/repositories` | "Add the repository here, and attach it to the project you just mapped, in the same form." |
-| declaring the environment **for one repository** | that repository's environment section under `<their cloud>/settings/repositories` | "The names only this repository needs go here. Values are entered once, by you — nothing I run ever sees them." (Account-wide names are **not** on this list: `catalyst-skills environment` does those.) |
+| approving the environment **for one repository**, and entering its values | that repository's Environment page under `<their cloud>/settings/repositories`: the Setup declaration tab's Approve this revision button approves, and the Environment variables and Secrets tabs take the values | "The names come from `.catalyst/catalyst.toml` in the repository, which I can write with you. Approving it and entering the values happen here, once, by you. Nothing I run ever sees a value." (Account-wide names are **not** on this list: `catalyst environment` does those.) |
 
 ⛔ **Do not compose a request for any of these.** A skill script never makes a request of its own; only the CLI does, and the CLI has no verb for them. If you find yourself constructing a URL, stop.
 
 ## The URL to hand over
 
-Never type a host from memory. `catalyst-skills status` prints the API it is connected to on its `API:` line, and `node scripts/where-am-i.mjs` prints ready-made links built from it. Use those. A person pointed at the wrong tenant's settings page has a worse afternoon than one pointed at no page at all.
+Never type a host from memory. `catalyst status` prints the API it is connected to on its `API:` line, and `node scripts/where-am-i.mjs` prints ready-made links built from it. Use those. A person pointed at the wrong tenant's settings page has a worse afternoon than one pointed at no page at all.
 
 ## Handing over, and coming back
 
@@ -46,5 +47,5 @@ When they come back:
 
 - Re-run `node scripts/where-am-i.mjs` and read them the part that should have changed.
 - If it changed, say what it now says and move on.
-- If it did not, refresh the contract once (`catalyst-skills contract --refresh`) and read it again — the contract is cached, and a page can be ahead of it by a few seconds.
+- If it did not, refresh the contract once (`catalyst contract --refresh`) and read it again — the contract is cached, and a page can be ahead of it by a few seconds.
 - If it still did not, report both: what the page told them, and what the instrument says. Ask what they saw. **Never mark a step done because the person said a page worked** — the instrument is the record, and this is exactly where a confident false "all set" costs them an hour later.

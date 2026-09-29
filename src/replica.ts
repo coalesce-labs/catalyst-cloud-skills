@@ -4,7 +4,6 @@
 // writer-lock heartbeat, and the `sync_meta.cursor` row (read through node:sqlite read-only). Exit
 // 0 fresh, 1 present but stale, 2 not configured, 3 absent. `--probe` adds the one network call.
 import { existsSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
-import { DatabaseSync } from "node:sqlite";
 import { createRequire } from "node:module";
 import { flagBool, flagInt, flagString, positionals, type ParsedArgs } from "./args.js";
 import { apiBase, loadConfig, replicaDbPath, type Ctx, type CustomerConfig } from "./config.js";
@@ -14,9 +13,47 @@ import { apiClient } from "./transport.js";
 import { authStrategyFor } from "./oauth.js";
 import { loadSdk, type Sdk } from "./sdk.js";
 import { createEventSync, type EventsSdk, type EventSyncHandle } from "./events.js";
+import { BUN_MIN, FIX_COMMAND } from "./runtime.js";
 import type { WebSocketFactory } from "@catalyst-cloud/sdk/node";
 
 export const DEFAULT_STALE_MS = 15_000;
+
+// CTC-2158: node:sqlite used to be a top-level static `import { DatabaseSync } from "node:sqlite"`.
+// Because this module is in EVERY verb's module graph (cli.ts imports it for `ready`'s replica
+// check), a runtime without node:sqlite aborted the WHOLE CLI during module loading — before
+// main(), so before any of ready.ts's per-check try/catch could turn it into a fix line. Measured
+// under bun 1.3.14: `bun bin/catalyst-skills.js ready` -> "catalyst-skills: failed to load:
+// ResolveMessage: No such built-in module: node:sqlite", raw, with no fix and no who.
+// `createRequire(...)("node:sqlite")` inside a try/catch is catchable on every runtime measured
+// (Node 22/26, bun 1.3.14/1.4.2) and is synchronous, which replicaStatus and the sql/schema verbs
+// need. It is loaded on first use, memoised per process.
+type SqliteModule = typeof import("node:sqlite");
+export type DatabaseSync = InstanceType<SqliteModule["DatabaseSync"]>;
+
+let sqliteCache: SqliteModule | null = null;
+
+/** Load `node:sqlite` on first use. Any failure (module absent on this runtime) becomes a named
+ *  CliError pointing at the bun floor and the one fix command — never a raw ResolveMessage. */
+export function loadSqlite(req: (id: string) => unknown = createRequire(import.meta.url)): SqliteModule {
+  if (sqliteCache) return sqliteCache;
+  try {
+    sqliteCache = req("node:sqlite") as SqliteModule;
+    return sqliteCache;
+  } catch (err) {
+    const detail = err instanceof Error ? err.message : String(err);
+    throw new CliError(
+      `node:sqlite is not available on this runtime (${detail}) — the replica needs it. ` +
+        `Supported: Node 22.5+ has node:sqlite built in; bun needs ${BUN_MIN} or newer. ` +
+        `One command fixes it without changing your default Node: ${FIX_COMMAND}`,
+      "sqlite-unavailable",
+    );
+  }
+}
+
+/** Test seam: forget the cached module. */
+export function resetSqliteCache(): void {
+  sqliteCache = null;
+}
 
 export type ReplicaVerdict = "fresh" | "stale" | "not-configured" | "absent";
 
@@ -134,7 +171,7 @@ function readLock(dbPath: string): { pid: number; heartbeat: number } | null {
 export function readCursor(dbPath: string): number | null {
   let db: DatabaseSync | null = null;
   try {
-    db = new DatabaseSync(dbPath, { readOnly: true });
+    db = new (loadSqlite().DatabaseSync)(dbPath, { readOnly: true });
     const table = db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'sync_meta'").get();
     if (!table) return null;
     const row = db.prepare("SELECT value FROM sync_meta WHERE key = 'cursor'").get() as { value?: unknown } | undefined;
@@ -169,7 +206,13 @@ export function replicaStatus(ctx: Ctx, cfg: CustomerConfig | null, opts: Status
     writer: null,
   };
   if (!cfg) return { ...base, reasons: ["not connected"] };
-  const dbPath = opts.dbPath ?? replicaDbPath(cfg, ctx.home);
+  let dbPath: string;
+  try {
+    dbPath = opts.dbPath ?? replicaDbPath(cfg, ctx.home, ctx.env);
+  } catch (error) {
+    if (error instanceof CliError && error.code === "replica-not-configured") return { ...base, reasons: [error.message] };
+    throw error;
+  }
   const writer = readWriterState(dbPath);
   if (!existsSync(dbPath)) return { ...base, verdict: "absent", exitCode: 3, dbPath, reasons: ["no replica file"], writer };
   const staleMs = opts.staleMs ?? DEFAULT_STALE_MS;
@@ -202,9 +245,9 @@ export function replicaStatus(ctx: Ctx, cfg: CustomerConfig | null, opts: Status
 function baseStatusLine(s: ReplicaStatus): string {
   switch (s.verdict) {
     case "not-configured":
-      return "replica: not configured — run login first";
+      return `replica: not configured (${s.reasons.join("; ")})`;
     case "absent":
-      return `replica: absent at ${s.dbPath} — start it with: catalyst-skills replica start --detach`;
+      return `replica: absent at ${s.dbPath} — start it with: catalyst replica start --detach`;
     case "fresh":
       return `replica: fresh at ${s.dbPath} (cursor ${s.cursor}, heartbeat ${s.heartbeatAgeMs}ms ago${s.lag !== undefined ? `, ${s.lag} behind head ${s.head}` : ""})`;
     case "stale":
@@ -252,7 +295,7 @@ export interface EngineDeps {
 
 /** better-sqlite3 when it resolves and constructs, else node:sqlite — with exactly one stderr line
  *  on the fallback so the choice is visible. */
-export async function engineFor(sdk: Sdk, dbPath: string, ctx: Pick<Ctx, "stderr">, deps: EngineDeps = {}) {
+export async function engineFor(sdk: Sdk, dbPath: string, ctx: Pick<Ctx, "stderr"> & { env?: NodeJS.ProcessEnv }, deps: EngineDeps = {}) {
   const requireDriver = deps.requireDriver ?? (() => createRequire(import.meta.url)("better-sqlite3"));
   try {
     const mod = requireDriver() as { default?: unknown } | undefined;
@@ -261,7 +304,8 @@ export async function engineFor(sdk: Sdk, dbPath: string, ctx: Pick<Ctx, "stderr
     return deps.readonly ? sdk.betterSqlite3ReadonlyEngine(driver, dbPath) : sdk.betterSqlite3Engine(driver, dbPath);
   } catch (err) {
     const why = err instanceof Error ? err.message.split("\n")[0] : String(err);
-    ctx.stderr(`[catalyst-skills] better-sqlite3 unavailable (${why}); using node:sqlite`);
+    // node:sqlite is the supported path (CTC-4272): say nothing when it works, except under CATALYST_DEBUG.
+    if (ctx.env?.CATALYST_DEBUG === "1") ctx.stderr(`[catalyst] better-sqlite3 unavailable (${why}); using node:sqlite`);
     return deps.readonly ? sdk.nodeSqliteReadonlyEngine(dbPath) : sdk.nodeSqliteEngine(dbPath);
   }
 }
@@ -293,7 +337,7 @@ export const SNAPSHOT_MAX_FAILURES = 5;
  *  count on; staying live is that signal. The failing warm loop never reaches it — its resync demand
  *  fails and tears the attempt down first (CTC-2499). */
 export const SNAPSHOT_LIVE_STABLE_MS = 60_000;
-export const REPLICA_RESTART_COMMAND = "catalyst-skills replica start --detach";
+export const REPLICA_RESTART_COMMAND = "catalyst replica start --detach";
 
 const defaultSleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
 
@@ -350,7 +394,7 @@ export async function cmdReplica(args: ParsedArgs, ctx: Ctx, deps: ReplicaDeps =
   if (sub === "status") return cmdStatus(args, ctx);
   const cfg = loadConfig(ctx.home);
   if (!cfg) throw new CliError("not connected yet — run login first", "not-configured");
-  const dbPath = flagString(args, "db") ?? replicaDbPath(cfg, ctx.home);
+  const dbPath = flagString(args, "db") ?? replicaDbPath(cfg, ctx.home, ctx.env);
   switch (sub) {
     case "start":
       return cmdStart(args, ctx, cfg, dbPath, deps);
@@ -392,7 +436,7 @@ async function cmdStart(args: ParsedArgs, ctx: Ctx, cfg: CustomerConfig, dbPath:
     const argv = (deps.argv ?? process.argv.slice(1)).filter((a) => a !== "--detach");
     const { pid } = (deps.detach ?? detachSelf)(argv, ctx.env);
     writeFileSync(pidfilePath(dbPath), `${pid}\n`);
-    ctx.stdout(`replica writer started in the background (pid ${pid}, db ${dbPath}); check with: catalyst-skills replica status`);
+    ctx.stdout(`replica writer started in the background (pid ${pid}, db ${dbPath}); check with: catalyst replica status`);
     return 0;
   }
   const sdk = await loadSdk();
@@ -571,7 +615,7 @@ async function cmdStart(args: ParsedArgs, ctx: Ctx, cfg: CustomerConfig, dbPath:
     const nowMs = ctx.now().getTime();
     const stopped =
       failures >= maxFailures
-        ? { at: nowMs, reason: `${failures} consecutive snapshot failures`, restartWith: "catalyst-skills replica start --detach" }
+        ? { at: nowMs, reason: `${failures} consecutive snapshot failures`, restartWith: "catalyst replica start --detach" }
         : null;
     writeWriterState(dbPath, { pid: process.pid, consecutiveFailures: failures, lastError, lastFailureAt: nowMs, stopped }, nowMs);
 
@@ -634,7 +678,7 @@ export function assertSingleSelect(sql: string): string {
 
 async function cmdSql(args: ParsedArgs, ctx: Ctx, dbPath: string, sql: string, deps: ReplicaDeps): Promise<number> {
   const query = assertSingleSelect(sql);
-  if (!existsSync(dbPath)) throw new CliError(`no replica at ${dbPath} — start it with: catalyst-skills replica start --detach`, "replica-absent", 3);
+  if (!existsSync(dbPath)) throw new CliError(`no replica at ${dbPath} — start it with: catalyst replica start --detach`, "replica-absent", 3);
   const sdk = await loadSdk();
   const engine = await engineFor(sdk, dbPath, ctx, { ...deps.engineDeps, readonly: true });
   const replica = await sdk.CatalystReplica.openReadOnly({ dbPath, engine, log: () => {} });
@@ -648,8 +692,8 @@ async function cmdSql(args: ParsedArgs, ctx: Ctx, dbPath: string, sql: string, d
 }
 
 async function cmdSchema(args: ParsedArgs, ctx: Ctx, dbPath: string, table: string | undefined): Promise<number> {
-  if (!existsSync(dbPath)) throw new CliError(`no replica at ${dbPath} — the schema is what the file holds; start it with: catalyst-skills replica start --detach`, "replica-absent", 3);
-  const db = new DatabaseSync(dbPath, { readOnly: true });
+  if (!existsSync(dbPath)) throw new CliError(`no replica at ${dbPath} — the schema is what the file holds; start it with: catalyst replica start --detach`, "replica-absent", 3);
+  const db = new (loadSqlite().DatabaseSync)(dbPath, { readOnly: true });
   try {
     const tables = (db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name").all() as { name: string }[]).map((r) => r.name);
     const wanted = table ? tables.filter((t) => t === table) : tables;

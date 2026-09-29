@@ -19,6 +19,7 @@ import {
   CliError,
   CUSTOMER_SKILLS,
   MeError,
+  LEGACY_PACKAGE_NAME,
   PACKAGE_NAME,
   PROVENANCE_MARKER,
   UsageError,
@@ -267,7 +268,7 @@ describe("changelog + Tier 2 notice", () => {
     // the upgrade command must pin @latest via `npm install -g`, then re-run login so the new global
     // bin rewrites customer.json.cliPath (or the helpers keep spawning the stale recorded bundle).
     expect(line).toContain(`npm install -g ${PACKAGE_NAME}@latest`);
-    expect(line).toContain("catalyst-skills login");
+    expect(line).toContain("catalyst login");
     expect(line).not.toContain("npm update");
     expect(updateNoticeLine("0.1.0", "0.2.0", null)).toContain("see CHANGELOG.md");
   });
@@ -323,7 +324,7 @@ describe("main — login (and the deprecated join alias)", () => {
       user: FIXTURE_ME_USER,
     });
     expect(cfg.key).toBe(FIXTURE_USER_KEY);
-    expect(cfg.cliPath, "the skill scripts spawn the CLI login recorded").toMatch(/bin\/catalyst-skills\.js$/);
+    expect(cfg.cliPath, "the skill scripts spawn the CLI login recorded").toMatch(/bin\/catalyst\.js$/);
     expect(statSync(configPathFor(home)).mode & 0o777).toBe(0o600);
     // Installing is the agent's own command. A login that also copied the set would leave a plugin
     // user with every skill twice, which is the one thing the README's install section warns about.
@@ -358,16 +359,37 @@ describe("main — login (and the deprecated join alias)", () => {
     expect(cfg.auth?.sessionId).toBe("session_fixture");
     expect(statSync(configPathFor(home)).mode & 0o777).toBe(0o600);
   });
-  test("keyless login on an EXPIRED device code prints one clear actionable line (with the duration) and exits 2", async () => {
+  test("CTC-2136: keyless login whose codes ALL expire mints 3, then prints one plain resume line and exits 2", async () => {
     server.oauth.expired = true;
+    const before = server.oauth.deviceAuthorizeCount;
     try {
       const code = await main(["login", "--base-url", server.url], ctx(), { isTty: () => false, sleep: async () => {} });
       expect(code).toBe(2);
-      expect(err.join("\n")).toMatch(/expired after 5 minutes/);
-      expect(err.join("\n")).toContain("catalyst-skills login");
+      expect(err.join("\n")).toContain("The sign-in code expired 3 times. Run the same command again when you are ready to approve.");
+      expect(server.oauth.deviceAuthorizeCount - before, "exactly 3 device codes in one login").toBe(3);
       expect(existsSync(configPathFor(home)), "no config written on a failed login").toBe(false);
     } finally {
       server.oauth.expired = false;
+      server.oauth.lastMintExpired = false; // the shared server's next login starts a fresh code chain
+    }
+  });
+  test("⭐ CTC-2136: keyless login whose first code expires carries on with a fresh code and connects, in one process", async () => {
+    server.oauth.expireNextCodes = 1;
+    const before = server.oauth.deviceAuthorizeCount;
+    try {
+      const code = await main(["login", "--base-url", server.url], ctx(), { isTty: () => false, sleep: async () => {} });
+      expect(code).toBe(0);
+      const printed = out.join("\n");
+      expect(printed).toContain("That code expired. Here is a new one (2 of 3):");
+      expect(printed).toContain("WXYZ-1235");
+      expect(printed).toContain(`Connected as ${FIXTURE_ME_USER.label}`);
+      expect(printed.match(/Config written to /g), "credentials written once").toHaveLength(1);
+      expect(server.oauth.deviceAuthorizeCount - before).toBe(2);
+      expect(readConfig().auth?.kind).toBe("oauth");
+      expect(readConfig().auth?.refreshToken).toBe("refresh-1");
+    } finally {
+      server.oauth.expireNextCodes = 0;
+      server.oauth.lastMintExpired = false;
     }
   });
   test("keyless login DENIED prints one clear actionable line and exits 2", async () => {
@@ -376,7 +398,7 @@ describe("main — login (and the deprecated join alias)", () => {
       const code = await main(["login", "--base-url", server.url], ctx(), { isTty: () => false, sleep: async () => {} });
       expect(code).toBe(2);
       expect(err.join("\n")).toMatch(/denied/);
-      expect(err.join("\n")).toContain("catalyst-skills login");
+      expect(err.join("\n")).toContain("catalyst login");
     } finally {
       server.oauth.denied = false;
     }
@@ -497,22 +519,22 @@ describe("main — Tier 2 notice (a new version's next session)", () => {
     saveConfig(home, seededConfig());
     let code = await main(["notice"], ctx());
     expect(code).toBe(0);
-    const noticeLines = out.filter((l) => l.startsWith("[catalyst-skills] updated"));
+    const noticeLines = out.filter((l) => l.startsWith("[catalyst] updated"));
     expect(noticeLines).toHaveLength(1);
     expect(noticeLines[0]).toContain(`npm install -g ${PACKAGE_NAME}@latest`);
-    expect(noticeLines[0]).toContain("catalyst-skills login");
+    expect(noticeLines[0]).toContain("catalyst login");
     expect(noticeLines[0]).not.toContain("npm update");
     expect(readConfig().lastSkillBundleVersion).not.toBe("0.0.9");
     out = [];
     code = await main(["notice"], ctx());
     expect(code).toBe(0);
-    expect(out.filter((l) => l.startsWith("[catalyst-skills]"))).toHaveLength(0);
+    expect(out.filter((l) => l.startsWith("[catalyst]"))).toHaveLength(0);
   });
   test("login after an update also prints the one-line notice", async () => {
     saveConfig(home, seededConfig({ baseUrl: server.url }));
     const code = await main(["login", "--key", "fixture-key", "--base-url", server.url], ctx());
     expect(code).toBe(0);
-    expect(out.filter((l) => l.startsWith("[catalyst-skills] updated"))).toHaveLength(1);
+    expect(out.filter((l) => l.startsWith("[catalyst] updated"))).toHaveLength(1);
     expect(readConfig().lastSkillBundleVersion).not.toBe("0.0.9");
   });
   test("notice with no config is silent and exit 0", async () => {
@@ -545,8 +567,8 @@ describe("main — Codex P2: an update refreshes the copied skills before record
       expect(md, `${name} must be the bundled copy after the update`).not.toContain("STALE COPY");
       expect(md).toContain(PROVENANCE_MARKER);
     }
-    expect(out.filter((l) => l.startsWith("[catalyst-skills] refreshed"))).toHaveLength(1);
-    expect(out.find((l) => l.startsWith("[catalyst-skills] refreshed"))).toContain(skillsDir);
+    expect(out.filter((l) => l.startsWith("[catalyst] refreshed"))).toHaveLength(1);
+    expect(out.find((l) => l.startsWith("[catalyst] refreshed"))).toContain(skillsDir);
     expect(readConfig().lastSkillBundleVersion).not.toBe("0.0.9");
   });
 
@@ -579,8 +601,8 @@ describe("main — Codex P2: an update refreshes the copied skills before record
     const code = await main(["notice"], ctx());
     expect(code).toBe(0);
     expect(readConfig().lastSkillBundleVersion).toBe("0.0.9");
-    expect(err.join("\n")).toContain("catalyst-skills install");
-    expect(out.filter((l) => l.startsWith("[catalyst-skills] refreshed"))).toHaveLength(0);
+    expect(err.join("\n")).toContain("re-run the install command: curl -fsSL https://staging.catalystcloud.dev/install.sh | sh");
+    expect(out.filter((l) => l.startsWith("[catalyst] refreshed"))).toHaveLength(0);
   });
 
   test("a config with no stamp at all (pre-notice install) refreshes once and stamps, printing no notice", async () => {
@@ -589,7 +611,7 @@ describe("main — Codex P2: an update refreshes the copied skills before record
     saveConfig(home, seededConfig({ lastSkillBundleVersion: "" }));
     const code = await main(["status"], ctx());
     expect(code).toBe(0);
-    expect(out.filter((l) => l.startsWith("[catalyst-skills] updated"))).toHaveLength(0);
+    expect(out.filter((l) => l.startsWith("[catalyst] updated"))).toHaveLength(0);
     expect(readFileSync(join(skillsDir, "connect-me", "SKILL.md"), "utf8")).not.toContain("STALE COPY");
     expect(readConfig().lastSkillBundleVersion).not.toBe("");
   });
@@ -599,7 +621,7 @@ describe("main — status / install / help / version", () => {
   test("status before login says how to connect, naming login and the env form", async () => {
     const code = await main(["status"], ctx());
     expect(code).toBe(0);
-    expect(out.join("\n")).toContain(`npx ${PACKAGE_NAME} login`);
+    expect(out.join("\n")).toContain(`npx ${LEGACY_PACKAGE_NAME} login`);
     expect(out.join("\n")).toContain("CATALYST_CLOUD_TOKEN");
   });
   test("status after login names the tenant and contract range", async () => {
@@ -639,6 +661,7 @@ describe("main — status / install / help / version", () => {
     const code = await main(["--version"], ctx());
     expect(code).toBe(0);
     expect(out.join("\n")).toContain(PACKAGE_NAME);
+    expect(PACKAGE_NAME).toBe("@catalyst-cloud/cli");
     expect(out.join("\n")).toContain("1.x");
   });
 });

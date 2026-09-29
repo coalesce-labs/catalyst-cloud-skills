@@ -36,6 +36,30 @@ export interface ContractReadinessCheck {
   state: "pass" | "fail" | "unknown";
   reason?: string;
   count?: number;
+  /** OPTIONAL (contract 1.24.0, CTC-3547): the declared variable NAMES a `required_values` fail found
+   *  with no value. Names only, never a value. An older cloud omits it. */
+  names?: readonly string[];
+  /** OPTIONAL (contract 1.24.0, CTC-3547): the subset of `names` that exist as plain variables but
+   *  whose `$NAME` references name a secret with no value. Names only. An older cloud omits it. */
+  unresolved?: readonly ContractUnresolvedValue[];
+  /** OPTIONAL (CTC-2539; `names` / `unresolved` since 1.24.0): the check's findings for the team's
+   *  OTHER registered repositories. An older cloud omits it, or omits the per-repo names. */
+  repos?: readonly ContractReadinessRepoNote[];
+}
+
+/** CTC-3547 — a required variable whose references do not resolve. Both sides are names. */
+export interface ContractUnresolvedValue {
+  name: string;
+  references: readonly string[];
+}
+
+/** CTC-2539 / CTC-3547 — one non-default repository's findings for a team check. */
+export interface ContractReadinessRepoNote {
+  /** `owner/name`. */
+  repo: string;
+  reason?: string;
+  names?: readonly string[];
+  unresolved?: readonly ContractUnresolvedValue[];
 }
 
 /**
@@ -147,7 +171,8 @@ export interface TenantContract {
     }[];
     reviewerLogin: string;
     cleanPassShapes: readonly { kind: string; description: string; honoured: boolean; ticket: string | null }[];
-    cloudRemediateRequiredChecks: readonly string[];
+    /** Served by 1.x contracts only; 2.0.0 (CTC-1999) removed it. Readers treat absence as []. */
+    cloudRemediateRequiredChecks?: readonly string[];
     prLabels: { queueReady: string; handStepsHold: string; hold: string; preview: string };
   };
   /** The customer skill bundle the cloud expects, when it publishes one (catalyst-cloud#3746). OPTIONAL:
