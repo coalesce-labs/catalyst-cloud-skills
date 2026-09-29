@@ -28,8 +28,8 @@ Two or three short sentences per turn is the right size. A turn that lists every
 Scripts are run, never read. Each prints `--help`.
 
 - `node scripts/where-am-i.mjs --next`: the single next step, with who owns it and where.
-- `node scripts/where-am-i.mjs`: every part in the order above, each with its instrument, its verdict, and for anything unfinished who can fix it and the page it is on. Works before the machine is connected.
-- `node scripts/where-am-i.mjs --json`: the same document for you to branch on.
+- `node scripts/where-am-i.mjs`: every part in the order above, each with its instrument, its verdict, and for anything unfinished who can fix it and the page it is on. Works before the machine is connected; `--json` is the same document for you to branch on.
+- `node scripts/where-am-i.mjs --next --repo <path>`: the moment the person names a checkout, pass it; the report gains the repository's agent setup and a `note:` with the offers, and every write waits for a yes (`references/repository-agent-setup.md`).
 - `node scripts/local-sync.mjs`: optional local replica and event sync status. Run `--start` only after the person chooses local sync.
 
 ## Load on demand
@@ -42,6 +42,7 @@ Scripts are run, never read. Each prints `--help`.
 | the next step is a browser page, or a page said it worked and you have to confirm it | `references/what-the-browser-owns.md` |
 | anything reports not ready, or you are about to say who should fix something | `references/who-fixes-what.md` |
 | the repository's settings file, `.catalyst/catalyst.toml`, and its approval | `references/declaring-a-repository.md` |
+| the repository's AGENTS.md block and portable agent layout (CLAUDE.md, skills, rules) | `references/repository-agent-setup.md` |
 | the `host` part is not ok, or you are about to say work can run | `references/what-a-phase-needs.md` |
 | the person chooses an optional local event and replica cache | `references/local-sync.md` |
 | the person asks what Catalyst is, or how a ticket gets worked | the `how-catalyst-works` skill |

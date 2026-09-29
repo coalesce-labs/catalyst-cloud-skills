@@ -63,6 +63,8 @@ describe("the table itself", () => {
     expect(needs["environment approve"]).toBe("admin");
     expect(needs["project wip-limit get"]).toBe("member");
     expect(needs["project wip-limit set"]).toBe("admin");
+    expect(needs["repo agents-block"]).toBe("member");
+    expect(needs["repo agent-setup"]).toBe("member");
   });
 });
 
