@@ -163,10 +163,10 @@ async function list(args: ParsedArgs, ctx: Ctx, doc: TenantContract, api: ApiCli
   if (scope.kind === "unmatched") {
     ctx.stderr(`[catalyst] your Linear identity is not matched yet (match it with: catalyst identity linear options, then catalyst identity linear set <linearUserId>), so this is every open ask, not only yours`);
   } else if (scope.kind === "no-person") {
-    ctx.stderr(`[catalyst] connected with the tenant's account key, which names no person — this is every open ask; log in with your personal key to see only yours`);
+    ctx.stderr(`[catalyst] connected with your cloud account's shared key, which names no person — this is every open ask; log in with your personal key to see only yours`);
   }
   if (ranked.length === 0) {
-    ctx.stdout(scope.kind === "mine" ? `no open asks assigned to ${scope.label} (${all.length} open in the tenant — add --anyone to see them)` : "no open asks");
+    ctx.stdout(scope.kind === "mine" ? `no open asks assigned to ${scope.label} (${all.length} open in your cloud account — add --anyone to see them)` : "no open asks");
     return 0;
   }
   for (const a of ranked) ctx.stdout(`${a.identifier}  holds ${a.blocks.length} ticket${a.blocks.length === 1 ? "" : "s"}${a.blocks.length ? `: ${a.blocks.join(", ")}` : ""}  ${a.title}`);

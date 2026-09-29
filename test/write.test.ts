@@ -142,7 +142,7 @@ describe("ask", () => {
     expect(ctx.out.join("\n")).toContain("answer c-42 recorded by steward");
     expect(await main(["ask", "accept", "ENG-7"], makeCtx(home))).toBe(1);
   });
-  test("list with the tenant's account key is every open ask, ranked, and says it names no person", async () => {
+  test("list with the cloud account's shared key is every open ask, ranked, and says it names no person", async () => {
     expect(await main(["ask", "list", "--json"], ctx)).toBe(0);
     const { scope, asks } = JSON.parse(ctx.out.join("\n")) as { scope: { kind: string }; asks: { identifier: string; blocks: string[]; score: number }[] };
     expect(scope).toEqual({ kind: "no-person" });
@@ -152,7 +152,7 @@ describe("ask", () => {
     const c2 = makeCtx(home);
     expect(await main(["ask", "list"], c2)).toBe(0);
     expect(c2.out[0]).toMatch(/^ENG-7  holds 2 tickets: ENG-1, ENG-2/);
-    expect(c2.err.join("\n")).toMatch(/account key, which names no person/);
+    expect(c2.err.join("\n")).toMatch(/shared key, which names no person/);
     server.issues = [];
     const c3 = makeCtx(home);
     expect(await main(["ask", "list"], c3)).toBe(0);
@@ -175,7 +175,7 @@ describe("ask", () => {
     server.issues = fixtureIssues().map((i) => (i.identifier === "ENG-7" ? { ...i, assignee_id: "someone-else" } : i));
     const c3 = makeCtx(home);
     expect(await main(["ask", "list"], c3)).toBe(0);
-    expect(c3.out.join("\n")).toBe("no open asks assigned to Tony (2 open in the tenant — add --anyone to see them)");
+    expect(c3.out.join("\n")).toBe("no open asks assigned to Tony (2 open in your cloud account — add --anyone to see them)");
     // Unmatched Linear identity: the whole list plus one named stderr line, never a silently empty one.
     await seedJoined(home, server, { config: { key: "fixture-user-key", user: { id: "d1-user-tony", label: "Tony", email: null, role: "admin", linearUserId: null } } });
     const c4 = makeCtx(home);
