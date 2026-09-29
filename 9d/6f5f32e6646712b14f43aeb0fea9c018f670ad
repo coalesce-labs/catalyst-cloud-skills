@@ -1,0 +1,1 @@
+Correct the PR description: this path-copy slice is standalone; project-specific deep links remain a follow-up contingent on the registry returning default repo ids.
