@@ -3,7 +3,7 @@ name: what-needs-me
 description: >-
   The human's decision inbox on a Catalyst Cloud tenant, and the one way an agent raises a decision on their behalf. Use when the person asks "what needs me?", "what am I blocking?", or when active work is gated on a choice only they can make. Lists open asks ranked by what each answer releases, files an ask through the cloud's ask route with the tenant's own template, and records the answer so the held work releases. Never answers as the human, never duplicates an open ask.
 disable-model-invocation: true
-allowed-tools: Bash(catalyst-skills:*) Bash(npx @catalyst-cloud/catalyst-skills:*)
+allowed-tools: Bash(catalyst:*) Bash(npx -p @catalyst-cloud/cli catalyst:*)
 ---
 <!-- vendored-from: @catalyst-cloud/catalyst-skills@0.13.0 — written in this repository for customer tenants -->
 

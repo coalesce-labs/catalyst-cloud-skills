@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // explain.mjs — "why is this ticket stuck?" in one paragraph. A thin wrapper over
-// `catalyst-skills explain <ticket>`, which reads the cloud's eligibility explainer for the ticket's
+// `catalyst explain <ticket>`, which reads the cloud's eligibility explainer for the ticket's
 // team and translates the exclusion reason, the failure block and any advisories into plain English.
 import { mustRun, parseFlags, printHelp } from "./lib/cli.mjs";
 

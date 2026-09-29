@@ -139,7 +139,7 @@ describe("optional onboarding local sync", () => {
           2,
         ),
     });
-    expect(unconfigured.recovery).toBe("catalyst-skills login");
+    expect(unconfigured.recovery).toBe("catalyst login");
     const unavailable = await runLocalSync({
       run: () => ({ code: 1, stdout: "", stderr: "cloud unavailable" }),
     });

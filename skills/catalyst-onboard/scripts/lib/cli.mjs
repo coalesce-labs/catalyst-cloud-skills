@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// lib/cli.mjs — the one way a skill script reaches Catalyst Cloud: spawn the catalyst-skills CLI.
+// lib/cli.mjs — the one way a skill script reaches Catalyst Cloud: spawn the catalyst CLI.
 // The CLI holds the SDK and the key; this file holds neither. It reads customer.json only to learn
 // where the CLI lives. Run any script beside this one with --help; this file is a library.
 //
@@ -13,7 +13,9 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { CONNECT_COMMAND, hasCredential } from "./credential.mjs";
 
-export const PACKAGE = "@catalyst-cloud/catalyst-skills";
+export const PACKAGE = "@catalyst-cloud/cli";
+/** The package ships two commands, so npx needs the one to run named: `npx -p <package> catalyst`. */
+export const NPX_ARGS = ["-p", PACKAGE, "catalyst"];
 export const NOT_CONFIGURED_EXIT = 2;
 export const CONNECT_LINE = CONNECT_COMMAND;
 
@@ -53,11 +55,11 @@ export function cliTarget(cfg = tryLoadConfig()) {
   const recorded = recordedPath !== null;
   return recorded
     ? { command: process.execPath, prefix: [cfg.cliPath], via: `node ${cfg.cliPath}`, recorded: true }
-    : { command: "npx", prefix: [PACKAGE], via: `npx ${PACKAGE}`, recorded: false };
+    : { command: "npx", prefix: NPX_ARGS, via: `npx -p ${PACKAGE} catalyst`, recorded: false };
 }
 
 /**
- * Run one catalyst-skills verb. Returns {code, stdout, stderr, ran} and never exits: a verb that
+ * Run one catalyst verb. Returns {code, stdout, stderr, ran} and never exits: a verb that
  * refuses because the machine is not connected is a READING, not a failure of this script.
  * `ran` is false when the CLI could not be started at all.
  */

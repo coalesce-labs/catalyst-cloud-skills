@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // replica-status.mjs — is the optional local replica alive, and how far behind is it? Wraps
-// `catalyst-skills replica status`, which needs no network (a pidfile, a writer-lock heartbeat and
+// `catalyst replica status`, which needs no network (a pidfile, a writer-lock heartbeat and
 // the cursor row); `--probe` adds the one network call that compares the cursor with the cloud's
 // head. The CLI's exit code passes straight through: 0 fresh, 1 present but stale, 2 not connected,
 // 3 absent. A skill reads that code to choose its source; it never refuses to work over it.
@@ -11,11 +11,11 @@ const HELP = `Usage: node scripts/replica-status.mjs [--probe] [--json]
   --probe   also fetch the cloud's head cursor and print how far behind the replica is
   --json    print the CLI's status document {verdict, exitCode, cursor, heartbeatAgeMs, ...}
 
-Exit codes, passed through from catalyst-skills replica status:
+Exit codes, passed through from catalyst replica status:
   0  fresh: a live writer, a young heartbeat, a cursor — skills read the replica
   1  stale: the file exists but the writer is gone or behind — skills read the API and say so
-  2  not connected to a tenant — run: npx @catalyst-cloud/catalyst-skills login (or, with a personal key: CATALYST_CLOUD_TOKEN=<your personal key> npx @catalyst-cloud/catalyst-skills login)
-  3  absent: no replica file — optional; start one with: catalyst-skills replica start --detach`;
+  2  not connected to a tenant — run: npx -p @catalyst-cloud/cli catalyst login (or, with a personal key: CATALYST_CLOUD_TOKEN=<your personal key> npx -p @catalyst-cloud/cli catalyst login)
+  3  absent: no replica file — optional; start one with: catalyst replica start --detach`;
 
 const args = process.argv.slice(2);
 if (args.includes("--help") || args.includes("-h")) {

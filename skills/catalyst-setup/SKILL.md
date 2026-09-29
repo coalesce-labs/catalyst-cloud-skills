@@ -2,7 +2,7 @@
 name: catalyst-setup
 description: >-
   Am I set up? Machine readiness (Node, the tenant connection, the cached contract, the CLI path, the skills, the SDK, the optional replica) plus tenant readiness from the contract's per-team checks, in one verdict: what passes, what is blocked, what is merely waiting, and who can click what. Use when someone asks "am I set up", "what is missing", "why does nothing happen", "is the replica running", or right after connecting a new machine. Reports; never repairs.
-allowed-tools: Bash(catalyst-skills:*) Bash(npx @catalyst-cloud/catalyst-skills:*)
+allowed-tools: Bash(catalyst:*) Bash(npx -p @catalyst-cloud/cli catalyst:*)
 ---
 <!-- vendored-from: @catalyst-cloud/catalyst-skills@0.13.0 — written in this repository for customer tenants -->
 
@@ -29,7 +29,7 @@ This readiness skill is part of `catalyst-cloud-skills` and checks tenant setup 
 - Report, never repair. No tenant-reachable repair verb exists for a key yet; the settings page is where a tenant owner or admin fixes a mapping, a connection or a label, and you say which one.
 - End every answer with the verdict and the who-can-click-what list, in that order.
 - A stale or absent replica is a note, never a failure: every skill reads the API meanwhile and says so. Do not tell the person to start it unless they want local SQL or cheaper repeated reads.
-- Not connected (exit 2) means the connect step, not a retry: `npx @catalyst-cloud/catalyst-skills login`, which logs the person in keyless in their browser; with a personal key from Settings → API keys instead, prefix it with `CATALYST_CLOUD_TOKEN=<your personal key>`. Never guess a tenant; the login (or the key) is the only selector.
+- Not connected (exit 2) means the connect step, not a retry: `npx -p @catalyst-cloud/cli catalyst login`, which logs the person in keyless in their browser; with a personal key from Settings → API keys instead, prefix it with `CATALYST_CLOUD_TOKEN=<your personal key>`. Never guess a tenant; the login (or the key) is the only selector.
 - Waiting is not failing. "No write observed", "no delivery observed" and "no host connected" clear themselves the first time the thing happens; say that instead of raising them.
 - Unknown is not a pass. A check the engine could not run is reported as such, never rounded up.
 - **Give numbers and a time.** Say how many are `pass`, `fail` and `unknown`, and when the team verdicts were computed: `readiness.checkedAt` per team on the contract, null when no pass has run.

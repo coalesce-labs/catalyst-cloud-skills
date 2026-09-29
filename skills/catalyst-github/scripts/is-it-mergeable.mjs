@@ -2,7 +2,7 @@
 // is-it-mergeable.mjs — the three legs of merge evidence for one PR (checks, reviewer signal,
 // unresolved threads) judged under the policy the tenant contract resolves for its repository, plus
 // the prerequisites a queue applies before any leg counts (open, not a draft, no conflict). Every
-// input comes from `catalyst-skills query`, `contract` and, when fresh, `replica sql`.
+// input comes from `catalyst query`, `contract` and, when fresh, `replica sql`.
 // Exit 0 no leg is red, 1 a leg or prerequisite is red, 2 this machine is not connected.
 import { parseJson, runCli, runCliOrExit } from "./lib/cli.mjs";
 import { resolvePull, truthy } from "./lib/pull.mjs";
@@ -34,7 +34,7 @@ if (!target) {
 const { ticket, detail } = resolvePull(target);
 const merge = parseJson(runCliOrExit(["contract", "--path", "merge", "--json"]).stdout);
 if (!merge || !Array.isArray(merge.policies)) {
-  console.error("the contract's merge block did not parse; run: catalyst-skills contract --refresh");
+  console.error("the contract's merge block did not parse; run: catalyst contract --refresh");
   process.exit(1);
 }
 
@@ -103,7 +103,7 @@ if (replica && replica.verdict === "fresh") {
   else if (unknown > 0) add("threads", "inconclusive", `${unknown} thread(s) with no resolved flag mirrored`);
   else add("threads", "pass", `${count(1)} thread(s), all resolved (ancestry against force-pushes is judged by the cloud, not here)`);
 } else {
-  add("threads", "inconclusive", `the PR detail carries no thread count and the replica is ${replica?.verdict ?? "unavailable"}; start it (catalyst-skills replica start --detach) for a local read`);
+  add("threads", "inconclusive", `the PR detail carries no thread count and the replica is ${replica?.verdict ?? "unavailable"}; start it (catalyst replica start --detach) for a local read`);
 }
 
 const failed = legs.filter((l) => l.state === "fail");

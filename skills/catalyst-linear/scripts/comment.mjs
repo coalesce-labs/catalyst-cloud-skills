@@ -7,7 +7,7 @@ import { exitOnFailure, parseFlags, parseJson, relayStderr, runCli, usage, wants
 
 const HELP = `Usage: node scripts/comment.mjs <ticket> (--body <text> | --stdin) [--parent <commentId>] [--bookkeeping] [--as-user] [--json]
 
-Posts one comment on a ticket. Wraps: catalyst-skills write comment. Spends one unit of the tenant's
+Posts one comment on a ticket. Wraps: catalyst write comment. Spends one unit of the tenant's
 daily write budget.
 
   <ticket>               the Linear identifier, e.g. KEY-123

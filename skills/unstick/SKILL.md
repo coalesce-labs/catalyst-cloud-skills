@@ -1,9 +1,9 @@
 ---
 name: unstick
 description: >-
-  Get a stuck Catalyst Cloud ticket moving again. Use when the person asks "why is this parked and can you release it?", "unpark this", "get things flowing again", "the outage is over, retry what failed", or hands you a ticket that is not moving. Reads why nothing runs and what holds the ticket through the catalyst-skills CLI, decides whether the recorded cause is fixed, previews the release, releases every governor holding the ticket the right way (or one failure class across a team), and raises an ask only for what a person has to do. Never releases a cause it cannot show changed without saying so.
+  Get a stuck Catalyst Cloud ticket moving again. Use when the person asks "why is this parked and can you release it?", "unpark this", "get things flowing again", "the outage is over, retry what failed", or hands you a ticket that is not moving. Reads why nothing runs and what holds the ticket through the catalyst CLI, decides whether the recorded cause is fixed, previews the release, releases every governor holding the ticket the right way (or one failure class across a team), and raises an ask only for what a person has to do. Never releases a cause it cannot show changed without saying so.
 disable-model-invocation: true
-allowed-tools: Bash(catalyst-skills:*) Bash(npx @catalyst-cloud/catalyst-skills:*)
+allowed-tools: Bash(catalyst:*) Bash(npx -p @catalyst-cloud/cli catalyst:*)
 ---
 <!-- vendored-from: @catalyst-cloud/catalyst-skills@0.13.0 — written in this repository for customer tenants -->
 
@@ -13,13 +13,13 @@ You get one stuck ticket, or one set of tickets stuck for the same reason, movin
 
 ## Run first
 
-Scripts are run, never read. Each prints `--help`; exit 2 means this machine is not connected (run `catalyst-skills login`).
+Scripts are run, never read. Each prints `--help`; exit 2 means this machine is not connected (run `catalyst login`).
 
 - `node scripts/unstick.mjs <ticket>` — one JSON document: the eligibility explanation, the execution history (every governor holding the ticket with what releases it, and past releases), and a dry-run release showing what a release would clear and refuse. Changes nothing.
 - `node scripts/unstick.mjs <ticket> --because "<what changed>"` — the same, then the real release. Add `--retry-unchanged` only when you can say what changed outside what the cloud can see.
 - `node scripts/unstick.mjs --class <failure-class> --team <key> [--because "<what changed>"]` — the same for every ticket on one team parked under one failure class (at most 25 per call).
 
-The verbs underneath are `catalyst-skills explain <ticket>`, `catalyst-skills explain <ticket> --history` and `catalyst-skills release <ticket> --because <text> [--retry-unchanged] [--dry-run]`.
+The verbs underneath are `catalyst explain <ticket>`, `catalyst explain <ticket> --history` and `catalyst release <ticket> --because <text> [--retry-unchanged] [--dry-run]`.
 
 ## Load on demand
 

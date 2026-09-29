@@ -5,7 +5,7 @@ import { CHECK_FAILED_EXIT, cliCommand, loadCustomerConfig, parseFlags, runCli, 
 
 const HELP = `Usage: node scripts/verify-connection.mjs [--json]
 
-Runs catalyst-skills status, contract --path contractVersion, and replica status, and prints one
+Runs catalyst status, contract --path contractVersion, and replica status, and prints one
 line for each: the tenant this machine is connected to, the cached contract version, and the replica
 verdict. Nothing is written.
 
@@ -61,8 +61,8 @@ if (flags.json) {
   console.log(`not connected (${via}): ${(status.stdout || status.stderr).trim().split("\n")[0] ?? "status printed nothing"}`);
 } else {
   console.log(`tenant: ${out.tenant}`);
-  console.log(out.contractVersion ? `contract: version ${out.contractVersion} cached` : `contract: not cached (${out.contractError ?? "unknown reason"}) — run: catalyst-skills contract --refresh`);
+  console.log(out.contractVersion ? `contract: version ${out.contractVersion} cached` : `contract: not cached (${out.contractError ?? "unknown reason"}) — run: catalyst contract --refresh`);
   const r = out.replica;
-  console.log(`replica: ${r.verdict}${r.cursor !== null && r.cursor !== undefined ? ` (cursor ${r.cursor})` : ""}${r.reasons && r.reasons.length ? ` — ${r.reasons.join("; ")}` : ""}${r.verdict === "absent" ? " — optional; start it with: catalyst-skills replica start --detach" : ""}`);
+  console.log(`replica: ${r.verdict}${r.cursor !== null && r.cursor !== undefined ? ` (cursor ${r.cursor})` : ""}${r.reasons && r.reasons.length ? ` — ${r.reasons.join("; ")}` : ""}${r.verdict === "absent" ? " — optional; start it with: catalyst replica start --detach" : ""}`);
 }
 process.exit(out.connected ? 0 : CHECK_FAILED_EXIT);

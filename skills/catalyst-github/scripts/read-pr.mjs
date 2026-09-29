@@ -1,13 +1,13 @@
 #!/usr/bin/env node
 // read-pr.mjs — one ticket's pull request (or one PR by node id) as the mirror holds it: state,
 // branch, head, base, linked ticket and its stage, GitHub's own mergeable verdict, every check,
-// review and commit status. Reads through `catalyst-skills query`; composes no URL.
+// review and commit status. Reads through `catalyst query`; composes no URL.
 import { linkedPulls, resolvePull, truthy } from "./lib/pull.mjs";
 
 const HELP = `Usage: node scripts/read-pr.mjs <ticket | pr-node-id> [--all] [--json]
 
   <ticket>       a ticket identifier such as ABC-123: its open PR is shown (else the merged one, else the newest)
-  <pr-node-id>   a GitHub pull-request node id, as printed by "catalyst-skills query pulls"
+  <pr-node-id>   a GitHub pull-request node id, as printed by "catalyst query pulls"
   --all          for a ticket: list every PR that names it instead of one detail
   --json         print the raw detail document instead of the summary
 

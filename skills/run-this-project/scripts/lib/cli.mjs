@@ -1,8 +1,8 @@
 #!/usr/bin/env node
-// lib/cli.mjs — the one way a skill script reaches Catalyst Cloud: by spawning the catalyst-skills
+// lib/cli.mjs — the one way a skill script reaches Catalyst Cloud: by spawning the catalyst
 // CLI. The CLI holds the SDK and the key; this file holds neither. It reads
 // ~/.config/catalyst-cloud/customer.json (under CATALYST_SKILLS_HOME when set, else HOME) for the
-// CLI path that login recorded and falls back to `npx @catalyst-cloud/catalyst-skills`.
+// CLI path that login recorded and falls back to `npx -p @catalyst-cloud/cli catalyst`.
 //
 // Exit codes every script built on this file shares: 2 = this machine is not connected, 1 = the
 // script's own check failed, 0 = fine.
@@ -12,7 +12,9 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { CONNECT_COMMAND, hasCredential } from "./credential.mjs";
 
-export const PACKAGE_NAME = "@catalyst-cloud/catalyst-skills";
+export const PACKAGE_NAME = "@catalyst-cloud/cli";
+/** The package ships two commands, so npx needs the one to run named: `npx -p <package> catalyst`. */
+export const NPX_ARGS = ["-p", PACKAGE_NAME, "catalyst"];
 export const NOT_CONFIGURED_EXIT = 2;
 export const CHECK_FAILED_EXIT = 1;
 
@@ -55,7 +57,7 @@ export function cliCommand(cfg = loadCustomerConfig()) {
     return { command: process.execPath, prefix: [cfg.cliPath], via: `node ${cfg.cliPath}` };
   }
   const npx = process.platform === "win32" ? "npx.cmd" : "npx";
-  return { command: npx, prefix: [PACKAGE_NAME], via: `npx ${PACKAGE_NAME}` };
+  return { command: npx, prefix: NPX_ARGS, via: `npx -p ${PACKAGE_NAME} catalyst` };
 }
 
 /**
@@ -176,7 +178,7 @@ export function wantsHelp(argv) {
 
 const HELP = `lib/cli.mjs — shared helper; not a command.
 
-Resolves the catalyst-skills CLI (the path login recorded in ${configPath()}, else npx ${PACKAGE_NAME})
+Resolves the catalyst CLI (the path login recorded in ${configPath()}, else npx -p ${PACKAGE_NAME} catalyst)
 and runs one verb for the script that imports it. Run any sibling script with --help instead.`;
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {

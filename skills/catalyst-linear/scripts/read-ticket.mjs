@@ -6,7 +6,7 @@ import { parseFlags, parseJson, relayStderr, runCli, usage, wantsHelp } from "./
 
 const HELP = `Usage: node scripts/read-ticket.mjs <ticket> [--comments] [--source replica|api] [--json]
 
-Reads one ticket record. Wraps: catalyst-skills query issue.
+Reads one ticket record. Wraps: catalyst query issue.
 
   <ticket>               the Linear identifier, e.g. KEY-123
   --comments             also print every comment (id, author, time, body)

@@ -2,7 +2,7 @@
 name: what-this-repo-needs
 description: >-
   What environment variable names does this repository need, and where does each one come from? Scans the repository offline (no login, no network) and lists the names in three groups — build/test, deploy-only, bindings — each with where it was found, what uses it, and where a local value would come from. Never reads or prints a value. Also validates a catalyst.env.json file the same way the cloud does. Use when someone asks "what does catalyst.env.json mean", "what env vars does this repo need", "why does the container need this", or before reviewing or writing a repository's environment declaration.
-allowed-tools: Bash(catalyst-skills:*) Bash(npx @catalyst-cloud/catalyst-skills:*)
+allowed-tools: Bash(catalyst:*) Bash(npx -p @catalyst-cloud/cli catalyst:*)
 ---
 <!-- vendored-from: @catalyst-cloud/catalyst-skills@0.13.0 — written in this repository for customer tenants -->
 
@@ -37,4 +37,4 @@ different group. Keep your own reasoning short — the list is the point, not yo
   value — only the name, where it was found, and where a local value would come from.
 - A Cloudflare (or other platform) binding is not an environment value; keep the two apart.
 - This reads the repository only. It needs no login and makes no network call — unlike the
-  account-scope `catalyst-skills environment` verb, which reads your tenant's own declaration.
+  account-scope `catalyst environment` verb, which reads your tenant's own declaration.

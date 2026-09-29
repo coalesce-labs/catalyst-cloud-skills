@@ -45,7 +45,8 @@
     "skill-lib:sync": "node scripts/sync-skill-lib.mjs",
     "skills:scan": "node scripts/scan-skills.mjs",
     "evals": "node scripts/run-evals.mjs",
-    "paths:check": "node scripts/vendor-paths.mjs --check"
+    "paths:check": "node scripts/vendor-paths.mjs --check",
+    "prose:check": "node scripts/check-public-prose.mjs"
   },
   "dependencies": {
     "@catalyst-cloud/sdk": "^0.13.0",

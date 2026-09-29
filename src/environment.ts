@@ -1,4 +1,4 @@
-// environment.ts — `catalyst-skills environment`: the tenant-scope environment declaration, through
+// environment.ts — `catalyst environment`: the tenant-scope environment declaration, through
 // the contract's account-environment routes. This is the ONE setup write a person's own key can
 // perform: the cloud has admitted it since the routes shipped, and until this verb existed nothing
 // could call it, so every setup action was a settings page.

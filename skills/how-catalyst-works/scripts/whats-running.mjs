@@ -5,7 +5,7 @@ import { exitOnFailure, parseFlags, parseJson, relayStderr, runCli, wantsHelp } 
 
 const HELP = `Usage: node scripts/whats-running.mjs [--queue] [--accounts] [--team <key>] [--json]
 
-Prints what is executing on your tenant. Wraps: catalyst-skills running, queue, accounts.
+Prints what is executing on your tenant. Wraps: catalyst running, queue, accounts.
 
   --queue        also print the dispatch queue (what runs next, in order)
   --team <key>   with --queue: one team's queue
