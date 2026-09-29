@@ -1,147 +1,113 @@
 # The one path
 
-The steps run in this order. The order is the product's own: the tenant-side steps run Linear, then the project, then GitHub, then the repository, because each one is the cheapest place to catch the failure the next one would otherwise hide. Connect the tenant's Linear workspace before starting personal Linear consent (3a). Install the tenant's GitHub App and register its repository before starting personal GitHub consent (6a).
+The steps run in the order a person can act on them, and the order says why: the coding account first, because nothing runs without one and it needs nothing else; the Linear integration, because the project list cannot be read without it; one project; the GitHub App and the repository it will work in; the person's own connected accounts, GitHub last because a registered repository is the proof the App is usable; the repository's settings file; then the first ticket. Each step is the cheapest place to catch the failure the next one would otherwise hide.
 
-Walk them **one at a time**. Before each step say what you are about to do and why; after it, show what actually came back. `node scripts/where-am-i.mjs --next` decides which step you are on — never your memory of the last turn.
+Walk them **one at a time**. Before each step say what it is for, in a sentence, and ask one question or do one thing. After it, show what actually came back. `node scripts/where-am-i.mjs --next` decides which step you are on, never your memory of the last turn. Two or three short sentences per turn is the right size.
 
-Each step below states: what it is for, what you run or hand over, **what you read back to prove it landed**, and **who owns it**.
+Each step states: what it is for, what you ask or run or hand over, **what you read back to prove it landed**, and **who owns it**.
 
-## 0 — Where are we
+## 0. Where are we
 
-**For:** starting from the truth instead of from an assumption. A person arrives here having done anything from nothing to most of it.
+**For:** starting from the truth instead of an assumption. A person arrives having done anything from nothing to most of it, and the installer has usually connected the machine already.
 
-**You run:** `node scripts/where-am-i.mjs`
-
-**Read back:** the whole thing, as it printed. Then say in one sentence which part is unfinished and whose it is.
+**You run:** `node scripts/where-am-i.mjs --next`. Read the one line, then say in a sentence which step is next and whose it is. Do not paste the full report.
 
 **Owner:** you.
 
-## 1 — Connect this machine
+## 1. Connect this machine
 
-**For:** giving this machine a credential, so every later read is the person's own.
+**For:** giving this machine a credential, so every later read is the person's own. The installer normally did this; you are here only when the script says the machine is not connected.
 
-**You run:** `catalyst-skills login`. It prints a short code and a URL. The person approves it in a browser — from a phone, if this machine has none.
+**You ask:** "Shall I start the login now?" On a yes, run `catalyst-skills login`. It prints a short code and a URL. The person approves it in a browser, from a phone if this machine has none. Do not offer the key form; it exists for a person who already holds a personal key and says so.
 
-**Read back:** the `Connected to …` and `Connected as …` lines the command printed, then `node scripts/where-am-i.mjs` again so the machine part flips.
+**Read back:** the `Connected to …` and `Connected as …` lines, then the script again so the machine part flips.
 
-**Owner:** you run it; **the approval is the person's, in a browser, and always will be.** Wait for them. Do not re-run the command while a code is outstanding — that invalidates the code they are typing.
+**Owner:** you run it; the approval is the person's, in a browser, and always will be. Do not re-run the command while a code is outstanding. If it refuses, stop and use the `connect-me` skill.
 
-If it refuses, stop here and use the `connect-me` skill; it owns every failure mode of this step.
+## 2. A coding account
 
-## 2 — Who you are
+**For:** what the work runs on. Catalyst runs each stage of a ticket on an account the person owns, at their own rate, under their own name. With none enrolled, every later step can be finished and nothing will ever start.
 
-**For:** the person grain. A connected machine does not mean an active seat, and an active seat does not mean their Linear identity is matched.
+**You ask:** "Do you already have a coding account you want Catalyst to run on?" Then `references/choosing-a-coding-account.md`: the four kinds, what each asks for, how to enrol one, and what to do with an account that is out of rotation, needs a new credential, or has ended.
 
-**You run:** it is already in the step 0 script's `person` line.
+**Read back:** the `coding accounts` part: an enrolled, active account, named by its label. A cancelled or ended one is kept for reporting, not used, never re-tokened, and does not hold this step up.
 
-**Read back:** their label and role, and whether their Linear identity is matched.
+**Owner:** a workspace owner or admin, in a browser, on the AI accounts page. Nothing you run ever sees the credential.
 
-**Owner:** a personal Linear connection normally matches the person's Linear identity automatically. If it remains unmatched after personal consent, run `catalyst-skills identity linear status`, then `catalyst-skills identity linear options`. Let the member select their own listed identity and run `catalyst-skills identity linear set <linearUserId>`. The command reads the result back. An automatically resolved identity cannot be replaced; an existing claim conflict needs a tenant owner or admin. An inactive seat also needs an owner or admin. Say which finding the instrument reported.
+## 3. Connect the Linear integration
 
-## 3 — Connect Linear
+**For:** the workspace. Until the workspace's Linear connection exists, no project can be read or mapped. Say that this is the one connection the whole workspace shares, made once by an admin.
 
-**For:** the account grain. Nothing about a project can be read or mapped until the tenant's Linear workspace is connected.
+**You hand over:** `<their cloud>/settings/connections` (the Integrations page; Settings labels it Connections today), and say: connect Linear. It sends them to Linear to authorise and brings them back.
 
-**You hand over:** `<their cloud>/settings/connections`, and say: connect Linear.
+**Read back:** after they say it is done, re-run the script and read them the `account` line. A resolved workspace is proof. If it still reads unresolved, run `catalyst-skills contract --refresh` and read it again.
 
-**Read back:** after they say it is done, re-run `node scripts/where-am-i.mjs` and read them the `account` line. A resolved workspace is proof. If it still reads unresolved, say the contract may be cached and run `catalyst-skills contract --refresh`, then read it again.
+**Owner:** a workspace owner or admin, in a browser. **Browser by construction**: it is an authorization grant, and no key can perform one.
 
-**Owner:** a tenant owner or admin, in a browser. **This is a browser step by construction** — it is an authorization grant, and no key can perform one.
+## 4. Pick one project, and map its stages
 
-## 3a — Connect your personal Linear account
+**For:** the project. A project is one Linear team plus the repositories registered to it. Until a project's stages are mapped, a card moved into it does nothing at all; this is the single most common reason a new workspace sees no activity.
 
-**For:** giving this person's agent its own provider access. The tenant's Linear connection and GitHub App serve the tenant; they do not prove that this member has approved personal grants.
-
-**You run:** `catalyst-skills connections personal linear start`. It gives a short-lived URL and tries to open it. The person approves in their own browser. If the browser does not open, give them the URL printed by the command. Never paste a provider token into a prompt.
-
-**Read back:** after approval, run `catalyst-skills connections personal linear status`. `node scripts/where-am-i.mjs` also reads the personal grant statuses. A URL opening is not proof that a grant landed.
-
-**Owner:** you start and check; the member approves in a browser. A usable personal Linear grant normally binds its viewer automatically. If identity remains unmatched, use `catalyst-skills identity linear options` for supported self-service recovery. Never choose a roster entry on the member's behalf. An already-resolved or already-claimed refusal needs an owner or admin to inspect the conflict.
-
-## 4 — Pick one project, and map its stages
-
-**For:** the project grain. A project is one Linear team. Until a project's stages are mapped, a card moved into it does nothing at all — this is the single most common reason a new tenant sees no activity.
-
-**You hand over:** `<their cloud>/settings/linear-teams`. They pick one project and press **Map my stages**, or **Adopt the Catalyst workflow** if they want Catalyst's own stages created for them.
+**You hand over:** `<their cloud>/settings/linear-teams`. They pick one team and press **Map my stages**, or **Adopt the Catalyst workflow** if they want Catalyst's stages created for them.
 
 **Read back:** re-run the script and read the `projects` line. A project that now appears with a readiness verdict is proof it was saved. Read them the verdict and any failing checks by name.
 
-**Owner:** a tenant owner or admin. ⛔ **Listing the projects and saving a mapping are settings-page work today** — a key cannot do either yet, and a key-callable path is being built. Say that plainly; it is a gap in the product, not something they did wrong.
+**Owner:** a workspace owner or admin. ⛔ Listing the projects and saving a mapping are settings-page work today; a key cannot do either yet. Say that plainly; it is a gap in the product, not something they did wrong.
 
-⭐ **One project at a time is safe, and lead with this.** Mapping one project changes no other project's stages and moves no other project's tickets. Encourage a pilot: pick the project they care least about breaking.
+⭐ **One project at a time is safe, and lead with this.** Mapping one project changes no other project's stages and moves no other project's tickets. Encourage a pilot: the project they care least about breaking.
 
-## 5 — Install the GitHub App
+## 5. Install the GitHub App
 
-**For:** the account grain again. Without it Catalyst can read tickets but cannot touch code.
+**For:** the workspace's GitHub integration. Without it Catalyst can read tickets but cannot touch code.
 
-**You hand over:** `<their cloud>/settings/connections`, and say: install the GitHub App, and grant it the repository they want worked and `<org>/thoughts` (step 5a).
+**You hand over:** the same Connections page, and say: install the GitHub App, and grant it the repository they want worked and `<org>/thoughts`. Catalyst's cloud phases write their notes to `<org>/thoughts`, where `<org>` owns the code repository. If it does not exist, they create a private repository named `thoughts`, initialized with a README, and then on the App's installation page for that org choose All repositories, or add `thoughts` to the selected repositories. The script's `repositories` part notes whether `gh` can see that repository, never that the App can reach it, so do not claim that.
 
-**Read back:** it is confirmed by step 6 succeeding — a repository cannot be registered through an app that is not installed. Say that is what you are waiting for rather than claiming you verified it here.
+**Read back:** it is confirmed by step 6 succeeding. A repository cannot be registered through an App that is not installed. Say that is what you are waiting for.
 
-**Owner:** a tenant owner or admin, in a browser. **Browser by construction**, same reason as step 3.
+**Owner:** a workspace owner or admin, in a browser. Browser by construction, same reason as step 3.
 
-## 5a — The thoughts repository
+## 6. Register the repository
 
-**For:** Catalyst's cloud phases write their notes to `<org>/thoughts`, where `<org>` is the GitHub org that owns the code repository. If the App cannot reach it, phases run without those notes and nothing says so. **You hand over:** GitHub. Confirm `<org>/thoughts` exists; if not, create a private repository named `thoughts`, initialized with a README. Then, on the GitHub App's installation page for that org, choose All repositories, or add `thoughts` to the selected repositories. **Read back:** once a repository is registered, the script's `repositories` part carries a note from `gh repo view <org>/thoughts`. It shows the repository exists, never that the App can reach it. Say that plainly; never claim App access is verified. **Owner:** an org admin on GitHub, in a browser.
+**For:** the repository. Registering, attached to a project, is what makes a repository something that project can dispatch work into.
 
-## 6 — Register the repository
+**You hand over:** `<their cloud>/settings/repositories`, and say: add the repository, **and attach it to the project you mapped in step 4**, in the same form.
 
-**For:** the repository grain. Registering is what makes a repository something a project can dispatch work into.
+**Read back:** re-run the script and read the `repositories` line. The repository appearing there proves it was registered, and only that; see `references/who-fixes-what.md` for what registration does not prove.
 
-**You hand over:** `<their cloud>/settings/repositories`, and say: add the repository, **and attach it to the project you mapped in step 4**.
+**Owner:** a workspace owner or admin. ⛔ Registering is settings-page work today. ⛔ A repository registered without a project attached is the trap: the call succeeds, the repository is listed, and nothing can ever dispatch into it.
 
-**Read back:** re-run the script and read the `repositories` line. The repository appearing there is proof it was registered — and **only that**. It is not proof it can be dispatched to; see `references/who-fixes-what.md` for what registration does and does not prove.
+## 7. Connect your own accounts
 
-**Owner:** a tenant owner or admin. ⛔ **Registering is settings-page work today**; a key-callable path is being built. ⛔ A repository registered without a project attached is the trap here: the call succeeds, the repository is listed, and nothing can ever dispatch into it. Make sure they attach the project in the same form, and say why.
+**For:** the person. The integrations serve the whole workspace; a connected account is this person's own Linear or GitHub login, so that what Catalyst does for them is attributed to them, and asks assigned to them can be told apart from everyone else's.
 
-## 6a — Connect your personal GitHub account
+**You run:** `catalyst-skills connections personal linear start`. It prints a short-lived URL and tries to open it; if the browser does not open, hand them the URL. Then `catalyst-skills connections personal linear status`. Do GitHub the same way, with `github`, only after the GitHub App is installed and the repository is registered: `catalyst-skills connections personal github start`, then `status`.
 
-**For:** letting Catalyst act as you in GitHub. This grant is separate from the tenant's GitHub App installation. **You run:** `catalyst-skills connections personal github start`, only after the GitHub App is installed and the repository is registered. The browser flow is the same as 3a. **Read back:** `catalyst-skills connections personal github status`; a connected result confirms the personal grant. **Owner:** you start and check; the member approves in a browser.
+**Read back:** each `status`, and the script's `person` part: their label and role, whether their Linear identity is matched, and each grant. A URL opening is not proof a grant landed. If Linear identity stays unmatched after consent, `catalyst-skills identity linear status`, then `options`; the person picks their own listed identity and you run `catalyst-skills identity linear set <linearUserId>`. An already-resolved or claimed identity, and an inactive seat, need an owner or admin.
 
-## 7 — Declare what the containers need
+**Owner:** you start and check; the person approves in a browser.
 
-**For:** the environment a phase runs in — the names of the variables and secrets the person's code needs. Names leave the machine; values are entered once, by them, in the app.
+## 8. The repository's settings file
 
-You can read, propose, and approve the account-wide declaration through the CLI if this member has an admin or owner seat. Personal connection initiation and status are also CLI actions; the provider approval remains in the browser.
+**For:** the repository's own settings, in `.catalyst/catalyst.toml` on its default branch: the Linear team it belongs to, the names of the variables and secrets its build needs, and its setup commands. Names leave the machine; values are entered once, by them, in the app.
 
-**You run:** `catalyst-skills environment` first, to read what the tenant already declares — the current revision, whether it is approved, and which revision a phase's checkout actually carries. Those last two are different things more often than people expect: a proposal that nobody approved changes nothing.
+**You ask:** one thing at a time. First: "Shall I draft it from your repository's own build files?" On a yes, ask where the repository is checked out on this machine; if it is not, write the file here for them to add. Then `references/declaring-a-repository.md`: the inventory, the file's shape, the pull request. Say what happens after the merge as context, not as a second task for now. After the merge, an owner or admin approves the revision on the repository's Environment page (Settings → Repositories → the repository → Environment → Setup declaration → Approve this revision) and enters the values on the same page. A workspace-wide declaration, if they want one, goes through `catalyst-skills environment` (read, propose, `--approve`), the one setup write you can perform.
 
-To change it, write the declaration to a JSON file and propose it:
+**Read back:** the script's `repository declarations` part, read from each project's `environment_declared` check: no file yet, invalid, awaiting approval, or in effect, per repository. Names only, never a value.
 
-```sh
-catalyst-skills environment propose --file declaration.json
-```
+**Owner:** the person, with you, in the repository; a workspace owner or admin for the approval.
 
-Add `--approve` to approve exactly the revision that propose just returned, which is the one-command form and the one to prefer — it is a compare-and-set, and nothing gets copied between two commands by hand. `catalyst-skills environment approve` on its own reads the current revision and approves that.
-
-**Read back:** the revision and hash the command printed, and whether it says the declaration is now what a phase's checkout carries. If it prints `referenced but not set on this tenant yet`, read those names out: the declaration names them and the tenant has no value for them, so a phase that needs one will fail on it until someone adds it in the app.
-
-**Owner:** you can read it from any active seat; proposing and approving need an admin or owner seat, and the cloud refuses with that sentence if the person does not have one — read the refusal to them rather than retrying.
-
-⛔ **Values never pass through you.** The declaration carries the *names* a build needs. The values are entered by the person, once, in the app, and nothing you run ever sees them. Say that plainly; a person asked for a secret by an agent is right to be suspicious. The names one repository needs go in its own committed `.catalyst/catalyst.toml`. See `references/declaring-a-repository.md`.
-
-If they do not know what their build needs yet, skip this step. It blocks nothing until a phase needs a secret.
-
-## 8 — A coding account, and a host
-
-**For:** what a phase runs on. Without an enrolled coding account and a passing host check, every step above can be done and nothing starts.
-
-**You run:** it is already in the script, as the `coding accounts` and `host` parts. What each reading means, who owns it, and what to hand over are in `references/what-a-phase-needs.md`. The contract names who enrols the account and who owns the host. If the script says an account needs a new credential, the steps are in `references/replacing-a-credential.md`.
-
----
-
-## 9 — Verify, then run the first ticket
+## 9. Verify, then run the first ticket
 
 **For:** the only thing that proves setup worked.
 
-**You run:** `catalyst-skills ready`. Its READY does not cover step 8; the script does. Read them the verdict and every failing line, each with its own fix and owner. If it says NOT READY, go to `references/who-fixes-what.md` before you touch anything — a project check failing is not something re-running anything on this machine can fix.
+**You run:** `catalyst-skills ready`. Its READY does not cover the coding account or the host; the script does. Read them the verdict and every failing line with its own fix and owner. If it says NOT READY, go to `references/who-fixes-what.md` before you touch anything.
 
-**Then:** have them move one card into the project's dispatch stage, and watch. `catalyst-skills explain <ticket>` says why it is or is not about to run. If they opted into local sync, use the optional first-event check in `references/local-sync.md`.
+**Then:** ask them to move one card into the project's start stage (usually Todo) and tell you which ticket it was. That is the whole question; do not offer to explain the pipeline or to search the backlog instead. Then watch. `catalyst-skills explain <ticket>` says why it is or is not about to run. If they opted into local sync, use the optional first-event check in `references/local-sync.md`.
 
-**Read back:** what `explain` actually said. If it says the ticket cannot start, the reason it names is the answer — read it to them and use the `how-catalyst-works` skill for what the reason means, then `unstick` if something is holding it.
+**Read back:** what `explain` actually said, and the first comment the agent leaves on the ticket. If `explain` says the ticket cannot start, the reason it names is the answer; use the `how-catalyst-works` skill for what it means, then `unstick` if something is holding it.
 
-**Owner:** the card move is theirs. The verdict is the tenant's.
+**Owner:** the card move is theirs. The verdict is the workspace's.
 
 ## When you are done
 
-Say what is set up, name anything still unfinished with its owner, and never say work can run while the `coding accounts` or `host` part is unfinished, and tell them the standing question "am I set up?" now belongs to the `catalyst-setup` skill, and "what's happening?" to `whats-happening`. You do not need to be invoked again.
+Say what is set up, name anything still unfinished with its owner, and never say work can run while the `coding accounts` or `host` part is unfinished. Tell them the standing question "am I set up?" now belongs to the `catalyst-setup` skill, and "what's happening?" to `whats-happening`. You do not need to be invoked again.

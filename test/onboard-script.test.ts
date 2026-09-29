@@ -35,6 +35,11 @@ interface Scenario {
   hostsCurrent: Check | null;
   readinessStatus?: string;
   hostFixedWhere?: { page: string; command: string | null } | null;
+  /** No project mapped yet: `contract --path teams` answers `[]`. */
+  noProject?: boolean;
+  /** The project's `environment_declared` check. Omitted, the contract carries no such check (an
+   *  older cloud, or a project never checked), which is not a failing declaration. */
+  environmentDeclared?: Check & { repos?: { repo: string; reason?: string }[] };
 }
 
 const ENROLLER = "A tenant owner or admin, in Catalyst settings.";
@@ -71,6 +76,7 @@ function readinessChecks(hostFixedWhere: Scenario["hostFixedWhere"]) {
 function answers(s: Scenario): Record<string, unknown> {
   const checks: Check[] = [{ id: "oauth_scope", state: "pass" }];
   if (s.hostsCurrent) checks.push(s.hostsCurrent);
+  if (s.environmentDeclared) checks.push(s.environmentDeclared);
   return {
     "ready --json": { ready: true, checks: s.readyChecks ?? [{ id: "config", ok: true, line: "config: connected" }] },
     "me --json": { user: { label: "Pat Example", role: "owner", linearUserId: "lin-user-fixture" } },
@@ -79,13 +85,15 @@ function answers(s: Scenario): Record<string, unknown> {
     "connections personal github status --json": { outcome: "connected", status: 200 },
     "contract --path account --json": { name: "Example Co", slug: "example", linearWorkspaceSlug: "example-ws" },
     "environment read --json": { current: null },
-    "contract --path teams --json": [
-      {
-        key: "ENG",
-        dispatchGate: { status: "open" },
-        readiness: { status: s.readinessStatus ?? "degraded", checks: s.readinessStatus === "unchecked" ? [] : checks },
-      },
-    ],
+    "contract --path teams --json": s.noProject
+      ? []
+      : [
+          {
+            key: "ENG",
+            dispatchGate: { status: "open" },
+            readiness: { status: s.readinessStatus ?? "degraded", checks: s.readinessStatus === "unchecked" ? [] : checks },
+          },
+        ],
     "contract --path merge.repositories --json": [{ owner: "example", name: "app" }],
     "contract --path readinessChecks --json": readinessChecks(s.hostFixedWhere),
     ...(s.accountsFail
@@ -260,7 +268,7 @@ describe("where-am-i.mjs: the coding account is read from the contract", () => {
     expect(accounts.verdict).toBe("unfinished");
     expect(accounts.lines[0]).toMatch(/cloud is older than the bundle/);
     expect(accounts.lines).toContain("0 enrolled, 0 able to take work");
-    expect(accounts.owner).toBe("a tenant owner or admin");
+    expect(accounts.owner).toBe("a workspace owner or admin");
     expect(accounts.where).toBe("https://cloud.example/settings/coding-accounts");
   });
 
@@ -316,7 +324,7 @@ describe("where-am-i.mjs: an enrolled contract still checks each account's crede
   const ENROL_ONE = /enrol+ (a|an|one|another)\b/i;
   const withoutNegations = (t: string) => t.replaceAll("Do not enroll another account.", "").replaceAll("Do not enroll one on this reading.", "");
 
-  test("a quarantined but CANCELLED Claude account is retired, never re-credentialed, and does not make setup unfinished", () => {
+  test("a quarantined but CANCELLED Claude account is kept for reporting, never re-credentialed, and does not make setup unfinished", () => {
     const cancelled = { accountSlot: "claude-465ad266", provider: "claude", status: "ended", observedStatus: "dead", renewalStatus: "canceled", quarantined: true, quarantineReason: "credential conflict" };
     const home = connectedHome({ codingAccounts: CA_ENROLLED, accounts: { accounts: [CLAUDE_OK, cancelled] }, hostsCurrent: PASS });
     const out = run(home, ["--json"]);
@@ -324,7 +332,8 @@ describe("where-am-i.mjs: an enrolled contract still checks each account's crede
     const accounts = part(doc, "coding accounts");
     expect(accounts.verdict).toBe("ok");
     expect(accounts.lines.join("\n")).not.toMatch(/claude-465ad266 needs a new credential/);
-    expect(accounts.lines.join("\n")).toMatch(/claude claude-465ad266\): retire them on the AI accounts page\. Do not replace their credential/);
+    expect(accounts.lines.join("\n")).toMatch(/claude-465ad266 \(claude\)\): kept for reporting, not used, and not counted here\. Never replace their credential/);
+    expect(accounts.lines.join("\n")).not.toMatch(/retire|delete/i);
     expect(doc.next?.part).not.toBe("coding accounts");
   });
 
@@ -492,18 +501,16 @@ describe("the onboarding guide walks a dead credential and the thoughts reposito
     expect(row).toContain("needs a new credential");
   });
 
-  test("step 5a sits between the App install and registering the repository, and step 5 grants <org>/thoughts", () => {
+  test("the thoughts repository is handled inside the App install step, before registering the repository", () => {
     const path = read("references/the-one-path.md");
-    const five = path.indexOf("## 5 — Install the GitHub App");
-    const fiveA = path.indexOf("## 5a — The thoughts repository");
-    const six = path.indexOf("## 6 — Register the repository");
+    const five = path.indexOf("## 5. Install the GitHub App");
+    const six = path.indexOf("## 6. Register the repository");
     expect(five).toBeGreaterThanOrEqual(0);
-    expect(fiveA).toBeGreaterThan(five);
-    expect(six).toBeGreaterThan(fiveA);
-    expect(path.slice(five, fiveA)).toContain("`<org>/thoughts`");
-    const stepFiveA = path.slice(fiveA, six);
+    expect(six).toBeGreaterThan(five);
+    const stepFive = path.slice(five, six);
+    expect(stepFive).toContain("`<org>/thoughts`");
     for (const text of ["private repository named `thoughts`", "initialized with a README", "All repositories", "never that the App can reach it"]) {
-      expect(stepFiveA, text).toContain(text);
+      expect(stepFive, text).toContain(text);
     }
     const browser = read("references/what-the-browser-owns.md");
     expect(browser).toContain("`<your GitHub org>/thoughts`");
@@ -543,12 +550,16 @@ describe("where-am-i.mjs: no next step without a basis", () => {
     }
   });
 
-  test("an unreadable account block, with no version refusal, says to read it again rather than connect Linear", () => {
+  test("an unreadable contract, with no version refusal, says to read it again rather than connect Linear", () => {
     const home = connectedHome({ contractError: "network error: could not reach https://cloud.example", hostsCurrent: PASS });
     const doc = json(home);
-    expect(doc.next?.part).toBe("account");
-    expect(doc.next?.action).toMatch(/^refresh the contract/);
+    // Every contract read failed. The first part in the person's order is the coding account, and its
+    // unreadable step is reading it again; no part after it names a Linear or GitHub step.
+    expect(doc.next?.part).toBe("coding accounts");
+    expect(doc.next?.action).toMatch(/read the coding accounts again/);
     expect(doc.next?.action).not.toMatch(/connect Linear|GitHub App/);
+    expect(part(doc, "account").verdict).toBe("unreadable");
+    for (const p of doc.parts.filter((x) => x.verdict === "unreadable")) expect(p.lines.join("\n")).not.toMatch(/connect Linear|install the GitHub App/);
   });
 
   test("installed CLI is npm's latest: a newer CLI is not published yet, and nothing here changes", () => {
@@ -572,5 +583,135 @@ describe("where-am-i.mjs: no next step without a basis", () => {
       expect(action).not.toContain(NOT_PUBLISHED);
       expect(action).not.toContain("Update the CLI:");
     }
+  });
+});
+
+describe("where-am-i.mjs: the steps come in the order a person can act on them", () => {
+  const ORDER = ["machine", "coding accounts", "account", "projects", "repositories", "person", "repository declarations", "host"];
+
+  test("nothing beyond the machine is done: the coding account is the first question, not the project", () => {
+    const doc = json(connectedHome({ codingAccounts: NONE_ENROLLED, noProject: true, hostsCurrent: null }));
+    expect(doc.parts.map((p) => p.part)).toEqual(ORDER);
+    expect(doc.next?.part).toBe("coding accounts");
+    expect(doc.finished).toBe(false);
+  });
+
+  test("an account enrolled and no project mapped: the project is next, and nothing after it is named", () => {
+    const home = connectedHome({ codingAccounts: CA_ENROLLED, noProject: true, hostsCurrent: null });
+    const doc = json(home);
+    expect(doc.next?.part).toBe("projects");
+    expect(run(home, ["--next"]).stdout).toMatch(/^projects: pick ONE project/);
+    // the declaration and the host wait on a project; neither is called a failure of its own
+    expect(part(doc, "repository declarations").verdict).toBe("unreadable");
+    expect(part(doc, "repository declarations").lines[0]).toMatch(/no project is mapped yet/);
+  });
+
+  test("the report prints the parts in that order", () => {
+    const report = run(connectedHome({ codingAccounts: CA_ENROLLED, hostsCurrent: PASS }), []).stdout;
+    const at = (name: string) => report.indexOf(`${name}  [`);
+    for (let i = 1; i < ORDER.length; i++) expect(at(ORDER[i]!), `${ORDER[i - 1]} before ${ORDER[i]}`).toBeGreaterThan(at(ORDER[i - 1]!));
+  });
+});
+
+describe("where-am-i.mjs: the repository declaration is read from the project's environment_declared check", () => {
+  type Note = { repo: string; reason?: string };
+  const decl = (state: string, reason?: string, repos?: Note[]) => ({ id: "environment_declared", state, ...(reason ? { reason } : {}), ...(repos ? { repos } : {}) });
+  const REPOS = "https://cloud.example/settings/repositories";
+
+  test("no declaration committed yet: unfinished, names .catalyst/catalyst.toml, and is the next step", () => {
+    const home = connectedHome({ codingAccounts: CA_ENROLLED, hostsCurrent: PASS, environmentDeclared: decl("fail", "no_environment_declaration") });
+    const doc = json(home);
+    const d = part(doc, "repository declarations");
+    expect(d.verdict).toBe("unfinished");
+    expect(d.lines.join("\n")).toContain("ENG: no .catalyst/catalyst.toml on its default branch yet");
+    expect(d.lines.join("\n")).toContain("never a value");
+    expect(d.where).toBe("write .catalyst/catalyst.toml with references/declaring-a-repository.md, then open a pull request");
+    expect(doc.next).toMatchObject({ part: "repository declarations", blocking: true });
+    expect(doc.next?.action).toMatch(/catalyst\.toml/);
+    expect(doc.finished).toBe(false);
+    // a command gets "do", a page gets "where"
+    expect(run(home, []).stdout).toMatch(/^ {2}do: write \.catalyst\/catalyst\.toml/m);
+  });
+
+  test("awaiting approval: names Approve this revision and the repositories page, owned by an owner or admin", () => {
+    const d = part(json(connectedHome({ codingAccounts: CA_ENROLLED, hostsCurrent: PASS, environmentDeclared: decl("fail", "declaration_awaiting_approval") })), "repository declarations");
+    expect(d.verdict).toBe("unfinished");
+    expect(d.lines.join("\n")).toContain("Approve this revision");
+    expect(d.owner).toBe("a workspace owner or admin");
+    expect(d.where).toBe(REPOS);
+  });
+
+  test("an invalid file names the fix, not the approval", () => {
+    const doc = json(connectedHome({ codingAccounts: CA_ENROLLED, hostsCurrent: PASS, environmentDeclared: decl("fail", "declaration_invalid") }));
+    expect(doc.next?.action).toMatch(/fix the file/);
+    expect(doc.next?.action).not.toMatch(/Approve/);
+  });
+
+  test("no default repository: register one first, on the repositories page", () => {
+    const doc = json(connectedHome({ codingAccounts: CA_ENROLLED, hostsCurrent: PASS, environmentDeclared: decl("fail", "no_team_repo_default") }));
+    expect(doc.next?.action).toMatch(/register one and make it the default/);
+    expect(doc.next?.where).toBe(REPOS);
+  });
+
+  test("the project's other repositories are read per repository, off the check's own notes", () => {
+    const d = part(json(connectedHome({ codingAccounts: CA_ENROLLED, hostsCurrent: PASS, environmentDeclared: decl("pass", undefined, [{ repo: "example/api", reason: "no_environment_declaration" }]) })), "repository declarations");
+    expect(d.verdict).toBe("unfinished");
+    expect(d.lines[0]).toBe("ENG: a declaration is in effect for the project's default repository");
+    expect(d.lines[1]).toMatch(/^ENG, example\/api: no \.catalyst\/catalyst\.toml/);
+  });
+
+  test("in effect: ok, and setup can finish", () => {
+    const doc = json(connectedHome({ codingAccounts: CA_ENROLLED, hostsCurrent: PASS, environmentDeclared: decl("pass") }));
+    expect(part(doc, "repository declarations")).toMatchObject({ verdict: "ok", owner: null, where: null });
+    expect(doc.finished).toBe(true);
+  });
+
+  test("unknown: unreadable, never ok, and the step is a re-check, not a file", () => {
+    const home = connectedHome({ codingAccounts: CA_ENROLLED, hostsCurrent: PASS, environmentDeclared: decl("unknown", "declaration_unread") });
+    const doc = json(home);
+    expect(part(doc, "repository declarations").verdict).toBe("unreadable");
+    expect(doc.finished).toBe(false);
+    expect(doc.next?.action).toMatch(/Re-check/);
+    expect(doc.next?.action).not.toMatch(/catalyst\.toml/);
+  });
+
+  test("a cloud that carries no such check: nothing is read, said so, and it does not block", () => {
+    const doc = json(connectedHome({ codingAccounts: CA_ENROLLED, hostsCurrent: PASS }));
+    const d = part(doc, "repository declarations");
+    expect(d.verdict).toBe("ok");
+    expect(d.lines[0]).toMatch(/reports no repository declaration check/);
+    expect(doc.finished).toBe(true);
+  });
+});
+
+describe("where-am-i.mjs: a logged-out machine keeps its installed CLI", () => {
+  test("a config with a recorded cliPath and no credential reads status through that CLI, and the next step is connecting", () => {
+    const home = mkdtempSync(join(tmpdir(), "onboard-logged-out-"));
+    const cli = join(home, "fake-cli.mjs");
+    writeFileSync(cli, 'const a = process.argv.slice(2).join(" ");\nif (a === "status") { console.log("Not connected to a tenant."); process.exit(2); }\nprocess.stderr.write(`not connected — run: catalyst-skills login\\n`); process.exit(2);\n');
+    mkdirSync(join(home, ".config", "catalyst-cloud"), { recursive: true });
+    writeFileSync(join(home, ".config", "catalyst-cloud", "customer.json"), JSON.stringify({ baseUrl: "https://cloud.example", account: "example", cliPath: cli }));
+    const out = spawnSync(process.execPath, [script, "--json"], { encoding: "utf8", timeout: 20_000, env: { ...process.env, CATALYST_SKILLS_HOME: home, HOME: home, PATH: "/usr/bin:/bin" } });
+    expect(out.status, out.stderr).toBe(1);
+    const doc = JSON.parse(out.stdout) as Doc & { cli: string; connected: boolean };
+    expect(doc.connected).toBe(false);
+    expect(doc.cli).toBe(`node ${cli}`);
+    expect(doc.next?.part).toBe("machine");
+    expect(doc.next?.action).toBe("connect this machine");
+    // the keyless login alone: no key form is offered to a person who has not said they hold one
+    expect(doc.next?.where).toBe("npx @catalyst-cloud/catalyst-skills login");
+  });
+});
+
+describe("where-am-i.mjs: a mapped project that was never checked", () => {
+  test("leaves the repository declaration unread and asks for Re-check, never ok", () => {
+    const doc = json(connectedHome({ codingAccounts: CA_ENROLLED, hostsCurrent: null, readinessStatus: "unchecked" }));
+    const d = part(doc, "repository declarations");
+    expect(d.verdict).toBe("unreadable");
+    expect(d.lines[0]).toMatch(/Press Re-check/);
+    expect(d.where).toBe("https://cloud.example/settings/linear-teams");
+    expect(doc.next?.part).toBe("repository declarations");
+    expect(doc.next?.action).toMatch(/Re-check/);
+    expect(doc.finished).toBe(false);
   });
 });

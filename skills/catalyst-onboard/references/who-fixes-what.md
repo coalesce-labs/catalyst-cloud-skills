@@ -1,8 +1,8 @@
 # Who fixes what
 
-Setup is seven parts. Each has one instrument, and each instrument answers about its own part and nothing else. Read this before you tell a person that something is not ready, and before you tell them to do anything about it.
+Setup is eight parts. Each has one instrument, and each instrument answers about its own part and nothing else. Read this before you tell a person that something is not ready, and before you tell them to do anything about it. The product's words for what they own are Workspace, Project, Repository, Integration, Connected account and Member; the parts below are the instruments' names for the same things.
 
-## The seven parts, and the instrument that owns each
+## The eight parts, and the instrument that owns each
 
 | part | instrument | what a pass proves | what it does **not** prove | who fixes a failure, and where |
 | -- | -- | -- | -- | -- |
@@ -12,9 +12,10 @@ Setup is seven parts. Each has one instrument, and each instrument answers about
 | **project** | `catalyst-skills contract --path teams`, and the `team:` checks of `ready` | for each project **that has been mapped**: its readiness verdict and each failing check by name | that this is every project they have — see below | a tenant owner or admin, `<their cloud>/settings/linear-teams` |
 | **repository** | `catalyst-skills contract --path merge.repositories` | the repository is registered to the account | that it is active, that a project can dispatch into it, or that its environment is declared | a tenant owner or admin, `<their cloud>/settings/repositories` |
 | **coding accounts** | `codingAccounts` in `catalyst-skills contract` (`catalyst-skills accounts` on an older cloud) | an account is enrolled and active | that it has headroom left for the next phase | the enroller and page the contract names; see `references/what-a-phase-needs.md` |
+| **repository declarations** | the `environment_declared` check in `catalyst-skills contract --path teams`, and its per-repository notes | the project's default repository has a committed `.catalyst/catalyst.toml` in effect: ingested, valid, and its latest revision approved | that the values the names refer to exist; that any other repository is declared, unless its note says so | the person, with you, in the repository for the file; a tenant owner or admin for the approval, at the repository's Environment page under `<their cloud>/settings/repositories` |
 | **host** | the `hosts_current` check in `catalyst-skills contract --path teams` | no host is missing or behind, or the tenant runs none | anything before a project has been checked | the owner the contract names for `hosts_current`; see `references/what-a-phase-needs.md` |
 
-`node scripts/where-am-i.mjs` runs all seven and labels each finding with its part. Use it rather than composing this by hand.
+`node scripts/where-am-i.mjs` runs all eight, in the order a person can act on them, and labels each finding with its part. Use it rather than composing this by hand.
 
 ## The two silences that are not absences
 
