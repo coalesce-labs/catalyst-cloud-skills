@@ -40,7 +40,7 @@ This reference restates an invariant: the vocabulary the cloud's eligibility exp
 | `environment_check_failed` | the repository's environment check failed | a tenant owner or admin, in settings, fixes and reruns the environment check |
 | `environment_check_expired` | the environment check's verdict aged out | a tenant owner or admin, in settings, reruns the environment check |
 | `environment_check_hash_mismatch` | the environment changed since its recorded verdict | a tenant owner or admin, in settings, reruns the environment check |
-| `repo_paused` | an operator paused the repository | an operator resumes it |
+| `repo_paused` | the repository is paused; `catalyst repo status` says by whom, when and why | `catalyst repo resume <owner/name>` | a tenant owner or admin, in settings or with that command; an operator who paused it can too |
 | `scope_overlap` | its declared file scope intersects a ticket already in flight | the person, with their own login, decides which goes first, or waits for the other ticket |
 | `human_owned_pr` | a person's own pull request holds the ticket | the person, with their own login, closes or merges that pull request, or hands it to Catalyst; never close someone's pull request for them. No release clears this one — the release command refuses it terminally — so do not route it to `unstick` expecting one |
 | `review_not_converging` | review and repair kept finding new problems without converging | the person, with their own login, reads the findings (`catalyst-github`) and comments on the ticket to resume; raise an ask for that read. No release clears this one — the release command refuses it terminally — so do not route it to `unstick` expecting one |
