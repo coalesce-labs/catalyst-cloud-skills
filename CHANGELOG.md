@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.9.4
+
+`/catalyst-onboard` walks a new member through setup one step at a time, in the order a person can act on it: coding account, Linear integration, project, GitHub App and repository, connected accounts, the repository's `.catalyst/catalyst.toml` declaration, then the host, ending with one ticket moving. Each turn asks one question, says why in a line, and checks the result after. A new reference covers choosing a coding account (a Claude setup token, a Codex `auth.json`, or a GLM or Qwen API key), and it says plainly that a plain Anthropic or OpenAI API key cannot be enrolled today. Accounts are named by their label. The skills use the product's own nouns (workspace, project, repository, integration, connected account).
+
+An ended or cancelled coding account is kept for reporting and not used. Onboarding no longer tells you to retire or delete it, and never to put another login's credential on it; reactivate it only if its subscription is live again. `catalyst accounts` marks it "subscription canceled — kept for reporting, not used".
+
+The onboarding step engine never names a next step it cannot back with a check, and it says when a newer CLI is announced but not yet published.
+
 ## 0.9.3
 
 A machine the Catalyst installer moved from `@catalyst-cloud/catalyst-skills` to `@catalyst-cloud/cli` works without logging in again. The recorded launcher pointed into the removed package, so `ready` failed its CLI-path check and skill scripts could not start the CLI; any command now repoints it at the launcher that is running. The CLI also leaves the installer's skills alone: it never writes through a symlinked skill folder, and when the installer owns skill placement it does not refresh skills at all. When a refresh does fail, it tells you to re-run the install command.
