@@ -168,6 +168,11 @@ export const FLAG_TABLES: Record<string, FlagTable> = {
   project: {
     team: { value: true, help: "the project's team key (default: the only mapped project)" },
   },
+  legacy: {
+    remove: { value: false, help: "remove what was found, after one question (or --yes)" },
+    data: { value: false, help: "with --remove: delete the old runtime's data folders too" },
+    yes: { value: false, help: "with --remove: answer the question yes (a run with no terminal only reports otherwise)" },
+  },
   repo: {
     write: { value: false, help: "agents-block: write or update the block in AGENTS.md (working tree only)" },
     apply: { value: false, help: "agent-setup: perform the portable-layout plan in the working tree" },
@@ -221,6 +226,7 @@ export const VERB_USAGE: Record<string, string> = {
   capabilities: "capabilities [--json]",
   project: "project wip-limit <get|set <n>|set default> [--team K] [--json]",
   repo: "repo <agents-block <path> [--write]|agent-setup <path> [--apply] [--with-check]> [--json]",
+  legacy: "legacy [--remove [--data] [--yes]] [--json]",
   connections: "connections personal <linear|github> <start|status> [--wait <seconds>] [--json]",
   release:
     "release <ticket> --because <what changed> [--retry-unchanged] [--dry-run] [--json] | release --class <failure-class> --team <K> --because <what changed> [--retry-unchanged] [--dry-run] [--limit N] [--json]",

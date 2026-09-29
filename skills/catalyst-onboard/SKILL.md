@@ -27,7 +27,7 @@ Two or three short sentences per turn is the right size. A turn that lists every
 
 Scripts are run, never read. Each prints `--help`.
 
-- `node scripts/where-am-i.mjs --next`: the single next step, with who owns it and where.
+- `node scripts/where-am-i.mjs --next`: the single next step, with who owns it and where; a `note:` line names a cancelled coding account or leftovers of the old local runtime (`catalyst legacy`).
 - `node scripts/where-am-i.mjs`: every part in the order above, each with its instrument, its verdict, and for anything unfinished who can fix it and the page it is on. Works before the machine is connected; `--json` is the same document for you to branch on.
 - `node scripts/where-am-i.mjs --next --repo <path>`: the moment the person names a checkout, pass it; the report gains the repository's agent setup and a `note:` with the offers, and every write waits for a yes (`references/repository-agent-setup.md`).
 - `node scripts/local-sync.mjs`: optional local replica and event sync status. Run `--start` only after the person chooses local sync.

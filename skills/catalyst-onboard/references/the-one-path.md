@@ -24,6 +24,14 @@ Each step states: what it is for, what you ask or run or hand over, **what you r
 
 **Owner:** you run it; the approval is the person's, in a browser, and always will be. Do not re-run the command while a code is outstanding. If it refuses, stop and use the `connect-me` skill.
 
+## 1b. Leftovers of the old local runtime
+
+**For:** a machine set up under the old local Catalyst runtime still carries its plugin, jobs, commands or state. They are unsupported now, and left in place they can start old jobs or shadow current commands. The script notes them (`note: this machine still carries …`) from the CLI's own fixed list; current jobs are never on it.
+
+**You ask:** once, strongly recommending it: "Shall I remove the old runtime's leftovers now? It keeps your data folders." On a yes, run `catalyst legacy --remove --yes` and read back its `removed:` and `re-checked:` lines. Then, as a separate question, offer `--data` for the data folders. On a no, move on; the note stays until they decide.
+
+**Owner:** you run it; the yes is theirs.
+
 ## 2. A coding account
 
 **For:** what the work runs on. Catalyst runs each stage of a ticket on an account the person owns, at their own rate, under their own name. With none enrolled, every later step can be finished and nothing will ever start.
