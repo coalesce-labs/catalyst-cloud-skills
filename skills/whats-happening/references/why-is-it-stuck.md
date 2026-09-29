@@ -17,6 +17,7 @@ This reference restates an invariant: the vocabulary the cloud's eligibility exp
 | `runner_image_breaker` | fleet-wide: the live runner image fails every phase at startup, so dispatch is held rather than parking tickets | the cloud moves the pin; one alert per tenant, no per-ticket action |
 | `routing_unavailable` | claimed, then refused at kickoff: no route, no eligible coding-account slot, or the provider is unavailable | provider recovery or a slot freeing; if it persists, the tenant admin checks coding accounts in settings |
 | `cooling_down` (with a named callback) | the phase is parked on a condition the cloud watches | the callback fires; the `detail` names it |
+| `wip_limit` | the project (one Linear team, all its repositories) is at its WIP limit, default 12, so this ticket gets no first phase; tickets already in progress are unaffected | a ticket in progress finishes. If the fleet is idle at the limit, the in-progress tickets are the ones waiting (merge queue, holds, paused repositories, asks): unstick those, never the queue. Raising the limit is the project owner's call |
 
 ## Reasons that need a human
 
