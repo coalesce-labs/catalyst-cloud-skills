@@ -72,7 +72,7 @@ No survivor is `no_eligible_account_slot` when any candidate was skipped on capa
 | `retry_backoff` | retrying in place, waiting out its 2/5/15-minute rung |
 | `routing_unavailable` | claimed then refused at kickoff: no route, no eligible slot, or the provider is unavailable; the detail names which |
 | `repo_paused` | an operator paused the repository |
-<<<<<<< HEAD
+| `wip_limit` | the project is at its WIP limit (see above): its tickets in progress are waiting, and this new start waits until one of them finishes |
 | `remediate_parked` | the remediate phase is parked, so the failing phase has nowhere to be repaired; `catalyst-skills release <ticket>` releases the park once its cause is fixed |
 | `phase_parked` | the offered phase is parked after repeated failures or a spent repair-round cap; the person releases it once its cause is fixed |
 | `later_phase_lease_held` | an earlier phase is offered while a live container still holds a later phase of this ticket |
@@ -81,10 +81,6 @@ No survivor is `no_eligible_account_slot` when any candidate was skipped on capa
 | `round_threshold` | the ticket spent its lifetime repair budget |
 | `claim_storm` | claimed too many times in the last hour; it waits the hour out, and there is nothing to release |
 | `repo_at_capacity` | the repository's runner seats are all in use; it starts when one frees |
-=======
-| `wip_limit` | the project is at its WIP limit (see above): its tickets in progress are waiting, and this new start waits until one of them finishes |
-| `remediate_parked` | the remediate phase is parked, so the failing phase has nowhere to be repaired |
->>>>>>> 46df57dfe613bf06403b918e65924ab95fc33d16
 
 ## The unknowns (the evaluator fails closed)
 

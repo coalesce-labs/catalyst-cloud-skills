@@ -1,10 +1,9 @@
 # Changelog
 
-<<<<<<< HEAD
-## 0.8.0
+## 0.9.6
 
 Ask your agent what a setting does and where it is set, and it names the screen, the route and the rule instead of guessing: connecting Linear, installing the GitHub App, registering a repository, the merge policy and its reviewers, secrets versus environment variables, and why routing has no write route yet all have a home in `how-catalyst-works`. `whats-happening` now maps every reason a ticket can be held to a next action and who takes it — the person with their own login, a tenant owner or admin in settings, an operator, or "no one acts" when it is genuinely just waiting — and three reasons that were missing from the stuck-state table (a live container holding a later phase, too many claims in an hour, and a repository at capacity) are documented for the first time. Connecting your own Linear account and being matched as a Linear identity are now explained as two different, sometimes disagreeing, facts, so "I connected Linear, why am I still not getting asks?" has a real answer. And the README says plainly what it still does not know: flow metrics — cycle time, throughput, how long a pull request has been open — are not computed yet, rather than counting something else and calling it that.
-=======
+
 ## 0.9.5
 
 The CLI calls itself `catalyst` everywhere: usage lines, every verb's `--help`, hints, remedies and errors. `catalyst-skills` still works as a deprecated alias. The npx form is `npx -p @catalyst-cloud/cli catalyst …`, because bare `npx @catalyst-cloud/cli` cannot pick a binary. A replica read on the `node:sqlite` fallback no longer prints a notice every time; `CATALYST_DEBUG=1` still shows it.
@@ -62,7 +61,6 @@ The supported runtime range is now declared in one place and every message names
 The CLI itself no longer dies part-way through loading on a runtime it does not support. `node:sqlite` used to be imported at the top of a module every verb loads, so a bun without it aborted the whole process before `ready` ever got a chance to explain why — you saw a raw `ResolveMessage`, not a fix. The engine now loads on first use, and its absence becomes a named `runtime` check with the one command that fixes it, on every runtime, every time.
 
 That one command is `catalyst-skills runtime install`. It downloads a pinned Node release into this CLI's own cache, verifies it against that release's published checksum before unpacking anything, and uses it from then on — without touching your machine's default Node and without admin rights. Run it any time `ready` reports the runtime as unsupported, or ahead of time if you would rather not manage your system Node at all.
->>>>>>> 46df57dfe613bf06403b918e65924ab95fc33d16
 
 ## 0.7.0
 

@@ -583,19 +583,11 @@ describe("CTC-2158: CI derives its Node matrix and exercises bun in both directi
     expect(md).toContain("--all");
   });
 
-<<<<<<< HEAD
-  test("the version matches the CHANGELOG's top entry, which is 0.8.0", () => {
+  test("the version matches the CHANGELOG's top entry, which is 0.9.6", () => {
     const changelog = readFileSync(join(pkgRoot, "CHANGELOG.md"), "utf8");
     expect(changelog).toContain(`## ${manifest.version}\n`);
-    expect(changelog.indexOf("## 0.8.0")).toBe(changelog.indexOf("## "));
-    expect(manifest.version).toBe("0.8.0");
-=======
-  test("the version matches the CHANGELOG's top entry, which is 0.9.5", () => {
-    const changelog = readFileSync(join(pkgRoot, "CHANGELOG.md"), "utf8");
-    expect(changelog).toContain(`## ${manifest.version}\n`);
-    expect(changelog.indexOf("## 0.9.5")).toBe(changelog.indexOf("## "));
-    expect(manifest.version).toBe("0.9.5");
->>>>>>> 46df57dfe613bf06403b918e65924ab95fc33d16
+    expect(changelog.indexOf("## 0.9.6")).toBe(changelog.indexOf("## "));
+    expect(manifest.version).toBe("0.9.6");
   });
 
   test("every shipped skill stamps the package version on its provenance line", () => {
@@ -767,7 +759,7 @@ describe("what-each-check-means documents every readiness check, and no file cou
 
 // CTC-2014 Tier 1 ② + Tier 2 (reason half): `src/execution.ts`'s EXCLUSION_REASONS, UNKNOWN_REASONS
 // and ADVISORIES are this bundle's vendored copy of the cloud's eligibility-evaluator vocabulary —
-// `test/execution.test.ts:161-162` already pins their lengths (37 / 11 / 1). This describe block is
+// `test/execution.test.ts:161-162` already pins their lengths (38 / 11 / 1). This describe block is
 // what "cites the enforcing code path" for that vocabulary: every row on the two customer-facing pages
 // traces back to the same constants a script actually prints, not to a hand-typed guess. It gates two
 // things at once: (1) every reason the CLI can print has a row on both pages a customer is sent to, in
@@ -781,7 +773,7 @@ describe("the stuck-state catalogue is complete and every exclusion reason names
 
   const REASON_TOKEN = /`([a-z][a-z0-9]*(?:_[a-z0-9]+)+)`/g;
   const ACTOR_VOCAB = /the person, with their own login|a tenant owner or admin, in settings|\ban operator\b|no one acts/;
-  // A routing outcome, not an eligibility exclusion reason: measured at `what-runs-next.md:30`. The
+  // A routing outcome, not an eligibility exclusion reason: measured at `what-runs-next.md:40`. The
   // one documented allowance a stray reason string needs to be added deliberately, not by drift.
   const ALLOWED_NON_ROSTER = ["no_eligible_account_slot"];
 
