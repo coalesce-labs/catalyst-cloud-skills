@@ -34,7 +34,7 @@ with no model and no credential, and fails — naming the skill and the phrase �
 - the skill's description no longer contains `exercised_phrase` verbatim (a scored case sending a
   phrase the description dropped would silently stop testing anything real);
 - `promised_phrases` no longer equals every phrase the live description quotes (this is the
-  zero-cost widening: all ~39 phrases across ten skills are pinned this way, not just the ten a
+  zero-cost widening: all ~42 phrases across eleven skills are pinned this way, not just the eleven a
   scored case actually sends);
 - the case's `invocation` no longer matches the skill's own `disable-model-invocation` frontmatter;
 - a skill is added to or removed from the roster (`src/cli.ts`'s `CUSTOMER_SKILLS`) without its case
@@ -45,7 +45,7 @@ name, deterministically, in milliseconds, whether or not an eval credential ever
 
 ## Why the six explicit cases use the slash form
 
-Six of the ten skills (`catalyst-linear`, `catalyst-onboard`, `connect-me`, `run-this-project`,
+Six of the eleven skills (`catalyst-linear`, `catalyst-onboard`, `connect-me`, `run-this-project`,
 `unstick`, `what-needs-me`) carry `disable-model-invocation: true` — a model can never route to them
 on its own. Their cases send `/<skill-name> <sentence>`, the documented user-trigger for such a
 skill, instead of a bare natural-language sentence a model would have to choose to route on. If the
@@ -66,7 +66,7 @@ cannot regress unnoticed.
 ## Cost
 
 Every grader here is a structural `tool_used` grader — none is an `llm` grader — so the judge cost of
-running this whole suite is $0. A full run is 10 cases × `runs: 3` × 2 arms = 60 short, read-only
+running this whole suite is $0. A full run is 11 cases × `runs: 3` × 2 arms = 66 short, read-only
 `claude -p` sessions, each capped at `max_turns: 6` and `timeout_seconds: 300`.
 
 ## The threshold is 1.0, and that is deliberate

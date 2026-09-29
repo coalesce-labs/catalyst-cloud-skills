@@ -140,6 +140,7 @@ export const FLAG_TABLES: Record<string, FlagTable> = {
     offline: { value: false, help: "skip the published-release check (no network)" },
   },
   accounts: {},
+  env: {},
   team: {
     all: { value: false, help: "check every team, one request at a time" },
     stage: { value: true, repeat: true, help: "map a role to a live Linear state name (role=StateName)" },
@@ -203,8 +204,9 @@ export const VERB_USAGE: Record<string, string> = {
   accounts: "accounts [--json]",
   mcp: "mcp <add <name> --url URL <--auth none|--bearer SECRET_NAME|--header NAME=SECRET_NAME...>|list|remove <name>> [--json]",
   team: "team <list|check <KEY>|check --all|map <KEY> [--stage role=StateName]... [--yes --plan-hash H]|adopt <KEY> [--undo] [--yes --plan-hash H]|migrate <KEY> [--choice sourceId=destinationId]... [--retire] [--yes --plan-hash H]|checklist <KEY>> [--json]",
+  env: "env <inventory [path] | check <file>> [--json]   (THIS repository, offline — no login, no network)",
   environment:
-    "environment [read] [--json] | environment propose --file <path>|--stdin [--expect-revision N] [--approve] [--json] | environment approve [--revision N --hash H] [--json]",
+    "environment [read] [--json] | environment propose --file <path>|--stdin [--expect-revision N] [--approve] [--json] | environment approve [--revision N --hash H] [--json]   (your ACCOUNT's declaration; needs login)",
   secret:
     "secret set <NAME> --repo <owner/name> [--command '<cmd>'] [--json]   (value from --command, stdin, or a hidden prompt) | secret import <file> --repo <owner/name> [--rotate NAME]... [--json]",
   identity: "identity linear <status|options|set> [<linearUserId>] [--json]",

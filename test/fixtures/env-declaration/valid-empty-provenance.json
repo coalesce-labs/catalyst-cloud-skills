@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "toolchains": [],
+  "systemPackages": [],
+  "setup": [],
+  "verify": [],
+  "services": [],
+  "environment": [
+    { "name": "DATABASE_URL", "required": true, "provenanceIds": [] }
+  ],
+  "agentAssets": [],
+  "provenance": []
+}
