@@ -1,33 +1,23 @@
 # The repository's agent setup
 
-Two CLI verbs, both local to a checkout the person names, both writing to the working tree only. Committing, the branch and the pull request are the person's, in the open; nothing here pushes, and nothing here reaches the cloud.
+Two CLI verbs, both on a checkout the person names, both writing only to its working tree. Nothing here pushes or reaches the cloud; the branch, commit and pull request are the person's, never on the default branch. When `catalyst capabilities` lacks `repo agents-block` and `repo agent-setup`, say the CLI is older and skip this; never paste the block by hand.
 
-`catalyst capabilities` lists `repo agents-block` and `repo agent-setup` when the installed CLI has them. When it does not, say the CLI is older and skip this page; do not paste the block by hand.
+Say in one clause what the report found ("CLAUDE.md carries your guidance, there is no AGENTS.md, and `.claude/skills` is a real directory"), then offer each write below after its own yes, in the same pull request as the settings file when that is open.
 
 ## The Catalyst block in AGENTS.md
 
-`catalyst repo agents-block <path>` reads the checkout's AGENTS.md and says one of: `absent` (no file), `missing` (a file without the block), `stale` (a block whose words differ from this CLI's), or `current`. With `--write` it creates the file holding only the block, appends the block after one blank line, or replaces the marked region in place. A rerun changes nothing. The block is delimited by `<!-- catalyst:start -->` and `<!-- catalyst:end -->`; it says the repository is worked through Catalyst and names the skills an agent loads to learn the process. It carries no process of its own, so it never goes out of date with the pipeline.
+`catalyst repo agents-block <path>` reads AGENTS.md as `absent`, `missing` (no block), `stale` (words differ from this CLI's) or `current`. `--write` creates the file, appends the block, or replaces the region between `<!-- catalyst:start -->` and `<!-- catalyst:end -->`; a rerun changes nothing. The block says the repository is worked through Catalyst and names the skills that explain the process; it carries no process of its own, so it never goes stale with the pipeline.
 
-**Ask first:** "Shall I add the Catalyst block to AGENTS.md, on a branch, for you to open as a pull request?" On a yes, run `--write`, show the line it printed, and hand the commit and pull request to the person (or do it with the settings-file change, in the same pull request, when that is open). Never write to the default branch.
+## The portable layout
 
-## What the repository holds for agents, and the portable layout
+`catalyst repo agent-setup <path>` reports AGENTS.md (size, block state), CLAUDE.md (whether a line is exactly `@AGENTS.md`, and its own line count), `.agents/skills|rules` and `.claude/skills|rules` (absent, real directory, or symlink and target), and other agent files it saw (`.codex`, `.cursor`, `GEMINI.md`), then one verdict:
 
-`catalyst repo agent-setup <path>` reports, file by file: AGENTS.md (present, size, the block's state), CLAUDE.md (present; whether it imports AGENTS.md with a line that is exactly `@AGENTS.md`; how many lines of its own it carries), `.agents/skills` and `.agents/rules` (present or not), `.claude/skills` and `.claude/rules` (absent, a real directory, or a symlink and where it points), and other agent files it noticed (`.codex`, `.cursor`, `GEMINI.md`, and the like, reported only).
+- **portable**: AGENTS.md is canonical, CLAUDE.md imports it, each `.claude/` twin is absent or a relative symlink into `.agents/`. Offer only the block if it is missing.
+- **convertible**: the report lists the plan (CLAUDE.md's guidance moves into AGENTS.md and CLAUDE.md becomes `@AGENTS.md` plus Claude-only notes; `.claude/skills|rules` move to `.agents/` behind a relative symlink). `--apply` does exactly that.
+- **needs a hand merge**: both directories are real, or a symlink points elsewhere. `--apply` refuses and names each blocker.
 
-Then one verdict:
+Portable means one AGENTS.md serves every coding agent, so a second harness finds the same instructions and skills without a drifting copy.
 
-- **portable**: AGENTS.md is canonical; CLAUDE.md, if present, imports it; each `.claude/skills` and `.claude/rules` is either absent or a relative symlink to its `.agents/` twin. Say so in a sentence and offer only the block if it is missing.
-- **convertible**: the report lists the plan, step by step: move CLAUDE.md's own guidance into AGENTS.md and leave CLAUDE.md as the thin importer (`@AGENTS.md` plus Claude-only notes); move `.claude/skills` or `.claude/rules` to `.agents/` and leave a relative symlink. `--apply` performs exactly that plan in the working tree.
-- **needs a hand merge**: both a `.claude/` and an `.agents/` directory are real, or a symlink points elsewhere. `--apply` refuses and names each blocker; the person merges by hand, then reruns.
+`--with-check` writes `scripts/agents-md-check.mjs`, a dependency-free CI script that fails when CLAUDE.md stops importing AGENTS.md, a `.claude/` twin stops being a relative symlink into `.agents/`, AGENTS.md outgrows 120 lines or 16 KiB (`AGENTS_MD_MAX_LINES`, `AGENTS_MD_MAX_BYTES`), or a backticked path it cites is gone. The person wires it into CI.
 
-Why portable: one AGENTS.md serves every coding agent, and the Claude files become pointers, so a second harness on the same repository finds the same instructions and the same skills without a copy that drifts.
-
-**Ask first:** read the report to the person in words ("CLAUDE.md holds 40 lines of guidance and no AGENTS.md exists; `.claude/skills` is a real directory"), say what portable would look like, and ask: "Shall I make it portable, on a branch, for you to open as a pull request?" On a yes, run `--apply`, show what it applied and the new report, and hand over the commit and pull request. Never `--apply` without the yes, and never on the default branch.
-
-## The check a customer can keep
-
-`catalyst repo agent-setup <path> --with-check` writes `scripts/agents-md-check.mjs` into the checkout: a dependency-free node script for CI that fails when CLAUDE.md stops importing AGENTS.md, when a `.claude/skills` or `.claude/rules` stops being a relative symlink into `.agents/`, when AGENTS.md outgrows its budget (120 lines and 16 KiB by default; `AGENTS_MD_MAX_LINES` and `AGENTS_MD_MAX_BYTES` change it), or when a repository path AGENTS.md cites in backticks no longer exists. Offer it as a file they add and wire into CI themselves; say what it checks in one sentence. A rerun with `--with-check` leaves an identical file alone.
-
-## Read back
-
-After any write, rerun `catalyst repo agent-setup <path>` and read the verdict line and the block's state. Exit 0 means portable with the block current; exit 1 means something on the list is still open, and the lines say which.
+**Read back:** rerun `catalyst repo agent-setup <path>` after any write. Exit 0 is portable with the block current; exit 1 lists what is still open.

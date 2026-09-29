@@ -1,36 +1,34 @@
 # The one-reply shape
 
-This reference restates an invariant of this skill: how a status answer is shaped. The facts inside it come live from `node scripts/snapshot.mjs` and `node scripts/explain.mjs`; the machine-readable schema is `assets/status-reply.json`.
+One question gets one reply, complete enough that the person needs no second surface. Every line names a ticket identifier, and a fact you could not read is named as unreadable, with where it lives.
 
-## The rule
+Open with one clause: the snapshot's `takenAt` and its source (a fresh replica's cursor, or the API and why). Then the blocks, in order:
 
-The person asked one question and gets one reply. If they would need a second surface, a second message, or a follow-up question from you to know where things stand, the reply is wrong. Every line names a ticket identifier. Nothing in the reply is a guess: a fact you could not read is named as unreadable, with where it lives.
-
-## The five blocks, in this order
-
-1. **In flight.** Tickets a phase is running on right now, or that hold a live lease mid-ladder. Source: the snapshot's `running` block (fleet activity, the agent roster, lease attributions). One line per ticket: identifier, the phase running, how long it has run.
-2. **Blocked, and on whom.** Tickets nothing is offered for. Source: the queue's excluded rows, then `explain` on each one the person cares about. Every line carries the reason in the person's words and who releases it: the human (an ask), the person's own login (`unstick`), a role, the cloud itself (a backoff, a park that self-releases), or a clock. "On whom" is never blank; if you cannot tell, say the reason the cloud gave and that this bundle does not know its release.
-3. **Waiting on the human.** The open asks, ranked by what each one holds. Source: `waitingOnHuman` in the snapshot. Keep this to identifier, the question, and what it releases; the `what-needs-me` skill owns the detail and the settling.
-4. **Closed.** What reached the done slot in the window the person asked about (or since your last reply). Source: `query issues` filtered by the team's done-slot stage name from the contract, or the change feed for a time window. When you did not read a window, say "since my last reply" and mean it.
-5. **Next.** What the queue picks up next, in the cloud's order, with the phase each will run. Source: the snapshot's `queue` block. Do not reorder it to what you think should be next; the levers are in `references/what-runs-next.md`.
-
-A sixth block, **cannot see**, appears only when it is non-empty: the facts your key cannot read (PR labels and reactions, which are not mirrored), each with the URL the CLI printed. A park or hold is not in this block: the person's own login releases it through `unstick`.
-
-A flow number is named in that block by name, not left out: cycle time, throughput, or how long pull requests have been open are not computed by anything a key reads today. Say they are not computed rather than counting ticket dates or open pull requests and calling it that.
-
-## The header line
-
-The reply opens with one clause that says when and from where: the snapshot's `takenAt` and its source line. When the replica was stale or absent, the reply says the numbers came from the API; when it was fresh, it says the cursor. This is not decoration. A stale source that goes unmentioned is the way a wrong status reply happens.
+1. **In flight.** From the snapshot's `running` block: identifier, the phase running, how long.
+2. **Blocked, and on whom.** The queue's excluded rows, with `explain` on the ones the person cares about. Every line carries the reason in the person's words and who releases it: the person, a role, the cloud itself, or a clock.
+3. **Waiting on the human.** `waitingOnHuman` in the snapshot, ranked by what each ask holds: identifier, the question, what it releases. `what-needs-me` owns the detail.
+4. **Closed.** What reached the done slot in the window asked about (`query issues` by the done-slot stage name, or the change feed); with no window read, "since my last reply".
+5. **Next.** The snapshot's `queue` block in the cloud's order, with each ticket's next phase.
+6. **Cannot see**, only when non-empty: PR labels and reactions (not mirrored), each with the URL the CLI printed. A flow number goes here by name: cycle time, throughput, or how long pull requests have been open are not computed by anything a key reads, so say they are not computed rather than counting ticket dates.
 
 ## Writing the lines
 
-- Identifier first, then the stage as the contract spells it for that team, then one clause. `KEY-123 · <stage name> · implement running 14 min`.
-- Age in human units (minutes, hours, days), from `updated_at` or the lease's start, never a raw timestamp.
-- A reason is the translation from `references/why-is-it-stuck.md`, not the cloud's snake_case token, unless the token is one the table does not know, in which case quote it as the cloud spelled it.
-- No adjectives about health. "Stuck" has a definition (`references/reading-the-board.md`); use it only when it applies.
+- Identifier first, then the stage as the contract spells it, then one clause: `KEY-123 · <stage name> · implement running 14 min`.
+- Age in human units from `updated_at` or the lease start, judged against the phase's natural duration.
+- A reason is its translation from `references/why-is-it-stuck.md`. One ticket in flight and nothing blocked is a three-line reply.
 
-## What the reply never does
+## Reading the board
 
-- It never restates a stage name, threshold or label from memory. The snapshot's `tenant` block carries the live values; read them there each time.
-- It never answers an ask, proposes a default on the human's behalf inside the status reply, or moves anything. Routing a request is `references/routing-work.md`; a decision is the `what-needs-me` skill.
-- It never pads a short answer. When one ticket is in flight and nothing is blocked, the reply is three lines.
+`node scripts/snapshot.mjs --board` groups open tickets by stage in slot order; read it by slot, never by name. A long dispatch column with nothing in flight is a capacity or eligibility question: `explain` the first row. A card that has not moved is running, retrying in place, or in remediate, which is an interrupt to count separately, never progress. An ask-labelled ticket belongs in the waiting-on-human block; a local-lane ticket is in flight elsewhere. The ticket's comments (`catalyst-linear`) and `catalyst explain --history <ticket>` must agree.
+
+## What counts as stuck
+
+A ticket is **stuck** only when all three hold:
+
+1. Nothing is offered for it: the queue excludes it, or `explain` gives a reason rather than a position.
+2. The reason does not release itself (`references/why-is-it-stuck.md` marks which do).
+3. No one is acting on the release: no open ask names it, and no human comment or push landed after the failure.
+
+Everything else is **waiting**, and the reply says on what; calling a wait "stuck" sends the human to fix what the cloud is handling.
+
+The reply answers no ask, proposes no default for the human, and moves nothing: requests go to `references/routing-work.md`, decisions to `what-needs-me`.

@@ -1,56 +1,25 @@
-# Stages and mapping: eleven slots, five that matter, and how to read this team's map
+# Stages and mapping
 
-This reference restates invariants (the slot vocabulary, which slots are load-bearing, the allowed state types, the three mapping modes). Everything about YOUR team — which Linear stage each slot maps to, its name, its type, whether it still exists — is live on the contract under `teams[].stages`. Read it with `node scripts/show-my-map.mjs [--team <key>]`; never quote a stage name or id from memory.
+A **slot** is Catalyst's name for a position on the board; a **stage** is the Linear workflow state a team has; the **mapping** binds each slot to one stage per team. Every team's live map is on the contract under `teams[].stages`; `node scripts/show-my-map.mjs [--team <key>]` prints it with the load-bearing slots starred.
 
-## The eleven slots, in pipeline order
-
-`dispatch`, `intake`, `research`, `plan`, `implement`, `remediate`, `verify`, `review`, `pr`, `done`, `canceled`
-
-A slot is Catalyst's name for a position on the board. A stage is the Linear workflow state your team actually has. Mapping is the per-team table that binds each slot to one stage.
+The slots, in pipeline order: `dispatch`, `intake`, `research`, `plan`, `implement`, `remediate`, `verify`, `review`, `pr`, `done`, `canceled`.
 
 ## Five slots are load-bearing
 
-| Slot | Why it matters | Allowed Linear state types |
+| slot | why it matters | allowed state types |
 | -- | -- | -- |
-| `dispatch` | Moving a card here is how work is dispatched. Nothing is offered from any other column. | `unstarted`, `backlog` |
-| `intake` | Where a never-seen ticket lands for the optional intake pass. | `unstarted`, `backlog` (never Linear's reserved triage type) |
-| `pr` | Where a card must sit for `merge` to be offered. | `started` |
-| `done` | Written by the merge webhook. | `completed` |
-| `canceled` | Terminal; a card here is never work. | `canceled` |
+| `dispatch` | moving a card here dispatches work; nothing is offered from any other column | `unstarted`, `backlog` |
+| `intake` | where a never-seen ticket lands for the optional intake pass | `unstarted`, `backlog`, never Linear's triage type |
+| `pr` | a card must sit here for `merge` to be offered | `started` |
+| `done` | written by the merge webhook | `completed` |
+| `canceled` | terminal; never work | `canceled` |
 
-An absent or wrongly-typed mapping on one of these five is a distinct silent failure: the ladder simply never moves. The other six slots are informational — a wrong value costs a warning in readiness, not a stall. That asymmetry is why "map my stages" is a five-field decision.
+An absent or wrongly typed mapping on one of these stops the ladder silently (on the others it costs a readiness warning): until dispatch, pr, done and canceled each point at a live stage, Catalyst starts nothing in that team, and `explain` says so. `teams[].gitAutomation` is a stored consent for a feature not built yet; nothing reads it, so its value neither stops nor starts work.
 
-## Three mapping modes
+`teams[].workflowMode` is **adopted** (Catalyst created the stages), **mapped** (a human chose each) or **mixed**. Mappings live at `<their cloud>/settings/linear-teams`; `.catalyst/catalyst.toml` has no stage section.
 
-The contract's `teams[].workflowMode` reports which one a team is in:
+## The state id is the authority
 
-- **adopted**: Catalyst created its recommended stage set for the team, one stage per slot, with verify and review sharing one validation stage.
-- **mapped**: the team kept its existing stages and a human chose which stage fills each slot.
-- **mixed**: some slots adopted, some hand-chosen.
+Only a stage's `stateId` is a lookup key, because a Linear import can keep every name while re-minting every id. Move cards by slot (`catalyst-linear` does) and let the CLI resolve the id. `stateStillExists: false` means the team needs re-mapping (`catalyst team map <KEY>`) before that slot can be written; the CLI refuses the move.
 
-`teams[].gitAutomation` is a stored consent for a feature that is not built yet (Catalyst managing a team's Linear git automations); nothing reads it, so `off` never stops work and turning it on would start none. What decides whether a team's tickets start is the mapping above: until dispatch, pr, done and canceled each point at a live stage, Catalyst starts nothing in that team, and `explain` says so by name.
-
-Stage mappings live in the app, at Settings → Linear teams. The cloud reads each repository's `.catalyst/catalyst.toml`, but that file has no stage-mapping section, so a mapping written there changes nothing. An older `.catalyst/config.json` is not imported.
-
-## The state id is the authority; names are display
-
-Each mapped stage carries a `stateId`, a display `name`, a `type`, `stateStillExists` and a `source` (how the mapping was chosen). Only the id is a lookup key. A Linear-to-Linear import can preserve every human-readable name while re-minting every state id, and then a name-based lookup points at nothing. So:
-
-- Move cards by slot (`catalyst-linear`'s move script does this) and let the CLI resolve the id from the contract. Never move a card "to Todo" by name.
-- `stateStillExists: false` means the mapped state is provably gone; the team needs re-mapping (`catalyst team map <KEY>`, or Settings → Linear teams) before that slot can be written to. The CLI refuses such a move rather than guessing.
-- The stage names the contract shows come from the mirror's live view of Linear, not from a stored snapshot, so they are current at read time.
-
-## How to read the printed map
-
-`node scripts/show-my-map.mjs` prints, per team, one row per slot: the slot, the stage name (or `(unmapped)`, or `(state gone)`), the state type, whether the state still exists, and the source. Load-bearing slots are starred. Then the team's ask, hold and release labels with `(absent)` where the workspace has no such label, then the ladder (phases, keying, intake on or off) and the live thresholds.
-
-Reading it for a question:
-
-- "Why does nothing dispatch?" — is `dispatch` mapped, does its state still exist, and is the card actually in that stage? `node scripts/explain.mjs <ticket>` names `not_at_dispatch_stage` when the card is elsewhere.
-- "Why is merge not running?" — is the card in the `pr` slot's stage?
-- "Why did the card go to Remediate?" — `remediate` is mapped, so a failed phase moved it there (see `references/when-a-phase-fails.md`); if `remediate` is unmapped the same episode shows up as the hold label from `teams[].labels.hold` instead.
-- "The team's Backlog is not in the list" — correct. Backlog is not a slot. Parking a card is a move to the team's backlog-type state, which the CLI resolves from the team's live workflow states rather than from the map.
-
-## Readiness over the mapping
-
-The contract carries a readiness vector per team (`teams[].readiness`), including whether every mapped state exists, whether the mapping is total, whether the types are compatible, whether the labels are present, whether writes land and whether the webhook covers the team. A check the cloud could not run is `unknown`, never `pass`. The `catalyst-onboard` skill reads this vector with who fixes each check; this skill only points at it.
+Backlog is not a slot: parking a card moves it to the team's backlog-type state, which the CLI resolves from the live workflow. Readiness over the mapping, and who fixes each check, is the `catalyst-onboard` skill.

@@ -14,9 +14,9 @@ An ask is one decision only the human can make, filed as a ticket in their own L
 
 Scripts are run, never read. Each prints `--help`; exit 2 means this machine is not connected (the `catalyst-onboard` skill connects it), exit 1 means the check itself failed or an argument was missing.
 
-- `node scripts/inbox.mjs --help` — the open asks assigned to the connected person, most open tickets held first, then the oldest; `--anyone` for everyone's; `--json` for `{scope, asks}`.
-- `node scripts/raise.mjs --help` — file one decision: `--team`, `--title`, `--option` (repeated), `--default`, and `--blocks` (repeated) or `--nothing-to-block`.
-- `node scripts/settle.mjs --help` — record the answering comment on an ask and post a release note on every ticket it held; `--close` moves the ask to the done slot.
+- `node scripts/inbox.mjs --help`: the open asks assigned to the connected person, most open tickets held first, then the oldest; `--anyone` for everyone's; `--json` for `{scope, asks}`.
+- `node scripts/raise.mjs --help`: file one decision: `--team`, `--title`, `--option` (repeated), `--default`, and `--blocks` (repeated) or `--nothing-to-block`.
+- `node scripts/settle.mjs --help`: record the answering comment on an ask and post a release note on every ticket it held; `--close` moves the ask to the done slot.
 
 ## Load on demand
 
@@ -34,8 +34,6 @@ The `catalyst-linear` skill posts the comment that carries an answer given in ch
 - **One ask per decision.** Read the inbox first; attach new held tickets to an open ask rather than filing a twin. Duplicates split one decision's urgency across rows.
 - **Every ask names what it blocks.** The ranking the human sees is by the count of open tickets each ask holds, then the oldest ask; priority is not a weight. An ask that holds nothing does not reach Waiting on me unless you chose `--nothing-to-block` on purpose.
 - **A write is visible.** Filing an ask puts a ticket in the person's Linear, assigns it to them, holds every ticket it names, and spends the daily write budget; settling posts a comment on the ask and on every held ticket. Read the inbox before you file.
-- **Never answer as the human.** You do not pick an option, close an ask on their behalf, or post in their voice. Their answer is quoted into the ask as the app actor and recorded with its comment id.
-- **A free-text reply is recorded, never interpreted into an option.** If it does not answer the question, ask the one clarification in the thread and leave the ask open.
+- **The human answers for themselves.** Their answer is quoted into the ask as the app actor and recorded with its comment id; a free-text reply is recorded as written, never turned into an option.
 - **Escalate inward.** A project owner raises asks for its scope; the desk raises what has no owner; a single stuck ticket or a provider outage is never an ask.
-- **Account facts come from the contract.** Team keys, label names, the option cap and the template are read live by the CLI; never restate them.
-- **Cite an identifier only after the create call returned it.**
+- **Account facts come from the contract.** Team keys, label names, the option cap and the template are read live by the CLI. Cite an identifier only after the create call returned it.

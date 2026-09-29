@@ -1,6 +1,6 @@
 # The unstick playbook
 
-This reference restates how a person's release of a stuck ticket works and the order you follow. The cloud does the deciding: it reads every governor holding the ticket and either releases all of them or releases nothing and names, for each one it refuses, the action that does fix it. Your job is to read, judge whether the cause is fixed, and say so honestly.
+The cloud does the deciding: it reads every governor holding the ticket and either releases all of them or releases nothing and names, for each one it refuses, the action that does fix it. Your job is to read, judge whether the cause is fixed, and say so honestly.
 
 ## The order
 

@@ -1,49 +1,24 @@
-# Coding accounts: slots, windows, walls, and why nothing is running
+# Coding accounts: slots, windows, walls
 
-This reference restates the model, which is the same for every account. Your own coding accounts (provider, harness, declared and observed state, usage windows, walls, quarantine, live holds) are readable with your own login: `node scripts/snapshot.mjs --accounts` prints the live rows (`catalyst accounts`). No credential or email ever rides in that read. The settings page (`<their cloud>/settings/coding-accounts`) is where an owner or admin enrols, pauses or removes one.
+The person's own rows print with `node scripts/snapshot.mjs --accounts`, with no credential or email. An owner or admin enrols, pauses or removes one at `<their cloud>/settings/coding-accounts`.
 
-## What a slot is
+## Slots and providers
 
-A slot is one enrolled coding-account credential: a subscription or token that runs phases. An account may enrol several coding accounts of the same provider under the same email, because identity is the credential, not the email; the email is a display field. A revoked slot leaves the roster.
+A slot is one enrolled credential that runs phases; identity is the credential, so one email may hold several. Claude, GLM and Qwen run under the Claude CLI, Codex under Codex, and GLM and Qwen also under OpenCode. The routing rows (`references/what-runs-next.md`), not the harness, name the model.
 
-## Providers and harnesses
+## State
 
-| Provider | Harness | Credential |
-| -- | -- | -- |
-| Claude | the Claude CLI | its own subscription |
-| Codex | Codex | its own subscription |
-| GLM | the Claude CLI | its own token |
-| Qwen | the Claude CLI | its own token |
-| GLM via OpenCode | OpenCode | the same GLM enrolment |
-| Qwen via OpenCode | OpenCode | the same Qwen enrolment |
+- **Declared:** `active` or `disabled`, set by the operator.
+- **Observed:** `healthy`, `degraded` or `unknown`, set by the poller (every 5 minutes for an active slot, daily for a disabled one).
+- **Quarantined:** system-set on a credential conflict or an authentication mismatch. Replace credential on the account's page clears it, and a workspace owner or admin can do that.
 
-The harness is a property of the catalog entry, never a routing input. Which provider a phase runs on is the routing decision in `references/what-runs-next.md`; the routing rows, not the slot, name the model.
+## Windows and walls
 
-## Two state axes
+Subscriptions meter usage over a **5-hour** and a **7-day** window. A **wall** is the limit a session can die at mid-run, so a slot whose remaining headroom cannot fit the phase's projected burn is not offered. A Claude slot serves several phases at once up to a cap; a Codex slot serves one, because its refresh tokens are single-use. Vendor status pages say nothing about the person's own windows.
 
-- **Declared**: `active` or `disabled`. The operator sets it.
-- **Observed**: `healthy`, `degraded` or `unknown`. The poller sets it from what the provider reports.
+## "Why is nothing running?"
 
-Two more lifecycle facts sit beside them: **quarantined** (system-set, on a credential conflict or an authentication mismatch; Replace credential on the account's page clears it, and a workspace owner or admin can do that, so an operator is not required) and **revoked** (operator-set).
+1. `node scripts/explain.mjs <ticket>`: `routing_unavailable` naming a slot or provider, or `no_eligible_account_slot` in the routing block, points at accounts.
+2. `node scripts/snapshot.mjs --accounts`: an empty list means none is enrolled; a wall is the `walled` field, a quarantine `quarantined` with its reason. Read them; silence proves nothing.
+3. Report it as one fleet-level cause for every ticket it holds.
 
-## Windows, walls, headroom
-
-- Subscriptions meter usage over a **5-hour** window and a **7-day** window, each with a used percentage and a reset time.
-- A **wall** is the window limit a session can die at mid-run. Before a slot is granted, a fit gate projects the phase's expected burn against the remaining headroom with a safety margin; a slot that would hit the wall is not offered.
-- **Headroom** per provider is advisory: it counts eligible and degraded slots and the best remaining percentage, and it can never promise what a reservation would refuse because both read the same eligibility predicate.
-- Holds: a Claude slot can serve several phases at once up to a per-account cap; a Codex slot serves one at a time because its refresh tokens are single-use.
-- Slot choice orders by usage band, then live-hold count, then used percent, then the latest reset, so bursts spread across accounts rather than stacking on one.
-
-A poller refreshes an active slot's usage every 5 minutes and a disabled one daily. Separately, vendor status pages are polled for provider health; that signal says nothing about your own accounts' windows, walls or quarantine.
-
-## What the settings page shows
-
-Your coding-accounts page lists each slot with a five-value status, first match wins: expired-or-revoked, walled, active, attested (healthy and active, but the provider is unobserved), unobserved. A drilldown shows the windows, the holds and the history.
-
-## Answering "why is nothing running?"
-
-1. Run `node scripts/explain.mjs <ticket>` for a stuck ticket. `routing_unavailable` with a detail naming a slot or provider, or `no_eligible_account_slot` in the routing block, points at accounts.
-2. Read the live rows with `node scripts/snapshot.mjs --accounts` and say what they show. An empty list means no account is enrolled; name the settings page. A wall is the `walled` field and a quarantine is `quarantined` with its reason; read them, never infer them from silence.
-3. Treat it as one fleet-level cause for every ticket it holds, never as a per-ticket escalation.
-
-The customer session never holds or mints a coding-account credential; phases run in the cloud on the enrolled accounts, and repository access is a per-phase installation token.

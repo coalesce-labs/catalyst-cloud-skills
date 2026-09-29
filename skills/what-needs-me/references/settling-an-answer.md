@@ -1,24 +1,20 @@
 # Settling an answer
 
-This reference restates invariants: where an answer is posted, how it is recorded, and how held work is released. The routes and the bookkeeping marker are the contract's; `node scripts/settle.mjs` reads them through the CLI.
-
-## The rule
-
-The answer lives on the ask. Wherever it arrived (a comment on the ask, a comment on a held ticket, a chat message, a call), it ends as a comment on the ask ticket, and that comment is recorded as the accepted answer. Question, options, default, answer and who answered are then one record.
+The answer lives on the ask. Wherever it arrived (the ask's thread, a held ticket, chat, a call), it ends as a comment on the ask, recorded as the accepted answer, so question, options, default, answer and who answered are one record.
 
 ## The three steps
 
-**1. Post the answer where it should live.** If the human answered in the ask's thread, nothing to do. If they answered anywhere else, post a comment on the ask that states the answer, as the app actor, never as the human, and attribute it in the text ("the owner answered in chat: option B"). Use the `catalyst-linear` skill's comment script; it returns the comment id. Do not paraphrase into a different option; quote what they said.
+**1. Post the answer where it should live.** An answer given anywhere but the ask's thread becomes a comment on the ask, as the app actor, quoting them and attributing it ("the owner answered in chat: option B"), through the `catalyst-linear` skill's comment script, which returns the comment id.
 
 **2. Record it.** `node scripts/settle.mjs <ask> --answer <commentId> --role <role>` calls the cloud's ask-accept with the ask, the answering comment and the role doing the recording. The script first checks the comment is really on the ask (an id from a different ticket is refused before anything is written), then records, then reads the ask's blocking relations.
 
-**3. Release the held work.** For every open ticket the ask blocks, the script posts one bookkeeping comment naming the ask, the comment id and the first line of the answer, so the next phase or agent on that ticket reads the decision without opening the ask. The comment carries the contract's bookkeeping prefix, which means the cloud's comment-wake trigger ignores it: a record, not a turn in a conversation. Pass `--no-release-note` to skip this when the held tickets are about to be canceled anyway.
+**3. Release the held work.** On every open ticket the ask blocks, the script posts one bookkeeping comment naming the ask, the comment id and the answer's first line, so the next agent there reads the decision; the marker keeps it from waking anyone. `--no-release-note` skips this for tickets about to be canceled.
 
 With `--close`, the script also moves the ask to its team's done slot. The blocking relations stay on the record; a done ticket does not block anything, so the held tickets become dispatchable on the cloud's next pass. Close only when the answer is complete; an answer that raises a follow-up question keeps the ask open and the follow-up goes in the same thread.
 
 ## Free-text replies
 
-A reply that names no option ("do whichever is cheaper", "ask me again Thursday") is recorded exactly as written. Nothing in the cloud or in this skill turns it into an option. Read it, decide whether it answers the question, and if it does not, reply in the thread with the one clarification needed and leave the ask open. If it does, settle with that comment as the answer and let the release note carry the quoted line.
+A reply that names no option ("do whichever is cheaper", "ask me again Thursday") is recorded exactly as written; nothing turns it into an option. If it answers the question, settle with it and let the release note quote it. If it does not, reply in the thread with the one clarification needed and leave the ask open.
 
 ## Who settles
 
@@ -26,9 +22,7 @@ The role that raised the ask, or the owner of the scope it belongs to. The desk 
 
 ## After settling
 
-- Tell the human, in one line, what was recorded and what it released.
-- The held tickets need no further action from you: their exclusion reason was the blocking relation, and the queue recomputes on the cloud's next pass. If one stays excluded, `whats-happening` explains why.
-- If the answer changes priorities or scope, that is a routing change for the project owner, not a second ask.
+Tell the human in one line what was recorded and what it released. The held tickets rejoin the queue on the cloud's next pass; if one stays excluded, `whats-happening` explains why. An answer that changes priorities or scope is a routing change for the project owner, not a second ask.
 
 ## When it cannot be settled
 

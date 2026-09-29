@@ -1,16 +1,12 @@
 # Raising a decision
 
-This reference restates invariants: what an ask is, when it is filed, and what it must carry. The body text, the headings, the option format and the cap on options are account facts served by the contract's `askTemplate` block and rendered by the cloud itself; `node scripts/raise.mjs` passes fields and never composes a heading.
-
-## What an ask is
-
-An ask is one decision only the human can make, filed as a ticket in the person's own Linear so that the question, the options, the default, the answer and who answered are one record the next agent can read. The cloud labels it as an ask, excludes it from dispatch (a question is never work), and holds every ticket it blocks until it is answered. It appears in the human's Waiting-on-me view when it is assigned to them and blocks open work.
+The body, headings, option format and option cap come from the contract's `askTemplate` and are rendered by the cloud; `node scripts/raise.mjs` passes fields. The cloud labels the ask, keeps it out of dispatch, and holds every ticket it blocks until it is answered.
 
 ## When to file one
 
-File an ask when active work is gated on a product call, a priority call between two things that cannot both go first, an approval, or an action only the human can physically take (a click in settings, a credential, a payment). File it **before** proceeding on the default, never after, and never only as a TODO line, a board row, a handoff note or a chat question. Those may point at the ask's identifier; they never replace it.
+File an ask when active work is gated on a product call, a priority call between two things that cannot both go first, an approval, or an action only the human can take (a click in settings, a credential, a payment). File it **before** proceeding on the default. A TODO line, board row, handoff note or chat question may point at the ask's identifier, never replace it.
 
-Do not file one for brainstorming, a design back-and-forth, a question the human asked first, a retry-or-abandon call a project owner can make, or a system-level failure (a provider down, out of capacity, rate-limited: that is one status line, and the affected tickets retry on their own).
+Brainstorming, design back-and-forth, a question the human asked first, a retry-or-abandon call a project owner can make, and a system-level failure (one status line; the tickets retry on their own) are not asks.
 
 ## What it carries
 
@@ -18,24 +14,20 @@ Do not file one for brainstorming, a design back-and-forth, a question the human
 2. **Context** the human needs to answer without opening anything else (`--context`), short.
 3. **Options**, each one line, realistic, at most the number the contract allows (`--option`, repeated). The cloud letters and formats them.
 4. **The default if silent** (`--default`): what proceeds and after how long. It must be sane enough to actually run. The raising agent applies it, after the ask exists, and records that it did; the cloud applies no default on a timer for the asks you raise. The exception is the ask a validate-budget or round-threshold hold raises: the cloud applies its default (re-plan) after 48 hours unanswered.
-5. **What it blocks** (`--blocks`, repeated): every ticket held until the answer lands. The cloud creates the blocking relations atomically with the ticket. An ask that holds nothing is refused unless you say `--nothing-to-block` on purpose, because an ask with no blocking relation never surfaces in Waiting on me and is indistinguishable from ordinary work.
+5. **What it blocks** (`--blocks`, repeated): every ticket held until the answer lands, related atomically with the ask. An ask that holds nothing is refused unless you pass `--nothing-to-block` on purpose, because it never surfaces in Waiting on me. Name every held ticket: the inbox ranks by that count (`references/reading-the-inbox.md`), so an ask that names one ticket when it really holds a project sinks below one holding two chores.
 
 `--ask-key` is an idempotency key: a re-run with the same key does not file a second ask.
 
 ## One ask per decision
 
-Run `node scripts/inbox.mjs` first and read the titles. When the same decision is already open, attach the new held tickets to it rather than filing again (the `catalyst-linear` skill adds the relation or a comment naming them). Duplicates split one decision's urgency across several rows and sink it below trivia in the ranking.
+Run `node scripts/inbox.mjs` first. When the same decision is already open, attach the new held tickets to it (the `catalyst-linear` skill adds the relation or a comment) rather than filing a twin that splits its urgency.
 
 ## Who raises, and where
 
 - A decision inside a project scope is raised by that project's owner; the desk raises what has no owner.
-- The ask is filed on the team the held work belongs to (`--team`), from the contract's team list. An approvals team, when the contract names one, is where an approval with no natural team goes.
-- Never raise an ask on someone else's behalf about their own scope, and never answer one for the human.
+- The ask goes on the held work's team (`--team`); an approval with no natural team goes to the approvals team when the contract names one.
+- Each scope's owner raises its own asks, and the human answers them.
 
 ## After filing
 
 Cite the identifier the script printed, and only that. Proceed on the default if the work allows it, and say so in the ask's thread (a bookkeeping comment) so the record shows the default was taken. When the answer arrives, `references/settling-an-answer.md`.
-
-## Ranking
-
-The human sees asks ranked the way the cloud's own Waiting-on-me view ranks them: the most open tickets blocked first, then the oldest ask. Priority is not a weight, and age only breaks a tie. That is why `--blocks` must be complete: an ask that names one held ticket when it really holds a project sinks below one that holds two chores.

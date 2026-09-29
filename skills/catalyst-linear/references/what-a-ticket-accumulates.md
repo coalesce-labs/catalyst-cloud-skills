@@ -1,6 +1,6 @@
 # What a ticket accumulates as Catalyst works it
 
-This reference restates invariants: the shapes of what the cloud writes onto a ticket. The one live value it needs — the bookkeeping marker and the label names — is on the contract under `vocabulary` and `teams[].labels`; print them with `catalyst contract --path vocabulary` and `catalyst contract --path teams`. Never quote a marker or a label id from memory.
+The shapes of what the cloud writes onto a ticket are the same for every account. The live values (the bookkeeping marker and the label names) are on the contract under `vocabulary` and `teams[].labels`; print them with `catalyst contract --path vocabulary` and `catalyst contract --path teams`. Never quote a marker or a label id from memory.
 
 ## Comments the cloud posts
 

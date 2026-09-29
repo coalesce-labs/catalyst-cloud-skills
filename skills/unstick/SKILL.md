@@ -14,9 +14,9 @@ You get one stuck ticket, or one set of tickets stuck for the same reason, movin
 
 Scripts are run, never read. Each prints `--help`; exit 2 means this machine is not connected (run `catalyst login`).
 
-- `node scripts/unstick.mjs <ticket>` — one JSON document: the eligibility explanation, the execution history (every governor holding the ticket with what releases it, and past releases), and a dry-run release showing what a release would clear and refuse. Changes nothing.
-- `node scripts/unstick.mjs <ticket> --because "<what changed>"` — the same, then the real release. Add `--retry-unchanged` only when you can say what changed outside what the cloud can see.
-- `node scripts/unstick.mjs --class <failure-class> --team <key> [--because "<what changed>"]` — the same for every ticket on one team parked under one failure class (at most 25 per call).
+- `node scripts/unstick.mjs <ticket>`: one JSON document: the eligibility explanation, the execution history (every governor holding the ticket with what releases it, and past releases), and a dry-run release showing what a release would clear and refuse. Changes nothing.
+- `node scripts/unstick.mjs <ticket> --because "<what changed>"`: the same, then the real release. Add `--retry-unchanged` only when you can say what changed outside what the cloud can see.
+- `node scripts/unstick.mjs --class <failure-class> --team <key> [--because "<what changed>"]`: the same for every ticket on one team parked under one failure class (at most 25 per call).
 
 The verbs underneath are `catalyst explain <ticket>`, `catalyst explain <ticket> --history` and `catalyst release <ticket> --because <text> [--retry-unchanged] [--dry-run]`.
 

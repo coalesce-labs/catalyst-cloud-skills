@@ -1,7 +1,5 @@
 # Reading the inbox
 
-This reference restates invariants: what "waiting on me" means, how declared and inferred asks differ, and how to present the queue. The label that marks an ask, its prefix, and the release label are the contract's `vocabulary`; `node scripts/inbox.mjs` reads them from the CLI and never from prose.
-
 ## What waiting-on-me means
 
 The account's own Waiting-on-me view lists a ticket for a person when all four hold:
@@ -17,16 +15,15 @@ So an ask that holds nothing is real, but the person may never see it in their o
 
 ## What the script reads
 
-`catalyst ask list` reads every page of the account's issues, not a windowed sample, so an empty list means nothing is assigned to you rather than that the read stopped early. It reads the open tickets carrying the team's ask label (by the label ids and prefix the contract serves), follows each one's blocking relations to the tickets it holds, drops held tickets that are already terminal, and ranks by the count of open tickets each ask holds (its `score`), then the oldest ask, then the identifier: the same order as the cloud's own Waiting-on-me view. Priority is not a weight. It filters to **the connected person** by default: `login` recorded who they are and their Linear user id, and the list keeps only asks assigned to that id. `--anyone` lists everyone's. The JSON answer carries a `scope` — `mine` (with the label and Linear id), `anyone`, `unmatched` (the person's Linear identity is not matched yet: they match it themselves with `catalyst identity linear set`, and until then the whole list is shown with a stderr line saying so), or `no-person` (the machine is connected with the account key, which names nobody: the whole list, with a line saying to log in with a personal key). Read the scope before presenting the list, and say which you got: "what needs me" is the `mine` list, "what needs anyone" is `--anyone`, and an empty `mine` list names the wider count so it never reads as "nothing needs anyone".
+`catalyst ask list` reads every page, so an empty list is real. It follows each open ask's blocking relations, drops held tickets already terminal, and ranks by the count of open tickets each ask holds (its `score`), then the oldest ask, then the identifier: the cloud's own Waiting-on-me order. Priority is not a weight; age only breaks a tie. It keeps the connected person's asks by default (`--anyone` for everyone's) and reports a `scope`: `mine`, `anyone`, `unmatched` (the Linear identity is not matched, so everyone's list is shown with a stderr line), or `no-person` (connected with the account key, which names nobody). Say which scope you got, and give the wider count beside an empty `mine` list so it never reads as "nothing needs anyone".
 
 ## The identity is not the same as the personal Linear grant
 
-Two different stored facts can disagree, and when asks are not reaching someone this is the first thing to check, before the grant. The **identity** is who you are in Linear: resolved automatically by an email match, or matched by the person themselves when it is not: `catalyst identity linear status`, then `options`, then `catalyst identity linear set <linearUserId>` for their own listed identity. The **personal Linear grant** is proven by connecting Linear yourself — a person action, not an admin one. Connecting Linear personally does **not** set the identity; the two are separate, and the identity is checked first, then the grant. An identity that resolved automatically, or one another member already claims, needs an owner or admin at Settings → Members; a pick is refused if another member already claims that Linear user. Everything that notifies or assigns a human needs a resolved identity: with no identity there is no ask and no push, and nothing is assigned to that person — even for someone who has connected Linear themselves. Do not report that as an empty queue. `what needs me` does not go quiet in that state: the scope comes back `unmatched`, everyone's open asks are listed, and a line says the identity is not matched yet (*What the script reads*, above). The honest answer is "nothing is assigned to you yet, so this is everyone's list, not yours; match your identity with `catalyst identity linear set` and it becomes yours".
+When asks are not reaching someone, check the identity first, then the grant. The **identity** is who they are in Linear, resolved by an email match or matched by the person (`catalyst identity linear status`, `options`, then `catalyst identity linear set <linearUserId>`). The **personal Linear grant** is proven by connecting Linear themselves. Connecting Linear personally does **not** set the identity. An auto-resolved identity, or one another member claims, needs an owner or admin at Settings → Members. With no identity nothing is assigned to them, even after they connect Linear, so an `unmatched` scope is not an empty queue: say "nothing is assigned to you yet, so this is everyone's list; match your identity with `catalyst identity linear set` and it becomes yours".
 
 ## Presenting the queue
 
-- Ranked as the script prints them: most open tickets held first, then the oldest ask. An ask that holds a project outranks one that holds a chore, whatever their priorities.
-- One line per ask: rank, identifier, what it holds (identifiers), the question. The human decides from the question and the held work, so both must be on the line.
+- In the script's order, one line per ask: rank, identifier, what it holds (identifiers), the question.
 - Asks that hold nothing come after a break, marked as not visible in Waiting on me until they block something.
 - When the list is empty, say "nothing needs you" and stop. Do not pad it with suspected asks.
 - A ticket `explain` flagged as `ask_shape_suspected` (its text reads as a decision but it carries no ask label) is mentioned separately with a question mark: it is either an ask the human should label, or a false positive they release with the release label the contract names.
@@ -34,9 +31,5 @@ Two different stored facts can disagree, and when asks are not reaching someone 
 ## What the inbox is not
 
 - It is not the dispatch queue. Held tickets are excluded from dispatch by their blocking relation; answering the ask releases them into the ordinary order.
-- It is not a place to answer. Nothing in this skill picks an option, closes an ask on the human's behalf, or posts in their voice. When they answer in chat, `references/settling-an-answer.md`.
-- It is not a stall detector. A ticket parked by repeated failures, a merge hold, or a coding-account wall is a status question for `whats-happening`, not a decision until someone makes it one by raising an ask.
-
-## Free-text and interpreted replies
-
-A human reply that names no option is recorded by the cloud and interpreted for display, but never auto-applied and never written back to Linear as a decision. Treat it the same way: read it, ask the human to confirm which option it means if that is unclear, and settle only once a comment on the ask states the answer.
+- It is not a place to answer; an answer goes through `references/settling-an-answer.md`.
+- It is not a stall detector. A park, a merge hold or a coding-account wall is a status question for `whats-happening` until someone raises an ask.

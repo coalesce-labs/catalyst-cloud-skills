@@ -1,70 +1,56 @@
-# Why is it stuck: every reason, what it means, and who acts
+# Why is it stuck: every reason, and who acts
 
-This is the one reason table in the pack: every reason the cloud's eligibility explainer gives when nothing is offered for a ticket, translated for a person, with what releases it. Other skills point here. `node scripts/explain.mjs <ticket>` prints the reason for one ticket; this table turns it into the next action. The mechanism behind the failure rows is in `references/when-a-phase-fails.md`, and the queue behind the ordering rows is in `references/what-runs-next.md`.
-
-## How to read a reason
-
-`explain` prints one paragraph: the queue position (or none), the status, the reason, a detail or marker when the cloud gave one, the last failure, and any advisories. Match the reason to a row. "Who acts" is one of: the person, with their own login; a workspace owner or admin, in settings; an operator; or "no one acts", which is an honest answer, not a gap. When a reason is not in this table, `explain` prints it as the cloud spelled it; report it verbatim and say the bundle does not know it.
+The pack's one reason table; other skills point here. Match the reason `node scripts/explain.mjs <ticket>` prints to a row. "No one acts" is an honest answer. A reason missing here is printed as the cloud spelled it: report it verbatim and say the bundle does not know it. The mechanism is in `references/when-a-phase-fails.md`.
 
 ## Reasons that release themselves
 
-| reason | what it means | how it clears | who acts |
-| -- | -- | -- | -- |
-| `retry_backoff` | the failed phase is retrying in place and waiting out its rung (2, 5, then 15 minutes) | a clock; the rungs are the contract's `thresholds.retryBackoffMs` | no one acts |
-| `lease_held` | a live container already holds this phase | the phase finishes | no one acts |
-| `intake_lease_held` | a later phase is offered while an intake container still holds the ticket | intake finishes | no one acts |
-| `later_phase_lease_held` | an earlier phase is offered while a live container still holds a later phase of this ticket | the later phase finishes | no one acts |
-| `environment_check_running` | the repository's environment check is in flight | the check finishes | no one acts |
-| `claim_storm` | this unit was claimed too many times in the last hour | it waits the hour out; there is nothing to release | no one acts |
-| `repo_at_capacity` | the repository's runner seats are all in use | it starts when a seat frees | no one acts |
-| `runner_image_breaker` | fleet-wide: the live runner image fails every phase at startup, so dispatch is held rather than parking tickets | an operator moves the image pin; one alert per account, no per-ticket action | an operator |
-| `routing_unavailable` | claimed, then refused at kickoff: no route, no eligible coding-account slot, or the provider is unavailable; the detail names which | provider recovery or a slot freeing | usually no one acts; if it persists, a workspace owner or admin, in settings, checks coding accounts (`references/coding-accounts.md`) |
-| `cooling_down` (with a named callback) | the phase is parked on a condition the cloud watches | the callback fires; the `detail` names it | no one acts; if the callback stalls, the person, with their own login, releases it through `unstick` |
-| `no_branch_to_remediate` / `branch_missing` | a branch-dependent phase has no branch yet, or a repair round is queued on a ticket with no branch | the cloud releases these parks on its own budget | no one acts |
-| `stale_failure_episode` | the ladder advanced after the recorded failure, so the round would repair a phase already passed | the round is dropped automatically | no one acts |
-| `wip_limit` | the project is at its work-in-progress limit, so this ticket gets no first phase; tickets already started are unaffected | a ticket in progress finishes. If the fleet is idle at the limit, the in-progress tickets are the ones waiting: unstick those. Raising the limit is the project owner's call | no one acts on this ticket; the in-progress tickets it waits on each have their own row |
+`retry_backoff` (a retry rung, `thresholds.retryBackoffMs`), `lease_held`, `intake_lease_held` and `later_phase_lease_held` (a live container holds this or a later phase), `environment_check_running`, `claim_storm` (claimed too often in the last hour), `repo_at_capacity` (every runner seat busy), `stale_failure_episode` (the round would repair a phase already passed, so it is dropped), and `no_branch_to_remediate` / `branch_missing` (the cloud's budgeted release): each clears on its own, and no one acts.
+
+| reason | what it means, and what clears it | who acts |
+| -- | -- | -- |
+| `runner_image_breaker` | fleet-wide: the live runner image fails every phase at startup; the image pin moves; one alert per account | an operator |
+| `routing_unavailable` | refused at kickoff: no route, no eligible slot, or the provider down (the detail says which); clears on recovery | usually no one acts; if it persists, a workspace owner or admin, in settings, checks coding accounts (`references/coding-accounts.md`) |
+| `cooling_down` (with a named callback) | parked on a condition the cloud watches; the callback in `detail` fires | no one acts; if the callback stalls, the person, with their own login, releases it through `unstick` |
+| `wip_limit` | the project is at its work-in-progress limit, so no first phase; a ticket in progress finishing clears it | no one acts on this ticket; the in-progress tickets it waits on each have their own row |
 
 ## Reasons that need a human
 
 | reason | what it means | who acts and how |
 | -- | -- | -- |
 | `ask_ticket` | it carries an ask label; a question is never work | the person, with their own login, answers the ask (`what-needs-me`) |
-| `ask_shape_suspected` | its own text reads as a decision request though it carries no ask label | the person, with their own login, answers it as an ask or applies the release label from the contract's `vocabulary` |
-| `blocked` | a live blocking relation holds it | whoever owns the blocker closes it; when the blocker is an ask, that is the person, with their own login |
-| `not_at_dispatch_stage` | the card is not in the team's dispatch column | the person, with their own login, moves the card to the dispatch slot (`references/what-runs-next.md`) |
-| `not_at_pr_stage` | merge is next but the card is not in the PR column (waived when an automation bounced it off PR and the bounce was recorded) | the person, with their own login, returns the card to the pr slot; find the automation that bounced it |
-| `no_change_hold` | a repair round changed nothing | the person, with their own login, comments on the ticket or pushes to the branch; `unstick` can also release it |
-| `waiting_on` | a merge-gate failure with no cause the cloud can repair holds the card at PR | the person, with their own login, reads the merge-wait comment; usually a hold label or a review they must give (`catalyst-github`) |
-| `externally_claimed` | a worker outside the cloud holds it | that worker releases it, or the person, with their own login, removes the local-lane label |
-| `environment_check_required` | the repository's environment check has not run | a workspace owner or admin, in settings, runs the environment check |
-| `environment_check_failed` | the repository's environment check failed | a workspace owner or admin, in settings, fixes and reruns the environment check |
-| `environment_check_expired` | the environment check's verdict aged out | a workspace owner or admin, in settings, reruns the environment check |
-| `environment_check_hash_mismatch` | the environment changed since its recorded verdict | a workspace owner or admin, in settings, reruns the environment check |
+| `ask_shape_suspected` | its text reads as a decision request with no ask label | the person, with their own login, answers it as an ask or applies the contract's release label |
+| `blocked` | a live blocking relation holds it | the blocker's owner closes it; for an ask, the person, with their own login |
+| `not_at_dispatch_stage` | the card is not in the dispatch column | the person, with their own login, moves it to the dispatch slot |
+| `not_at_pr_stage` | merge is next but the card is off the PR column | the person, with their own login, returns it to the pr slot and finds the automation that bounced it |
+| `no_change_hold` | a repair round changed nothing | the person, with their own login, comments or pushes; `unstick` can also release it |
+| `waiting_on` | a merge-gate failure the cloud cannot repair holds it at PR | the person, with their own login, reads the merge-wait comment: usually a hold label or an owed review (`catalyst-github`) |
+| `externally_claimed` | a worker outside the cloud holds it | that worker, or the person, with their own login, removes the local-lane label |
+| `environment_check_required` / `environment_check_failed` / `environment_check_expired` / `environment_check_hash_mismatch` | the repository's environment check has not run, failed, aged out, or predates a change | a workspace owner or admin, in settings, runs, fixes or reruns it |
 | `repo_paused` | an operator paused the repository | an operator resumes it |
-| `scope_overlap` | its declared file scope intersects a ticket in flight (implement only, once a team activates a scope policy) | the person, with their own login, decides which goes first, or waits for the other ticket |
-| `human_owned_pr` | a person's own pull request holds the ticket | the person, with their own login, closes or merges that pull request, or hands it to Catalyst; never close someone's pull request for them. The release command refuses this one, so do not route it to `unstick` |
-| `review_not_converging` | validate and repair cycles kept finding new problems without converging | the person, with their own login, reads the findings (`catalyst-github`) and comments on the ticket: a comment resumes at validate, and `catalyst: resume implement` resumes at implement. A push alone does not clear it, there is no ask and no default, and the release command refuses it |
-| `round_threshold` | the ticket spent its lifetime repair budget | the person, with their own login, answers the ask the cloud raised, or pushes a fix the fleet did not make; each grants one more cycle. A comment does not clear it, and the release command refuses it. Point at that ask rather than raising a second one |
+| `scope_overlap` | its declared file scope meets a ticket in flight | the person, with their own login, picks which goes first, or waits |
+| `human_owned_pr` | a person's own pull request holds the ticket | the person, with their own login, closes, merges or hands over that pull request, which only they may close. The release command refuses it |
+| `review_not_converging` | validate and repair cycles are not converging (review convergence hold) | the person, with their own login, reads the findings (`catalyst-github`) and comments. The release command refuses it; the hold table in `references/when-a-phase-fails.md` says what clears it |
+| `round_threshold` | the lifetime repair budget is spent (round-threshold hold) | the person, with their own login, answers the ask the cloud raised or pushes a fix; point at that ask rather than raising another. The release command refuses it; see the hold table |
 
 ## Reasons a release clears once the cause is fixed
 
-These do not release themselves. Once the recorded cause is fixed, the person's own login releases them with `catalyst release <ticket>`. The desk does not release; route the ticket to the `unstick` skill, which reads the history, previews the release and runs it, or names what a person must do first.
+The desk does not release. Route these to the `unstick` skill, which reads the history, previews `catalyst release <ticket>`, and runs it or names what a person must do first.
 
 | reason | what it means | note | who acts |
 | -- | -- | -- | -- |
-| `phase_parked` / `cooling_down` (parked after repeated failures, or the round cap was spent) | the phase is parked and does not release itself | `unstick`; `explain --history` names the park and the failure class | the person, with their own login |
-| `remediate_parked` | the repair phase itself is parked, so the failing phase has nowhere to be repaired | as above | the person, with their own login |
-| `validate_class_spent` | the same validate failure came back after its one repair round (a validate-budget hold) | a push or a human comment releases it on its own; so does an answer to its ask, and after 48 hours unanswered the ask's default (re-plan) applies. A release needs a push or comment since the hold, or `--retry-unchanged` with a `--because` | the person, with their own login |
-| `branch_gone` | a branch that existed was deleted | decide whether to recreate it or drop the ticket | the person, with their own login |
+| `phase_parked` / `cooling_down` (repeated failures, or the round cap spent) | the phase is parked | `explain --history` names the park | the person, with their own login |
+| `remediate_parked` | the repair phase itself is parked | as above | the person, with their own login |
+| `validate_class_spent` | the validate-budget hold | a push, comment or ask answer also clears it (the hold table) | the person, with their own login |
+| `branch_gone` | a branch that existed was deleted | recreate it, or drop the ticket | the person, with their own login |
 
 ## Reasons that are not problems
 
-`ticket_terminal` (done or canceled), `pipeline_complete` (every phase ran), and `pr_merged` (the PR merged, nothing left to clone) describe finished work; no one acts. Report them as closed, not blocked. A ticket not Done a minute after its PR merged is a finding, not a chore.
+`ticket_terminal`, `pipeline_complete` and `pr_merged` describe finished work; no one acts. Report them as closed.
 
 ## When the cloud could not judge
 
-A status of `unknown` with a reason such as `ordering_never_published`, `ordering_stale`, `workflow_mapping_unknown`, `ticket_unknown`, `dependency_snapshot_unknown`, `blocker_unknown`, `label_snapshot_unknown`, `prior_artifact_unknown`, `scope_unknown`, `scope_occupancy_unknown` or `branch_snapshot_unknown` means the evaluator failed closed rather than guessing: "I could not look", never "it is not there". Report it as inconclusive. Most clear on the cloud's next pass. `workflow_mapping_unknown`, and `ordering_never_published` beside it, does not clear by itself when the team has no saved stage mapping: `explain` then names the missing stages, and a workspace owner or admin maps the team (`catalyst team map <KEY>`, or Settings → Linear teams). If another one persists for a team, the readiness verdict (`catalyst-onboard`) is the next read.
+A status of `unknown` with `ordering_never_published`, `ordering_stale`, `workflow_mapping_unknown`, `ticket_unknown`, `dependency_snapshot_unknown`, `blocker_unknown`, `label_snapshot_unknown`, `prior_artifact_unknown`, `scope_unknown`, `scope_occupancy_unknown` or `branch_snapshot_unknown` means "I could not look", never "it is not there": report it as inconclusive; most clear on the next pass. `workflow_mapping_unknown` (and `ordering_never_published` with it) does not clear by itself when the team has no saved mapping: a workspace owner or admin maps it (`catalyst team map <KEY>`). If another persists, read readiness (`catalyst-onboard`).
 
 ## The one advisory
 
-`human_addressed_unlabeled_ask_suspect` gates nothing: the ticket is assigned to a human with no delegate and may be an unlabelled ask. Mention it in the waiting-on-human block with a question mark.
+`human_addressed_unlabeled_ask_suspect` gates nothing: a human-assigned ticket may be an unlabelled ask. List it under waiting-on-human with a question mark.
