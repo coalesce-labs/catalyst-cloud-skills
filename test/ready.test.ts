@@ -61,7 +61,7 @@ describe("ready", () => {
     expect(text).toMatch(/^ok {3}skills: all \d+ present/m);
     expect(text).toMatch(/^ok {3}sdk: loads/m);
     expect(text).toMatch(/^note {2}replica: absent/m);
-    expect(text).toMatch(/^note {2}team ENG: webhook_covers_team is unknown \(no_delivery_observed\), degrading/m);
+    expect(text).toMatch(/^note {2}team ENG: Catalyst confirms this once Linear events arrive for this team\.$/m);
     expect(text).toMatch(/^note {2}team OPS: readiness not checked yet/m);
   });
   test("a fresh replica reads ok", async () => {
@@ -127,8 +127,11 @@ describe("ready", () => {
     writeFileSync(contractPathFor(home), JSON.stringify(cache));
     expect(await main(["ready"], ctx)).toBe(1);
     const text = ctx.out.join("\n");
-    expect(text).toMatch(/^FAIL {2}team ENG: oauth_scope is fail \(missing_scope\), blocking/m);
-    expect(text).toMatch(/who: owner u-fixture-owner, admin u-fixture-admin/);
+    expect(text).toMatch(/^FAIL {2}team ENG: Catalyst is missing a Linear permission it needs\.$/m);
+    expect(text).toMatch(/^ {6}fix: Reconnect Linear in Catalyst settings to grant the missing permission\.$/m);
+    // No name is known for either id (no replica, not the signed-in person), so the role alone.
+    expect(text).toMatch(/^ {6}who: an owner or an admin$/m);
+    expect(text).not.toContain("u-fixture-");
     expect(text).toMatch(/^FAIL {2}team OPS: blocked/m);
   });
   test("CTC-3561: a required_values fail names the missing variables and where to set them, and prints no value", async () => {
@@ -142,7 +145,7 @@ describe("ready", () => {
     writeFileSync(contractPathFor(home), JSON.stringify(cache));
     expect(await main(["ready"], ctx)).toBe(1);
     const text = ctx.out.join("\n");
-    expect(text).toMatch(/^FAIL {2}team ENG: required_values is fail/m);
+    expect(text).toMatch(/^FAIL {2}team ENG: A variable this team's repository requires has no value, or references a secret with no value\.$/m);
     expect(text).toContain(
       "fix: set DATABASE_URL, STRIPE_KEY on the repository's Environment page under Settings → Repositories (team ENG; they have no value at repository or account scope)",
     );
@@ -159,15 +162,17 @@ describe("ready", () => {
       "set DATABASE_URL on the repository's Environment page under Settings → Repositories (team ENG; it has no value at repository or account scope)",
     );
   });
-  test("CTC-3561: a team check without names, or with an empty list, keeps today's fix line", async () => {
+  test("CTC-3561: a team check without names, or with an empty list, gets the check's own plain fix", async () => {
     await seedJoined(home, server);
     const cache = JSON.parse(readFileSync(contractPathFor(home), "utf8")) as { doc: { teams: { readiness: { checks: Record<string, unknown>[] } }[] } };
     cache.doc.teams[0]!.readiness.checks[0] = { id: "oauth_scope", state: "fail", reason: "missing_scope" };
     cache.doc.teams[0]!.readiness.checks.push({ id: "required_values", state: "fail", names: [] });
     writeFileSync(contractPathFor(home), JSON.stringify(cache));
     const r = await readyReport(ctx, { skillNames: CUSTOMER_SKILLS, offline: true });
-    expect(r.checks.find((c) => c.id === "team:ENG:oauth_scope")!.fix).toBe("open settings for team ENG and resolve oauth_scope");
-    expect(r.checks.find((c) => c.id === "team:ENG:required_values")!.fix).toBe("open settings for team ENG and resolve required_values");
+    expect(r.checks.find((c) => c.id === "team:ENG:oauth_scope")!.fix).toBe("Reconnect Linear in Catalyst settings to grant the missing permission.");
+    expect(r.checks.find((c) => c.id === "team:ENG:required_values")!.fix).toBe(
+      "Set the missing values on the repository's Environment page under Settings → Repositories.",
+    );
   });
   test("CTC-3606: an unresolved reference names the variable and the reference, and says the checkout refuses it", async () => {
     await seedJoined(home, server);
@@ -236,7 +241,9 @@ describe("ready", () => {
     });
     writeFileSync(contractPathFor(home), JSON.stringify(cache));
     const r = await readyReport(ctx, { skillNames: CUSTOMER_SKILLS, offline: true });
-    expect(r.checks.find((c) => c.id === "team:ENG:required_values")!.fix).toBe("open settings for team ENG and resolve required_values");
+    expect(r.checks.find((c) => c.id === "team:ENG:required_values")!.fix).toBe(
+      "Set the missing values on the repository's Environment page under Settings → Repositories.",
+    );
   });
   test("CTC-3561: the bundle's contract range accepts 1.24.0, the version that ships names", async () => {
     const { contractVersionInRange } = await import("../src/contract");
@@ -297,8 +304,10 @@ describe("more ready branches", () => {
     expect(await main(["ready"], ctx)).toBe(1);
     const text = ctx.out.join("\n");
     expect(text).toMatch(/^note {2}team ENG: degraded/m);
-    expect(text).toMatch(/^FAIL {2}team OPS: mystery_check is fail$/m);
-    expect(text).toMatch(/who: a tenant owner or admin \(none resolved on the contract\)/);
+    // A check this bundle has no words for still names its id: that is all a reader could search for.
+    expect(text).toMatch(/^FAIL {2}team OPS: The mystery_check check failed\.$/m);
+    expect(text).toMatch(/^ {6}fix: Open Catalyst settings for team OPS\.$/m);
+    expect(text).toMatch(/who: an owner or admin of your Catalyst account \(the contract names none\)/);
   });
   test("config names the connected person when the /me user block is present", async () => {
     await seedJoined(home, server, { config: { user: FIXTURE_ME_USER } });
@@ -355,7 +364,7 @@ describe("more ready branches", () => {
     const j = JSON.parse(ctx.out.join("\n")) as { ready: boolean; checks: { id: string; ok: boolean; note?: boolean; line: string; who?: string }[] };
     const c = j.checks.find((x) => x.id === "team:ENG:labels_present")!;
     expect(c).toMatchObject({ ok: false, note: true, who: "nobody yet; it is informational" });
-    expect(c.line).toBe("team ENG: labels_present is fail (labels_missing ×2), degrading");
+    expect(c.line).toBe("team ENG: 2 labels Catalyst uses are missing from this Linear workspace.");
     expect(j.ready).toBe(true);
   });
 });
@@ -384,14 +393,15 @@ describe("ready never recommends starting the replica (CTC-2499)", () => {
     await main(["ready"], ctx);
     expect(ctx.out.join("\n")).not.toContain("replica start");
   });
-  test("the absent note says the replica is optional and off by default for large tenants, with no ticket key", async () => {
+  test("the absent note says the replica is optional and off by default for large accounts, with no ticket key", async () => {
     await seedJoined(home, server);
     installSkills(defaultSkillsDirFor(home), {});
     await main(["ready"], ctx);
     const text = ctx.out.join("\n");
     expect(text).toMatch(/^note {2}replica: absent/m); // the existing pin, unchanged
     expect(text).toContain("optional");
-    expect(text).toContain("off by default for large tenants");
+    expect(text).toContain("off by default for large accounts");
+    expect(text).not.toMatch(/tenant/i);
     const replicaNote = text.split("\n").find((line) => /^note {2}replica: absent/.test(line));
     expect(replicaNote).toBeDefined();
     expect(replicaNote).not.toMatch(/\bC[TL]C-\d+\b/);
@@ -445,7 +455,7 @@ describe("ready never recommends starting the replica (CTC-2499)", () => {
 });
 
 describe("ready prints each team's dispatch gate (CTC-2208)", () => {
-  test("AC2a — a shut gate is a FAIL with the cloud's own remedy as the fix, and the verdict is NOT READY", async () => {
+  test("AC2a — a shut gate is a FAIL with the cloud's own remedy as the fix; the machine is set up, so the verdict counts the team step", async () => {
     await seedJoined(home, server);
     installSkills(defaultSkillsDirFor(home), {});
     seedTeamGate(home, 0, { status: "mapping_missing", missingSlots: ["dispatch", "pr"], remedy: "Open Settings → Linear teams → ENG and press Map my stages." });
@@ -453,8 +463,9 @@ describe("ready prints each team's dispatch gate (CTC-2208)", () => {
     const text = ctx.out.join("\n");
     expect(text).toMatch(/^FAIL {2}team ENG: dispatch gate mapping_missing \(dispatch, pr\), blocking$/m);
     expect(text).toMatch(/^ {6}fix: Open Settings → Linear teams → ENG and press Map my stages\.$/m);
-    expect(text).toMatch(/^ {6}who: owner u-fixture-owner, admin u-fixture-admin$/m);
-    expect(text.split("\n").at(-1)).toBe("NOT READY");
+    expect(text).toMatch(/^ {6}who: an owner or an admin$/m);
+    // CTC-4398: a shut gate is a team step, not a machine fault. The exit code still says not ready.
+    expect(text.split("\n").at(-1)).toBe("READY: this machine is set up. 1 team step left.");
   });
 
   test("AC2b — an open gate reads ok and the verdict stays READY", async () => {
@@ -683,5 +694,177 @@ describe("ready reports when the installed skill bundle or CLI is behind the pub
   test("ready --help names --offline", async () => {
     expect(await main(["ready", "--help"], ctx)).toBe(0);
     expect(ctx.out.join("\n")).toContain("--offline");
+  });
+});
+
+// CTC-4398 — Ryan's real 0.13.0 run printed raw Linear ids, check ids, reason slugs and "tenant #0",
+// then NOT READY for a machine that was set up. This fixture reproduces his two teams' checks.
+const RYAN = "c2a8cc92-cab6-4536-9500-0f24abdf702b";
+const RYAN_USER = { id: "d1-user-ryan", label: "Ryan Rozich", email: null, role: "admin" as const, linearUserId: RYAN };
+const AUTOMATION_META = ["linear_automation_pr_open", "linear_automation_pr_review", "linear_automation_pr_ready", "linear_automation_pr_merge"].map((id) => ({
+  id,
+  severity: "blocking",
+  needsAnswer: true,
+  fixedBy: "owner_or_admin_in_linear",
+  fixedByLine: "A tenant owner or admin, in Linear’s own settings.",
+  settingsPath: "/settings/linear-teams",
+}));
+
+type Doc = Record<string, unknown> & { teams: Record<string, unknown>[]; readinessChecks: Record<string, unknown>[]; humans: unknown[] };
+
+function team(key: string, status: string, checks: Record<string, unknown>[], defaultRepo: string): Record<string, unknown> {
+  return {
+    id: `team-${key}`,
+    key,
+    name: key,
+    workflowMode: "mapped-existing",
+    gitAutomation: "off",
+    stages: {},
+    labels: { ask: [], hold: [], release: [] },
+    readiness: { status, checks, checkedAt: 1, expiresAt: null, workflowRev: 1 },
+    dispatchGate: { status: "open", missingSlots: [], remedy: null },
+    repositories: { default: defaultRepo, registered: [defaultRepo] },
+  };
+}
+
+/** Seed a joined machine whose contract carries Ryan's two teams, signed in as Ryan unless `me` says otherwise. */
+async function seedRyan(opts: { me?: typeof RYAN_USER | null; humans?: unknown[]; edit?: (doc: Doc) => void } = {}): Promise<void> {
+  await seedJoined(home, server, { config: { name: "Coalesce Labs (tenant #0)", ...(opts.me === null ? {} : { user: opts.me ?? RYAN_USER }) } });
+  installSkills(defaultSkillsDirFor(home), {});
+  const cache = JSON.parse(readFileSync(contractPathFor(home), "utf8")) as { doc: Doc };
+  const doc = cache.doc;
+  doc.account = { ...(doc.account as object), name: "Coalesce Labs (tenant #0)" };
+  doc.humans = opts.humans ?? [{ linearUserId: RYAN, role: "admin" }];
+  doc.readinessChecks = [
+    ...doc.readinessChecks.filter((r) => !String(r.id).startsWith("linear_automation_")),
+    ...AUTOMATION_META,
+    { id: "merge_queue_configured", severity: "degrading", needsAnswer: false, settingsPath: "/settings/projects" },
+  ].map((r) => (r.id === "environment_declared" ? { ...r, needsAnswer: false } : r));
+  doc.teams = [
+    team(
+      "ZCTC163",
+      "blocked",
+      [
+        { id: "oauth_scope", state: "pass" },
+        { id: "webhook_covers_team", state: "unknown", reason: "delivery_unattributed" },
+        { id: "environment_declared", state: "fail", reason: "no_environment_declaration" },
+        { id: "reviewer_configured", state: "fail", reason: "no_reviewer_configured" },
+        { id: "linear_automation_pr_open", state: "fail", reason: "automation_conflict", count: 1 },
+        { id: "linear_automation_pr_review", state: "fail", reason: "automation_conflict", count: 1 },
+        { id: "linear_automation_pr_merge", state: "fail", reason: "automation_conflict", count: 1 },
+        { id: "merge_queue_configured", state: "fail", reason: "merge_queue_unconfigured" },
+      ],
+      "ryanrozich/evergreen-e2e-demo",
+    ),
+    team(
+      "CTC",
+      "degraded",
+      [
+        { id: "environment_declared", state: "fail", reason: "declaration_awaiting_approval" },
+        { id: "merge_queue_configured", state: "fail", reason: "merge_queue_unconfigured" },
+      ],
+      "coalesce-labs/catalyst-cloud",
+    ),
+  ];
+  opts.edit?.(doc);
+  writeFileSync(contractPathFor(home), JSON.stringify(cache));
+}
+
+describe("CTC-4398: ready speaks plain words", () => {
+  test("Ryan's run: people by name, readable check lines, and a verdict that says only team steps are left", async () => {
+    await seedRyan();
+    // Positive control: the stored account name really carries the internal numbering.
+    expect(readFileSync(`${home}/.config/catalyst-cloud/customer.json`, "utf8")).toContain("tenant #0");
+    expect(await main(["ready", "--offline"], ctx)).toBe(1); // exit code unchanged: not every check passes
+    const text = ctx.out.join("\n");
+    expect(text).toMatch(/^ok {3}config: joined Coalesce Labs as Ryan Rozich \(admin\)$/m);
+    expect(text).not.toMatch(/tenant/i);
+    // who: the signed-in person is "you", never the raw Linear id.
+    expect(text).not.toContain(RYAN);
+    expect(text.match(/^ {6}who: you$/gm)).toHaveLength(3);
+    // The automation checks name Linear's rule and where to change it, plus the page to re-check on.
+    expect(text).toMatch(
+      /^FAIL {2}team ZCTC163: Linear's "On PR open" Git automation moves this team's issues itself, which conflicts with the stage moves Catalyst makes\.$/m,
+    );
+    expect(text).toContain(
+      `      fix: In Linear, open Settings → Teams → ZCTC163 → Workflow → Git automations and set "On PR open" to No action, ` +
+        `or point it at the state Catalyst maps for that stage. Catalyst moves the issue itself. Then re-check the team at ${server.url}/settings/linear-teams.`,
+    );
+    expect(text).toContain('set "On PR review request or activity" to No action');
+    expect(text).toContain('set "On PR merge" to No action');
+    // One plain sentence per check, with the severity word and the team label kept.
+    expect(text).toMatch(/^note {2}team ZCTC163: Linear events are arriving, but none could be tied to this team yet, so Catalyst cannot confirm it hears this team\.$/m);
+    expect(text).toMatch(/^note {2}team ZCTC163: No merge queue is configured for this team's repository, so Catalyst can open pull requests but cannot merge them\.$/m);
+    expect(text).toMatch(
+      /^note {2}team CTC: the environment declaration for coalesce-labs\/catalyst-cloud waits for approval by you\. Open Settings → Repositories → coalesce-labs\/catalyst-cloud → Environment, go to the Setup declaration tab, and press Approve this revision\.$/m,
+    );
+    // No raw check id or reason slug reaches a human line.
+    expect(text).not.toMatch(/linear_automation_|automation_conflict|delivery_unattributed|merge_queue_unconfigured|declaration_awaiting_approval|webhook_covers_team|is fail|is unknown/);
+    expect(text.split("\n").at(-1)).toBe("READY: this machine is set up. 3 team steps left.");
+  });
+
+  test("--json keeps every id and field, and adds whoIds, machineReady and teamStepsLeft", async () => {
+    await seedRyan();
+    expect(await main(["ready", "--offline", "--json"], ctx)).toBe(1);
+    const j = JSON.parse(ctx.out.at(-1)!) as { ready: boolean; machineReady: boolean; teamStepsLeft: number; checks: { id: string; ok: boolean; note?: boolean; line: string; fix?: string; who?: string; whoIds?: string[] }[] };
+    expect(j).toMatchObject({ ready: false, machineReady: true, teamStepsLeft: 3 });
+    const open = j.checks.find((c) => c.id === "team:ZCTC163:linear_automation_pr_open")!;
+    expect(open).toMatchObject({ ok: false, who: "you", whoIds: [RYAN] });
+    expect(open.fix).toContain("Git automations");
+    expect(j.checks.map((c) => c.id)).toEqual(
+      expect.arrayContaining(["config", "team:ZCTC163:webhook_covers_team", "team:ZCTC163:merge_queue_configured", "team:CTC:environment_declared"]),
+    );
+  });
+
+  test("who names another person from the replica, and falls back to the role alone for an id nobody resolves", async () => {
+    const humans = [
+      { linearUserId: "u-jane", role: "owner" },
+      { linearUserId: "u-ghost", role: "admin" },
+    ];
+    await seedRyan({ me: null, humans });
+    const report = await readyReport(ctx, { skillNames: CUSTOMER_SKILLS, offline: true, userNames: () => new Map([["u-jane", "Jane Doe"]]) });
+    const c = report.checks.find((x) => x.id === "team:ZCTC163:linear_automation_pr_open")!;
+    expect(c.who).toBe("Jane Doe (owner) or an admin");
+    expect(c.who).not.toContain("u-ghost");
+    expect(c.whoIds).toEqual(["u-jane", "u-ghost"]);
+  });
+
+  test("the name comes from a real replica's users table when no seam is given", async () => {
+    await seedRyan({ me: null, humans: [{ linearUserId: "u-jane", role: "owner" }] });
+    const dbPath = await seedReplica(home, { cursor: 5, heartbeatAgeMs: 0 });
+    const { DatabaseSync } = await import("node:sqlite");
+    const db = new DatabaseSync(dbPath);
+    db.prepare("INSERT INTO users (id, name, display_name) VALUES (?, ?, ?)").run("u-jane", "Jane Doe", "jane");
+    db.close();
+    const report = await readyReport(ctx, { skillNames: CUSTOMER_SKILLS, offline: true });
+    expect(report.checks.find((x) => x.id === "team:ZCTC163:linear_automation_pr_open")!.who).toBe("Jane Doe (owner)");
+  });
+
+  test("an id that resolves to nobody prints the role alone, never the id", async () => {
+    await seedRyan({ me: null });
+    expect(await main(["ready", "--offline"], ctx)).toBe(1);
+    const text = ctx.out.join("\n");
+    expect(text).toMatch(/^ {6}who: an admin$/m);
+    expect(text).not.toContain(RYAN);
+  });
+
+  test("a failing machine check keeps NOT READY even with team steps left", async () => {
+    await seedRyan();
+    const report = await readyReport(ctx, { skillNames: CUSTOMER_SKILLS, offline: true, runtime: { kind: "node", version: "20.0.0", nodeCompat: "20.0.0" } });
+    expect(report).toMatchObject({ ready: false, machineReady: false, teamStepsLeft: 3 });
+    const { verdictLine } = await import("../src/ready");
+    expect(verdictLine(report)).toBe("NOT READY");
+    expect(verdictLine({ ready: false, machineReady: true, teamStepsLeft: 1 })).toBe("READY: this machine is set up. 1 team step left.");
+    expect(verdictLine({ ready: true, machineReady: true, teamStepsLeft: 0 })).toBe("READY");
+  });
+
+  test("a team the contract marks archived is skipped with one note", async () => {
+    await seedRyan({ edit: (doc) => void (doc.teams[0]!.archived = true) });
+    // Only CTC's notes remain, so nothing fails.
+    expect(await main(["ready", "--offline"], ctx)).toBe(0);
+    const text = ctx.out.join("\n");
+    expect(text).toMatch(/^note {2}team ZCTC163 is archived; skipped$/m);
+    expect(text).not.toMatch(/team ZCTC163: /);
+    expect(text.split("\n").at(-1)).toBe("READY");
   });
 });

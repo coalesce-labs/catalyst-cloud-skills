@@ -9,7 +9,8 @@ import { contractVersionInRange, readContractCache } from "./contract.js";
 import type { ContractReadinessCheck, TenantContract } from "./contract-types.js";
 import { CliError } from "./errors.js";
 import { latestPublishedVersion, type PublishedLookup } from "./published.js";
-import { replicaStatus, writerIsRunning, type ReplicaStatus } from "./replica.js";
+import { readUserNames, replicaStatus, writerIsRunning, type ReplicaStatus } from "./replica.js";
+import { LINEAR_AUTOMATION_RULES, checkFix, checkSentence } from "./readiness-copy.js";
 import { loadSdk } from "./sdk.js";
 import { FIX_COMMAND, detectRuntime, runtimeVerdict, supportedRangeText, type RuntimeFacts } from "./runtime.js";
 import { semverOlder } from "./semver.js";
@@ -26,10 +27,18 @@ export interface ReadyCheck {
   line: string;
   fix?: string;
   who?: string;
+  /** CTC-4398: the Linear user ids `who` names, for a reader that needs the identity, not the words. */
+  whoIds?: string[];
 }
 
 export interface ReadyReport {
   ready: boolean;
+  /** CTC-4398: every check that is not a team check passes (or is a note). With `ready` false this
+   *  means only team steps remain, which the human verdict says; `ready` and the exit code keep
+   *  their meaning. */
+  machineReady: boolean;
+  /** Failing team checks: the steps left for the account's owners and admins. */
+  teamStepsLeft: number;
   checks: ReadyCheck[];
   /** The replica document `replica status --json` prints, so `ready --json` carries the writer's
    *  stopped state, failure count and last error without a second shape to keep in step. */
@@ -61,7 +70,7 @@ function readyReplicaLine(s: ReplicaStatus): string {
     case "not-configured":
       return "replica: not configured — run login first";
     case "absent":
-      return `replica: absent at ${s.dbPath} — optional, and off by default for large tenants while the snapshot path is being made safe; every read works through the API`;
+      return `replica: absent at ${s.dbPath}. It is optional, and off by default for large accounts while the snapshot path is being made safe; every read works through the API`;
     case "fresh":
       return `replica: fresh at ${s.dbPath} (cursor ${s.cursor}, heartbeat ${s.heartbeatAgeMs}ms ago${s.lag !== undefined ? `, ${s.lag} behind head ${s.head}` : ""})`;
     case "stale":
@@ -136,6 +145,8 @@ export interface ReadyDeps {
   fetchLatestRelease?: () => Promise<PublishedLookup>;
   /** Skip the published-release lookup entirely (--offline / CATALYST_SKILLS_OFFLINE=1). */
   offline?: boolean;
+  /** Test seam: Linear user id to name. Defaults to the replica's `users` table when one exists. */
+  userNames?: (ids: readonly string[]) => ReadonlyMap<string, string>;
 }
 
 function nameList(v: unknown): string[] {
@@ -164,8 +175,8 @@ function unresolvedLine(u: { name: string; references: string[] }): string {
  *  is a subset of `names` (the variable exists; its reference does not), so those are not told to be
  *  "set". Every field is optional so an older cloud still works. Everything printed is a declared
  *  identifier or a repository name, never a value, and nothing here reads a value. Any other check
- *  keeps the generic line. */
-function teamCheckFix(label: string, c: ContractReadinessCheck): string {
+ *  gets its plain fix from readiness-copy.ts plus the contract's settings page, when it names one. */
+function teamCheckFix(label: string, c: ContractReadinessCheck, settingsUrl: string | null): string {
   const unresolved = unresolvedList(c.unresolved);
   const unresolvedNames = new Set(unresolved.map((u) => u.name));
   const names = nameList(c.names).filter((n) => !unresolvedNames.has(n));
@@ -185,13 +196,48 @@ function teamCheckFix(label: string, c: ContractReadinessCheck): string {
     if (missing.length > 0) parts.push(`${note.repo} is missing ${missing.join(", ")}`);
     for (const u of repoUnresolved) parts.push(`in ${note.repo}, ${unresolvedLine(u)}`);
   }
-  if (parts.length === 0) return `open settings for team ${label} and resolve ${c.id}`;
-  return parts.join(". ");
+  if (parts.length > 0) return parts.join(". ");
+  const plain = checkFix(c, label) ?? `Open Catalyst settings for team ${label}.`;
+  if (settingsUrl === null) return plain;
+  return c.id in LINEAR_AUTOMATION_RULES ? `${plain} Then re-check the team at ${settingsUrl}.` : `${plain} Page: ${settingsUrl}.`;
 }
 
-function whoCanAnswer(doc: TenantContract): string {
-  const roles = doc.humans.map((h) => `${h.role} ${h.linearUserId}`);
-  return roles.length ? roles.join(", ") : "a tenant owner or admin (none resolved on the contract)";
+/** The account's display name without the cloud's internal numbering ("Acme (tenant #0)" → "Acme"). */
+export function accountLabel(name: string): string {
+  return name.replace(/\s*\((?:tenant|account)\s*#\d+\)\s*$/i, "").trim() || name;
+}
+
+export interface WhoCanAnswer {
+  who: string;
+  whoIds: string[];
+}
+
+function joinOr(items: readonly string[]): string {
+  if (items.length <= 1) return items.join("");
+  return `${items.slice(0, -1).join(", ")} or ${items.at(-1)}`;
+}
+
+/**
+ * CTC-4398: the contract's owners and admins, in words. The contract carries only a Linear user id
+ * and a role, so a person is "you" when the id is the signed-in person's, their name when the
+ * replica knows it, and otherwise their role alone. A bare id is never printed.
+ */
+export function whoCanAnswer(
+  humans: TenantContract["humans"],
+  me: { linearUserId: string | null } | undefined,
+  names: ReadonlyMap<string, string>,
+): WhoCanAnswer {
+  const words: string[] = [];
+  for (const h of humans) {
+    const role = h.role === "owner" ? "an owner" : "an admin";
+    const w = me?.linearUserId && h.linearUserId === me.linearUserId ? "you" : names.has(h.linearUserId) ? `${names.get(h.linearUserId)} (${h.role})` : role;
+    if (!words.includes(w)) words.push(w);
+  }
+  words.sort((a, b) => (a === "you" ? -1 : b === "you" ? 1 : 0));
+  return {
+    who: words.length > 0 ? joinOr(words) : "an owner or admin of your Catalyst account (the contract names none)",
+    whoIds: humans.map((h) => h.linearUserId),
+  };
 }
 
 export async function readyReport(ctx: Ctx, deps: ReadyDeps): Promise<ReadyReport> {
@@ -216,9 +262,10 @@ export async function readyReport(ctx: Ctx, deps: ReadyDeps): Promise<ReadyRepor
             // `principal` is "service" for every api key (it means "a key, not a browser session"); it
             // never names a person. Since CTC-2076 a personal key's /me carries a `user` block, so name
             // the connected person when there is one, and fall back to the account for a host key.
+            // CTC-4398: the account's name as a person knows it, without the cloud's "(tenant #0)".
             line: cfg.user
-              ? `config: joined ${cfg.name} as ${cfg.user.label} (${cfg.user.role})`
-              : `config: joined ${cfg.name} (${cfg.slug}) as ${cfg.principal}`,
+              ? `config: joined ${accountLabel(cfg.name)} as ${cfg.user.label} (${cfg.user.role})`
+              : `config: joined ${accountLabel(cfg.name)} (${cfg.slug}) as ${cfg.principal}`,
           }
         : { id: "config", ok: false, line: "config: not connected", fix: "npx -p @catalyst-cloud/cli catalyst login (keyless; or pass --key / set CATALYST_CLOUD_TOKEN)", who: "you (approve the login in your browser)" },
     );
@@ -247,7 +294,7 @@ export async function readyReport(ctx: Ctx, deps: ReadyDeps): Promise<ReadyRepor
         id: "bundle",
         ok: false,
         note: true,
-        line: `bundle: ${installed} installed is older than the tenant's minimum ${minVersion} — upgrade: ${upgradeCommand()}`,
+        line: `bundle: ${installed} installed is older than the minimum ${minVersion} your Catalyst account expects; upgrade: ${upgradeCommand()}`,
       });
     }
   }
@@ -350,9 +397,17 @@ export async function readyReport(ctx: Ctx, deps: ReadyDeps): Promise<ReadyRepor
 
   if (cache) {
     const doc = cache.doc;
-    const who = whoCanAnswer(doc);
+    const ids = doc.humans.map((h) => h.linearUserId);
+    const names = deps.userNames ? deps.userNames(ids) : replica.dbPath !== null ? readUserNames(replica.dbPath, ids) : new Map<string, string>();
+    const { who, whoIds } = whoCanAnswer(doc.humans, cfg?.user, names);
+    const origin = cfg?.baseUrl ? cfg.baseUrl.replace(/\/+$/, "") : null;
     for (const team of doc.teams) {
       const label = team.key ?? team.id;
+      // CTC-4398: a mirror that keeps an archived team on the contract marks it; nobody works there.
+      if (team.archived === true) {
+        checks.push({ id: `team:${label}`, ok: true, note: true, line: `team ${label} is archived; skipped` });
+        continue;
+      }
       // The team's dispatch gate, straight off the cached contract: an older cloud omits it and this
       // emits nothing (the `skillsBundle` precedent above). A shut gate means NOTHING in the team can
       // start, so it is a FAIL carrying the cloud's own remedy as the fix — never an informational
@@ -370,6 +425,7 @@ export async function readyReport(ctx: Ctx, deps: ReadyDeps): Promise<ReadyRepor
                 line: `team ${label}: dispatch gate ${dg.status}${slots ? ` (${slots})` : ""}, blocking`,
                 fix: dg.remedy ?? `open settings for team ${label} and map its stages`,
                 who,
+                whoIds,
               },
         );
       }
@@ -385,23 +441,54 @@ export async function readyReport(ctx: Ctx, deps: ReadyDeps): Promise<ReadyRepor
       for (const c of bad) {
         const meta = doc.readinessChecks.find((r) => r.id === c.id);
         const needsAnswer = meta?.needsAnswer ?? true;
+        const settingsUrl = origin !== null && typeof meta?.settingsPath === "string" && meta.settingsPath.startsWith("/") ? `${origin}${meta.settingsPath}` : null;
+        // CTC-4398: one plain sentence per check. A proposed declaration is a note, and a note prints
+        // no fix line, so the sentence itself says who approves it and where.
+        let line = `team ${label}: ${checkSentence(c)}`;
+        if (c.id === "environment_declared" && c.reason === "declaration_awaiting_approval" && c.state === "fail") {
+          const repo = typeof team.repositories?.default === "string" && team.repositories.default !== "" ? team.repositories.default : "the repository";
+          line =
+            `team ${label}: the environment declaration for ${repo} waits for approval by ${who}. ` +
+            `Open Settings → Repositories → ${repo} → Environment, go to the Setup declaration tab, and press Approve this revision.`;
+        }
         checks.push({
           id: `team:${label}:${c.id}`,
           ok: !needsAnswer && c.state !== "fail",
           note: !needsAnswer,
-          line: `team ${label}: ${c.id} is ${c.state}${c.reason ? ` (${c.reason}${c.count !== undefined ? ` ×${c.count}` : ""})` : ""}${meta ? `, ${meta.severity}` : ""}`,
-          fix: teamCheckFix(label, c),
+          line,
+          fix: teamCheckFix(label, c, settingsUrl),
           who: needsAnswer ? who : "nobody yet; it is informational",
+          ...(needsAnswer ? { whoIds } : {}),
         });
       }
       if (bad.length === 0 && team.readiness.status !== "ready") {
-        checks.push({ id: `team:${label}`, ok: team.readiness.status !== "blocked", note: team.readiness.status === "degraded", line: `team ${label}: ${team.readiness.status}`, fix: `open settings for team ${label}`, who });
+        checks.push({
+          id: `team:${label}`,
+          ok: team.readiness.status !== "blocked",
+          note: team.readiness.status === "degraded",
+          line: `team ${label}: ${team.readiness.status}`,
+          fix: `Open Catalyst settings for team ${label} and press Re-check.`,
+          who,
+          whoIds,
+        });
       }
     }
   }
 
   const ready = checks.every((c) => c.ok || c.note);
-  return { ready, checks, replica };
+  const isTeam = (c: ReadyCheck): boolean => c.id.startsWith("team:");
+  const machineReady = checks.filter((c) => !isTeam(c)).every((c) => c.ok || c.note);
+  const teamStepsLeft = checks.filter((c) => isTeam(c) && !c.ok && !c.note).length;
+  return { ready, machineReady, teamStepsLeft, checks, replica };
+}
+
+/** The human verdict line. `ready` false with a ready machine means only team steps remain, and
+ *  saying NOT READY there sent people hunting for a machine fault that was not there (CTC-4398). */
+export function verdictLine(report: Pick<ReadyReport, "ready" | "machineReady" | "teamStepsLeft">): string {
+  if (report.ready) return "READY";
+  if (!report.machineReady) return "NOT READY";
+  const n = report.teamStepsLeft;
+  return `READY: this machine is set up. ${n} team ${n === 1 ? "step" : "steps"} left.`;
 }
 
 export async function cmdReady(args: ParsedArgs, ctx: Ctx, deps: ReadyDeps): Promise<number> {
@@ -416,7 +503,7 @@ export async function cmdReady(args: ParsedArgs, ctx: Ctx, deps: ReadyDeps): Pro
         if (c.who) ctx.stdout(`      who: ${c.who}`);
       }
     }
-    ctx.stdout(report.ready ? "READY" : "NOT READY");
+    ctx.stdout(verdictLine(report));
   }
   return report.ready ? 0 : 1;
 }

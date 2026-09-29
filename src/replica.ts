@@ -185,6 +185,30 @@ export function readCursor(dbPath: string): number | null {
   }
 }
 
+/** CTC-4398: Linear user names for `ids`, read-only from the replica's `users` table. The replica
+ *  is optional, so any failure (no file, no table, no node:sqlite) answers an empty map. */
+export function readUserNames(dbPath: string, ids: readonly string[]): Map<string, string> {
+  const names = new Map<string, string>();
+  if (ids.length === 0 || !existsSync(dbPath)) return names;
+  let db: DatabaseSync | null = null;
+  try {
+    db = new (loadSqlite().DatabaseSync)(dbPath, { readOnly: true });
+    const table = db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'users'").get();
+    if (!table) return names;
+    const stmt = db.prepare("SELECT name, display_name FROM users WHERE id = ?");
+    for (const id of ids) {
+      const row = stmt.get(id) as { name?: unknown; display_name?: unknown } | undefined;
+      const name = [row?.name, row?.display_name].find((v): v is string => typeof v === "string" && v.trim() !== "");
+      if (name !== undefined) names.set(id, name.trim());
+    }
+  } catch {
+    return names;
+  } finally {
+    db?.close();
+  }
+  return names;
+}
+
 export interface StatusOptions {
   staleMs?: number;
   nowMs?: number;
