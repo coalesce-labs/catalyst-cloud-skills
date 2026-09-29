@@ -20,7 +20,7 @@ const NOTES = [
   "`replica status --probe --json` and `events status --probe --json` (optional local freshness),",
   "`me --json` and personal connection statuses (person), `contract --path …` for the account, the projects and the repositories,",
   "`contract --path codingAccounts` and `accounts --json` (coding accounts, and which one needs a new credential), and each",
-  "project's hosts_current check with its fixedWhere (host), and each project's environment_declared check with its per-repository notes (repository declarations).",
+  "project's hosts_current check with its fixedWhere (host), and each project's environment_declared check with its per-repository notes (repository declarations). The teams read is refreshed, so a mapping just saved reads back mapped.",
   "Also runs `gh repo view <owner>/thoughts` for each registered repository's owner, as a note: it shows the repository exists, never that the GitHub App can reach it.",
   "When the tenant serves a contract version this CLI refuses, runs `npm view @catalyst-cloud/cli version` once to say whether a newer CLI is published.",
   "Writes nothing and changes nothing. Runs before this machine is connected — that is one of the states it reports.",
@@ -95,7 +95,7 @@ const machineLines = connected ? statusLines : [statusLines[0] ?? "status printe
 let machineVerdict = connected ? "ok" : "unfinished";
 
 // `ready` is ONE verdict over two parts; split it by check id before anything is reported. A check
-// whose id begins with "team:" belongs to a project and cannot be moved from this machine.
+// whose id begins with "team:" belongs to a project and needs the member's admin or owner seat.
 let projectChecks = [];
 let machineFix = null;
 let localSync;
@@ -245,7 +245,9 @@ let teamRows = null;
 if (!connected) {
   add("projects", "catalyst-skills contract --path teams", "unreadable", ["not readable until this machine is connected"], null, null);
 } else {
-  const teams = readContract(["contract", "--path", "teams", "--json"]);
+  // The mapping write updates the cloud before the cached contract's dispatchGate projection.
+  // Revalidate this one read so a successful save does not appear unmapped on the next step.
+  const teams = readContract(["contract", "--refresh", "--path", "teams", "--json"]);
   const doc = tryJson(teams.stdout);
   const rows = Array.isArray(doc) ? doc : null;
   teamRows = rows;
@@ -261,7 +263,7 @@ if (!connected) {
       lines.push(`${key}: ${readiness.status ?? "unknown"}${bad.length ? ` — ${bad.map((c) => `${c.id} ${c.state}`).join(", ")}` : ""}`);
     }
     for (const c of projectChecks) lines.push(`${c.ok ? "note" : "FAIL"} ${c.line}${c.who ? ` — who: ${c.who}` : ""}`);
-    lines.push("⛔ MAPPED projects only. An empty list means nothing is mapped yet, NOT that there are no projects — the full list is on the page below.");
+    lines.push("MAPPED projects only. An empty list means nothing is mapped yet, NOT that there are no projects. Run catalyst-skills team list to inspect the live list without checking readiness.");
     // A project is set up when its dispatch gate is open (its stages are mapped), or when its
     // readiness reads ready. Readiness alone kept `--next` on "map its stages" for a tenant whose
     // gates were open: readiness stays "unchecked" until someone presses Re-check, and a new team
@@ -269,7 +271,7 @@ if (!connected) {
     const setUp = (t) => t.dispatchGate?.status === "open" || (t.readiness?.status ?? "unchecked") === "ready";
     for (const t of rows) {
       if (t.dispatchGate?.status === "open" && (t.readiness?.status ?? "unchecked") === "unchecked") {
-        lines.push(`${t.key ?? t.id ?? "(unkeyed)"}: stages mapped; readiness not checked yet: press Re-check on the page below to see the rest`);
+        lines.push(`${t.key ?? t.id ?? "(unkeyed)"}: stages mapped; readiness not checked yet: run catalyst-skills team check ${t.key ?? t.id} to see the rest`);
       }
     }
     const ready = rows.length > 0 && rows.every(setUp);
