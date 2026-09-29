@@ -757,7 +757,14 @@ export async function startMeFixture(
     if (path === "/api/v1/cycles") return send(200, { rows: [{ id: "cyc-1", number: 12, name: "Cycle 12", starts_at: "2026-09-01", ends_at: "2026-09-14" }] });
     if (path === "/api/v1/search") {
       const q = (url.searchParams.get("q") ?? "").toLowerCase();
-      return send(200, { rows: state.issues.filter((r) => String(r.title).toLowerCase().includes(q)).map((r) => ({ kind: "issue", identifier: r.identifier, title: r.title })) });
+      // The hub's real shape (read-model SearchView): four groups, not one `rows` list.
+      const hit = (s: unknown) => String(s ?? "").toLowerCase().includes(q);
+      return send(200, {
+        issues: state.issues.filter((r) => hit(r.title)).map((r) => ({ id: r.id, identifier: r.identifier, title: r.title })),
+        pulls: q === "widget" ? [{ repo_id: "acme/app", number: 41, node_id: "PR_41", title: "Widget pull" }] : [],
+        projects: q === "widget" ? [{ id: "proj-w", name: "Widget project" }] : [],
+        initiatives: q === "widget" ? [{ id: "init-w", name: "Widget initiative" }] : [],
+      });
     }
     // ⛔ The changefeed EVICTS. A cursor before the oldest retained seq is a 409
     // `{error:"cursor_underflow", resync:true}`, and one past the head is a 409
