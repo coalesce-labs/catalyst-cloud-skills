@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // raise.mjs — file one decision for the human as an ask ticket, through the cloud's own ask route.
-// Wraps `catalyst-skills ask raise`. You pass fields (question, options, default, what it blocks);
+// Wraps `catalyst ask raise`. You pass fields (question, options, default, what it blocks);
 // the cloud renders the body from the tenant's ask template, applies the ask labels, and creates the
 // blocking relations in one atomic write. Headings are never composed here.
 import { mustRun, parseFlags, parseJson, printHelp } from "./lib/cli.mjs";

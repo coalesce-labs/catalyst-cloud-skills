@@ -37,19 +37,19 @@ Some checks degrade a team without ever blocking it, and one is informational on
 
 ## The machine checks the CLI adds
 
-`catalyst-skills ready` prepends checks about this machine before the tenant's:
+`catalyst ready` prepends checks about this machine before the tenant's:
 
 | id | proves | fix |
 | -- | -- | -- |
-| `runtime` | this runtime can run the CLI: Node 22.15+ (22.15 is where `node:module.registerHooks` arrives, which the SDK's TypeScript dependencies need) or bun 1.4+ (1.4 is where `node:sqlite` arrives, which the replica needs) | `npx -y @catalyst-cloud/catalyst-skills runtime install` — installs a pinned Node under the CLI's own cache and uses it from then on; it does not change your default Node |
-| `config` | this machine is connected: `customer.json` exists and loads | `npx @catalyst-cloud/catalyst-skills login` (keyless: the person approves in their browser); or, with a personal key minted at Settings → API keys, the same command prefixed with `CATALYST_CLOUD_TOKEN=<your personal key>` |
-| `contract` | the tenant contract is cached and its major version is one this bundle accepts | `catalyst-skills contract --refresh`; a version outside the range means update the bundle. A 403 naming an older cloud means the cloud has not yet deployed personal-key access |
-| `bundle` | the installed CLI is at least the version this tenant requires | `npm install -g @catalyst-cloud/catalyst-skills@latest && catalyst-skills login`; a note, never a failure |
+| `runtime` | this runtime can run the CLI: Node 22.15+ (22.15 is where `node:module.registerHooks` arrives, which the SDK's TypeScript dependencies need) or bun 1.4+ (1.4 is where `node:sqlite` arrives, which the replica needs) | `npx -y -p @catalyst-cloud/cli catalyst runtime install` — installs a pinned Node under the CLI's own cache and uses it from then on; it does not change your default Node |
+| `config` | this machine is connected: `customer.json` exists and loads | `npx -p @catalyst-cloud/cli catalyst login` (keyless: the person approves in their browser); or, with a personal key minted at Settings → API keys, the same command prefixed with `CATALYST_CLOUD_TOKEN=<your personal key>` |
+| `contract` | the tenant contract is cached and its major version is one this bundle accepts | `catalyst contract --refresh`; a version outside the range means update the bundle. A 403 naming an older cloud means the cloud has not yet deployed personal-key access |
+| `bundle` | the installed CLI is at least the version this tenant requires | `npm install -g @catalyst-cloud/cli@latest && catalyst login`; a note, never a failure |
 | `cliPath` | the CLI path recorded at login still exists, so skill scripts can spawn it | re-run login |
 | `skills` | every skill in the Cloud setup and operations pack is present in its install scope; this check does not cover coding workflow skills | read `catalyst-onboard`'s `references/skill-sources.md` and install `coalesce-labs/catalyst-cloud-skills` in the intended scope. A count lower than what you just installed means the CLI is older than the skills: `ready` counts its own roster, not the folders on disk. Update the CLI (the `bundle` row). Nothing else is affected meanwhile. |
 | `cliRelease` | the installed CLI is not behind the newest published release | the same upgrade command as `bundle`; a note, never a failure |
 | `skillsRelease` | the installed skill files are not behind the newest published bundle | check the active lock and every same-named agent path as described in this pack's README, then re-run `npx skills@latest add coalesce-labs/catalyst-cloud-skills --all -g` for a verified global install or omit `-g` inside a project; stop on independent, changed, or uncertain copies. Re-adding picks up new skills. A line saying the check could not run means the registry was unreachable, not that anything is wrong |
-| `sdk` | the SDK loads, so the replica and the watch are available | the same one command (`npx -y @catalyst-cloud/catalyst-skills runtime install`); every read still works through the API meanwhile |
+| `sdk` | the SDK loads, so the replica and the watch are available | the same one command (`npx -y -p @catalyst-cloud/cli catalyst runtime install`); every read still works through the API meanwhile |
 | `replica` | the optional replica is fresh | a note, never a failure; see below |
 
 ## The replica's four verdicts
@@ -59,7 +59,7 @@ Some checks degrade a team without ever blocking it, and one is informational on
 | exit | verdict | what a skill does with it |
 | -- | -- | -- |
 | 0 | fresh: a live writer, a heartbeat younger than the staleness threshold, a non-empty cursor | reads the replica and says so |
-| 1 | stale: the file exists but the writer is gone, the heartbeat is old, or there is no cursor | reads the API and says so; `catalyst-skills replica start --detach` brings it back |
+| 1 | stale: the file exists but the writer is gone, the heartbeat is old, or there is no cursor | reads the API and says so; `catalyst replica start --detach` brings it back |
 | 2 | not connected to a tenant | the connect step first |
 | 3 | absent: no replica file at all | reads the API; the replica is optional and one command away |
 
@@ -67,7 +67,7 @@ Some checks degrade a team without ever blocking it, and one is informational on
 
 ## The writer stops itself after repeated snapshot failures
 
-`replica start` backs off with jitter after a failed or incomplete snapshot pull, and gives up after five consecutive snapshot failures rather than retrying forever — a writer that keeps failing never hammers the tenant. A snapshot that completes resets the count to zero. Both `catalyst-skills replica status` and `catalyst-skills ready` name the stopped state, the count, the last error, and the command that restarts it. The four exit codes above are unchanged: a stopped writer with a database already on disk still reads stale, since there truly is no live writer.
+`replica start` backs off with jitter after a failed or incomplete snapshot pull, and gives up after five consecutive snapshot failures rather than retrying forever — a writer that keeps failing never hammers the tenant. A snapshot that completes resets the count to zero. Both `catalyst replica status` and `catalyst ready` name the stopped state, the count, the last error, and the command that restarts it. The four exit codes above are unchanged: a stopped writer with a database already on disk still reads stale, since there truly is no live writer.
 
 ## Who can click what
 

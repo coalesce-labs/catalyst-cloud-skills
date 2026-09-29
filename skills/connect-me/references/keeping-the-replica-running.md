@@ -5,11 +5,11 @@ This reference restates invariants of the local replica the Catalyst Cloud SDK m
 ## The supported path is the plain command
 
 ```sh
-catalyst-skills replica start --detach    # start in the background, write a pidfile, return
-catalyst-skills replica status            # 0 fresh, 1 stale, 2 not configured, 3 absent; one line either way
-catalyst-skills replica status --probe    # also compare the local cursor with the cloud head
-catalyst-skills replica stop              # signal the pidfile's process
-catalyst-skills replica start             # foreground, Ctrl-C to stop
+catalyst replica start --detach    # start in the background, write a pidfile, return
+catalyst replica status            # 0 fresh, 1 stale, 2 not configured, 3 absent; one line either way
+catalyst replica status --probe    # also compare the local cursor with the cloud head
+catalyst replica stop              # signal the pidfile's process
+catalyst replica start             # foreground, Ctrl-C to stop
 ```
 
 It is a Node process, not a service. Node 22.15 or newer (or bun 1.4 or newer) with its built-in SQLite module runs it the same on macOS, Linux and Windows, and the bundle never requires a daemon, because a required service is the first thing that breaks on a laptop. The writer is not a prerequisite for any skill; a fresh one is a preference. A skill must never refuse to work because the replica is down, and must never silently read a stale one; `replica status` is the one exit code that settles both.
@@ -24,7 +24,7 @@ Under `~/.config/catalyst-cloud/` by default:
 | `replica.db.writer.lock` | the writer's lock, with a heartbeat the status check reads |
 | `replica.db.pid` | the background writer's process id, written by `--detach` |
 | a `sync_meta` row inside the database | the stream cursor, so a restart resumes where it stopped |
-| `watch-cursor.json` | the events-only cursor for `catalyst-skills watch`, stamped with the tenant; a few bytes |
+| `watch-cursor.json` | the events-only cursor for `catalyst watch`, stamped with the tenant; a few bytes |
 
 The replica is upserts and deletes into one file, so it neither grows without bound nor needs pruning; the cursor is a row. There is no directory of old files to clean and nothing to rotate. If the writer logs, it logs to standard error and the shell decides where that goes; nothing under the config directory is a log.
 
@@ -36,7 +36,7 @@ The first start seeds the file from the cloud's snapshot (one full copy of the t
 
 ## Surviving a reboot
 
-Optional. The plain command is the supported path; these are for people who want the writer back after a restart. Each example assumes a global install (`npm install -g @catalyst-cloud/catalyst-skills`); substitute the absolute path `catalyst-skills status` prints as the CLI path if you prefer. Run the writer in the foreground under the supervisor (no `--detach`), so the supervisor owns the process.
+Optional. The plain command is the supported path; these are for people who want the writer back after a restart. Each example assumes a global install (`npm install -g @catalyst-cloud/cli`); substitute the absolute path `catalyst status` prints as the CLI path if you prefer. Run the writer in the foreground under the supervisor (no `--detach`), so the supervisor owns the process.
 
 ### macOS, launchd
 
@@ -48,7 +48,7 @@ Save as `~/Library/LaunchAgents/dev.catalystcloud.replica.plist`, then `launchct
 <plist version="1.0"><dict>
   <key>Label</key><string>dev.catalystcloud.replica</string>
   <key>ProgramArguments</key><array>
-    <string>/usr/local/bin/catalyst-skills</string><string>replica</string><string>start</string>
+    <string>/usr/local/bin/catalyst</string><string>replica</string><string>start</string>
   </array>
   <key>RunAtLoad</key><true/>
   <key>KeepAlive</key><true/>
@@ -56,7 +56,7 @@ Save as `~/Library/LaunchAgents/dev.catalystcloud.replica.plist`, then `launchct
 </dict></plist>
 ```
 
-Check the path to the binary with `which catalyst-skills`; Homebrew Node installs under `/opt/homebrew/bin`. `launchctl unload` the same file to stop it.
+Check the path to the binary with `which catalyst`; Homebrew Node installs under `/opt/homebrew/bin`. `launchctl unload` the same file to stop it.
 
 ### Linux, systemd user unit
 
@@ -68,7 +68,7 @@ Description=Catalyst Cloud local replica
 After=network-online.target
 
 [Service]
-ExecStart=/usr/bin/env catalyst-skills replica start
+ExecStart=/usr/bin/env catalyst replica start
 Restart=on-failure
 RestartSec=5
 
@@ -80,7 +80,7 @@ For a writer that should run while nobody is logged in, `loginctl enable-linger 
 
 ### Windows
 
-There is no service wrapper in the bundle. Task Scheduler runs `catalyst-skills replica start` at logon with "Run whether user is logged on or not" and "If the task fails, restart every 1 minute"; or run `catalyst-skills replica start --detach` from a shell after logging in, which is the plain path and works the same as elsewhere.
+There is no service wrapper in the bundle. Task Scheduler runs `catalyst replica start` at logon with "Run whether user is logged on or not" and "If the task fails, restart every 1 minute"; or run `catalyst replica start --detach` from a shell after logging in, which is the plain path and works the same as elsewhere.
 
 ## Two things that look like problems and are not
 

@@ -6,7 +6,7 @@ import { exitOnFailure, parseFlags, parseJson, relayStderr, runCli, usage, wants
 const HELP = `Usage: node scripts/search.mjs <terms...> [--limit <n>] [--json]
 
 Searches your tenant for tickets, pull requests, projects and initiatives matching the terms.
-Wraps: catalyst-skills query search.
+Wraps: catalyst query search.
 
   <terms>       one or more words; matched against identifiers, titles and names
   --limit <n>   max rows (default 50)

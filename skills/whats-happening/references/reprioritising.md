@@ -1,6 +1,6 @@
 # Reprioritising
 
-This reference restates invariants: how Catalyst orders work and which levers a person actually has. The live queue is `catalyst-skills queue [--team K]` (inside `node scripts/snapshot.mjs`); the thresholds behind backoffs and parks are the contract's `thresholds` block, printed in the snapshot's `tenant` section.
+This reference restates invariants: how Catalyst orders work and which levers a person actually has. The live queue is `catalyst queue [--team K]` (inside `node scripts/snapshot.mjs`); the thresholds behind backoffs and parks are the contract's `thresholds` block, printed in the snapshot's `tenant` section.
 
 ## How the cloud orders work
 

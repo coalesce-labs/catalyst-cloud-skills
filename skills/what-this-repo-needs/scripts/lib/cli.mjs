@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // lib/cli.mjs — the one way a skill script reaches the Catalyst Cloud SDK and API: by spawning the
-// catalyst-skills CLI this bundle installed. It reads customer.json to find that CLI and nothing
+// catalyst CLI this bundle installed. It reads customer.json to find that CLI and nothing
 // else; it never holds the key itself. This file is a library — run a sibling script with
 // --help for usage. Per-skill (skills install one directory at a time, so nothing shared outside the
 // skill would ever be installed) — see runCliOffline below for the one way this skill's copy differs.
@@ -10,7 +10,9 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { CONNECT_COMMAND, hasCredential } from "./credential.mjs";
 
-export const PACKAGE = "@catalyst-cloud/catalyst-skills";
+export const PACKAGE = "@catalyst-cloud/cli";
+/** The package ships two commands, so npx needs the one to run named: `npx -p <package> catalyst`. */
+export const NPX_ARGS = ["-p", PACKAGE, "catalyst"];
 export const CONNECT_HINT = `this machine is not connected to a tenant yet — run: ${CONNECT_COMMAND}`;
 
 /** ~/.config/catalyst-cloud/customer.json, honouring CATALYST_SKILLS_HOME before HOME. */
@@ -41,8 +43,8 @@ export function requireCustomerConfig() {
 }
 
 /**
- * Run one catalyst-skills verb and return {code, stdout, stderr}. Spawns the CLI whose path the
- * connect step recorded in customer.json; falls back to `npx @catalyst-cloud/catalyst-skills` when
+ * Run one catalyst verb and return {code, stdout, stderr}. Spawns the CLI whose path the
+ * connect step recorded in customer.json; falls back to `npx -p @catalyst-cloud/cli catalyst` when
  * no path is recorded or it no longer exists. Exits 2 when the machine is not connected.
  */
 export function runCli(args, opts = {}) {
@@ -51,12 +53,12 @@ export function runCli(args, opts = {}) {
 }
 
 /**
- * Run `catalyst-skills env inventory` / `env check` without requiring a credential at all. Unlike
+ * Run `catalyst env inventory` / `env check` without requiring a credential at all. Unlike
  * every other verb this launcher can reach, `env inventory` and `env check` are LOCAL and OFFLINE —
  * they never call the cloud — so gating them on `requireCustomerConfig` would break the feature they
  * exist to provide. Still resolves the recorded `cliPath` when a customer.json happens to exist (so
  * an already-connected machine reuses the same installed CLI), and still falls back to
- * `npx @catalyst-cloud/catalyst-skills` otherwise.
+ * `npx -p @catalyst-cloud/cli catalyst` otherwise.
  */
 export function runCliOffline(args, opts = {}) {
   let cfg = null;
@@ -72,7 +74,7 @@ export function runCliOffline(args, opts = {}) {
 function spawnCli(cfg, args, opts) {
   const recorded = Boolean(cfg) && typeof cfg.cliPath === "string" && existsSync(cfg.cliPath);
   const command = recorded ? process.execPath : process.platform === "win32" ? "npx.cmd" : "npx";
-  const argv = recorded ? [cfg.cliPath, ...args] : [PACKAGE, ...args];
+  const argv = recorded ? [cfg.cliPath, ...args] : [...NPX_ARGS, ...args];
   const res = spawnSync(command, argv, {
     encoding: "utf8",
     input: opts.stdin,
@@ -81,7 +83,7 @@ function spawnCli(cfg, args, opts) {
     shell: !recorded && process.platform === "win32",
   });
   if (res.error) {
-    console.error(`could not run ${recorded ? cfg.cliPath : `npx ${PACKAGE}`}: ${res.error.message}`);
+    console.error(`could not run ${recorded ? cfg.cliPath : `npx -p ${PACKAGE} catalyst`}: ${res.error.message}`);
     process.exit(2);
   }
   return { code: res.status ?? 1, stdout: res.stdout ?? "", stderr: res.stderr ?? "" };
@@ -95,7 +97,7 @@ function spawnCli(cfg, args, opts) {
 export function runCliOrExit(args, opts = {}) {
   const res = runCli(args, opts);
   if (res.code === 0) return res;
-  const why = res.stderr.trim() || res.stdout.trim() || `catalyst-skills ${args.join(" ")} exited ${res.code}`;
+  const why = res.stderr.trim() || res.stdout.trim() || `catalyst ${args.join(" ")} exited ${res.code}`;
   console.error(why);
   process.exit(res.code === 2 ? 2 : 1);
 }

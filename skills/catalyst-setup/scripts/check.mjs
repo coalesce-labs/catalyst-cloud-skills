@@ -2,7 +2,7 @@
 // check.mjs — "am I set up?" in one verdict: the machine checks the CLI runs (Node, the connection,
 // the cached contract, the CLI path, the skills, the SDK, the optional replica) plus every team's
 // readiness vector from the tenant contract, then the list of who can click what. Wraps
-// `catalyst-skills ready --json`; reports, never repairs. Exit 0 READY, 1 NOT READY, 2 not connected.
+// `catalyst ready --json`; reports, never repairs. Exit 0 READY, 1 NOT READY, 2 not connected.
 import { parseJson, runCli } from "./lib/cli.mjs";
 
 const HELP = `Usage: node scripts/check.mjs [--json]
@@ -28,12 +28,12 @@ if (unknown.length > 0) {
 
 const res = runCli(["ready", "--json"]);
 if (res.code === 2) {
-  console.error(res.stderr.trim() || "catalyst-skills ready refused");
+  console.error(res.stderr.trim() || "catalyst ready refused");
   process.exit(2);
 }
 const report = parseJson(res.stdout);
 if (!report || !Array.isArray(report.checks)) {
-  console.error(res.stderr.trim() || res.stdout.trim() || "catalyst-skills ready printed no report");
+  console.error(res.stderr.trim() || res.stdout.trim() || "catalyst ready printed no report");
   process.exit(res.code === 0 ? 1 : res.code);
 }
 if (args.includes("--json")) {

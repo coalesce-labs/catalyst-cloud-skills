@@ -33,12 +33,12 @@ Which parks release themselves:
 
 | Park | Releases by |
 | -- | -- |
-| repeated failure | a release from the person's own login once its cause is fixed (`catalyst-skills release`), not a clock |
+| repeated failure | a release from the person's own login once its cause is fixed (`catalyst release`), not a clock |
 | remediate round cap reached | the same release, which buys one more round, not a clock |
 | missing branch | its own budgeted release loop |
 | rebase conflict | its own budgeted release loop |
 
-A person's own key releases a park, and every other hold that a retry can fix, in one step: `catalyst-skills release <ticket> --because <what changed>`. The cloud releases every governor holding the ticket or releases nothing and names what a person must do instead (a person's own pull request, a review that will not converge, the lifetime repair budget). It refuses a cause it cannot see change unless the caller says what changed. The `unstick` skill runs that loop. When a ticket is parked, name the failure class the explainer shows and whether its cause is fixed.
+A person's own key releases a park, and every other hold that a retry can fix, in one step: `catalyst release <ticket> --because <what changed>`. The cloud releases every governor holding the ticket or releases nothing and names what a person must do instead (a person's own pull request, a review that will not converge, the lifetime repair budget). It refuses a cause it cannot see change unless the caller says what changed. The `unstick` skill runs that loop. When a ticket is parked, name the failure class the explainer shows and whether its cause is fixed.
 
 ## Two holds that are not failures
 
@@ -47,7 +47,7 @@ A person's own key releases a park, and every other hold that a retry can fix, i
 
 ## What a human sees on the ticket
 
-Each attempt posts a phase-outcome comment (complete or FAILED, with phase, attempt, artifact, a summary and any park or hold block) and each remediation round posts a remediate-attempt comment naming the failure class it is repairing. `catalyst-linear` describes the shapes. The attempt ledger, the round count against the cap and the park history are readable: `catalyst-skills explain --history <ticket>` prints them from the cloud's own relay ledger.
+Each attempt posts a phase-outcome comment (complete or FAILED, with phase, attempt, artifact, a summary and any park or hold block) and each remediation round posts a remediate-attempt comment naming the failure class it is repairing. `catalyst-linear` describes the shapes. The attempt ledger, the round count against the cap and the park history are readable: `catalyst explain --history <ticket>` prints them from the cloud's own relay ledger.
 
 ## Rule of thumb for answering "why is it stuck?"
 

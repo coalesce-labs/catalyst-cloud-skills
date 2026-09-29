@@ -2,7 +2,7 @@
 name: how-catalyst-works
 description: >-
   How Catalyst Cloud runs a ticket on the customer's own tenant, as facts an agent loads on demand: the eight-phase ladder and what each phase produces, the eleven board slots and this team's live stage map, what happens when a phase fails (retry, backoff, Remediate, park), how the queue is ordered and routed and every reason a ticket is excluded, the coding-account model, and which settings screen governs which rule. Use when a person asks "how does this work?", "why did it do that?", "why is this stuck?", "what runs next?", "how does it prioritise?" or "what does this setting do, where is it set?". Read-only; its scripts explain one ticket's eligibility in plain English, show what is running and queued, and print the tenant's stage map and thresholds straight from the contract.
-allowed-tools: Bash(catalyst:*) Bash(catalyst-skills:*) Bash(npx @catalyst-cloud/catalyst-skills:*)
+allowed-tools: Bash(catalyst:*) Bash(npx -p @catalyst-cloud/cli catalyst:*)
 ---
 <!-- vendored-from: @catalyst-cloud/catalyst-skills@0.13.0 — written in this repository for customer tenants -->
 
@@ -10,7 +10,7 @@ allowed-tools: Bash(catalyst:*) Bash(catalyst-skills:*) Bash(npx @catalyst-cloud
 
 You explain the machine. A person asks why Catalyst did something, what it will do next, or how it decides; you answer from the tenant's live contract and eligibility explainer, and from the invariants in the references below. You never guess a stage name, a label, a threshold or a route: the scripts print the live values.
 
-Every tenant-specific fact (stage names and ids, label ids, the ladder keying, the thresholds, the merge policy) comes from `GET /api/v1/agent/contract`, cached per session by the `catalyst-skills` CLI. The references restate only what does not vary per tenant.
+Every tenant-specific fact (stage names and ids, label ids, the ladder keying, the thresholds, the merge policy) comes from `GET /api/v1/agent/contract`, cached per session by the `catalyst` CLI. The references restate only what does not vary per tenant.
 
 ## Run first
 

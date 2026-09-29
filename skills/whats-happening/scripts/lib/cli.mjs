@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// lib/cli.mjs — the one way a skill script reaches Catalyst Cloud: spawn the catalyst-skills CLI.
+// lib/cli.mjs — the one way a skill script reaches Catalyst Cloud: spawn the catalyst CLI.
 // The CLI holds the SDK and the key; this file holds neither. It reads customer.json only
 // to learn where the CLI lives, and it exits 2 with one line when the machine is not connected.
 // Run any script beside this one with --help; this file is a library and is never run directly.
@@ -8,7 +8,9 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { CONNECT_COMMAND, hasCredential } from "./credential.mjs";
 
-export const PACKAGE = "@catalyst-cloud/catalyst-skills";
+export const PACKAGE = "@catalyst-cloud/cli";
+/** The package ships two commands, so npx needs the one to run named: `npx -p <package> catalyst`. */
+export const NPX_ARGS = ["-p", PACKAGE, "catalyst"];
 export const NOT_CONFIGURED_EXIT = 2;
 
 export function configPath() {
@@ -36,7 +38,7 @@ function notConfigured(why) {
 }
 
 /**
- * Run one catalyst-skills verb and return {code, stdout, stderr}. Uses the CLI path the login
+ * Run one catalyst verb and return {code, stdout, stderr}. Uses the CLI path the login
  * recorded when it still exists, else `npx <package>`. A CLI exit of 2 with a "not joined" or
  * "not connected" line is turned into this script's own exit 2, so every caller sees one contract.
  */
@@ -44,7 +46,7 @@ export function runCli(args, opts = {}) {
   const cfg = loadConfig();
   const useRecorded = typeof cfg.cliPath === "string" && existsSync(cfg.cliPath);
   const cmd = useRecorded ? process.execPath : "npx";
-  const argv = useRecorded ? [cfg.cliPath, ...args] : [PACKAGE, ...args];
+  const argv = useRecorded ? [cfg.cliPath, ...args] : [...NPX_ARGS, ...args];
   const res = spawnSync(cmd, argv, {
     input: opts.stdin,
     encoding: "utf8",

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // unstick.mjs — "why is this stuck, and can it be released?" in one JSON document. Runs
-// `catalyst-skills explain`, `explain --history` and a dry-run `release` for one ticket (or a dry-run
+// `catalyst explain`, `explain --history` and a dry-run `release` for one ticket (or a dry-run
 // class release for one team), and only with --because runs the real release. Reaches the cloud only
 // by spawning the CLI.
 import { mustRun, parseFlags, parseJson, printHelp, runCli } from "./lib/cli.mjs";

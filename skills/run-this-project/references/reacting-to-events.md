@@ -1,10 +1,10 @@
 # Reacting to events
 
-This reference restates invariants of the Catalyst Cloud stream and the `watch` verb. Nothing here varies per tenant; the tenant facts a reaction needs (stage ids, label ids, the ask team) come from `catalyst-skills contract` at the moment you need them.
+This reference restates invariants of the Catalyst Cloud stream and the `watch` verb. Nothing here varies per tenant; the tenant facts a reaction needs (stage ids, label ids, the ask team) come from `catalyst contract` at the moment you need them.
 
 ## The mechanism
 
-A steward never polls. It subscribes once to the tenant stream through the SDK's live client and reacts to each change as it arrives. The verb is `catalyst-skills watch`, and this skill's `scripts/watch-scope.mjs` is that verb with the scope checked up front:
+A steward never polls. It subscribes once to the tenant stream through the SDK's live client and reacts to each change as it arrives. The verb is `catalyst watch`, and this skill's `scripts/watch-scope.mjs` is that verb with the scope checked up front:
 
 ```sh
 node scripts/watch-scope.mjs --project <id>          # every ticket in the project
@@ -48,7 +48,7 @@ One JSON object per line, exactly what the SDK delivers:
 | `agent_sessions`, `agent_activities` | a phase started, wrote an artifact, opened a PR, reported | the plan on the session is the ladder itself; the current phase is the one in progress |
 | `fleet_activity`, `fleet_host_liveness` | a runner picked up or dropped a phase | a phase running is not a stall, whatever the clock says |
 | `fleet_anomalies` | the cloud raised a fleet-level alert | one alert covers every ticket it touches; never escalate it per ticket |
-| `workflow_states`, `team_workflow_mapping` | the tenant's stage map changed | refresh the contract (`catalyst-skills contract --refresh`) before the next state move |
+| `workflow_states`, `team_workflow_mapping` | the tenant's stage map changed | refresh the contract (`catalyst contract --refresh`) before the next state move |
 | `projects`, `cycles`, `initiatives` | your scope's container changed | update the status summary |
 
 Entities not listed still arrive when they are in scope; ignore what you do not need.
@@ -73,4 +73,4 @@ Start with `--from head` when you are picking up a project that has been running
 
 ## The honest limit
 
-The stream carries the mirror's entity changes. It does not carry the relay ledger's phase failures, parks, remediate rounds or backoff timers as first-class frames. Between frames you learn those from the outcome comments the cloud posts on the ticket, which do arrive as `comments` frames: a phase-failed card names the phase, the attempt and the failure class; a remediate-attempt card names the round; a board-health comment names a stall the cloud itself noticed. For the current verdict on any ticket, ask the explainer: `catalyst-skills explain <ticket>` turns the exclusion reason and the last failure into one paragraph. `catalyst-skills explain --history <ticket>` prints the per-phase attempt ledger, the remediation rounds against the cap, and any park with what releases it.
+The stream carries the mirror's entity changes. It does not carry the relay ledger's phase failures, parks, remediate rounds or backoff timers as first-class frames. Between frames you learn those from the outcome comments the cloud posts on the ticket, which do arrive as `comments` frames: a phase-failed card names the phase, the attempt and the failure class; a remediate-attempt card names the round; a board-health comment names a stall the cloud itself noticed. For the current verdict on any ticket, ask the explainer: `catalyst explain <ticket>` turns the exclusion reason and the last failure into one paragraph. `catalyst explain --history <ticket>` prints the per-phase attempt ledger, the remediation rounds against the cap, and any park with what releases it.

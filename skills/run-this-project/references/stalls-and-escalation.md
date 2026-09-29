@@ -16,7 +16,7 @@ A running phase is never a stall, however long it has run; the cloud's own timeo
 
 ## The chase order
 
-Run `catalyst-skills explain <ticket>` first, and let its reason pick the row:
+Run `catalyst explain <ticket>` first, and let its reason pick the row:
 
 | the explainer says | what it means | your move |
 | -- | -- | -- |
@@ -26,7 +26,7 @@ Run `catalyst-skills explain <ticket>` first, and let its reason pick the row:
 | blocked | a live blocks relation | chase the blocker: is it dispatchable, is it an ask nobody answered, is it done but still open |
 | ask ticket, ask shape suspected | the ticket is a question | route it to `what-needs-me`; if it is really work, a human applies the release label |
 | not at dispatch stage | somebody moved the card, or it never entered | read the card's history; re-dispatch with `make-ready.mjs` if it should run |
-| phase parked, cooling down, remediate parked | the cloud parked it after repeated failure or the round cap | read the last outcome card for the class; once its cause is fixed, the `unstick` skill releases it (`catalyst-skills release <ticket> --because <what changed>`); if the fix is a decision, file an ask |
+| phase parked, cooling down, remediate parked | the cloud parked it after repeated failure or the round cap | read the last outcome card for the class; once its cause is fixed, the `unstick` skill releases it (`catalyst release <ticket> --because <what changed>`); if the fix is a decision, file an ask |
 | no change hold | a remediate round changed nothing | a human comment on the ticket, or a new push to the branch, releases it; say what should change |
 | validate class spent, stale failure episode | the repair budget for this failure is used, or the ladder moved on | read the outcome cards; usually a decision about the approach, so an ask |
 | waiting on | a merge-gate failure with no automatic repair | read the merge-wait comment and the PR's three legs through `catalyst-github` |
@@ -40,7 +40,7 @@ Where the explainer names a reason not in this table, it prints the raw reason; 
 
 ## Capacity and fleet conditions are one note, not many asks
 
-When several tickets in scope are offered and nothing picks them up, or the explainer names a routing, slot, provider or image condition, the cause is shared: coding-account headroom, a provider outage, a paused repository, a poisoned runner image. Write one line in the status summary naming the condition and the tickets it holds. Do not file an ask per ticket. `catalyst-skills accounts` reads coding-account status (state, usage windows, walls, quarantine); enrolling, pausing or removing an account is the settings page, not you.
+When several tickets in scope are offered and nothing picks them up, or the explainer names a routing, slot, provider or image condition, the cause is shared: coding-account headroom, a provider outage, a paused repository, a poisoned runner image. Write one line in the status summary naming the condition and the tickets it holds. Do not file an ask per ticket. `catalyst accounts` reads coding-account status (state, usage windows, walls, quarantine); enrolling, pausing or removing an account is the settings page, not you.
 
 ## Escalate inward, never outward
 
@@ -60,4 +60,4 @@ File it through `what-needs-me`, never by hand and never as the human. The ask c
 
 ## Reply where the message arrived
 
-A human comment inside your scope is answered by you, in that thread, tagged, as the app actor. A question only a human can decide becomes an ask; you do not answer it, and you never post as the human. A bookkeeping record (a state move, a decision you took, a chain summary) carries the contract's bookkeeping marker as a prefix so it wakes nothing; the `--bookkeeping` flag on `catalyst-skills write comment` adds it.
+A human comment inside your scope is answered by you, in that thread, tagged, as the app actor. A question only a human can decide becomes an ask; you do not answer it, and you never post as the human. A bookkeeping record (a state move, a decision you took, a chain summary) carries the contract's bookkeeping marker as a prefix so it wakes nothing; the `--bookkeeping` flag on `catalyst write comment` adds it.

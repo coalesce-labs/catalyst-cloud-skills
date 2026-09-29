@@ -5,7 +5,7 @@ import { exitOnFailure, parseFlags, parseJson, relayStderr, runCli, usage, wants
 
 const HELP = `Usage: node scripts/label.mjs <ticket> [--add <name|id>]... [--remove <name|id>]... [--json]
 
-Adds and/or removes labels. Wraps: catalyst-skills write label. One write-budget unit per call
+Adds and/or removes labels. Wraps: catalyst write label. One write-budget unit per call
 direction (add, remove), whatever the label count.
 
   <ticket>              the Linear identifier, e.g. KEY-123

@@ -1,4 +1,4 @@
-// secret.ts — `catalyst-skills secret set|import`: put a repository's secrets into the cloud from the
+// secret.ts — `catalyst secret set|import`: put a repository's secrets into the cloud from the
 // terminal, as the person who is logged in (CTC-3549). The cloud gates both on an admin or owner seat,
 // encrypts the value, and records who wrote it and where it came from, never the value itself.
 //

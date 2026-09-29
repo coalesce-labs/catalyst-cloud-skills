@@ -14,7 +14,7 @@ const SPEC = {
 const { help, flags } = parseFlags(process.argv.slice(2), SPEC);
 if (help) {
   printHelp("node scripts/snapshot.mjs [--team K] [--board] [--limit N] [--full-contract] [--help]", SPEC, [
-    "Runs, in order: catalyst-skills contract, running, queue, ask list, replica status (and query issues with --board).",
+    "Runs, in order: catalyst contract, running, queue, ask list, replica status (and query issues with --board).",
     "Output: one JSON document {takenAt, source, tenant, running, queue, waitingOnHuman, board?, errors?}.",
     "A section the cloud refused is reported under errors and the rest still prints; exit 1 in that case.",
     "Every tenant fact (stage names, thresholds, teams) comes from the contract in this output, never from prose.",

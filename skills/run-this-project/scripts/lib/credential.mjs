@@ -6,12 +6,12 @@
 //
 // customer.json carries exactly one credential: a personal key (`key`), or the keyless login's
 // session (`auth`, the recommended rail). A script never reads either for its value: it spawns the
-// catalyst-skills CLI, which authenticates with whichever is present and refreshes a login's token
+// catalyst CLI, which authenticates with whichever is present and refreshes a login's token
 // itself. A new credential kind lands here, once.
 
 /** The command that connects this machine, as every not-connected line names it. */
 export const CONNECT_COMMAND =
-  "npx @catalyst-cloud/catalyst-skills login (or, with a personal key: CATALYST_CLOUD_TOKEN=<your personal key> npx @catalyst-cloud/catalyst-skills login)";
+  "npx -p @catalyst-cloud/cli catalyst login (or, with a personal key: CATALYST_CLOUD_TOKEN=<your personal key> npx -p @catalyst-cloud/cli catalyst login)";
 
 /** True when `cfg` (parsed customer.json) holds a usable credential of either kind. Never throws. */
 export function hasCredential(cfg) {
