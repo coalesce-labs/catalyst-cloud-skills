@@ -34,7 +34,13 @@ interface Scenario {
   codingAccounts?: unknown;
   hostsCurrent: Check | null;
   readinessStatus?: string;
+  /** Extra failing checks on the project (a blocked team's Linear automation conflicts, say). */
+  blockingChecks?: Check[];
   hostFixedWhere?: { page: string; command: string | null } | null;
+  /** The person's role on `me --json`; owner when omitted. */
+  role?: string;
+  /** What `capabilities --json` answers; omitted, the verb is unknown (an older CLI). */
+  capabilities?: unknown;
   /** No project mapped yet: `contract --path teams` answers `[]`. */
   noProject?: boolean;
   /** The project's `environment_declared` check. Omitted, the contract carries no such check (an
@@ -69,6 +75,15 @@ function readinessChecks(hostFixedWhere: Scenario["hostFixedWhere"]) {
       fixedByLine: "Whoever runs the Catalyst host that is behind.",
       ...(hostFixedWhere === undefined ? {} : { fixedWhere: hostFixedWhere }),
     },
+    ...["linear_automation_pr_open", "linear_automation_pr_review", "linear_automation_pr_ready", "linear_automation_pr_merge"].map((id) => ({
+      id,
+      severity: "blocking",
+      needsAnswer: true,
+      fixedBy: "owner_or_admin_in_linear",
+      fixedByLine: "A tenant owner or admin, in Linear’s own settings.",
+      fixedWhere: null,
+    })),
+    { id: "merge_queue_configured", severity: "degrading", needsAnswer: false, fixedBy: "repository_admin", fixedByLine: "Whoever administers this team’s GitHub repository.", fixedWhere: null },
   ];
 }
 
@@ -77,9 +92,11 @@ function answers(s: Scenario): Record<string, unknown> {
   const checks: Check[] = [{ id: "oauth_scope", state: "pass" }];
   if (s.hostsCurrent) checks.push(s.hostsCurrent);
   if (s.environmentDeclared) checks.push(s.environmentDeclared);
+  if (s.blockingChecks) checks.push(...s.blockingChecks);
   return {
     "ready --json": { ready: true, checks: s.readyChecks ?? [{ id: "config", ok: true, line: "config: connected" }] },
-    "me --json": { user: { label: "Pat Example", role: "owner", linearUserId: "lin-user-fixture" } },
+    "me --json": { user: { label: "Pat Example", role: s.role ?? "owner", linearUserId: "lin-user-fixture" } },
+    ...(s.capabilities === undefined ? {} : { "capabilities --json": s.capabilities }),
     // CTC-3212 — both personal grants connected, so the person part is finished in these scenarios.
     "connections personal linear status --json": { outcome: "connected", status: 200 },
     "connections personal github status --json": { outcome: "connected", status: 200 },
@@ -699,8 +716,43 @@ describe("where-am-i.mjs: a logged-out machine keeps its installed CLI", () => {
     expect(doc.cli).toBe(`node ${cli}`);
     expect(doc.next?.part).toBe("machine");
     expect(doc.next?.action).toBe("connect this machine");
-    // the keyless login alone: no key form is offered to a person who has not said they hold one
-    expect(doc.next?.where).toBe("npx @catalyst-cloud/catalyst-skills login");
+    // the keyless login alone, by the installed CLI's own name: no npx line for a machine that holds the
+    // CLI, and no key form for a person who has not said they hold one
+    expect(doc.next?.where).toBe("catalyst login");
+  });
+});
+
+describe("where-am-i.mjs: a mapped project whose readiness is blocked", () => {
+  test("a Linear automation conflict keeps the projects part unfinished with the gate open, and the next step is that rule's fix in Linear, then a re-check", () => {
+    const doc = json(
+      connectedHome({
+        codingAccounts: CA_ENROLLED,
+        hostsCurrent: PASS,
+        environmentDeclared: { id: "environment_declared", state: "pass" },
+        readinessStatus: "blocked",
+        blockingChecks: [
+          { id: "linear_automation_pr_open", state: "fail", reason: "automation_conflict" },
+          { id: "linear_automation_pr_merge", state: "fail", reason: "automation_conflict" },
+          { id: "merge_queue_configured", state: "fail", reason: "merge_queue_unconfigured" },
+        ],
+      }),
+    );
+    const p = part(doc, "projects");
+    expect(p.verdict).toBe("unfinished");
+    // the degrading check is listed as failing but never as the blocker
+    expect(p.lines.join("\n")).toMatch(/ENG: BLOCKED — linear_automation_pr_open, linear_automation_pr_merge; in Linear, open Settings → Teams → ENG → Workflow → Git automation and set On PR open, On PR merge to No action/);
+    expect(doc.next?.part).toBe("projects");
+    expect(doc.next?.action).toMatch(/^fix ENG's blocking checks \(linear_automation_pr_open, linear_automation_pr_merge\): in Linear, open Settings → Teams → ENG → Workflow → Git automation and set On PR open, On PR merge to No action \(no Catalyst key can change a Linear automation rule\); then run catalyst team check ENG \(or press Re-check\) and run this again$/);
+    expect(doc.next?.owner).toBe("A tenant owner or admin, in Linear’s own settings.");
+    expect(doc.next?.where).toBeNull();
+    expect(doc.next?.action).not.toMatch(/team map|team list/);
+    expect(doc.finished).toBe(false);
+  });
+
+  test("a degraded project with its gate open stays set up (the blocked rule does not widen)", () => {
+    const doc = json(connectedHome({ codingAccounts: CA_ENROLLED, hostsCurrent: PASS, environmentDeclared: { id: "environment_declared", state: "pass" }, readinessStatus: "degraded", blockingChecks: [{ id: "merge_queue_configured", state: "fail", reason: "merge_queue_unconfigured" }] }));
+    expect(part(doc, "projects").verdict).toBe("ok");
+    expect(doc.next?.part).not.toBe("projects");
   });
 });
 
@@ -709,10 +761,51 @@ describe("where-am-i.mjs: a mapped project that was never checked", () => {
     const doc = json(connectedHome({ codingAccounts: CA_ENROLLED, hostsCurrent: null, readinessStatus: "unchecked" }));
     const d = part(doc, "repository declarations");
     expect(d.verdict).toBe("unreadable");
-    expect(d.lines[0]).toMatch(/Press Re-check/);
+    expect(d.lines[0]).toMatch(/no project has a readiness check yet/);
     expect(d.where).toBe("https://cloud.example/settings/linear-teams");
     expect(doc.next?.part).toBe("repository declarations");
     expect(doc.next?.action).toMatch(/Re-check/);
     expect(doc.finished).toBe(false);
+  });
+});
+
+describe("where-am-i.mjs: a step is a command when this person's CLI can run it, else the page with who can", () => {
+  const cap = (verb: string, needs: string, availability = "available") => ({ verb, needs, availability, routes: [], missing: [] });
+  const TEAM_VERBS = { capabilities: [cap("team check", "admin"), cap("team map", "admin"), cap("ready", "member")] };
+  const unchecked = (extra: Partial<Scenario>) => ({ codingAccounts: CA_ENROLLED, hostsCurrent: null, readinessStatus: "unchecked", ...extra });
+
+  test("an admin with `team check` available is told to run it, as a command, not sent to the page", () => {
+    const home = connectedHome(unchecked({ capabilities: TEAM_VERBS }));
+    const doc = json(home);
+    expect(doc.next?.action).toMatch(/^run catalyst team check ENG, then run this again$/);
+    expect(doc.next?.where).toBe("catalyst team check ENG");
+    expect(doc.next?.owner).toBe("you, the assistant: run it now with the person's login, without asking");
+    expect(run(home, []).stdout).toMatch(/^ {2}do: catalyst team check ENG$/m);
+    expect(run(home, ["--next"]).stdout).not.toMatch(/settings\/linear-teams/);
+  });
+
+  test("a member is told which role can run it, and is not sent to the admin page as their own step", () => {
+    const doc = json(connectedHome(unchecked({ capabilities: TEAM_VERBS, role: "member" })));
+    expect(doc.next?.action).toMatch(/^a workspace owner or admin runs catalyst team check ENG/);
+    expect(doc.next?.owner).toBe("a workspace owner or admin");
+    expect(doc.next?.where).toBe("https://cloud.example/settings/linear-teams");
+  });
+
+  test("an older CLI (no capabilities verb) and a cloud that does not serve the route both keep the page", () => {
+    const older = json(connectedHome(unchecked({})));
+    expect(older.next?.action).toBe("press Re-check on the projects page, then run this again");
+    const olderCloud = json(connectedHome(unchecked({ capabilities: { capabilities: [cap("team check", "admin", "needs_newer_cloud")] } })));
+    expect(olderCloud.next?.action).toBe("press Re-check on the projects page, then run this again");
+    expect(olderCloud.next?.where).toBe("https://cloud.example/settings/linear-teams");
+  });
+
+  test("mapping a project becomes `team list` then `team map` for an admin whose CLI has it", () => {
+    const home = connectedHome({ codingAccounts: CA_ENROLLED, noProject: true, hostsCurrent: null, capabilities: TEAM_VERBS });
+    const doc = json(home);
+    expect(doc.next?.part).toBe("projects");
+    expect(doc.next?.action).toMatch(/run catalyst team list, then catalyst team map <KEY>/);
+    expect(doc.next?.where).toBe("catalyst team list");
+    const member = json(connectedHome({ codingAccounts: CA_ENROLLED, noProject: true, hostsCurrent: null, capabilities: TEAM_VERBS, role: "member" }));
+    expect(member.next?.action).toMatch(/^a workspace owner or admin maps ONE project/);
   });
 });

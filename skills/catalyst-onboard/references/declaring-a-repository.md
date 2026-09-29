@@ -43,4 +43,4 @@ run = ["npm", "ci"]
 
 ## After the merge
 
-`catalyst-skills ready` reports `environment_declared` for the team's default repository and names the next step: commit the file, fix it, or approve it. The `catalyst-setup` check table has each reason. The workspace-wide declaration is separate; `catalyst-skills environment` handles it (also step 8 of `references/the-one-path.md`).
+`catalyst ready` reports `environment_declared` for the team's default repository and names the next step: commit the file, fix it, or approve it. The `catalyst-setup` check table has each reason. The workspace-wide declaration is separate; `catalyst environment` handles it (also step 8 of `references/the-one-path.md`).
