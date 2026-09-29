@@ -91,13 +91,19 @@ writeFileSync(
     `const answers = ${JSON.stringify(answers(state))};`,
     `const connected = ${connected};`,
     "const a = process.argv.slice(2).join(' ');",
+    "main();",
+    "function main() {",
     `if (a === "status") { console.log(connected ? "Tenant: example\\nAPI: ${CLOUD} (ok)\\nBundle: 0.9.3" : "Not connected to a tenant. Run: catalyst-skills login"); process.exit(connected ? 0 : 2); }`,
+    // A login that never completes: it prints the code and URL a real one prints, then waits for an
+    // approval no browser will give, so the guide has to hand the step over and stop.
+    `if (a === "login" || a.startsWith("login ")) { console.log("Open ${CLOUD}/device and enter the code WXYZ-1234 to approve this machine.\\nWaiting for approval (the code expires in 5 minutes)..."); setTimeout(() => { process.stderr.write("the login code expired after 5 minutes; run login again\\n"); process.exit(1); }, 20_000); return; }`,
     'if (!connected) { process.stderr.write("not connected to a tenant — run: catalyst-skills login\\n"); process.exit(2); }',
     'if (a === "ready") { console.log("READY"); process.exit(0); }',
     "if (a in answers) { console.log(JSON.stringify(answers[a])); process.exit(0); }",
     'if (a.startsWith("contract --path ")) { process.stderr.write(`contract: 2.2.0 from cache\\nthe contract has nothing at "${a.split(" ")[2]}"\\n`); process.exit(2); }',
     'if (a.startsWith("explain ")) { console.log("ENG-1: eligible; it will run on the next pull (coding account Work laptop, project ENG, repository example/app)."); process.exit(0); }',
     "process.stderr.write(`unknown verb: ${a}\\n`); process.exit(9);",
+    "}",
   ].join("\n"),
 );
 chmodSync(cli, 0o755);

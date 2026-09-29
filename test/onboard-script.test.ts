@@ -500,18 +500,16 @@ describe("the onboarding guide walks a dead credential and the thoughts reposito
     expect(row).toContain("needs a new credential");
   });
 
-  test("step 5a sits between the App install and registering the repository, and step 5 grants <org>/thoughts", () => {
+  test("the thoughts repository is handled inside the App install step, before registering the repository", () => {
     const path = read("references/the-one-path.md");
-    const five = path.indexOf("## 5 — Install the GitHub App");
-    const fiveA = path.indexOf("## 5a — The thoughts repository");
-    const six = path.indexOf("## 6 — Register the repository");
+    const five = path.indexOf("## 5. Install the GitHub App");
+    const six = path.indexOf("## 6. Register the repository");
     expect(five).toBeGreaterThanOrEqual(0);
-    expect(fiveA).toBeGreaterThan(five);
-    expect(six).toBeGreaterThan(fiveA);
-    expect(path.slice(five, fiveA)).toContain("`<org>/thoughts`");
-    const stepFiveA = path.slice(fiveA, six);
+    expect(six).toBeGreaterThan(five);
+    const stepFive = path.slice(five, six);
+    expect(stepFive).toContain("`<org>/thoughts`");
     for (const text of ["private repository named `thoughts`", "initialized with a README", "All repositories", "never that the App can reach it"]) {
-      expect(stepFiveA, text).toContain(text);
+      expect(stepFive, text).toContain(text);
     }
     const browser = read("references/what-the-browser-owns.md");
     expect(browser).toContain("`<your GitHub org>/thoughts`");

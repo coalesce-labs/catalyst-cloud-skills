@@ -60,7 +60,7 @@ Each step states: what it is for, what you ask or run or hand over, **what you r
 
 **For:** the workspace's GitHub integration. Without it Catalyst can read tickets but cannot touch code.
 
-**You hand over:** the same Connections page, and say: install the GitHub App, and grant it the repository they want worked and `<org>/thoughts`. Catalyst's cloud phases write their notes to `<org>/thoughts`, where `<org>` owns the code repository; if it does not exist, they create a private repository named `thoughts` with a README and add it to the App's installation. The script's `repositories` part notes whether `gh` can see that repository; it can never show that the App can reach it, so never claim that.
+**You hand over:** the same Connections page, and say: install the GitHub App, and grant it the repository they want worked and `<org>/thoughts`. Catalyst's cloud phases write their notes to `<org>/thoughts`, where `<org>` owns the code repository. If it does not exist, they create a private repository named `thoughts`, initialized with a README, and then on the App's installation page for that org choose All repositories, or add `thoughts` to the selected repositories. The script's `repositories` part notes whether `gh` can see that repository, never that the App can reach it, so do not claim that.
 
 **Read back:** it is confirmed by step 6 succeeding. A repository cannot be registered through an App that is not installed. Say that is what you are waiting for.
 

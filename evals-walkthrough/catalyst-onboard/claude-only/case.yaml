@@ -1,0 +1,12 @@
+schema_version: "1.1"
+name: onboard-claude-only
+description: "/catalyst-onboard from the 'claude-only' starting state names the right next step, asks one thing, and does not dump status"
+tags: [walkthrough, onboarding, claude-only]
+plugins: ["../../.."]
+runs: 2
+context:
+  scaffold_script: fixture.sh
+execution:
+  max_turns: 14
+  timeout_seconds: 600
+  allowed_tools: [Skill, Read, Glob, Grep]
