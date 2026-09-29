@@ -1,13 +1,13 @@
 #!/usr/bin/env node
-// check.mjs — validates a catalyst.env.json file offline, with the same rules this bundle vendors
-// from the cloud's own validator. Never reads or prints a value. Offline: no login, no network —
-// wraps `catalyst env check`.
+// check.mjs — checks the repository settings TOML offline. Never reads or prints a value. Offline:
+// no login, no network — wraps `catalyst env check`.
 import { runCliOffline } from "./lib/cli.mjs";
 
-const HELP = `Usage: node scripts/check.mjs <file> [--json]
+const HELP = `Usage: node scripts/check.mjs [path] [--json]
 
-Validates a catalyst.env.json file against this bundle's offline copy of the cloud's rules. Prints
-"valid" or the refusal reasons — never a value. Exit 0 valid, 1 invalid or unreadable.
+Checks TOML syntax and the environment variable table in .catalyst/catalyst.toml (default), or at
+the repo-relative path you name. Prints "valid" or refusal reasons — never a value. A legacy root
+catalyst.env.json is not read by the cloud. Exit 0 valid or absent, 1 invalid or unreadable.
 
 --json prints {state, errors}. This is a local, offline check: no login, no network required.`;
 
@@ -18,13 +18,12 @@ if (args.includes("--help") || args.includes("-h")) {
 }
 const json = args.includes("--json");
 const file = args.find((a) => a !== "--json");
-if (!file) {
-  console.error("env check needs a file: node scripts/check.mjs <path to catalyst.env.json>");
-  console.log(HELP);
-  process.exit(1);
-}
-
-const res = runCliOffline(["env", "check", file, ...(json ? ["--json"] : [])]);
+const res = runCliOffline([
+  "env",
+  "check",
+  ...(file ? [file] : []),
+  ...(json ? ["--json"] : []),
+]);
 if (res.stdout) process.stdout.write(res.stdout);
 if (res.stderr) process.stderr.write(res.stderr);
 await finish(res.code);
