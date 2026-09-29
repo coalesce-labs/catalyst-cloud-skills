@@ -13,7 +13,7 @@ The queue re-derives within seconds of any board change and at the top of every 
 
 ## Concurrency
 
-- Each repository has a concurrency cap (default 20 running phases). An operator can raise or lower it; a paused repository resolves to a cap of zero without touching the stored value, so resuming restores it.
+- Each repository has a concurrency cap (default 20 running phases). An operator can raise or lower it; a paused repository resolves to a cap of zero without touching the stored value, so resuming restores it. Any member sees which repositories are paused, by whom, when and why, with `catalyst repo status`; a workspace owner or admin pauses one with `catalyst repo pause <owner/name> --reason <why>` and resumes it with `catalyst repo resume <owner/name>`; a pause made by an operator reads as paused by an operator, and the same verbs read and clear it.
 - Dispatch buckets by repository and splits slots across teams so no team starves another. A slot that is running, might be running, or is restarting is never free capacity.
 - Comment-wake work (an agent answering a human comment) shares the same cap as ladder work.
 
@@ -71,7 +71,7 @@ No survivor is `no_eligible_account_slot` when any candidate was skipped on capa
 | `no_branch_to_remediate` | a remediate round is queued on a ticket with no branch |
 | `retry_backoff` | retrying in place, waiting out its 2/5/15-minute rung |
 | `routing_unavailable` | claimed then refused at kickoff: no route, no eligible slot, or the provider is unavailable; the detail names which |
-| `repo_paused` | an operator paused the repository |
+| `repo_paused` | the repository is paused; `catalyst repo status` says by whom, when and why, and `catalyst repo resume <owner/name>` (owner or admin) clears it |
 | `wip_limit` | the project is at its WIP limit (see above): its tickets in progress are waiting, and this new start waits until one of them finishes |
 | `remediate_parked` | the remediate phase is parked, so the failing phase has nowhere to be repaired; `catalyst-skills release <ticket>` releases the park once its cause is fixed |
 | `phase_parked` | the offered phase is parked after repeated failures or a spent repair-round cap; the person releases it once its cause is fixed |
