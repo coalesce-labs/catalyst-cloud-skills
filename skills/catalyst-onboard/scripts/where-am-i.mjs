@@ -283,7 +283,7 @@ const readinessMeta = () => {
   }
   return readinessMetaCache;
 };
-// Linear's own Git automation rules, by check id, as the Settings → Workflow → Git automation screen
+// Linear's own Git automation rules, by check id, as the Settings → Workflows & automations → Pull request and commit automations screen
 // names them. A rule that moves a card is a conflict with the stage Catalyst manages, and no Catalyst
 // key can change a Linear automation rule: the fix is in Linear, by a Linear admin.
 const LINEAR_AUTOMATION_RULES = {
@@ -334,7 +334,7 @@ if (!connected) {
       const ownerRow = fails.map((c) => readinessMeta().find((r) => r.id === c.id)).find((r) => r && typeof r.fixedByLine === "string");
       const owner = ownerRow ? ownerRow.fixedByLine : "a workspace owner or admin";
       const how = [
-        rules.length > 0 ? `in Linear, open Settings → Teams → ${key} → Workflow → Git automation and set ${rules.join(", ")} to No action (no Catalyst key can change a Linear automation rule)` : null,
+        rules.length > 0 ? `in Linear, open Settings → Teams → ${key} → Workflows & automations → Pull request and commit automations and set ${rules.join(", ")} to No action (Catalyst does not yet offer to change these rules)` : null,
         others.length > 0 ? `${others.join(", ")}: ${owner}` : null,
       ].filter(Boolean).join("; ");
       lines.push(`${key}: BLOCKED — ${ids.length > 0 ? ids.join(", ") : "a blocking check failed"}; ${how || `owner: ${owner}`}`);

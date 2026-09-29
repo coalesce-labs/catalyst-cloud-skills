@@ -814,9 +814,9 @@ describe("where-am-i.mjs: a mapped project whose readiness is blocked", () => {
     const p = part(doc, "projects");
     expect(p.verdict).toBe("unfinished");
     // the degrading check is listed as failing but never as the blocker
-    expect(p.lines.join("\n")).toMatch(/ENG: BLOCKED — linear_automation_pr_open, linear_automation_pr_merge; in Linear, open Settings → Teams → ENG → Workflow → Git automation and set On PR open, On PR merge to No action/);
+    expect(p.lines.join("\n")).toMatch(/ENG: BLOCKED — linear_automation_pr_open, linear_automation_pr_merge; in Linear, open Settings → Teams → ENG → Workflows & automations → Pull request and commit automations and set On PR open, On PR merge to No action/);
     expect(doc.next?.part).toBe("projects");
-    expect(doc.next?.action).toMatch(/^fix ENG's blocking checks \(linear_automation_pr_open, linear_automation_pr_merge\): in Linear, open Settings → Teams → ENG → Workflow → Git automation and set On PR open, On PR merge to No action \(no Catalyst key can change a Linear automation rule\); then run catalyst team check ENG \(or press Re-check\) and run this again$/);
+    expect(doc.next?.action).toMatch(/^fix ENG's blocking checks \(linear_automation_pr_open, linear_automation_pr_merge\): in Linear, open Settings → Teams → ENG → Workflows & automations → Pull request and commit automations and set On PR open, On PR merge to No action \(Catalyst does not yet offer to change these rules\); then run catalyst team check ENG \(or press Re-check\) and run this again$/);
     expect(doc.next?.owner).toBe("A tenant owner or admin, in Linear’s own settings.");
     expect(doc.next?.where).toBeNull();
     expect(doc.next?.action).not.toMatch(/team map|team list/);

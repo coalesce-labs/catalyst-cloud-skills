@@ -131,6 +131,31 @@ describe("ready", () => {
     expect(text).toMatch(/who: owner u-fixture-owner, admin u-fixture-admin/);
     expect(text).toMatch(/^FAIL {2}team OPS: blocked/m);
   });
+  test("Linear automation fixes reach both ready text and the JSON consumed by the installer", async () => {
+    await seedJoined(home, server);
+    installSkills(defaultSkillsDirFor(home), {});
+    const cache = JSON.parse(readFileSync(contractPathFor(home), "utf8")) as { doc: { teams: { readiness: { status: string; checks: { id: string; state: string; reason?: string }[] } }[] } };
+    const rules = [
+      ["linear_automation_pr_open", "On PR open"],
+      ["linear_automation_pr_review", "On PR review request or activity"],
+      ["linear_automation_pr_ready", "On PR ready for merge"],
+      ["linear_automation_pr_merge", "On PR merge"],
+    ] as const;
+    cache.doc.teams[0]!.readiness = {
+      status: "blocked",
+      checks: rules.map(([id]) => ({ id, state: "fail", reason: "automation_conflict" })),
+    };
+    writeFileSync(contractPathFor(home), JSON.stringify(cache));
+    expect(await main(["ready", "--json"], ctx)).toBe(1);
+    const report = JSON.parse(ctx.out.join("\n")) as { checks: { id: string; fix?: string }[] };
+    const plain = makeCtx(home);
+    expect(await main(["ready"], plain)).toBe(1);
+    for (const [id, rule] of rules) {
+      const fix = report.checks.find((check) => check.id === `team:ENG:${id}`)?.fix;
+      expect(fix).toBe(`in Linear, open Settings → Teams → ENG → Workflows & automations → Pull request and commit automations and set ${rule} to No action, including branch-specific overrides; then run catalyst team check ENG`);
+      expect(plain.out.join("\n")).toContain(`fix: ${fix}`);
+    }
+  });
   test("CTC-3561: a required_values fail names the missing variables and where to set them, and prints no value", async () => {
     await seedJoined(home, server);
     installSkills(defaultSkillsDirFor(home), {});

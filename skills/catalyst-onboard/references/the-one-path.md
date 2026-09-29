@@ -28,7 +28,7 @@ A card moved into an unmapped project does nothing, the most common reason a new
 
 `catalyst team list` shows the teams without checking readiness; the person picks one key. `catalyst team map <KEY>` or `catalyst team adopt <KEY>` prints a preview to approve before `--yes --plan-hash <hash>` (exit 3 applied nothing). Run `catalyst team check <KEY>` only for the selected team. `team migrate <KEY>`, its `--retire`, and `team adopt <KEY> --undo` each preview and need their own approval. `catalyst capabilities` says which verbs this cloud serves.
 
-A `blocked` project is not set up. Linear's own Git automation rules change only in Linear (Settings → Teams → the team → Workflow → Git automation → No action); hand that over, then re-check.
+A `blocked` project is not set up. Change Linear's own Git automation rules in Linear for now (Settings → Teams → the team → Workflows & automations → Pull request and commit automations → No action); hand that over, then re-check.
 
 ## 5. Install the GitHub App
 
