@@ -93,6 +93,11 @@ export interface ContractTeam {
     workflowRev: number | null;
   };
   dispatchGate?: ContractDispatchGate;
+  /** OPTIONAL: a mirror that keeps archived teams on the contract marks them `archived: true`
+   *  (CTC-4398). Absent or false means a live team. */
+  archived?: boolean | null;
+  /** OPTIONAL: the team's repositories as the contract lists them. An older cloud omits it. */
+  repositories?: { default?: string | null; registered?: readonly string[] };
 }
 
 export interface ContractRoute {
@@ -178,7 +183,16 @@ export interface TenantContract {
   /** The customer skill bundle the cloud expects, when it publishes one (catalyst-cloud#3746). OPTIONAL:
    *  an older cloud omits it, and `ready` reads it defensively — an absent field emits nothing. */
   skillsBundle?: { package: string; minVersion: string };
-  readinessChecks: readonly { id: string; severity: string; needsAnswer: boolean }[];
+  /** `fixedBy`, `fixedByLine` and `settingsPath` are OPTIONAL: an older cloud serves only the first three. */
+  readinessChecks: readonly {
+    id: string;
+    severity: string;
+    needsAnswer: boolean;
+    fixedBy?: string;
+    fixedByLine?: string;
+    /** The Catalyst settings page for this check, a path on the app's origin (`/settings/linear-teams`). */
+    settingsPath?: string | null;
+  }[];
   humans: readonly { linearUserId: string; role: "owner" | "admin" }[];
   asks: { approvalsTeamId: string | null };
 }
