@@ -1,10 +1,10 @@
 # Raising a decision
 
-This reference restates invariants: what an ask is, when it is filed, and what it must carry. The body text, the headings, the option format and the cap on options are tenant facts served by the contract's `askTemplate` block and rendered by the cloud itself; `node scripts/raise.mjs` passes fields and never composes a heading.
+This reference restates invariants: what an ask is, when it is filed, and what it must carry. The body text, the headings, the option format and the cap on options are account facts served by the contract's `askTemplate` block and rendered by the cloud itself; `node scripts/raise.mjs` passes fields and never composes a heading.
 
 ## What an ask is
 
-An ask is one decision only the human can make, filed as a ticket in the tenant's own Linear so that the question, the options, the default, the answer and who answered are one record the next agent can read. The cloud labels it as an ask, excludes it from dispatch (a question is never work), and holds every ticket it blocks until it is answered. It appears in the human's Waiting-on-me view when it is assigned to them and blocks open work.
+An ask is one decision only the human can make, filed as a ticket in the person's own Linear so that the question, the options, the default, the answer and who answered are one record the next agent can read. The cloud labels it as an ask, excludes it from dispatch (a question is never work), and holds every ticket it blocks until it is answered. It appears in the human's Waiting-on-me view when it is assigned to them and blocks open work.
 
 ## When to file one
 
@@ -17,7 +17,7 @@ Do not file one for brainstorming, a design back-and-forth, a question the human
 1. **The question**, one sentence, as the title (`--title`).
 2. **Context** the human needs to answer without opening anything else (`--context`), short.
 3. **Options**, each one line, realistic, at most the number the contract allows (`--option`, repeated). The cloud letters and formats them.
-4. **The default if silent** (`--default`): what proceeds and after how long. It must be sane enough to actually run. Note that nothing in the cloud applies the default on a timer; the raising agent applies it, after the ask exists, and records that it did.
+4. **The default if silent** (`--default`): what proceeds and after how long. It must be sane enough to actually run. The raising agent applies it, after the ask exists, and records that it did; the cloud applies no default on a timer for the asks you raise. The exception is the ask a validate-budget or round-threshold hold raises: the cloud applies its default (re-plan) after 48 hours unanswered.
 5. **What it blocks** (`--blocks`, repeated): every ticket held until the answer lands. The cloud creates the blocking relations atomically with the ticket. An ask that holds nothing is refused unless you say `--nothing-to-block` on purpose, because an ask with no blocking relation never surfaces in Waiting on me and is indistinguishable from ordinary work.
 
 `--ask-key` is an idempotency key: a re-run with the same key does not file a second ask.
@@ -38,4 +38,4 @@ Cite the identifier the script printed, and only that. Proceed on the default if
 
 ## Ranking
 
-The human sees asks ranked by how much open work each holds, weighted by that work's priority (urgent counts most), never by age. That is why `--blocks` must be complete: an ask that names one held ticket when it really holds a project sinks below a chore.
+The human sees asks ranked the way the cloud's own Waiting-on-me view ranks them: the most open tickets blocked first, then the oldest ask. Priority is not a weight, and age only breaks a tie. That is why `--blocks` must be complete: an ask that names one held ticket when it really holds a project sinks below one that holds two chores.

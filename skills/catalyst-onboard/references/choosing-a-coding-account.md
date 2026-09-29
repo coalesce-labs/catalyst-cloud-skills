@@ -31,7 +31,7 @@ Enrolling is a browser step, by construction: the person pastes a credential int
 2. Wait. Do not run anything while they are on the page.
 3. When they say it is saved, run `node scripts/where-am-i.mjs` and read them the `coding accounts` part. An enrolled and active account, named by its label, is proof. If the part still says none is enrolled, refresh the contract once (`catalyst contract --refresh`) and read it again.
 
-Only a workspace owner or admin can enrol one (the page still says "tenant" in places). If the person is neither, say who can, and stop this step there.
+Only a workspace owner or admin can enrol one (the page may still use an older word for the account). If the person is neither, say who can, and stop this step there.
 
 ## Naming accounts
 

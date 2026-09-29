@@ -45,9 +45,9 @@ describe("ask list reads the whole scope", () => {
     expect(await main(["ask", "list", "--anyone", "--json"], ctx)).toBe(0);
     const { asks } = JSON.parse(ctx.out.join("\n")) as { asks: { identifier: string; score: number; blocks: string[] }[] };
     const eng7 = asks.find((a) => a.identifier === "ENG-7");
-    // fixtureIssues: ENG-7 blocks ENG-1 (priority 2 -> weight 3) and ENG-2 (priority 1 -> weight 4).
+    // fixtureIssues: ENG-7 blocks ENG-1 and ENG-2. The score is the count of open tickets it blocks.
     expect(eng7?.blocks.sort()).toEqual(["ENG-1", "ENG-2"]);
-    expect(eng7?.score).toBe(7);
+    expect(eng7?.score).toBe(2);
   });
 
   test("a tenant that fits in one page still makes exactly one request", async () => {

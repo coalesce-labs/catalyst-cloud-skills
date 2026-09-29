@@ -1,15 +1,17 @@
 // skills.ts — copying the bundled skills into the user's skills directory, and the one-line update
 // notice a new version prints on its next session.
-import { cpSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, statSync } from "node:fs";
+import { cpSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { defaultSkillsDirFor, upgradeCommand, type Ctx, type CustomerConfig } from "./config.js";
+import { defaultSkillsDirFor, readManifest, upgradeCommand, type Ctx, type CustomerConfig } from "./config.js";
 import { semverOlder } from "./semver.js";
 import { PROVENANCE_MARKER, parseFrontmatter, parseProvenanceVersion } from "./skill-shape.js";
 
 export interface SkillsInstallResult {
   installed: string[];
   skipped: { name: string; reason: "foreign-skill-dir" }[];
+  /** Retired skills this package installed earlier and this bundle no longer ships, now removed. */
+  removed: string[];
 }
 
 export function skillsSourceDir(): string {
@@ -23,13 +25,19 @@ export function skillsSourceDir(): string {
  * `onlyExisting` is the update path: it refreshes copies this package already made and creates
  * none. That is what keeps the update notice from planting a second copy of every skill beside a
  * set the customer's agent installed as a plugin.
+ *
+ * Both paths then remove a retired skill: a folder in the target that carries this bundle's
+ * provenance stamp but whose name this bundle no longer ships. Left in place, it keeps routing
+ * requests to a skill that was merged away. A folder without the stamp (a person's own skill), a
+ * symlink, and a folder stamped by a NEWER bundle than this one are never removed.
  */
 export function installSkills(
   targetDir: string,
   opts: { force?: boolean; onlyExisting?: boolean },
   sourceDir: string = skillsSourceDir(),
+  bundleVersion: string = readManifest().version,
 ): SkillsInstallResult {
-  const result: SkillsInstallResult = { installed: [], skipped: [] };
+  const result: SkillsInstallResult = { installed: [], skipped: [], removed: [] };
   if (existsSync(targetDir) && !statSync(targetDir).isDirectory()) {
     throw new Error(`${targetDir} is not a directory`);
   }
@@ -57,7 +65,36 @@ export function installSkills(
     cpSync(src, dst, { recursive: true });
     result.installed.push(name);
   }
+  result.removed = removeRetiredSkills(targetDir, new Set(names.filter((n) => existsSync(join(sourceDir, n, "SKILL.md")))), bundleVersion);
   return result;
+}
+
+/** Remove every stamped folder in `targetDir` whose name `shipped` no longer carries. */
+function removeRetiredSkills(targetDir: string, shipped: ReadonlySet<string>, bundleVersion: string): string[] {
+  if (!existsSync(targetDir)) return [];
+  const removed: string[] = [];
+  for (const e of readdirSync(targetDir, { withFileTypes: true })) {
+    if (shipped.has(e.name)) continue;
+    const dir = join(targetDir, e.name);
+    // lstat, not the dirent alone: a symlink belongs to whoever linked it and is never followed.
+    if (isSymlink(dir) || !e.isDirectory()) continue;
+    const skillMd = join(dir, "SKILL.md");
+    if (!existsSync(skillMd)) continue;
+    let text: string;
+    try {
+      text = readFileSync(skillMd, "utf8");
+    } catch {
+      continue;
+    }
+    const line = provenanceLine(text);
+    if (line === undefined) continue;
+    const stamp = parseProvenanceVersion(line);
+    // A newer bundle may ship a skill this one does not know yet; an older CLI must not delete it.
+    if (stamp !== null && semverOlder(bundleVersion, stamp)) continue;
+    rmSync(dir, { recursive: true, force: true });
+    removed.push(e.name);
+  }
+  return removed.sort();
 }
 
 function isSymlink(path: string): boolean {

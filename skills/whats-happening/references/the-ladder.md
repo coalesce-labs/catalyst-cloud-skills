@@ -1,6 +1,6 @@
 # The ladder: eight phases, what each one produces
 
-This reference restates invariants. The phase order and what each phase leaves behind do not vary per tenant. The only live values are whether intake is switched on for your tenant and which keying the advance table uses; both are on the contract under `ladder` (print them with `node scripts/show-my-map.mjs`).
+This reference restates invariants. The phase order and what each phase leaves behind are the same for every account. The only live values are whether intake is switched on for your account and which keying the advance table uses; both are on the contract under `ladder` (print them with `node scripts/show-my-map.mjs`).
 
 ## The phases, in order
 
@@ -19,7 +19,7 @@ Every artifact-bearing phase (all but `intake` and `merge`) projects its artifac
 
 ## What moves the card
 
-An advance table maps a phase outcome to a card move: research done moves the card from the dispatch slot to the research slot, plan done from research to plan, implement done from plan to implement, validate done from implement to review, pr done from review to pr. The table is served on the contract as `ladder.advance` so you can read the exact rows; do not restate them from memory, because the tenant's keying decides whether a stage names the phase that just finished (trailing, the default) or the phase still ahead (leading).
+An advance table maps a phase outcome to a card move: research done moves the card from the dispatch slot to the research slot, plan done from research to plan, implement done from plan to implement, validate done from implement to review, pr done from review to pr. The table is served on the contract as `ladder.advance` so you can read the exact rows; do not restate them from memory, because the account's keying decides whether a stage names the phase that just finished (trailing, the default) or the phase still ahead (leading).
 
 Three rows never move the card:
 
@@ -38,4 +38,4 @@ The terminal move to the done slot is keyed to the real pull-request-merged even
 
 1. The card's stage tells you which phase last finished (under trailing keying) — read the team's map with `node scripts/show-my-map.mjs --team <key>` to translate a stage name into a slot.
 2. The phase-outcome comments on the ticket tell you which attempts ran and how they ended; the document attachments are the artifacts themselves.
-3. `node scripts/explain-ticket.mjs <ticket>` tells you what the cloud will run next, or why it will not.
+3. `node scripts/explain.mjs <ticket>` tells you what the cloud will run next, or why it will not.

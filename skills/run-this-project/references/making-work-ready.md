@@ -1,6 +1,6 @@
 # Making work ready
 
-This reference restates invariants of how Catalyst takes work. The tenant's own values (which Linear state is the dispatch column, which state is the backlog, the ask and release label ids, the round cap and the park threshold) are read live from `catalyst contract`; the scripts here never name a stage.
+This reference restates invariants of how Catalyst takes work. The account's own values (which Linear state is the dispatch column, which state is the backlog, the ask and release label ids, the round cap and the park threshold) are read live from `catalyst contract`; the scripts here never name a stage.
 
 ## The steward's two moves
 
@@ -26,7 +26,7 @@ Before the move, the ticket needs, in the record itself:
 - No ask on it. A ticket that carries the ask label, or whose own text reads as a decision request (an ask-shaped title, lettered options, a "default if silent" line), is excluded as a question rather than work. If a real ticket trips the shape detector, a human applies the release label named in the contract's vocabulary; you can also rewrite the text so it reads as work.
 - Declared scope when the team enforces it: a ticket whose declared files overlap a ticket already in flight is held as `scope_overlap` for the implement phase.
 
-A ticket does not need a branch, a PR, or any artifact to be dispatched: the ladder creates those. A ticket that has never entered the ladder starts at intake when the tenant enables it, otherwise at research.
+A ticket does not need a branch, a PR, or any artifact to be dispatched: the ladder creates those. A ticket that has never entered the ladder starts at intake when the account has intake on, otherwise at research.
 
 ## After the move
 
@@ -34,7 +34,7 @@ A ticket does not need a branch, a PR, or any artifact to be dispatched: the lad
 
 - `offered` or `eligible` with a queue position: done; a runner will pick it up in the next dispatch pass, ordered by priority, then age, then identifier, with tickets already mid-ladder ahead of fresh ones.
 - An ordering that is stale or never published: the cloud re-derives the team's queue within a pass of the move; ask again in a minute with `catalyst explain <ticket>`.
-- Any other exclusion reason: the paragraph names it and what releases it. The reasons and what unblocks each are in `how-catalyst-works` and in `whats-happening`'s "why is it stuck" reference.
+- Any other exclusion reason: the paragraph names it and what releases it. The reasons and what unblocks each are in the `whats-happening` skill's `references/why-is-it-stuck.md`.
 
 ## Evidence a phase ran
 

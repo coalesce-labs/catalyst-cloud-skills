@@ -4,7 +4,7 @@ A person can finish every other step and still see nothing run. A phase needs tw
 
 ## Coding accounts
 
-**For:** a phase runs on one of the tenant's own enrolled coding accounts. With none active, no phase can start.
+**For:** a phase runs on one of the workspace's own enrolled coding accounts. With none active, no phase can start.
 
 **Instrument:** `codingAccounts` in `catalyst contract`. It carries a `state`, a printable `line`, who enrolls an account (`enrolledByLine`) and the `page`. The script prints all of them. It never shows a credential or an email. When the state is `enrolled`, the script also reads `catalyst accounts` to check each account's credential.
 
@@ -19,7 +19,7 @@ A person can finish every other step and still see nothing run. A phase needs tw
 
 **Owner:** the one the contract names. The person does it in the browser. Never ask for the credential, and never handle it. A key cannot enrol one. Which kinds of account exist, what each asks for, and what to do with an ended or cancelled one are in `references/choosing-a-coding-account.md`; it is step 2 of the path, the first thing asked.
 
-**Older cloud:** if the contract has no `codingAccounts`, the script says the cloud is older and reads `catalyst accounts` instead. That list counts the accounts enrolled and the ones able to take work. An expired, revoked or quarantined account does not count. The owner is then a tenant owner or admin, at `<their cloud>/settings/coding-accounts`.
+**Older cloud:** if the contract has no `codingAccounts`, the script says the cloud is older and reads `catalyst accounts` instead. That list counts the accounts enrolled and the ones able to take work. An expired, revoked or quarantined account does not count. The owner is then a workspace owner or admin, at `<their cloud>/settings/coding-accounts`.
 
 ## Host
 
@@ -31,7 +31,7 @@ A person can finish every other step and still see nothing run. A phase needs tw
 
 | reading | what it says | what to do |
 | -- | -- | -- |
-| `pass` | nothing is waiting on a host. A tenant that runs no host of its own reads this too | nothing |
+| `pass` | nothing is waiting on a host. An account that runs no host of its own reads this too | nothing |
 | `unknown`, `no_host_connected` | no Catalyst host is connected | name the owner and stop |
 | `unknown`, `hosts_unreported` | a host is connected but has not said which mapping it loaded | name the owner; it clears when the host reconnects |
 | `fail`, `hosts_behind` | a connected host runs an older mapping | name the owner |

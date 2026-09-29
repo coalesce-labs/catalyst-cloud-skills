@@ -52,9 +52,16 @@ function write(root: string, name: string, tree: Tree): string {
   return dir;
 }
 
-function mutatingSkill(name: string, drop: "portability" | "frontmatter" | "openai" | null): Tree {
+function mutatingSkill(name: string): Tree {
+  return goodSkill(name, {
+    "agents/portability.yaml": `identity: { pack: catalyst-cloud-skills, skill: ${name} }\neffects: [external-write]\nmutating: true\ninvocation: implicit\nexposure: [catalog]\n`,
+  });
+}
+
+/** A manual-only skill: the three invocation fields agree, except the one `drop` flips. */
+function manualOnlySkill(name: string, drop: "portability" | "frontmatter" | "openai" | null): Tree {
   const t = goodSkill(name, {
-    "agents/portability.yaml": `identity: { pack: catalyst-cloud-skills, skill: ${name} }\neffects: [external-write]\ninvocation: explicit\nexposure: [catalog]\n${drop === "portability" ? "" : "mutating: true\n"}`,
+    "agents/portability.yaml": `identity: { pack: catalyst-cloud-skills, skill: ${name} }\neffects: []\ninvocation: ${drop === "portability" ? "implicit" : "explicit"}\nexposure: [catalog]\n`,
     "agents/openai.yaml": `interface:\n  display_name: "M"\n  short_description: "m"\n  default_prompt: "Use $${name}"\npolicy:\n  allow_implicit_invocation: ${drop === "openai" ? "true" : "false"}\n`,
   });
   if (drop !== "frontmatter") t["SKILL.md"] = t["SKILL.md"]!.replace("description:", "disable-model-invocation: true\ndescription:");
@@ -65,8 +72,11 @@ describe("validateSkillDir", () => {
   test("a passing tree returns []", () => {
     expect(validateSkillDir(write(tempHome(), "good-skill", goodSkill()))).toEqual([]);
   });
-  test("a passing mutating trio returns []", () => {
-    expect(validateSkillDir(write(tempHome(), "mut", mutatingSkill("mut", null)))).toEqual([]);
+  test("a skill that writes and that the model may pick returns []: invocation is not authorization", () => {
+    expect(validateSkillDir(write(tempHome(), "mut", mutatingSkill("mut")))).toEqual([]);
+  });
+  test("a manual-only skill whose three invocation fields agree returns []", () => {
+    expect(validateSkillDir(write(tempHome(), "manual", manualOnlySkill("manual", null)))).toEqual([]);
   });
 
   const cases: [string, Tree | ((root: string) => string), RegExp][] = [
@@ -93,9 +103,11 @@ describe("validateSkillDir", () => {
     ["no openai.yaml", goodSkill("x", { "agents/openai.yaml": undefined as unknown as string }), /agents\/openai.yaml is missing/],
     ["openai without a policy block", goodSkill("x", { "agents/openai.yaml": "interface:\n  display_name: x\n  allow_implicit_invocation: true\n" }), /no "policy:" block/],
     ["openai without allow_implicit_invocation", goodSkill("x", { "agents/openai.yaml": "policy:\n  other: 1\n" }), /does not set policy.allow_implicit_invocation/],
-    ["a mutating skill missing mutating: true", mutatingSkill("x", "portability"), /lacks mutating: true/],
-    ["a mutating skill missing disable-model-invocation", mutatingSkill("x", "frontmatter"), /does not set disable-model-invocation: true/],
-    ["a mutating skill missing allow_implicit_invocation: false", mutatingSkill("x", "openai"), /does not set policy.allow_implicit_invocation: false/],
+    ["effects listed without mutating: true", goodSkill("x", { "agents/portability.yaml": "effects: [external-write]\ninvocation: implicit\nexposure: [catalog]\n" }), /lists effects but lacks mutating: true/],
+    ["mutating: true with no effects", goodSkill("x", { "agents/portability.yaml": "effects: []\nmutating: true\ninvocation: implicit\nexposure: [catalog]\n" }), /mutating: true but lists no effects/],
+    ["a manual-only skill whose portability says implicit", manualOnlySkill("x", "portability"), /invocation fields disagree.*invocation: implicit\)/],
+    ["a manual-only sidecar with no disable-model-invocation", manualOnlySkill("x", "frontmatter"), /invocation fields disagree.*disable-model-invocation: false/],
+    ["a manual-only skill whose OpenAI sidecar allows implicit invocation", manualOnlySkill("x", "openai"), /invocation fields disagree.*allow_implicit_invocation: true/],
     ["a .log file", goodSkill("x", { "scripts/run.log": "oops\n" }), /run.log is a log file/],
     ["the word linearis in a reference", goodSkill("x", { "references/one.md": "# One\n\nRun Linearis to read it.\n" }), /references\/one.md mentions a Linear CLI name/],
     ["catalyst-replica in a script", goodSkill("x", { "scripts/check.mjs": '#!/usr/bin/env node\n// --help: wraps catalyst-replica\n' }), /mentions the internal replica tool name/],

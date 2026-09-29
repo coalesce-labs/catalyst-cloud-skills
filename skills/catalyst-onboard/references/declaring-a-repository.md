@@ -10,7 +10,7 @@ This is step 8 of `references/the-one-path.md`. Offer to draft the file from the
 2. For each name, record the file it came from: a `.env.example` (never `.env`, which holds live values), a CI secret in a workflow's `env:` block, or a platform binding. A name you cannot tie to a file is a guess. Say so instead of listing it.
 3. Mark whether the container needs it to build and test, or only to deploy. Containers build and test. They do not deploy.
 4. Leave platform bindings and deploy-only CI secrets out by default. The platform supplies a binding at run time, and no build or test reads a deploy-only secret. Include one only when the person says the build needs it, and say why.
-5. Write the names into `.catalyst/catalyst.toml` and open a pull request. Use that exact path. The cloud reads no other file, and an older `catalyst.env.json` is ignored. Once the pull request merges, each push to the default branch that touches the file makes the cloud read it and propose it as a new revision. A tenant owner or admin opens Settings → Repositories → the repository → Environment → Setup declaration and clicks Approve this revision. The person enters the values on the same page's Environment variables and Secrets tabs.
+5. Write the names into `.catalyst/catalyst.toml` and open a pull request. Use that exact path. The cloud reads no other file, and an older `catalyst.env.json` is ignored. Once the pull request merges, each push to the default branch that touches the file makes the cloud read it and propose it as a new revision. A workspace owner or admin opens Settings → Repositories → the repository → Environment → Setup declaration and clicks Approve this revision. The person enters the values on the same page's Environment variables and Secrets tabs.
 
 ## The file's shape
 
@@ -43,4 +43,4 @@ run = ["npm", "ci"]
 
 ## After the merge
 
-`catalyst ready` reports `environment_declared` for the team's default repository and names the next step: commit the file, fix it, or approve it. The `catalyst-setup` check table has each reason. The workspace-wide declaration is separate; `catalyst environment` handles it (also step 8 of `references/the-one-path.md`).
+`catalyst ready` reports `environment_declared` for the team's default repository and names the next step: commit the file, fix it, or approve it. `references/reading-ready.md` has each reason. The workspace-wide declaration is separate; `catalyst environment` handles it (also step 8 of `references/the-one-path.md`).

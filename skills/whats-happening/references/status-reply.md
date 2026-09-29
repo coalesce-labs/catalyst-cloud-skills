@@ -9,12 +9,12 @@ The person asked one question and gets one reply. If they would need a second su
 ## The five blocks, in this order
 
 1. **In flight.** Tickets a phase is running on right now, or that hold a live lease mid-ladder. Source: the snapshot's `running` block (fleet activity, the agent roster, lease attributions). One line per ticket: identifier, the phase running, how long it has run.
-2. **Blocked, and on whom.** Tickets nothing is offered for. Source: the queue's excluded rows, then `explain` on each one the person cares about. Every line carries the reason in the person's words and who releases it: the human (an ask), a role, the cloud itself (a backoff, a park that self-releases), or a clock. "On whom" is never blank; if you cannot tell, say the reason the cloud gave and that the release is unknown to a key.
+2. **Blocked, and on whom.** Tickets nothing is offered for. Source: the queue's excluded rows, then `explain` on each one the person cares about. Every line carries the reason in the person's words and who releases it: the human (an ask), the person's own login (`unstick`), a role, the cloud itself (a backoff, a park that self-releases), or a clock. "On whom" is never blank; if you cannot tell, say the reason the cloud gave and that this bundle does not know its release.
 3. **Waiting on the human.** The open asks, ranked by what each one holds. Source: `waitingOnHuman` in the snapshot. Keep this to identifier, the question, and what it releases; the `what-needs-me` skill owns the detail and the settling.
 4. **Closed.** What reached the done slot in the window the person asked about (or since your last reply). Source: `query issues` filtered by the team's done-slot stage name from the contract, or the change feed for a time window. When you did not read a window, say "since my last reply" and mean it.
-5. **Next.** What the queue picks up next, in the cloud's order, with the phase each will run. Source: the snapshot's `queue` block. Do not reorder it to what you think should be next; the levers are in `references/reprioritising.md`.
+5. **Next.** What the queue picks up next, in the cloud's order, with the phase each will run. Source: the snapshot's `queue` block. Do not reorder it to what you think should be next; the levers are in `references/what-runs-next.md`.
 
-A sixth block, **cannot see**, appears only when it is non-empty: the facts your key cannot read (PR labels and reactions, which are not mirrored; an operator-only park release), each with the URL the CLI printed.
+A sixth block, **cannot see**, appears only when it is non-empty: the facts your key cannot read (PR labels and reactions, which are not mirrored), each with the URL the CLI printed. A park or hold is not in this block: the person's own login releases it through `unstick`.
 
 A flow number is named in that block by name, not left out: cycle time, throughput, or how long pull requests have been open are not computed by anything a key reads today. Say they are not computed rather than counting ticket dates or open pull requests and calling it that.
 

@@ -1,10 +1,10 @@
 # Reacting to events
 
-This reference restates invariants of the Catalyst Cloud stream and the `watch` verb. Nothing here varies per tenant; the tenant facts a reaction needs (stage ids, label ids, the ask team) come from `catalyst contract` at the moment you need them.
+This reference restates invariants of the Catalyst Cloud stream and the `watch` verb. Nothing here varies per account; the account facts a reaction needs (stage ids, label ids, the ask team) come from `catalyst contract` at the moment you need them.
 
 ## The mechanism
 
-A steward never polls. It subscribes once to the tenant stream through the SDK's live client and reacts to each change as it arrives. The verb is `catalyst watch`, and this skill's `scripts/watch-scope.mjs` is that verb with the scope checked up front:
+A steward never polls. It subscribes once to the account's event stream through the SDK's live client and reacts to each change as it arrives. The verb is `catalyst watch`, and this skill's `scripts/watch-scope.mjs` is that verb with the scope checked up front:
 
 ```sh
 node scripts/watch-scope.mjs --project <id>          # every ticket in the project
@@ -12,7 +12,7 @@ node scripts/watch-scope.mjs --team <key>            # every ticket on the team
 node scripts/watch-scope.mjs --ticket ENG-41 --ticket ENG-42
 ```
 
-The stream itself is tenant-wide; scope is filtered on this machine from each frame's entity and row, and a row that only carries a ticket reference (a comment, a session, a pull request) is resolved to its project through the ticket's own record, cached for the life of the watch. The cost of an ignored frame is one JSON parse, so a wide scope is fine.
+The stream itself is account-wide; scope is filtered on this machine from each frame's entity and row, and a row that only carries a ticket reference (a comment, a session, a pull request) is resolved to its project through the ticket's own record, cached for the life of the watch. The cost of an ignored frame is one JSON parse, so a wide scope is fine.
 
 **In Claude Code**, arm a monitor on the command above. Each line it prints is one applied change inside the scope, delivered into your session as an event. React to it in the same turn: read what changed, decide, act, and only then let the turn end.
 
@@ -32,7 +32,7 @@ One JSON object per line, exactly what the SDK delivers:
 {"type":"change","accountId":"<tenant>","seq":4182,"entity":"comments","entityId":"<id>","op":"upsert","row":{...}}
 ```
 
-`seq` is the tenant-wide position. `entity` is one of the mirror's feed tables. `op` is `upsert` or `delete`. `row` is the mirrored row when the op is an upsert; a delete carries the id only. A frame for another tenant is refused by the CLI and never printed.
+`seq` is the account-wide position. `entity` is one of the mirror's feed tables. `op` is `upsert` or `delete`. `row` is the mirrored row when the op is an upsert; a delete carries the id only. A frame for another account is refused by the CLI and never printed.
 
 ## Entities that matter to a scope
 
@@ -48,7 +48,7 @@ One JSON object per line, exactly what the SDK delivers:
 | `agent_sessions`, `agent_activities` | a phase started, wrote an artifact, opened a PR, reported | the plan on the session is the ladder itself; the current phase is the one in progress |
 | `fleet_activity`, `fleet_host_liveness` | a runner picked up or dropped a phase | a phase running is not a stall, whatever the clock says |
 | `fleet_anomalies` | the cloud raised a fleet-level alert | one alert covers every ticket it touches; never escalate it per ticket |
-| `workflow_states`, `team_workflow_mapping` | the tenant's stage map changed | refresh the contract (`catalyst contract --refresh`) before the next state move |
+| `workflow_states`, `team_workflow_mapping` | the account's stage map changed | refresh the contract (`catalyst contract --refresh`) before the next state move |
 | `projects`, `cycles`, `initiatives` | your scope's container changed | update the status summary |
 
 Entities not listed still arrive when they are in scope; ignore what you do not need.
@@ -59,13 +59,13 @@ A frame is reacted to in the turn it arrives, not batched for a later pass. The 
 
 ## The cursor rule
 
-The cursor file (`~/.config/catalyst-cloud/watch-cursor.json`, stamped with the tenant) advances only after the reaction returns. A reaction that throws, or an `--exec` command that exits non-zero, leaves the cursor at the last good frame; the CLI closes the socket and the SDK's reconnect replays from that cursor, so the failed frame is offered again. Delivery is therefore at-least-once: make reactions safe to repeat (check before you write, prefer idempotent writes such as a label add over a fresh comment).
+The cursor file (`~/.config/catalyst-cloud/watch-cursor.json`, stamped with the account) advances only after the reaction returns. A reaction that throws, or an `--exec` command that exits non-zero, leaves the cursor at the last good frame; the CLI closes the socket and the SDK's reconnect replays from that cursor, so the failed frame is offered again. Delivery is therefore at-least-once: make reactions safe to repeat (check before you write, prefer idempotent writes such as a label add over a fresh comment).
 
 Two consequences. First, a crash mid-reaction replays, never loses. Second, a reaction that keeps failing keeps the watch pinned on one frame; fix the reaction rather than skipping the frame, or restart with `--from head` and re-read the scope with `scripts/scope-status.mjs` to catch up on what you missed.
 
 ## What to do on resync
 
-When the tenant tells the stream it can no longer replay from your cursor, the CLI prints one line on standard error, `[watch] resync: cursor moved to head <n>`, and continues from the head. No rows are copied. Anything that happened between your old cursor and the head is not replayed, so a resync is your cue to run `scripts/scope-status.mjs` once and reconcile the summary against the live state.
+When the cloud tells the stream it can no longer replay from your cursor, the CLI prints one line on standard error, `[watch] resync: cursor moved to head <n>`, and continues from the head. No rows are copied. Anything that happened between your old cursor and the head is not replayed, so a resync is your cue to run `scripts/scope-status.mjs` once and reconcile the summary against the live state.
 
 ## Starting a watch on an existing project
 

@@ -6,7 +6,7 @@ Explain it in this person's terms: their repositories, their tickets, how they w
 
 They keep filing tickets in Linear. Moving a card into the team's dispatch column starts the work. Catalyst Cloud then takes the ticket through research, a plan, the implementation, validation, a pull request and the merge.
 
-Each phase runs in a cloud container, on a coding account the tenant enrolled. Each phase leaves a document and an outcome comment on the ticket, so the ticket is the record.
+Each phase runs in a cloud container, on a coding account their workspace enrolled. Each phase leaves a document and an outcome comment on the ticket, so the ticket is the record.
 
 Their laptop stops being where coding sessions run. There are no local sessions, no home server, and no test runners or headless browsers competing for the machine. They install two skill packs and a small CLI that holds their sign-in.
 
@@ -27,4 +27,4 @@ A decision only they can make arrives as a ticket in their own Linear. It has op
 
 ## Why it is different
 
-Every item above has a mechanism in another reference. Retries and repair rounds are in `references/when-a-phase-fails.md`. An unknown verdict means "could not look": see `references/what-runs-next.md`. One outage is one alert, not one per ticket.
+Every item above has a mechanism in another reference. Retries and repair rounds are in `references/when-a-phase-fails.md`. An unknown verdict means "could not look": see `references/why-is-it-stuck.md`. One outage is one alert, not one per ticket.

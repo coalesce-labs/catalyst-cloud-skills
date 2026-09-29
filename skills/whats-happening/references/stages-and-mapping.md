@@ -37,7 +37,7 @@ Stage mappings live in the app, at Settings → Linear teams. The cloud reads ea
 Each mapped stage carries a `stateId`, a display `name`, a `type`, `stateStillExists` and a `source` (how the mapping was chosen). Only the id is a lookup key. A Linear-to-Linear import can preserve every human-readable name while re-minting every state id, and then a name-based lookup points at nothing. So:
 
 - Move cards by slot (`catalyst-linear`'s move script does this) and let the CLI resolve the id from the contract. Never move a card "to Todo" by name.
-- `stateStillExists: false` means the mapped state is provably gone; the map needs fixing in your tenant settings before that slot can be written to. The CLI refuses such a move rather than guessing.
+- `stateStillExists: false` means the mapped state is provably gone; the team needs re-mapping (`catalyst team map <KEY>`, or Settings → Linear teams) before that slot can be written to. The CLI refuses such a move rather than guessing.
 - The stage names the contract shows come from the mirror's live view of Linear, not from a stored snapshot, so they are current at read time.
 
 ## How to read the printed map
@@ -46,11 +46,11 @@ Each mapped stage carries a `stateId`, a display `name`, a `type`, `stateStillEx
 
 Reading it for a question:
 
-- "Why does nothing dispatch?" — is `dispatch` mapped, does its state still exist, and is the card actually in that stage? `node scripts/explain-ticket.mjs <ticket>` names `not_at_dispatch_stage` when the card is elsewhere.
+- "Why does nothing dispatch?" — is `dispatch` mapped, does its state still exist, and is the card actually in that stage? `node scripts/explain.mjs <ticket>` names `not_at_dispatch_stage` when the card is elsewhere.
 - "Why is merge not running?" — is the card in the `pr` slot's stage?
 - "Why did the card go to Remediate?" — `remediate` is mapped, so a failed phase moved it there (see `references/when-a-phase-fails.md`); if `remediate` is unmapped the same episode shows up as the hold label from `teams[].labels.hold` instead.
 - "The team's Backlog is not in the list" — correct. Backlog is not a slot. Parking a card is a move to the team's backlog-type state, which the CLI resolves from the team's live workflow states rather than from the map.
 
 ## Readiness over the mapping
 
-The contract carries a readiness vector per team (`teams[].readiness`), including whether every mapped state exists, whether the mapping is total, whether the types are compatible, whether the labels are present, whether writes land and whether the webhook covers the team. A check the cloud could not run is `unknown`, never `pass`. `catalyst-setup` reads this vector; this skill only points at it.
+The contract carries a readiness vector per team (`teams[].readiness`), including whether every mapped state exists, whether the mapping is total, whether the types are compatible, whether the labels are present, whether writes land and whether the webhook covers the team. A check the cloud could not run is `unknown`, never `pass`. The `catalyst-onboard` skill reads this vector with who fixes each check; this skill only points at it.

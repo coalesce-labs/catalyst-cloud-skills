@@ -147,11 +147,11 @@ describe("ask", () => {
     const { scope, asks } = JSON.parse(ctx.out.join("\n")) as { scope: { kind: string }; asks: { identifier: string; blocks: string[]; score: number }[] };
     expect(scope).toEqual({ kind: "no-person" });
     expect(asks.map((r) => r.identifier)).toEqual(["ENG-7", "ENG-8"]);
-    expect(asks[0]).toMatchObject({ blocks: ["ENG-1", "ENG-2"], score: 3 + 4 });
+    expect(asks[0]).toMatchObject({ blocks: ["ENG-1", "ENG-2"], score: 2 });
     expect(asks[1]).toMatchObject({ blocks: ["ENG-3"], score: 1 });
     const c2 = makeCtx(home);
     expect(await main(["ask", "list"], c2)).toBe(0);
-    expect(c2.out[0]).toMatch(/^ENG-7  holds 2 tickets \(weight 7\): ENG-1, ENG-2/);
+    expect(c2.out[0]).toMatch(/^ENG-7  holds 2 tickets: ENG-1, ENG-2/);
     expect(c2.err.join("\n")).toMatch(/account key, which names no person/);
     server.issues = [];
     const c3 = makeCtx(home);
@@ -252,7 +252,26 @@ describe("more ask branches", () => {
     expect(JSON.parse(c3.out.join("\n"))).toMatchObject({ identifier: expect.stringMatching(/^ENG-1\d\d$/) });
     expect(await main(["ask", "raise", "--team", "ENG", "--title", "t", "--blocks", "ENG-404"], makeCtx(home))).toBe(2);
   });
-  test("rankAsks weighs priority none as 1 and drops non-asks", () => {
+  test("rankAsks orders by open tickets blocked, then the oldest ask, never by priority", () => {
+    const ask = (identifier: string, created_at: number, blocks: string[]) => ({
+      identifier,
+      state: "Todo",
+      title: identifier,
+      created_at,
+      labels: [{ id: "label-ask-eng", name: "ask" }],
+      relations: blocks.map((b) => ({ type: "blocks", issue_identifier: identifier, related_identifier: b })),
+    });
+    const issues = [
+      { identifier: "ENG-1", state: "Todo", priority: 4 },
+      { identifier: "ENG-2", state: "Todo", priority: 4 },
+      { identifier: "ENG-3", state: "Todo", priority: 1 },
+      ask("ENG-10", 3_000, ["ENG-3"]), // holds one urgent ticket
+      ask("ENG-11", 2_000, ["ENG-1", "ENG-2"]), // holds two low ones: first, whatever their priority
+      ask("ENG-12", 1_000, ["ENG-1"]), // ties ENG-10 on count and is older, so it goes before it
+    ];
+    expect(rankAsks(issues, server.contract, () => true).map((a) => a.identifier)).toEqual(["ENG-11", "ENG-12", "ENG-10"]);
+  });
+  test("rankAsks scores a priority-none ticket like any other and drops non-asks", () => {
     const issues = [
       { identifier: "ENG-1", state: "Todo", priority: 0 },
       { identifier: "ENG-2", state: "Todo", priority: 9 },

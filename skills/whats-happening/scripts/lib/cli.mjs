@@ -132,6 +132,6 @@ export function printHelp(usage, spec, notes = []) {
     for (const n of names) lines.push(`  --${n}${spec[n].value ? " <value>" : ""}  ${spec[n].help}`);
     lines.push("");
   }
-  lines.push(...notes, "", "Exit codes: 0 ok · 1 the check failed or the arguments were wrong · 2 this machine is not connected to a tenant");
+  lines.push(...notes, "", "Exit codes: 0 ok · 1 the check failed or the arguments were wrong · 2 this machine is not connected");
   process.stdout.write(lines.join("\n") + "\n");
 }

@@ -1,6 +1,6 @@
 # Routing work
 
-This reference restates an invariant: what this skill does when the person asks for something to be done rather than known, and where a decision goes. Nothing here is tenant-specific.
+This reference restates an invariant: what this skill does when the person asks for something to be done rather than known, and where a decision goes. Nothing here varies per account.
 
 ## Three kinds of request
 
@@ -25,12 +25,10 @@ Cite an identifier only after the create call returned it. A guessed number is u
 
 ## What goes to what-needs-me
 
-Anything that gates active work on a choice only the human can make: a product call, a priority call between two things that cannot both go first, an approval, or an action only they can physically take (a click in settings, a credential). It is raised as an ask through the `what-needs-me` skill with the question, the options, the default that fires if they stay silent, and what it blocks, and it is raised **before** anyone proceeds on the default.
-
-Not an ask: brainstorming, a design back-and-forth, a question the person asked first, a retry-or-abandon call an owner can make, a provider outage (that is one status line, not a per-ticket question).
+A choice only the person can make, gating active work, is an ask. `what-needs-me` owns when to file one, what it carries, and what is not an ask (`what-needs-me`'s `references/raising-a-decision.md`). Raise it there before anyone proceeds on the default.
 
 ## Three rules that bind this skill
 
 - **Never answer as the human.** You do not pick an option on an open ask, close one, or post in their voice. When their answer arrives in chat, it is recorded on the ask through `what-needs-me` so the record is complete, and it is recorded as the app actor, never as them.
-- **Escalate inward, never outward.** An instrument reports to the project owner; the owner asks the desk; the desk asks the human, as an ask. A single stuck ticket is never a page to the human. A system-level failure (provider down, out of capacity, rate-limited) is one line in the status reply, not a question per ticket.
+- **Escalate inward.** The order is in `what-needs-me`: the desk raises what has no owner, and a system-level failure (provider down, out of capacity, rate-limited) is one line in the status reply, not a question per ticket.
 - **One door.** If the person needs a second place to look after your reply, add the missing block to the reply next time rather than pointing them at a dashboard.

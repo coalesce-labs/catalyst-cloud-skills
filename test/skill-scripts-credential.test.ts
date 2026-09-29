@@ -25,9 +25,6 @@ const CASES: Record<(typeof CUSTOMER_SKILLS)[number], { script: string; args: st
   "catalyst-github": { script: "read-pr.mjs", args: ["ENG-2"] },
   "catalyst-linear": { script: "read-ticket.mjs", args: ["ENG-2"] },
   "catalyst-onboard": { script: "where-am-i.mjs", args: [] },
-  "catalyst-setup": { script: "check.mjs", args: [] },
-  "connect-me": { script: "verify-connection.mjs", args: [] },
-  "how-catalyst-works": { script: "explain-ticket.mjs", args: ["ENG-2"] },
   "run-this-project": { script: "scope-status.mjs", args: ["--team", "ENG"] },
   unstick: { script: "unstick.mjs", args: ["ENG-2"] },
   "what-needs-me": { script: "inbox.mjs", args: [] },
@@ -143,11 +140,11 @@ describe("every skill's scripts run for either credential", () => {
     expect(calls()).toContainEqual(["events", "status", "--probe", "--json"]);
   });
 
-  // Two skills deliberately run `status` even with no usable config, because asking the CLI whether
-  // this machine is connected IS their job: connect-me's verifier, and catalyst-onboard's report,
-  // whose first reading is the machine grain and whose FIRST STATE is "no credential here yet".
-  // Neither is a launcher gate, so neither has a negative case; every other skill must still refuse.
-  const REPORTS_NOT_CONNECTED = new Set(["connect-me", "catalyst-onboard"]);
+  // One skill deliberately runs `status` even with no usable config, because asking the CLI whether
+  // this machine is connected IS its job: catalyst-onboard's report, whose first reading is the
+  // machine grain and whose FIRST STATE is "no credential here yet". It is not a launcher gate, so it
+  // has no negative case; every other skill must still refuse.
+  const REPORTS_NOT_CONNECTED = new Set(["catalyst-onboard"]);
   // what-this-repo-needs is local, offline and repo-scoped: `env inventory` / `env check` call no
   // route and need no login, so gating its launcher on a credential would break the feature. It is
   // excluded from the exit-2 loop below and asserted the OTHER way instead, just after this loop.

@@ -22,7 +22,7 @@ Each step states: what it is for, what you ask or run or hand over, **what you r
 
 **Read back:** the `Connected to …` and `Connected as …` lines, then the script again so the machine part flips.
 
-**Owner:** you run it; the approval is the person's, in a browser, and always will be. Do not re-run the command while a code is outstanding. If it refuses, stop and use the `connect-me` skill.
+**Owner:** you run it; the approval is the person's, in a browser, and always will be. Do not re-run the command while a code is outstanding. If it refuses, `references/connecting-this-machine.md` names each refusal and its fix.
 
 ## 1b. Leftovers of the old local runtime
 
@@ -82,7 +82,7 @@ For manual setup, `catalyst team checklist <KEY>` prints the same lines as the b
 
 **You hand over:** `<their cloud>/settings/repositories`, and say: add the repository, **and attach it to the project you mapped in step 4**, in the same form.
 
-**Read back:** re-run the script and read the `repositories` line. The repository appearing there proves it was registered, and only that; see `references/who-fixes-what.md` for what registration does not prove.
+**Read back:** re-run the script and read the `repositories` line. The repository appearing there proves it was registered, and only that; see `references/reading-ready.md` for what registration does not prove.
 
 **Owner:** a workspace owner or admin. ⛔ Registering is settings-page work today. ⛔ A repository registered without a project attached is the trap: the call succeeds, the repository is listed, and nothing can ever dispatch into it.
 
@@ -112,14 +112,14 @@ For manual setup, `catalyst team checklist <KEY>` prints the same lines as the b
 
 **For:** the only thing that proves setup worked.
 
-**You run:** `catalyst team check <KEY>` first when the script's next step names it (an owner or admin whose CLI has the verb), then `catalyst ready`. Its READY does not cover the coding account or the host; the script does. Read them the verdict and every failing line with its own fix and owner. If it says NOT READY, go to `references/who-fixes-what.md` before you touch anything.
+**You run:** `catalyst team check <KEY>` first when the script's next step names it (an owner or admin whose CLI has the verb), then `catalyst ready`. Its READY does not cover the coding account or the host; the script does. Read them the verdict and every failing line with its own fix and owner. If it says NOT READY, go to `references/reading-ready.md` before you touch anything.
 
 **Then:** one question, worded like this: "Move one ticket into ENG's start stage (usually Todo) and tell me its id." Nothing else in that turn: no offer to explain the pipeline, to look at the board, or to pick one for them. Then watch. `catalyst explain <ticket>` says why it is or is not about to run. If they opted into local sync, use the optional first-event check in `references/local-sync.md`.
 
-**Read back:** what `explain` actually said, and the first comment the agent leaves on the ticket. If `explain` says the ticket cannot start, the reason it names is the answer; use the `how-catalyst-works` skill for what it means, then `unstick` if something is holding it.
+**Read back:** what `explain` actually said, and the first comment the agent leaves on the ticket. If `explain` says the ticket cannot start, the reason it names is the answer; use the `whats-happening` skill for what it means, then `unstick` if something is holding it.
 
 **Owner:** the card move is theirs. The verdict is the workspace's.
 
 ## When you are done
 
-Say what is set up, name anything still unfinished with its owner, and never say work can run while the `coding accounts` or `host` part is unfinished. Tell them the standing question "am I set up?" now belongs to the `catalyst-setup` skill, and "what's happening?" to `whats-happening`. You do not need to be invoked again.
+Say what is set up, name anything still unfinished with its owner, and never say work can run while the `coding accounts` or `host` part is unfinished. Tell them they can ask "am I set up?" again at any time, and "what's happening?" goes to `whats-happening`.

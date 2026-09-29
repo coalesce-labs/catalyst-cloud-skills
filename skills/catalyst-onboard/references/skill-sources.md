@@ -6,10 +6,10 @@ The installer the person ran first, at their cloud's `/install.sh` (the app's se
 
 | Pack | Purpose | By hand | Optional Claude Code plugin |
 | -- | -- | -- | -- |
-| `coalesce-labs/catalyst-cloud-skills` | Tenant setup and operation | `npx skills@latest add coalesce-labs/catalyst-cloud-skills --all -g` | `catalyst@catalyst-cloud` |
+| `coalesce-labs/catalyst-cloud-skills` | Cloud account setup and operation | `npx skills@latest add coalesce-labs/catalyst-cloud-skills --all -g` | `catalyst@catalyst-cloud` |
 | `coalesce-labs/catalyst-dev-skills` | Coding workflows | `npx skills@latest add coalesce-labs/catalyst-dev-skills --all -g` | `catalyst-dev@catalyst-dev-skills` |
 
-Install both packs on a workstation used for coding and tenant operations. Each Claude plugin is an alternative to `npx skills` for that same pack. Do not install a pack through both methods.
+Install both packs on a workstation used for coding and cloud operations. Each Claude plugin is an alternative to `npx skills` for that same pack. Do not install a pack through both methods.
 
 ## Where each install lands
 

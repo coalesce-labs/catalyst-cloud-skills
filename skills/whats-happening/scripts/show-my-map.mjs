@@ -1,45 +1,31 @@
 #!/usr/bin/env node
-// show-my-map.mjs — this tenant's stage map, ladder and thresholds, straight from the contract:
+// show-my-map.mjs — this account's stage map, ladder and thresholds, straight from the contract:
 // per team, every slot with the Linear stage it maps to, its type, whether that state still exists
 // and how the mapping was chosen; then the ladder and the live failure thresholds.
-import { exitOnFailure, parseFlags, parseJson, relayStderr, runCli, wantsHelp } from "./lib/cli.mjs";
+import { mustRun, parseFlags, parseJson, printHelp } from "./lib/cli.mjs";
 
-const HELP = `Usage: node scripts/show-my-map.mjs [--team <key>] [--json]
-
-Prints the tenant contract's stage map, ladder and thresholds. Nothing here is guessed: every value is
-read from the contract Catalyst Cloud serves for your tenant. Wraps: catalyst contract --path.
-
-  --team <key>   only this team
-  --json         one JSON document: { slots, teams, ladder, thresholds }
-  --help         this text
-
-A slot marked * is load-bearing: dispatch, intake, pr, done and canceled must be mapped for the
-ladder to move at all; the others are informational. "(unmapped)" means the team has no stage for
-that slot; "(state gone)" means the mapped Linear state no longer exists and needs re-mapping in
-settings.
-
-Exit 0, 1 on a usage error or an unknown team, 2 when this machine is not connected to a tenant or
-the contract could not be read (the line says which).`;
+const SPEC = {
+  team: { value: true, help: "only this team" },
+  json: { value: false, help: "one JSON document: { slots, teams, ladder, thresholds }" },
+};
 
 const LOAD_BEARING = new Set(["dispatch", "intake", "pr", "done", "canceled"]);
 
-const argv = process.argv.slice(2);
-if (wantsHelp(argv)) {
-  console.log(HELP);
+const { help, flags } = parseFlags(process.argv.slice(2), SPEC);
+if (help) {
+  printHelp("node scripts/show-my-map.mjs [--team <key>] [--json] [--help]", SPEC, [
+    "Prints the contract's stage map, ladder and thresholds. Every value is read from the contract",
+    "Catalyst Cloud serves for your account. Wraps: catalyst contract --path.",
+    "A slot marked * is load-bearing: dispatch, intake, pr, done and canceled must be mapped for the",
+    'ladder to move at all. "(unmapped)" means the team has no stage for that slot; "(state gone)"',
+    "means the mapped Linear state no longer exists and the team needs re-mapping.",
+  ]);
   process.exit(0);
 }
-const { flags } = parseFlags(argv, { bool: ["json"], value: ["team"] });
 
 function contractPath(path) {
-  const r = runCli(["contract", "--path", path, "--json"]);
-  exitOnFailure(r);
-  const v = parseJson(r.stdout);
-  if (v === null || v === undefined) {
-    relayStderr(r);
-    console.error(`contract --path ${path} returned nothing readable`);
-    process.exit(1);
-  }
-  return { value: v, stderr: r.stderr };
+  const r = mustRun(["contract", "--path", path, "--json"]);
+  return { value: parseJson(r.stdout, `contract --path ${path}`), stderr: r.stderr };
 }
 
 const slotsRead = contractPath("slots");
@@ -53,7 +39,7 @@ if (flags.team) {
   const want = flags.team.toUpperCase();
   teams = teams.filter((t) => String(t.key ?? "").toUpperCase() === want);
   if (teams.length === 0) {
-    console.error(`no team with key ${flags.team} on this tenant's contract`);
+    console.error(`no team with key ${flags.team} on this account's contract`);
     process.exit(1);
   }
 }

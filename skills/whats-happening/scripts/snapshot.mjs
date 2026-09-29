@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// snapshot.mjs — one call that answers "where are we?": the tenant contract (trimmed to what a
+// snapshot.mjs — one call that answers "where are we?": the account's contract (trimmed to what a
 // status reply needs), what is running, what is queued, what is waiting on a human, and whether the
 // local replica is fresh. Prints ONE JSON document on stdout and the source line on stderr.
 import { mustRun, parseFlags, parseJson, printHelp, runCli } from "./lib/cli.mjs";
@@ -8,16 +8,18 @@ const SPEC = {
   team: { value: true, help: "limit the queue and the board to this team key" },
   board: { value: false, help: "also include open tickets grouped by stage, in the contract's slot order" },
   limit: { value: true, help: "board: max tickets to read (default 200)" },
-  "full-contract": { value: false, help: "include the whole contract instead of the trimmed tenant block" },
+  "full-contract": { value: false, help: "include the whole contract instead of the trimmed `tenant` block" },
+  accounts: { value: false, help: "also include the coding accounts: provider, state, usage windows, walls, quarantine (never a credential)" },
 };
 
 const { help, flags } = parseFlags(process.argv.slice(2), SPEC);
 if (help) {
-  printHelp("node scripts/snapshot.mjs [--team K] [--board] [--limit N] [--full-contract] [--help]", SPEC, [
-    "Runs, in order: catalyst contract, running, queue, ask list, replica status (and query issues with --board).",
-    "Output: one JSON document {takenAt, source, tenant, running, queue, waitingOnHuman, board?, errors?}.",
+  printHelp("node scripts/snapshot.mjs [--team K] [--board] [--accounts] [--limit N] [--full-contract] [--help]", SPEC, [
+    "Runs, in order: catalyst contract, running, queue, ask list, replica status (query issues with --board,",
+    "accounts with --accounts).",
+    "Output: one JSON document {takenAt, source, tenant, running, queue, waitingOnHuman, board?, accounts?, errors?}.",
     "A section the cloud refused is reported under errors and the rest still prints; exit 1 in that case.",
-    "Every tenant fact (stage names, thresholds, teams) comes from the contract in this output, never from prose.",
+    "Every account fact (stage names, thresholds, teams) comes from the contract in this output, never from prose.",
   ]);
   process.exit(0);
 }
@@ -61,6 +63,8 @@ const out = {
   queue,
   waitingOnHuman: asks,
 };
+
+if (flags.accounts) out.accounts = section("accounts", ["accounts", "--json"]);
 
 if (flags.board) {
   const args = ["query", "issues", "--limit", String(flags.limit ?? 200), "--json"];

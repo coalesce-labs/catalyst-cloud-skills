@@ -14,7 +14,7 @@ These will never be a command, on any release. Each is an authorization a person
 | installing the GitHub App | `<their cloud>/settings/connections` | "Open the same page and install the GitHub App, granting it the repository you want worked and `<your GitHub org>/thoughts`." |
 | creating or confirming `<your GitHub org>/thoughts`, and letting the GitHub App reach it | GitHub, then the GitHub App's installation page for that org | "Catalyst's cloud phases write their notes to `<your GitHub org>/thoughts`, in the org that owns the code repository. Check it exists. If not, create a private repository named `thoughts`, initialized with a README. Then, on the GitHub App's installation page for that org, choose All repositories, or add `thoughts` to the selected repositories." |
 | connecting personal Linear | the URL printed by `catalyst connections personal linear start` | "Approve your own Linear account in this browser. I will check the grant status afterward." |
-| connecting personal GitHub, after the tenant GitHub App is installed and its repository is registered | the URL printed by `catalyst connections personal github start` | "Approve your own GitHub account in this browser. I will check the grant status afterward." |
+| connecting personal GitHub, after the workspace's GitHub App is installed and its repository is registered | the URL printed by `catalyst connections personal github start` | "Approve your own GitHub account in this browser. I will check the grant status afterward." |
 
 Say **by construction**, not "not supported yet". A person who thinks it is a missing feature will wait for it.
 
@@ -31,7 +31,7 @@ These are settings pages today because the routes behind them take a browser ses
 
 ## The URL to hand over
 
-Never type a host from memory. `catalyst status` prints the API it is connected to on its `API:` line, and `node scripts/where-am-i.mjs` prints ready-made links built from it. Use those. A person pointed at the wrong tenant's settings page has a worse afternoon than one pointed at no page at all.
+Never type a host from memory. `catalyst status` prints the API it is connected to on its `API:` line, and `node scripts/where-am-i.mjs` prints ready-made links built from it. Use those. A person pointed at the wrong account's settings page has a worse afternoon than one pointed at no page at all.
 
 ## Handing over, and coming back
 
@@ -39,7 +39,7 @@ The shape is always the same three parts, and all three matter:
 
 1. **What to open.** One link, and what they will see on it.
 2. **What to do there.** One action, named the way the page names it.
-3. **What you need back.** Not "let me know when you are done" — say what you will check and how. "When you have saved it, say so and I will re-read your tenant and tell you what it now says."
+3. **What you need back.** Not "let me know when you are done" — say what you will check and how. "When you have saved it, say so and I will re-read your workspace and tell you what it now says."
 
 Then **wait**. Do not run anything while they are mid-flow, do not narrate, and do not move to the next step.
 

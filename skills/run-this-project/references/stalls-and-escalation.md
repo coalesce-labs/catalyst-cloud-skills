@@ -1,12 +1,12 @@
 # Stalls and escalation
 
-The stall thresholds here are **local policy**, set once by the human who owns the tenant and read by `scripts/scope-status.mjs`. They are not cloud values and the cloud does not enforce them; the cloud's own enforcement numbers (retry backoff, the park threshold, the remediate round cap, the write budget) are on the contract and printed by `how-catalyst-works`. The chase order and the escalation rule below are invariants.
+The stall thresholds here are **local judgment**, set once by the person who owns the project and read by `scripts/scope-status.mjs`. The cloud publishes no stall policy and enforces none of these numbers. What the cloud itself does about a failing ticket is on the contract's `thresholds` (the retry backoff, the park threshold, the repair-round cap, the write budget); the `whats-happening` skill's `scripts/show-my-map.mjs` prints them. The chase order and the escalation rule below are invariants.
 
 ## The policy file
 
 `assets/stall-policy.json` ships the defaults: minutes a ticket may sit in each slot with no update and nothing running or leased on it before it counts as stalled. To change them, copy that file to `~/.config/catalyst-cloud/stall-policy.json` and edit it there; the script prefers the local copy and prints which file it used. Pass `--stall-policy <file>` to use another.
 
-Two slots deserve thought when tuning. The dispatch slot's threshold is how long a card may wait to be picked up before you ask why nothing took it; on a busy tenant with a full queue that is capacity, not a stall, and the answer is to wait or re-prioritise. The PR slot's threshold is how long a card may wait for merge evidence; reviews and CI take real time, so set it generously.
+Two slots deserve thought when tuning. The dispatch slot's threshold is how long a card may wait to be picked up before you ask why nothing took it; on a busy account with a full queue that is capacity, not a stall, and the answer is to wait or re-prioritise. The PR slot's threshold is how long a card may wait for merge evidence; reviews and CI take real time, so set it generously.
 
 ## What counts as stuck
 
@@ -16,27 +16,15 @@ A running phase is never a stall, however long it has run; the cloud's own timeo
 
 ## The chase order
 
-Run `catalyst explain <ticket>` first, and let its reason pick the row:
+Run `catalyst explain <ticket>` first. Look its reason up in the one reason table, the `whats-happening` skill's `references/why-is-it-stuck.md`: it says what the reason means, what releases it, and who acts. What that means for you as the owner:
 
-| the explainer says | what it means | your move |
-| -- | -- | -- |
-| offered, with a position | the queue has it; a runner is the bottleneck | wait; if every ticket waits, it is capacity, see below |
-| lease held, intake lease held | a container has it | not a stall; wait for the outcome card |
-| retry backoff | a pre-branch or infrastructure failure is retrying in place | wait out the rung; three in a row parks it, and then it is a real stall |
-| blocked | a live blocks relation | chase the blocker: is it dispatchable, is it an ask nobody answered, is it done but still open |
-| ask ticket, ask shape suspected | the ticket is a question | route it to `what-needs-me`; if it is really work, a human applies the release label |
-| not at dispatch stage | somebody moved the card, or it never entered | read the card's history; re-dispatch with `make-ready.mjs` if it should run |
-| phase parked, cooling down, remediate parked | the cloud parked it after repeated failure or the round cap | read the last outcome card for the class; once its cause is fixed, the `unstick` skill releases it (`catalyst release <ticket> --because <what changed>`); if the fix is a decision, file an ask |
-| no change hold | a remediate round changed nothing | a human comment on the ticket, or a new push to the branch, releases it; say what should change |
-| validate class spent, stale failure episode | the repair budget for this failure is used, or the ladder moved on | read the outcome cards; usually a decision about the approach, so an ask |
-| waiting on | a merge-gate failure with no automatic repair | read the merge-wait comment and the PR's three legs through `catalyst-github` |
-| branch missing, branch gone, no branch to remediate | the branch the phase needs does not exist | a hand-deleted branch is a human question; a never-created one means implement has not run, so check the earlier phases |
-| environment check required, running, failed, expired, hash mismatch | the repository's environment gate | a repository setting; the tenant admin resolves it in settings, one ask for the repository, not per ticket |
-| scope overlap | another in-flight ticket owns the files | wait for it, or re-order by priority |
-| routing unavailable, no eligible slot, runner image breaker, repo paused | a fleet or provider condition | one fleet note, never per ticket; see below |
-| pr merged, pipeline complete, ticket terminal | it is finished | close the loop in the summary; if the card is not Done a minute after the merge, that is a finding, not a chore |
+- **It releases itself** (a lease, a backoff rung, a capacity wait): not a stall. Wait for the outcome card. Three failed rungs in a row park it, and then it is.
+- **The person, with their own login, acts**: do it when the move is yours (re-dispatch with `make-ready.mjs`, comment on the ticket to clear a no-change or validate-budget hold, route a question to `what-needs-me`), and file an ask when it is theirs.
+- **A park or a hold a release clears**: once its cause is fixed, the `unstick` skill releases it (`catalyst release <ticket> --because <what changed>`). A round-threshold hold and a review that will not converge refuse that release; the table says what clears each.
+- **An owner or admin, in settings**, or **an operator**: one ask per repository or setting, never one per ticket.
+- **Finished**: close the loop in the summary. A card not Done a minute after its merge is a finding, not a chore.
 
-Where the explainer names a reason not in this table, it prints the raw reason; read it as spelled and consult `how-catalyst-works`.
+When the explainer names a reason the table does not know, it prints the raw reason; quote it as spelled.
 
 ## Capacity and fleet conditions are one note, not many asks
 

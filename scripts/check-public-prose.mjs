@@ -22,7 +22,13 @@ export const RULES = [
     re: /coalesce-labs\/(?:catalyst-cloud(?!-skills)|thoughts)\b|\bLantern\b|\bexecution-core\b/,
     inFences: true,
   },
+  // People and their accounts are never "tenants". Identifiers keep their names, so inline code and
+  // link targets are left out of this check: `tenantId`, `/v1/tenant/...`, `tenant-0`.
+  { id: "tenant-word", re: /\btenants?\b/i, inFences: false, identifiersExempt: true },
 ];
+
+/** A line with its inline code and Markdown link targets removed: the identifiers a rule exempts. */
+export const withoutIdentifiers = (line) => line.replace(/`[^`]*`/g, "").replace(/\]\([^)]*\)/g, "]");
 
 /** Lines allowed to name the old command or package, each by a substring of the one line it exempts. */
 export const RETIRED_CLI_ALLOWED = [
@@ -40,7 +46,7 @@ export function scanText(text) {
     if (/^\s*(?:```|~~~)/.test(line)) fenced = !fenced;
     for (const rule of RULES) {
       if (fenced && !rule.inFences) continue;
-      if (!rule.re.test(line)) continue;
+      if (!rule.re.test(rule.identifiersExempt ? withoutIdentifiers(line) : line)) continue;
       if (rule.id === "retired-cli" && RETIRED_CLI_ALLOWED.some((a) => line.includes(a))) continue;
       findings.push({ line: i + 1, rule: rule.id, text: line.trim() });
     }

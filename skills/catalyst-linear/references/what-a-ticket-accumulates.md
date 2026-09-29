@@ -18,7 +18,7 @@ Every one of these is posted by the app actor and is skipped by the comment-wake
 
 ## One document per phase, attached
 
-Each artifact-bearing phase (research, plan, implement, validate, pr, remediate) projects its artifact into Linear as a document at a deterministic id, titled `<TICKET> · <phase> · attempt <n> · <YYYY-MM-DD>`, attached to the ticket, and announced by the projection-link comment above. Research and plan documents on a ticket that belongs to a project are also linked from the project. The same body is committed into the tenant's thoughts repository when one is configured. Reading the document is how you read what a phase concluded; the phase-outcome comment only summarises it.
+Each artifact-bearing phase (research, plan, implement, validate, pr, remediate) projects its artifact into Linear as a document at a deterministic id, titled `<TICKET> · <phase> · attempt <n> · <YYYY-MM-DD>`, attached to the ticket, and announced by the projection-link comment above. Research and plan documents on a ticket that belongs to a project are also linked from the project. The same body is committed into the account's thoughts repository when one is configured. Reading the document is how you read what a phase concluded; the phase-outcome comment only summarises it.
 
 ## The agent session
 

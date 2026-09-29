@@ -14,7 +14,7 @@ Other accounts can be healthy at the same time. The contract can still say `enro
 
 ## Who does it
 
-A tenant owner or admin, in the browser. The person copies the credential and pastes it. You never read it, print it, or paste it. The script prints the page link; use it, and never type a host.
+A workspace owner or admin, in the browser. The person copies the credential and pastes it. You never read it, print it, or paste it. The script prints the page link; use it, and never type a host.
 
 ## Codex
 
@@ -46,6 +46,6 @@ Replace its credential on the same page, with the credential that page asks for.
 
 ## What Replace credential does
 
-It stores the new credential and clears the account's quarantine in the same step. A tenant owner or admin can do it. An operator is not needed.
+It stores the new credential and clears the account's quarantine in the same step. A workspace owner or admin can do it. An operator is not needed.
 
 A failed poll is recorded until the account is polled again. If the script still names the account right after the replacement, wait for the next poll and read it again. If it still names it, report both: what the page said, and what the script says.

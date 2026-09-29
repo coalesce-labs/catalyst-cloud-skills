@@ -547,7 +547,7 @@ describe("the onboarding guide walks a dead credential and the thoughts reposito
     const execution = readFileSync(join(here, "..", "src", "execution.ts"), "utf8");
     expect(execution).not.toMatch(/re-enrol/);
     expect(execution).toContain("Settings → AI accounts → the account → Replace credential");
-    const facts = readFileSync(join(here, "..", "skills", "how-catalyst-works", "references", "coding-accounts.md"), "utf8");
+    const facts = readFileSync(join(here, "..", "skills", "whats-happening", "references", "coding-accounts.md"), "utf8");
     expect(facts).not.toContain("only an operator clears it");
     expect(facts).toContain("Replace credential on the account's page clears it");
   });

@@ -1,5 +1,0 @@
-identity: { pack: catalyst-cloud-skills, skill: connect-me }
-effects: [workspace-write]
-mutating: true
-invocation: explicit
-exposure: [catalog]

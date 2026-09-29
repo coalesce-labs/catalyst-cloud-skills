@@ -1,15 +1,14 @@
 ---
 name: catalyst-linear
 description: >-
-  Catalyst's view of Linear on the customer's own tenant. Reads a ticket with its comments, relations, labels, linked pull requests and agent sessions inline, from the local replica when it is fresh and the origin-fresh API otherwise, always naming the source; searches tickets, PRs, projects and initiatives; writes comments, card moves, labels and new tickets through the tenant's agent proxy as the app actor, with every route, stage id, label id and marker read from the tenant contract. Knows what a ticket accumulates as Catalyst works it (phase-outcome comments, the document per phase, the agent session, the labels, the single blocks relation, the bookkeeping marker, the eyes acknowledgement). Use when a person says "show me the ticket", "what did Catalyst write on it", "comment on it", "move it", "label it" or "file a ticket". Not for raising a decision for a human (what-needs-me) and not for pull requests (catalyst-github).
+  Catalyst's view of Linear on the customer's own cloud account. Reads a ticket with its comments, relations, labels, linked pull requests and agent sessions inline, from the local replica when it is fresh and the origin-fresh API otherwise, always naming the source; searches tickets, PRs, projects and initiatives; writes comments, card moves, labels and new tickets through the account's agent proxy as the app actor, with every route, stage id, label id and marker read from the account's contract. Knows what a ticket accumulates as Catalyst works it (phase-outcome comments, the document per phase, the agent session, the labels, the single blocks relation, the bookkeeping marker, the eyes acknowledgement). Use when a person says "show me the ticket", "what did Catalyst write on it", "comment on it", "move it", "label it" or "file a ticket". Not for raising a decision for a human (what-needs-me) and not for pull requests (catalyst-github).
 allowed-tools: Bash(catalyst:*) Bash(npx -p @catalyst-cloud/cli catalyst:*)
-disable-model-invocation: true
 ---
-<!-- vendored-from: @catalyst-cloud/catalyst-skills@0.13.0 — written in this repository for customer tenants -->
+<!-- vendored-from: @catalyst-cloud/catalyst-skills@0.13.0 — written in this repository for customer accounts -->
 
 # Catalyst Linear
 
-You read tickets and write to them on the customer's tenant, as Catalyst. Reads come from the replica when it is fresh, else from the API, and every read names its source. Writes go through the tenant's agent proxy as the app actor, with routes, stage ids, label ids and the bookkeeping marker resolved from the tenant contract by the `catalyst` CLI. You never compose a URL, never name a stage by its display name, and never quote a label id or marker from memory.
+You read tickets and write to them in the customer's cloud account, as Catalyst. Reads come from the replica when it is fresh, else from the API, and every read names its source. Writes go through the account's agent proxy as the app actor, with routes, stage ids, label ids and the bookkeeping marker resolved from the contract by the `catalyst` CLI. You never compose a URL, never name a stage by its display name, and never quote a label id or marker from memory.
 
 ## Run first
 
@@ -40,4 +39,4 @@ Exit codes: 0 done, 1 not found or a usage error, 2 this machine is not connecte
 - **Records carry the marker.** A merge note, a state-move log, a chain summary: `--bookkeeping`, so it never reads as a human turn. A real question is not bookkeeping.
 - **Move by slot, label by contract.** A stage name is display; the id is the authority, and the CLI resolves both. Moving to `dispatch` dispatches; the backlog-type state parks.
 - **A decision is an ask, not a ticket.** Raise it through `what-needs-me` with options, a default and what it blocks; a question filed as a ticket is held out of dispatch by shape.
-- **One write per need, no loops.** Writes spend a daily budget the contract names; batch, and report a refusal rather than retrying.
+- **One write per need, no loops.** Every write is visible in the person's Linear and spends a daily budget the contract names; batch, and report a refusal rather than retrying. A move into dispatch starts paid work on a coding account.

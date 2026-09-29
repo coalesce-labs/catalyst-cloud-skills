@@ -1,11 +1,10 @@
 ---
 name: run-this-project
 description: >-
-  Own one Catalyst Cloud project end to end until it closes. Use when the person says "run this project for me", "own this until it ships", "keep this moving", or hands you a project id or a set of tickets to drive. Subscribes to the tenant stream for the scope through the catalyst CLI, reacts to each change in the same turn, makes tickets ready and moves them to dispatch, parks what should stop, chases stalls, escalates inward, and keeps one status summary current. Writes to Linear as the app actor; never polls.
-disable-model-invocation: true
+  Own one Catalyst Cloud project end to end until it closes. Use when the person says "run this project for me", "own this until it ships", "keep this moving", or hands you a project id or a set of tickets to drive. Subscribes to the account's event stream for the scope through the catalyst CLI, reacts to each change in the same turn, makes tickets ready and moves them to dispatch, parks what should stop, chases stalls, escalates inward, and keeps one status summary current. Writes to Linear as the app actor; never polls.
 allowed-tools: Bash(catalyst:*) Bash(npx -p @catalyst-cloud/cli catalyst:*)
 ---
-<!-- vendored-from: @catalyst-cloud/catalyst-skills@0.13.0 — written in this repository for customer tenants -->
+<!-- vendored-from: @catalyst-cloud/catalyst-skills@0.13.0 — written in this repository for customer accounts -->
 
 # Run this project
 
@@ -29,7 +28,7 @@ Every script exits 2 when this machine is not connected (run `catalyst login`), 
 | arming the watch, deciding what a frame means, a reaction failed, a resync line printed | `references/reacting-to-events.md` |
 | dispatching or parking a ticket, judging whether a phase actually ran, writing a ticket for Catalyst | `references/making-work-ready.md` |
 | something is not moving, tuning the stall policy, deciding whether a human needs to hear about it | `references/stalls-and-escalation.md` |
-| the exclusion vocabulary in depth, the ladder, this team's stage map | the `how-catalyst-works` skill |
+| what an exclusion reason means and who acts, the ladder, this team's stage map | the `whats-happening` skill |
 | raising or settling a decision | the `what-needs-me` skill |
 | a PR's checks, review and merge legs | the `catalyst-github` skill |
 
@@ -38,8 +37,9 @@ Every script exits 2 when this machine is not connected (run `catalyst login`), 
 - **React, never poll.** A loop that re-reads the API or the replica is a defect. The stream and the cursor file are the mechanism; a reaction that throws leaves the cursor so the frame is offered again.
 - **Dispatch is a card move.** The cloud takes work from the dispatch column and writes every later stage itself. Your two moves are into dispatch and into the backlog; never hand-move a card into a ladder stage.
 - **Evidence a phase ran is the outcome comment, the attached document and the agent session,** not the clock and not the card's column.
-- **Tenant facts come from the contract, live.** Never restate a stage name, label id, team id, threshold or template in prose; run `catalyst contract --path <a.b.c>` when you need one.
+- **Account facts come from the contract, live.** Never restate a stage name, label id, team id, threshold or template in prose; run `catalyst contract --path <a.b.c>` when you need one.
 - **Escalate inward.** Instrument, then you, then the desk, then the human as an ask filed through `what-needs-me` with what it blocks. Decide the technical calls yourself; take the sane default and record it; a fleet or provider condition is one note, never one ask per ticket.
+- **Say what a write costs.** Every card move and comment is a write as the app actor: it spends the daily write budget the contract names, and a move into dispatch starts paid work on a coding account. `make-ready.mjs` prints the explainer's verdict after the move; read it before the next one.
 - **Reply where the message arrived,** in-thread, tagged, as the app actor. Never post as the human, never answer someone else's ask. Bookkeeping records take the contract's marker (`catalyst write comment --bookkeeping`).
 - **One status summary,** kept current after every reaction: in flight, blocked and on whom, closed, next, each line with a ticket id. Where a human decision is pending, the line carries the ask's id.
-- **Say what a key cannot see.** PR labels and reactions are not mirrored; the CLI says so by name and points at settings. A park or hold is released from the person's own login once its cause is fixed, through the `unstick` skill (`catalyst release`). Execution history (`explain --history`) and coding-account status (`accounts`) ARE readable — read them rather than reconstructing them from comments.
+- **Say what a key cannot see.** PR labels and reactions are not mirrored; the CLI says so by name and points at settings. A park or most holds are released from the person's own login once the cause is fixed, through the `unstick` skill (`catalyst release`); a round-threshold hold and a review that will not converge refuse it, and `whats-happening` says what clears each. Execution history (`explain --history`) and coding-account status (`accounts`) ARE readable — read them rather than reconstructing them from comments.
