@@ -187,7 +187,8 @@ export function modernCliPath(recorded: string | undefined): string | null {
 }
 
 export function normalizeBaseUrl(url: string): string {
-  return url.replace(/\/+$/, "");
+  while (url.endsWith("/")) url = url.slice(0, -1);
+  return url;
 }
 
 /** The origin WITH the versioned prefix — what the SDK and every API read/write take. */

@@ -2,24 +2,32 @@
 // validator. Unlike every other verb in this file's siblings, `cmdEnv` never calls `requireConfig` or
 // `apiClient` — it needs neither a login nor a network call, which is the whole point of the feature:
 // a person reviews what a repository declares without connecting anything first.
-import { readFileSync, statSync, type Stats } from "node:fs";
+import { existsSync, readFileSync, statSync, type Stats } from "node:fs";
 import { resolve } from "node:path";
 import { positionals, type ParsedArgs } from "./args.js";
 import type { Ctx } from "./config.js";
-import { validateDeclaration } from "./env/declaration-rules.js";
+import { validateSettingsToml } from "./env/settings-toml.js";
 import { inventoryRepo } from "./env/inventory.js";
-import { inventoryToJson, renderCheck, renderInventory } from "./env/render.js";
+import { inventoryToJson, renderInventory } from "./env/render.js";
 import type { ScanDeps } from "./env/types.js";
 import { UsageError } from "./errors.js";
 
 export type EnvDeps = Partial<ScanDeps>;
 
-export async function cmdEnv(args: ParsedArgs, ctx: Ctx, deps: EnvDeps = {}): Promise<number> {
+export async function cmdEnv(
+  args: ParsedArgs,
+  ctx: Ctx,
+  deps: EnvDeps = {},
+): Promise<number> {
   const [sub, ...rest] = positionals(args);
-  if (sub === undefined) throw new UsageError("env needs a subcommand: inventory | check");
+  if (sub === undefined)
+    throw new UsageError("env needs a subcommand: inventory | check");
 
   if (sub === "inventory") {
-    if (rest.length > 1) throw new UsageError(`env inventory takes at most one path (got an extra "${rest[1]}")`);
+    if (rest.length > 1)
+      throw new UsageError(
+        `env inventory takes at most one path (got an extra "${rest[1]}")`,
+      );
     const root = resolve(rest[0] ?? ".");
     // C-3: walkRepo swallows a readdir failure and returns [], so without this an unreadable or
     // mistyped path printed three empty groups and exited 0 — a typo that reads as "declares nothing".
@@ -27,11 +35,15 @@ export async function cmdEnv(args: ParsedArgs, ctx: Ctx, deps: EnvDeps = {}): Pr
     try {
       stat = statSync(root);
     } catch {
-      ctx.stderr(`${root} does not exist — env inventory takes a path to a repository`);
+      ctx.stderr(
+        `${root} does not exist — env inventory takes a path to a repository`,
+      );
       return 1;
     }
     if (!stat.isDirectory()) {
-      ctx.stderr(`${root} is not a directory — env inventory takes a path to a repository`);
+      ctx.stderr(
+        `${root} is not a directory — env inventory takes a path to a repository`,
+      );
       return 1;
     }
     const inv = inventoryRepo(root, deps);
@@ -41,30 +53,52 @@ export async function cmdEnv(args: ParsedArgs, ctx: Ctx, deps: EnvDeps = {}): Pr
   }
 
   if (sub === "check") {
-    const file = rest[0];
-    if (!file) throw new UsageError("env check needs a file: catalyst env check <path to catalyst.env.json>");
-    if (rest.length > 1) throw new UsageError(`env check takes exactly one file (got an extra "${rest[1]}")`);
+    const file = rest[0] ?? ".catalyst/catalyst.toml";
+    if (rest.length > 1)
+      throw new UsageError(
+        `env check takes exactly one file (got an extra "${rest[1]}")`,
+      );
+    if (file.endsWith("catalyst.env.json")) {
+      const message =
+        "catalyst.env.json is a legacy declaration and is no longer read; validate .catalyst/catalyst.toml instead";
+      if (args.json)
+        ctx.stdout(JSON.stringify({ state: "invalid", errors: [message] }));
+      else ctx.stderr(message);
+      return 1;
+    }
     let text: string;
     try {
       text = readFileSync(file, "utf8");
     } catch (err) {
-      ctx.stderr(`could not read ${file}: ${err instanceof Error ? err.message : String(err)}`);
+      if (rest[0] === undefined && !existsSync("catalyst.env.json")) {
+        if (args.json)
+          ctx.stdout(JSON.stringify({ state: "no-source", errors: [] }));
+        else ctx.stdout("no .catalyst/catalyst.toml found in this repository");
+        return 0;
+      }
+      if (rest[0] === undefined && existsSync("catalyst.env.json")) {
+        const message =
+          "No .catalyst/catalyst.toml found; this repository has a legacy catalyst.env.json, which is no longer read. Convert it to the [environment] table in .catalyst/catalyst.toml.";
+        if (args.json)
+          ctx.stdout(JSON.stringify({ state: "invalid", errors: [message] }));
+        else ctx.stderr(message);
+        return 1;
+      }
+      ctx.stderr(
+        `could not read ${file}: ${err instanceof Error ? err.message : String(err)}`,
+      );
       return 1;
     }
-    let doc: unknown;
-    try {
-      doc = JSON.parse(text);
-    } catch {
-      // C-4/S-2: JSON.parse's own message embeds the first ten characters of the input, so
-      // forwarding it prints content from the file — on a verb documented as never printing a value.
-      ctx.stderr(`${file} is not valid JSON`);
-      return 1;
-    }
-    const errors = validateDeclaration(doc);
-    const state = errors.length === 0 ? "valid" : "invalid";
-    if (args.json) ctx.stdout(JSON.stringify({ state, errors }));
-    else for (const line of renderCheck({ state, errors }, file)) ctx.stdout(line);
-    return state === "valid" ? 0 : 1;
+    const result = validateSettingsToml(text);
+    if (args.json) ctx.stdout(JSON.stringify(result));
+    else if (result.state === "valid")
+      ctx.stdout(
+        `valid — ${file} contains ${result.variableNames.length} environment variable names`,
+      );
+    else if (result.state === "no-source")
+      ctx.stdout(`no [environment] table in ${file}`);
+    else for (const error of result.errors) ctx.stderr(`${file}: ${error}`);
+    return result.state === "invalid" ? 1 : 0;
   }
 
   throw new UsageError(`unknown env subcommand "${sub}": inventory | check`);

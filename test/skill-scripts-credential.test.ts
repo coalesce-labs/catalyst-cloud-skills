@@ -11,7 +11,14 @@
 // field inline.
 import { describe, expect, test } from "vitest";
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { delimiter, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -21,7 +28,10 @@ const pkgRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
 const skillsRoot = join(pkgRoot, "skills");
 
 /** One real script per skill, with arguments that reach the CLI. */
-const CASES: Record<(typeof CUSTOMER_SKILLS)[number], { script: string; args: string[] }> = {
+const CASES: Record<
+  (typeof CUSTOMER_SKILLS)[number],
+  { script: string; args: string[] }
+> = {
   "catalyst-github": { script: "read-pr.mjs", args: ["ENG-2"] },
   "catalyst-linear": { script: "read-ticket.mjs", args: ["ENG-2"] },
   "catalyst-onboard": { script: "where-am-i.mjs", args: [] },
@@ -41,7 +51,10 @@ const OAUTH = {
 };
 
 /** A home with customer.json (the given credential fields) and a stand-in CLI that logs its argv. */
-function connectedHome(credential: Record<string, unknown>): { home: string; calls: () => string[][] } {
+function connectedHome(credential: Record<string, unknown>): {
+  home: string;
+  calls: () => string[][];
+} {
   const home = mkdtempSync(join(tmpdir(), "skill-credential-"));
   const log = join(home, "calls.log");
   const cli = join(home, "fake-cli.mjs");
@@ -49,7 +62,7 @@ function connectedHome(credential: Record<string, unknown>): { home: string; cal
     cli,
     [
       'import { appendFileSync } from "node:fs";',
-      'const args = process.argv.slice(2);',
+      "const args = process.argv.slice(2);",
       // `--refresh` may precede `--path`: read the path by its flag, not its position.
       'const path = args.includes("--path") ? args[args.indexOf("--path") + 1] : undefined;',
       `appendFileSync(${JSON.stringify(log)}, JSON.stringify(process.argv.slice(2)) + "\\n");`,
@@ -59,7 +72,8 @@ function connectedHome(credential: Record<string, unknown>): { home: string; cal
       'else if (args[0] === "me") out = JSON.stringify({ user: { id: "user-fixture", label: "Fixture", role: "member", linearUserId: "linear-fixture" } }) + "\\n";',
       'else if (args[0] === "connections") out = JSON.stringify({ outcome: "connected" }) + "\\n";',
       'else if (args[0] === "contract" && path === "account") out = JSON.stringify({ name: "Fixture", slug: "fixture", linearWorkspaceSlug: "fixture" }) + "\\n";',
-      'else if (args[0] === "contract" && path === "teams") out = JSON.stringify([{ key: "ENG", dispatchGate: { status: "open" }, readiness: { status: "ready", checks: [{ id: "hosts_current", state: "pass" }] } }]) + "\\n";',
+      'else if (args[0] === "contract" && path === "teams") out = JSON.stringify([{ id: "team-eng", key: "ENG", stages: { dispatch: { stateId: "todo", name: "Todo" } }, dispatchGate: { status: "open" }, readiness: { status: "ready", checks: [{ id: "hosts_current", state: "pass" }] } }]) + "\\n";',
+      'else if (args[0] === "project" && args[1] === "list") out = JSON.stringify([{ id: "project-app", name: "Fixture App", linearTeamId: "team-eng", linearTeamKey: "ENG", githubRepoOwner: "coalesce-labs", githubRepoName: "fixture", status: "active" }]) + "\\n";',
       'else if (args[0] === "contract" && path === "codingAccounts") out = JSON.stringify({ state: "enrolled", activeCount: 1, line: "At least one coding account is enrolled and active for this tenant." }) + "\\n";',
       'else if (args[0] === "contract" && path === "readinessChecks") out = "[]\\n";',
       'else if (args[0] === "accounts") out = JSON.stringify({ accounts: [{ accountSlot: "claude-1", provider: "claude", status: "active", quarantined: false }] }) + "\\n";',
@@ -67,33 +81,55 @@ function connectedHome(credential: Record<string, unknown>): { home: string; cal
       'else if (args[0] === "environment") out = JSON.stringify({ current: { revision: 1, canonicalHash: "fixture" }, isApproved: true, delivered: { revision: 1 }, unresolvedReferences: [] }) + "\\n";',
       'else if (args[0] === "replica" && args[1] === "status") out = JSON.stringify({ verdict: "absent", exitCode: 3, dbPath: "/tmp/replica.db", writerAlive: false }) + "\\n";',
       'else if (args[0] === "events" && args[1] === "status") out = JSON.stringify({ verdict: "absent", cursor: null, head: null, writerAlive: false, reasons: ["event cache cursor is absent"] }) + "\\n";',
-      'process.stdout.write(out);',
+      "process.stdout.write(out);",
     ].join("\n"),
   );
   // A stand-in `gh` first on PATH, so the onboarding report's thoughts note never reaches the real GitHub.
   mkdirSync(join(home, "bin"));
-  writeFileSync(join(home, "bin", "gh"), "#!/bin/sh\necho 'not found' >&2\nexit 1\n", { mode: 0o755 });
+  writeFileSync(
+    join(home, "bin", "gh"),
+    "#!/bin/sh\necho 'not found' >&2\nexit 1\n",
+    { mode: 0o755 },
+  );
   mkdirSync(join(home, ".config", "catalyst-cloud"), { recursive: true });
   writeFileSync(
     join(home, ".config", "catalyst-cloud", "customer.json"),
-    JSON.stringify({ baseUrl: "https://cloud.example", account: "tenant-fixture", cliPath: cli, ...credential }),
+    JSON.stringify({
+      baseUrl: "https://cloud.example",
+      account: "tenant-fixture",
+      cliPath: cli,
+      ...credential,
+    }),
   );
   return {
     home,
     calls: () =>
       existsSync(log)
-        ? readFileSync(log, "utf8").trim().split("\n").filter(Boolean).map((l) => JSON.parse(l) as string[])
+        ? readFileSync(log, "utf8")
+            .trim()
+            .split("\n")
+            .filter(Boolean)
+            .map((l) => JSON.parse(l) as string[])
         : [],
   };
 }
 
 function runScript(skill: keyof typeof CASES, home: string) {
   const { script, args } = CASES[skill];
-  return spawnSync(process.execPath, [join(skillsRoot, skill, "scripts", script), ...args], {
-    encoding: "utf8",
-    timeout: 20_000,
-    env: { ...process.env, CATALYST_SKILLS_HOME: home, HOME: home, PATH: `${join(home, "bin")}${delimiter}${process.env.PATH ?? ""}` },
-  });
+  return spawnSync(
+    process.execPath,
+    [join(skillsRoot, skill, "scripts", script), ...args],
+    {
+      encoding: "utf8",
+      timeout: 20_000,
+      env: {
+        ...process.env,
+        CATALYST_SKILLS_HOME: home,
+        HOME: home,
+        PATH: `${join(home, "bin")}${delimiter}${process.env.PATH ?? ""}`,
+      },
+    },
+  );
 }
 
 describe("every skill's scripts run for either credential", () => {
@@ -107,7 +143,9 @@ describe("every skill's scripts run for either credential", () => {
       const r = runScript(skill, home);
       expect(r.stderr, `${skill} stderr`).not.toMatch(/not connected/i);
       expect(r.status, `${skill} exit (stderr: ${r.stderr})`).not.toBe(2);
-      expect(calls().length, `${skill} never spawned the CLI`).toBeGreaterThan(0);
+      expect(calls().length, `${skill} never spawned the CLI`).toBeGreaterThan(
+        0,
+      );
     });
 
     test(`${skill}: a personal key is connected and reaches the CLI (unchanged)`, () => {
@@ -121,11 +159,21 @@ describe("every skill's scripts run for either credential", () => {
 
   test("catalyst-onboard reports optional local freshness without making it block setup", () => {
     const { home, calls } = connectedHome({ auth: OAUTH });
-    const script = join(skillsRoot, "catalyst-onboard", "scripts", "where-am-i.mjs");
+    const script = join(
+      skillsRoot,
+      "catalyst-onboard",
+      "scripts",
+      "where-am-i.mjs",
+    );
     const r = spawnSync(process.execPath, [script, "--json"], {
       encoding: "utf8",
       timeout: 20_000,
-      env: { ...process.env, CATALYST_SKILLS_HOME: home, HOME: home, PATH: `${join(home, "bin")}${delimiter}${process.env.PATH ?? ""}` },
+      env: {
+        ...process.env,
+        CATALYST_SKILLS_HOME: home,
+        HOME: home,
+        PATH: `${join(home, "bin")}${delimiter}${process.env.PATH ?? ""}`,
+      },
     });
     expect(r.status, r.stderr).toBe(0);
     const report = JSON.parse(r.stdout) as {
@@ -135,7 +183,9 @@ describe("every skill's scripts run for either credential", () => {
     };
     expect(report.finished).toBe(true);
     expect(report.localSync.assessment.verdict).toBe("absent");
-    expect(report.parts.find((part) => part.part === "machine")?.lines.join("\n")).toContain("note optional local sync absent");
+    expect(
+      report.parts.find((part) => part.part === "machine")?.lines.join("\n"),
+    ).toContain("note optional local sync absent");
     expect(calls()).toContainEqual(["replica", "status", "--probe", "--json"]);
     expect(calls()).toContainEqual(["events", "status", "--probe", "--json"]);
   });
@@ -149,7 +199,9 @@ describe("every skill's scripts run for either credential", () => {
   // route and need no login, so gating its launcher on a credential would break the feature. It is
   // excluded from the exit-2 loop below and asserted the OTHER way instead, just after this loop.
   const RUNS_OFFLINE = new Set(["what-this-repo-needs"]);
-  for (const skill of CUSTOMER_SKILLS.filter((s) => !REPORTS_NOT_CONNECTED.has(s) && !RUNS_OFFLINE.has(s))) {
+  for (const skill of CUSTOMER_SKILLS.filter(
+    (s) => !REPORTS_NOT_CONNECTED.has(s) && !RUNS_OFFLINE.has(s),
+  )) {
     test(`${skill}: a config holding neither credential is not connected — exit 2, the CLI never spawned`, () => {
       const { home, calls } = connectedHome({});
       const r = runScript(skill, home);
@@ -175,7 +227,10 @@ describe("every skill's scripts run for either credential", () => {
     const r = runScript("what-this-repo-needs", home);
     expect(r.status, r.stderr).toBe(0);
     expect(r.stderr).not.toMatch(/not connected/i);
-    expect(calls().length, "it must have reached the CLI, not merely exited 0").toBeGreaterThan(0);
+    expect(
+      calls().length,
+      "it must have reached the CLI, not merely exited 0",
+    ).toBeGreaterThan(0);
   });
 
   // Every connect instruction a person reads leads with the keyless login; the key form is the
@@ -186,8 +241,12 @@ describe("every skill's scripts run for either credential", () => {
   const LOGIN = String.raw`(?:npx\s+-p\s+@catalyst-cloud\/cli\s+catalyst|npx\s+@catalyst-cloud\/(?:catalyst-skills|cli)|\bcatalyst(?:-skills)?)\s+login`;
   // A key placeholder may carry spaces (`<your personal key>`), so it is a bracketed run or a token.
   const KEY_VALUE = String.raw`(?:<[^>\n]*>|\S+)`;
-  const KEY_FORM = new RegExp(String.raw`CATALYST_CLOUD_TOKEN=${KEY_VALUE}\s+${LOGIN}|${LOGIN}\s+--key\b`);
-  const KEYLESS_FORM = new RegExp(String.raw`(?<!CATALYST_CLOUD_TOKEN=${KEY_VALUE}\s+(?:npx\s+@catalyst-cloud\/)?)${LOGIN}(?!\s+--key\b)`);
+  const KEY_FORM = new RegExp(
+    String.raw`CATALYST_CLOUD_TOKEN=${KEY_VALUE}\s+${LOGIN}|${LOGIN}\s+--key\b`,
+  );
+  const KEYLESS_FORM = new RegExp(
+    String.raw`(?<!CATALYST_CLOUD_TOKEN=${KEY_VALUE}\s+(?:npx\s+@catalyst-cloud\/)?)${LOGIN}(?!\s+--key\b)`,
+  );
 
   function keyFirst(text: string): boolean {
     const key = text.search(KEY_FORM);
@@ -220,10 +279,14 @@ describe("every skill's scripts run for either credential", () => {
 
   test("no skill file tells a person to connect with the key form first", () => {
     const walk = (dir: string): string[] =>
-      readdirSync(dir, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walk(join(dir, e.name)) : [join(dir, e.name)]));
+      readdirSync(dir, { withFileTypes: true }).flatMap((e) =>
+        e.isDirectory() ? walk(join(dir, e.name)) : [join(dir, e.name)],
+      );
     const files = walk(skillsRoot);
     // The check can see: several skill files do name a key-form login (keyless first).
-    expect(files.filter((f) => KEY_FORM.test(readFileSync(f, "utf8"))).length).toBeGreaterThan(3);
+    expect(
+      files.filter((f) => KEY_FORM.test(readFileSync(f, "utf8"))).length,
+    ).toBeGreaterThan(3);
     const offenders = files.filter((f) => keyFirst(readFileSync(f, "utf8")));
     expect(offenders.map((f) => f.slice(skillsRoot.length + 1))).toEqual([]);
   });
@@ -233,14 +296,26 @@ describe("the credential check lives in one vendored file", () => {
   const canonicalPath = join(pkgRoot, "skill-lib", "credential.mjs");
 
   test("every skill carries scripts/lib/credential.mjs byte-identical to skill-lib/credential.mjs", () => {
-    expect(existsSync(canonicalPath), "skill-lib/credential.mjs is the one source").toBe(true);
+    expect(
+      existsSync(canonicalPath),
+      "skill-lib/credential.mjs is the one source",
+    ).toBe(true);
     const canonical = readFileSync(canonicalPath, "utf8");
-    const dirs = readdirSync(skillsRoot, { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => e.name).sort();
+    const dirs = readdirSync(skillsRoot, { withFileTypes: true })
+      .filter((e) => e.isDirectory())
+      .map((e) => e.name)
+      .sort();
     expect(dirs).toEqual([...CUSTOMER_SKILLS]);
     for (const skill of dirs) {
       const copy = join(skillsRoot, skill, "scripts", "lib", "credential.mjs");
-      expect(existsSync(copy), `${skill} is missing scripts/lib/credential.mjs — run: npm run skill-lib:sync`).toBe(true);
-      expect(readFileSync(copy, "utf8"), `${skill}'s copy drifted — run: npm run skill-lib:sync`).toBe(canonical);
+      expect(
+        existsSync(copy),
+        `${skill} is missing scripts/lib/credential.mjs — run: npm run skill-lib:sync`,
+      ).toBe(true);
+      expect(
+        readFileSync(copy, "utf8"),
+        `${skill}'s copy drifted — run: npm run skill-lib:sync`,
+      ).toBe(canonical);
     }
   });
 
@@ -254,15 +329,28 @@ describe("the credential check lives in one vendored file", () => {
 
   test("every launcher imports the shared check and checks no credential field inline", () => {
     for (const skill of CUSTOMER_SKILLS) {
-      const lib = readFileSync(join(skillsRoot, skill, "scripts", "lib", "cli.mjs"), "utf8");
-      expect(lib, `${skill} lib must import ./credential.mjs`).toMatch(/from\s+["']\.\/credential\.mjs["']/);
-      expect(lib, `${skill} lib checks a credential inline`).not.toMatch(INLINE_CHECK);
+      const lib = readFileSync(
+        join(skillsRoot, skill, "scripts", "lib", "cli.mjs"),
+        "utf8",
+      );
+      expect(lib, `${skill} lib must import ./credential.mjs`).toMatch(
+        /from\s+["']\.\/credential\.mjs["']/,
+      );
+      expect(lib, `${skill} lib checks a credential inline`).not.toMatch(
+        INLINE_CHECK,
+      );
     }
   });
 
   test("the sync script's --check agrees with the gate", () => {
-    expect(existsSync(join(pkgRoot, "scripts", "sync-skill-lib.mjs"))).toBe(true);
-    const r = spawnSync(process.execPath, [join(pkgRoot, "scripts", "sync-skill-lib.mjs"), "--check"], { encoding: "utf8" });
+    expect(existsSync(join(pkgRoot, "scripts", "sync-skill-lib.mjs"))).toBe(
+      true,
+    );
+    const r = spawnSync(
+      process.execPath,
+      [join(pkgRoot, "scripts", "sync-skill-lib.mjs"), "--check"],
+      { encoding: "utf8" },
+    );
     expect(r.status, r.stdout + r.stderr).toBe(0);
   });
 });
