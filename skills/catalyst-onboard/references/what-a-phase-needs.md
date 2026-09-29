@@ -17,7 +17,7 @@ A person can finish every other step and still see nothing run. A phase needs tw
 | `inactive` | accounts exist, but every one is out of rotation | reactivate one on the page. Never tell them to enrol another |
 | `unread` | the cloud could not read the accounts | say it could not be read. It is not "no accounts". Do not tell them to enrol one; read it again later |
 
-**Owner:** the one the contract names. The person does it in the browser. Never ask for the credential, and never handle it. A key cannot enrol one.
+**Owner:** the one the contract names. The person does it in the browser. Never ask for the credential, and never handle it. A key cannot enrol one. Which kinds of account exist, what each asks for, and what to do with an ended or cancelled one are in `references/choosing-a-coding-account.md`; it is step 2 of the path, the first thing asked.
 
 **Older cloud:** if the contract has no `codingAccounts`, the script says the cloud is older and reads `catalyst-skills accounts` instead. That list counts the accounts enrolled and the ones able to take work. An expired, revoked or quarantined account does not count. The owner is then a tenant owner or admin, at `<their cloud>/settings/coding-accounts`.
 

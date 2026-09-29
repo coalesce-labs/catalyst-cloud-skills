@@ -1,5 +1,7 @@
 #!/usr/bin/env node
-// where-am-i.mjs — how far has setup got? SEVEN PARTS, EACH READ BY THE INSTRUMENT THAT OWNS IT, and
+// where-am-i.mjs — how far has setup got? EIGHT PARTS, EACH READ BY THE INSTRUMENT THAT OWNS IT, and
+// reported in the order a person can act on them (coding account first, then the integrations, the
+// project, its repository, the person's own connected accounts, the repository's declaration, the host);
 // each finding labelled with the part it belongs to. The whole point of this script is that no part
 // answers for another: a project that is not ready is reported as a project finding with a tenant
 // owner's name on it, never as something the person at this keyboard can fix by running anything.
@@ -18,7 +20,7 @@ const NOTES = [
   "`replica status --probe --json` and `events status --probe --json` (optional local freshness),",
   "`me --json` and personal connection statuses (person), `contract --path …` for the account, the projects and the repositories,",
   "`contract --path codingAccounts` and `accounts --json` (coding accounts, and which one needs a new credential), and each",
-  "project's hosts_current check with its fixedWhere (host).",
+  "project's hosts_current check with its fixedWhere (host), and each project's environment_declared check with its per-repository notes (repository declarations).",
   "Also runs `gh repo view <owner>/thoughts` for each registered repository's owner, as a note: it shows the repository exists, never that the GitHub App can reach it.",
   "When the tenant serves a contract version this CLI refuses, runs `npm view @catalyst-cloud/cli version` once to say whether a newer CLI is published.",
   "Writes nothing and changes nothing. Runs before this machine is connected — that is one of the states it reports.",
@@ -135,7 +137,8 @@ add(
   machineVerdict,
   machineLines,
   "you, on this machine",
-  connected ? null : CONNECT_LINE,
+  // The keyless login alone: a person who holds a personal key already knows the key form.
+  connected ? null : CONNECT_LINE.split(" (or")[0],
 );
 
 // ── person ────────────────────────────────────────────────────────────────────────────────────────
@@ -186,7 +189,7 @@ if (!connected) {
       "catalyst-skills me, and catalyst-skills connections personal <provider> status --json",
       matched && !personalGrantIncomplete ? "ok" : "unfinished",
       [`${user.label ?? "(unnamed)"} (${user.role ?? "role unknown"})`, matched ? "Linear identity matched" : "Linear identity NOT matched — asks assigned to you cannot be told apart from everyone else's. It blocks nothing below. Run catalyst-skills identity linear options for self-service recovery; personal Linear consent normally binds its viewer automatically.", ...grantLines],
-      personalGrantIncomplete ? "you" : matched ? null : "a tenant owner or admin",
+      personalGrantIncomplete ? "you" : matched ? null : "a workspace owner or admin",
       personalGrantIncomplete ? "catalyst-skills connections personal <provider> start or status" : matched ? null : link("/settings/account"),
       false,
     );
@@ -230,7 +233,7 @@ if (!connected) {
         "the GitHub App install is NOT carried here — the connections page is the only place that shows it",
         ...envLines,
       ],
-      "a tenant owner or admin",
+      "a workspace owner or admin",
       link("/settings/connections"),
     );
   }
@@ -270,7 +273,7 @@ if (!connected) {
       }
     }
     const ready = rows.length > 0 && rows.every(setUp);
-    add("projects", "catalyst-skills contract --path teams, and the team: checks of ready", ready ? "ok" : "unfinished", lines, "a tenant owner or admin", link("/settings/linear-teams"));
+    add("projects", "catalyst-skills contract --path teams, and the team: checks of ready", ready ? "ok" : "unfinished", lines, "a workspace owner or admin", link("/settings/linear-teams"));
   }
 }
 
@@ -300,7 +303,7 @@ if (!connected) {
     repositoryRegistered = rows.length > 0;
     lines.push("⛔ REGISTRATION only. This carries no status and no project attachment, so it never proves a repository can be dispatched into.");
     for (const owner of [...new Set(rows.map((r) => r.owner).filter((o) => typeof o === "string" && o !== ""))]) lines.push(thoughtsNote(owner));
-    add("repositories", "catalyst-skills contract --path merge.repositories", rows.length > 0 ? "ok" : "unfinished", lines, "a tenant owner or admin", link("/settings/repositories"));
+    add("repositories", "catalyst-skills contract --path merge.repositories", rows.length > 0 ? "ok" : "unfinished", lines, "a workspace owner or admin", link("/settings/repositories"));
   }
 }
 
@@ -310,6 +313,9 @@ if (!connected) {
 // The contract says the state, its sentence, who enrolls one and on which page. An older cloud's
 // contract has no `codingAccounts`, and only then is the owner assumed.
 let accountsNext = "enrol a coding account a phase can run on";
+// A note --next prints beside the next step: an ended or cancelled account is not unfinished, but the
+// person must hear that it is kept for reporting and never re-tokened, before anyone reaches for a setup token.
+let retireNote = null;
 // The contract counts accounts by declared rotation, so one healthy account can hide another whose
 // credential is dead. When it says `enrolled`, each account is read as well. An account needs a new
 // credential when it is quarantined, expired or revoked, or when its last polls failed on the
@@ -319,7 +325,7 @@ let accountsNext = "enrol a coding account a phase can run on";
 const CREDENTIAL_ERROR_CODES = new Set(["no_access_token", "no_credential"]);
 const CREDENTIAL_FAILURE_STREAK = 3;
 // A cancelled subscription or an ended account is not a credential problem: no token brings it
-// back. It is retired, never re-credentialed, and it does not make setup unfinished.
+// back. It is kept for reporting, never re-credentialed, and it does not make setup unfinished.
 const isRetirable = (a) => a?.renewalStatus === "canceled" || a?.status === "ended" || a?.declaredState === "ended";
 const credentialProblem = (a) => {
   if (isRetirable(a)) return null;
@@ -361,7 +367,8 @@ if (!connected) {
       const dead = rows === null ? [] : rows.filter((a) => credentialProblem(a) !== null);
       const retirable = rows === null ? [] : rows.filter(isRetirable);
       const who = (a) => [a.label, a.email].find((v) => typeof v === "string" && v !== "");
-      const retireLine = retirable.length === 0 ? [] : [`${retirable.length} account(s) ended or cancelled (${retirable.map((a) => `${a.provider ?? "unknown provider"} ${a.accountSlot ?? "?"}`).join(", ")}): retire them on the AI accounts page. Do not replace their credential; no token revives a cancelled subscription.`];
+      const retireLine = retirable.length === 0 ? [] : [`${retirable.length} account(s) cancelled or ended (${retirable.map((a) => `${who(a) ?? a.displayName ?? a.accountSlot ?? "?"} (${a.provider ?? "unknown provider"})`).join(", ")}): kept for reporting, not used, and not counted here. Never replace their credential; reactivate one on the AI accounts page only if its subscription is live again.`];
+      retireNote = retireLine[0] ?? null;
       if (rows === null) {
         accountsNext = "read the coding accounts again; each account's credential could not be checked";
         add("coding accounts", DETAIL, "unreadable", [...head, `coding accounts could not be checked in detail (${error}). Whether each one still has a working credential is unknown. Do not enroll one on this reading.`], null, null);
@@ -405,7 +412,7 @@ if (!connected) {
       const lines = [olderLine, `${rows.length} enrolled, ${usable.length} able to take work`];
       for (const a of rows) lines.push(`${a.accountSlot ?? "?"}: ${a.provider ?? "?"}, ${a.status ?? "status unknown"}${a.quarantined ? ", quarantined" : ""}`);
       if (usable.length === 0) lines.push("no phase can start until one is enrolled and able to take work");
-      add("coding accounts", "catalyst-skills accounts", usable.length > 0 ? "ok" : "unfinished", lines, "a tenant owner or admin", link("/settings/coding-accounts"));
+      add("coding accounts", "catalyst-skills accounts", usable.length > 0 ? "ok" : "unfinished", lines, "a workspace owner or admin", link("/settings/coding-accounts"));
     }
   } else {
     accountsNext = "read the coding accounts again; the contract could not be read";
@@ -437,7 +444,7 @@ if (!connected) {
   const how = fw === null ? null : link(fw.page);
   const howLines = fw?.command ? [`the owner runs: ${fw.command}`] : [];
   if (hc === null) {
-    add("host", "hosts_current in catalyst-skills contract --path teams", "unreadable", [teamRows === null ? "the project list could not be read, so the host check cannot be either" : "no project has a readiness check yet, so whether a host is connected cannot be read. Press Re-check on the projects page."], "a tenant owner or admin", link("/settings/linear-teams")).next =
+    add("host", "hosts_current in catalyst-skills contract --path teams", "unreadable", [teamRows === null ? "the project list could not be read, so the host check cannot be either" : "no project has a readiness check yet, so whether a host is connected cannot be read. Press Re-check on the projects page."], "a workspace owner or admin", link("/settings/linear-teams")).next =
       teamRows === null
         ? "refresh the contract (catalyst-skills contract --refresh), then run this again; the project list could not be read, so the host check cannot be either"
         : "press Re-check on the projects page, then run this again";
@@ -446,6 +453,70 @@ if (!connected) {
   } else {
     const detail = hc.reason === "no_host_connected" ? "no Catalyst host is connected" : hc.reason === "hosts_behind" ? "a connected host runs an older mapping" : hc.reason === "hosts_unreported" ? "a host is connected but has not reported what it loaded" : `state ${hc.state}`;
     add("host", "hosts_current in catalyst-skills contract --path teams", "unfinished", [`hosts_current ${hc.state}${hc.reason ? ` (${hc.reason})` : ""} on ${hc.team}: ${detail}`, ...howLines], owner, how);
+  }
+}
+
+// ── repository declarations ───────────────────────────────────────────────────────────────────────
+// A repository's own settings live in its committed `.catalyst/catalyst.toml`. Whether the project's
+// default repository has one in effect is the contract's `environment_declared` check; the project's
+// other repositories appear under that check's `repos`. Names only: nothing here reads a value, and
+// nothing here reads a file on this machine. A cloud that sends no such check has nothing to read.
+const DECL_INSTRUMENT = "environment_declared in catalyst-skills contract --path teams";
+const DECL_REASONS = {
+  no_team_repo_default: { text: "no repository is the project's default yet: register one and make it the default", who: "a workspace owner or admin", page: "/settings/repositories" },
+  no_environment_declaration: { text: "no .catalyst/catalyst.toml on its default branch yet: write it with the person (names only, never a value), open a pull request, merge it", who: "the person, in the repository, with your help", page: null },
+  declaration_invalid: { text: "the committed .catalyst/catalyst.toml did not validate: fix the file (the ingest names the error) and merge the fix", who: "the person, in the repository, with your help", page: null },
+  declaration_read_failed: { text: "the committed .catalyst/catalyst.toml could not be read: fix the file (the ingest names the error) and merge the fix", who: "the person, in the repository, with your help", page: null },
+  declaration_awaiting_approval: { text: "the declaration is proposed and waits for approval: Settings → Repositories → the repository → Environment → Setup declaration → Approve this revision", who: "a workspace owner or admin", page: "/settings/repositories" },
+};
+const DECL_DO = "write .catalyst/catalyst.toml with references/declaring-a-repository.md, then open a pull request";
+let declNext = "commit .catalyst/catalyst.toml to the repository and have an owner or admin approve it";
+if (!connected) {
+  add("repository declarations", DECL_INSTRUMENT, "unreadable", ["not readable until this machine is connected"], null, null);
+} else if (teamRows === null) {
+  add("repository declarations", DECL_INSTRUMENT, "unreadable", ["the project list could not be read, so no repository declaration can be either"], null, null).next =
+    "refresh the contract (catalyst-skills contract --refresh), then run this again; the project list could not be read, so no repository declaration can be either";
+} else if (teamRows.length === 0) {
+  add("repository declarations", DECL_INSTRUMENT, "unreadable", ["no project is mapped yet, so there is no repository whose declaration could be read"], null, null).next =
+    "map a project first; a repository declaration is read per project";
+} else if (teamRows.every((t) => !Array.isArray(t.readiness?.checks) || t.readiness.checks.length === 0)) {
+  // Mapped, never checked: the contract carries no checks at all until someone presses Re-check, and
+  // that silence is not "nothing to declare".
+  add("repository declarations", DECL_INSTRUMENT, "unreadable", ["no project has a readiness check yet, so whether its repository is declared cannot be read. Press Re-check on the projects page."], "a workspace owner or admin", link("/settings/linear-teams")).next =
+    "press Re-check on the projects page, then run this again";
+} else {
+  const found = teamRows.flatMap((t) => (Array.isArray(t.readiness?.checks) ? t.readiness.checks : []).filter((c) => c.id === "environment_declared").map((c) => ({ ...c, team: t.key ?? t.id ?? "(unkeyed)" })));
+  const lines = [];
+  let verdict = "ok";
+  let owner = null;
+  let where = null;
+  let unknown = false;
+  const describe = (reason) => DECL_REASONS[reason] ?? { text: `environment_declared ${reason ?? "failed"} (a reason this bundle does not know; read it on the page)`, who: "a workspace owner or admin", page: "/settings/repositories" };
+  const flag = (team, repo, reason) => {
+    const r = describe(reason);
+    lines.push(`${team}${repo ? `, ${repo}` : ""}: ${r.text}`);
+    if (verdict === "ok") declNext = `${repo ? `${repo}: ` : ""}${r.text}`;
+    verdict = "unfinished";
+    owner ??= r.who;
+    where ??= r.page === null ? DECL_DO : link(r.page);
+  };
+  if (found.length === 0) {
+    lines.push("this cloud reports no repository declaration check for the mapped projects, so there is nothing to read here; the repository's Environment page is where one would show");
+  }
+  for (const c of found) {
+    if (c.state === "pass") lines.push(`${c.team}: a declaration is in effect for the project's default repository`);
+    else if (c.state === "fail") flag(c.team, null, c.reason);
+    else {
+      unknown = true;
+      lines.push(`${c.team}: environment_declared could not be read${c.reason ? ` (${c.reason})` : ""}; press Re-check on the projects page`);
+    }
+    for (const note of Array.isArray(c.repos) ? c.repos : []) if (typeof note?.repo === "string" && note.reason) flag(c.team, note.repo, note.reason);
+  }
+  if (unknown && verdict === "ok") {
+    add("repository declarations", DECL_INSTRUMENT, "unreadable", lines, "a workspace owner or admin", link("/settings/linear-teams")).next = "press Re-check on the projects page, then run this again";
+  } else {
+    if (verdict !== "ok") lines.push("Names only: a value never passes through this script or the file. The person enters values on the repository's Environment page.");
+    add("repository declarations", DECL_INSTRUMENT, verdict, lines, verdict === "ok" ? null : owner, verdict === "ok" ? null : where);
   }
 }
 
@@ -465,12 +536,20 @@ const NEXT = {
       : personalGithubIncomplete
         ? "install the tenant GitHub App and register its repository before connecting your personal GitHub account"
         : "get this person's seat and Linear identity sorted",
-  account: "connect Linear, and install the GitHub App",
+  account: "connect the Linear integration on the Connections page (the GitHub App comes later, with the repository)",
   projects: "pick ONE project and map its stages (or adopt the Catalyst workflow)",
-  repositories: "register the repository, attaching it to the project you mapped",
+  repositories: "install the GitHub App on the Connections page, granting it the repository you want worked; registering that repository on the Repositories page, attached to the project, is the step right after",
   "coding accounts": accountsNext,
+  "repository declarations": declNext,
   host: "connect a Catalyst host",
 };
+// The parts are read in the order their data allows and reported in the order a person can act on
+// them: the coding account first (nothing runs without one, and it needs no other step), then the
+// workspace's Linear integration, the project, the GitHub App with its repository, the person's own
+// connected accounts (personal GitHub after the repository proves the App), the repository's
+// declaration, and last the host. `--next` is the first unfinished part in this order.
+const ORDER = ["machine", "coding accounts", "account", "projects", "repositories", "person", "repository declarations", "host"];
+parts.sort((a, b) => ORDER.indexOf(a.part) - ORDER.indexOf(b.part));
 // A personal Linear grant cannot start until the tenant's Linear workspace exists. Once that account
 // connection is present, a missing personal grant becomes the next member step before project setup.
 const personPart = parts.find((p) => p.part === "person");
@@ -522,9 +601,10 @@ if (contractMismatch !== null && stuck !== null) {
 const finished = parts.every((p) => p.verdict === "ok");
 
 if (flags.json) {
-  console.log(JSON.stringify({ cli: via, connected, cloud, personalConnections, parts, localSync, next, finished }));
+  console.log(JSON.stringify({ cli: via, connected, cloud, personalConnections, parts, localSync, next, finished, notes: retireNote === null ? [] : [retireNote] }));
 } else if (flags.next) {
-  if (next === null) console.log("nothing left: every part is finished, a coding account is enrolled and the host check passes. Move one card into the project's dispatch stage.");
+  process.on("exit", () => { if (retireNote !== null) console.log(`note: ${retireNote}`); });
+  if (next === null) console.log("nothing left: every part is finished, a coding account is enrolled and the host check passes. Move one card into the project's start stage (usually Todo).");
   else console.log(`${next.part}: ${next.action}${next.blocking ? "" : " (does not block the steps below)"}${next.owner ? ` — who: ${next.owner}` : ""}${next.where ? ` — ${next.where.startsWith("http") ? "where" : "do"}: ${next.where}` : ""}`);
 } else {
   for (const p of parts) {
@@ -537,6 +617,6 @@ if (flags.json) {
     if (p.verdict !== "ok" && p.where) console.log(`  ${p.where.startsWith("http") ? "where" : "do"}: ${p.where}`);
     console.log("");
   }
-  console.log(next === null ? "next: nothing left — move one card into the project's dispatch stage and watch." : `next: ${next.part} — ${next.action}${next.owner ? ` (${next.owner})` : ""}${next.where ? ` — ${next.where}` : ""}`);
+  console.log(next === null ? "next: nothing left — move one card into the project's start stage (usually Todo) and watch." : `next: ${next.part} — ${next.action}${next.owner ? ` (${next.owner})` : ""}${next.where ? ` — ${next.where}` : ""}`);
 }
 process.exit(finished ? 0 : 1);

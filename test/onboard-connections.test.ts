@@ -64,7 +64,7 @@ describe("onboarding personal grants", () => {
   test("does not make personal GitHub the next step until repository registration confirms the tenant App", () => {
     const beforeInstall = readOnboard("connected", "absent", false);
     expect(beforeInstall.doc.next?.part).not.toBe("person");
-    expect(beforeInstall.doc.next?.action).toContain("register the repository");
+    expect(beforeInstall.doc.next?.action).toMatch(/install the GitHub App.*registering that repository/);
 
     const afterInstall = readOnboard("connected", "absent", true);
     expect(afterInstall.doc.next).toMatchObject({
@@ -76,12 +76,16 @@ describe("onboarding personal grants", () => {
 
   test("the human guide places personal GitHub consent after repository registration", () => {
     const guide = readFileSync(join(import.meta.dirname, "..", "skills", "catalyst-onboard", "references", "the-one-path.md"), "utf8");
-    const app = guide.indexOf("## 5 — Install the GitHub App");
-    const repository = guide.indexOf("## 6 — Register the repository");
-    const personalGithub = guide.indexOf("## 6a — Connect your personal GitHub account");
-    expect(app).toBeGreaterThanOrEqual(0);
+    const codingAccount = guide.indexOf("## 2. A coding account");
+    const linear = guide.indexOf("## 3. Connect the Linear integration");
+    const app = guide.indexOf("## 5. Install the GitHub App");
+    const repository = guide.indexOf("## 6. Register the repository");
+    const personal = guide.indexOf("## 7. Connect your own accounts");
+    expect(codingAccount).toBeGreaterThanOrEqual(0);
+    expect(linear).toBeGreaterThan(codingAccount);
+    expect(app).toBeGreaterThan(linear);
     expect(repository).toBeGreaterThan(app);
-    expect(personalGithub).toBeGreaterThan(repository);
-    expect(guide.slice(personalGithub)).toContain("after the GitHub App is installed and the repository is registered");
+    expect(personal).toBeGreaterThan(repository);
+    expect(guide.slice(personal)).toContain("after the GitHub App is installed and the repository is registered");
   });
 });
