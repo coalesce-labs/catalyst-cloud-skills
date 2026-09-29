@@ -589,11 +589,11 @@ describe("ready reports when the installed skill bundle or CLI is behind the pub
     await seedJoined(home, server);
     installSkills(defaultSkillsDirFor(home), {});
     const dir = defaultSkillsDirFor(home);
-    const p = join(dir, "catalyst-setup", "SKILL.md");
+    const p = join(dir, "catalyst-onboard", "SKILL.md");
     writeFileSync(p, readFileSync(p, "utf8").replace(STAMP_RE, `${PROVENANCE_MARKER}@0.1.0`));
     const report = await readyReport(online(), { skillNames: CUSTOMER_SKILLS, fetchLatestRelease: fixedLookup("9.9.9") });
     expect(report.checks.find((c) => c.id === "skillsRelease")?.line).toContain("0.1.0");
-    expect(report.checks.find((c) => c.id === "skillsRelease")?.line).toContain("catalyst-setup");
+    expect(report.checks.find((c) => c.id === "skillsRelease")?.line).toContain("catalyst-onboard");
   });
 
   // A mixed install is the field report itself: machines that pulled at different hours hold some

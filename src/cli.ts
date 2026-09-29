@@ -105,9 +105,6 @@ export const CUSTOMER_SKILLS = [
   "catalyst-github",
   "catalyst-linear",
   "catalyst-onboard",
-  "catalyst-setup",
-  "connect-me",
-  "how-catalyst-works",
   "run-this-project",
   "unstick",
   "what-needs-me",
@@ -261,6 +258,7 @@ function maybePrintUpdateNotice(args: ParsedArgs, ctx: Ctx): void {
     return;
   }
   if (refreshed.installed.length > 0) say(`[catalyst] refreshed ${refreshed.installed.join(", ")} at ${skillsDir} to ${manifest.version}`);
+  if (refreshed.removed.length > 0) say(`[catalyst] removed retired skills ${refreshed.removed.join(", ")} from ${skillsDir}; their work moved into the skills this bundle ships`);
   for (const s of refreshed.skipped) {
     say(`[catalyst] left "${s.name}" alone: ${skillsDir}/${s.name} was not installed by this package (catalyst install --force to replace)`);
   }
@@ -484,6 +482,7 @@ function cmdInstall(args: ParsedArgs, ctx: Ctx): number {
   for (const s of result.skipped) {
     ctx.stdout(`Skipped "${s.name}": ${skillsDir}/${s.name} exists and was not installed by this package (use --force to replace)`);
   }
+  if (result.removed.length > 0) ctx.stdout(`Removed retired skills from ${skillsDir}: ${result.removed.join(", ")}`);
   return 0;
 }
 

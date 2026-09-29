@@ -1,6 +1,6 @@
 {
   "skill": "unstick",
-  "invocation": "explicit",
+  "invocation": "implicit",
   "exercised_phrase": "unpark this",
   "promised_phrases": [
     "why is this parked and can you release it?",

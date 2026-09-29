@@ -22,7 +22,7 @@ export const BLOCK_END = "<!-- catalyst:end -->";
 
 /** The two skills the block names. ONE place each: the packs are being consolidated, and a rename
  *  lands here, then `repo agents-block --write` brings every repository's block up to date. */
-export const BLOCK_PROCESS_SKILL = "how-catalyst-works";
+export const BLOCK_PROCESS_SKILL = "whats-happening";
 export const BLOCK_DECISION_SKILL = "catalyst-sop";
 
 /** ⭐ THE block, word for word. Harness-agnostic; names the skills, never the process. */

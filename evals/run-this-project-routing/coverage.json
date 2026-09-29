@@ -1,6 +1,6 @@
 {
   "skill": "run-this-project",
-  "invocation": "explicit",
+  "invocation": "implicit",
   "exercised_phrase": "run this project for me",
   "promised_phrases": [
     "run this project for me",

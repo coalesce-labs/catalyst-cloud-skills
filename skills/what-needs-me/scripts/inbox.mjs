@@ -1,23 +1,24 @@
 #!/usr/bin/env node
-// inbox.mjs — "what needs me?": the open asks on this tenant, ranked by what each answer releases.
+// inbox.mjs — "what needs me?": the open asks in this cloud account, ranked by what each answer releases.
 // A thin wrapper over `catalyst ask list`, which reads the open tickets carrying the team's
-// ask label (from the contract), follows each one's blocking relations, and weights held work by
-// priority. By default the CLI keeps only the asks assigned to the connected person; --anyone widens
-// to the whole tenant. Prints the ranked list; --json prints the CLI's {scope, asks} unchanged.
+// ask label (from the contract), follows each one's blocking relations, and ranks by the count of
+// open tickets held, then the oldest ask. By default the CLI keeps only the asks assigned to the
+// connected person; --anyone widens to the whole account. Prints the ranked list; --json prints the
+// CLI's {scope, asks} unchanged.
 import { mustRun, parseFlags, parseJson, printHelp } from "./lib/cli.mjs";
 
 const SPEC = {
   json: { value: false, help: "print the CLI's answer as JSON: {scope, asks: [{identifier, title, state, blocks[], score, assigneeId}]}" },
   team: { value: true, help: "only asks whose identifier carries this team key" },
   all: { value: false, help: "include asks that hold nothing (by default they are listed last, marked)" },
-  anyone: { value: false, help: "every open ask in the tenant, not only the ones assigned to you" },
+  anyone: { value: false, help: "every open ask in the account, not only the ones assigned to you" },
 };
 
 const { help, flags } = parseFlags(process.argv.slice(2), SPEC);
 if (help) {
   printHelp("node scripts/inbox.mjs [--json] [--team K] [--all] [--anyone] [--help]", SPEC, [
-    "Rank: the sum over held open tickets of a priority weight (urgent 4 ... low 1, none 1), highest first.",
-    "An ask that holds nothing is real but will not appear in the tenant's Waiting-on-me view; it is",
+    "Rank: most open tickets blocked first, then the oldest ask; priority is not a weight.",
+    "An ask that holds nothing is real but will not appear in the Waiting-on-me view; it is",
     "listed last with a marker so you can attach the work it should block (references/reading-the-inbox.md).",
   ]);
   process.exit(0);
@@ -33,11 +34,11 @@ if (flags.json) {
 }
 // Say whose list this is before the list, so an empty "mine" never reads as "nothing needs anyone".
 if (scope.kind === "mine") process.stdout.write(`asks assigned to ${scope.label}:\n`);
-else if (scope.kind === "anyone") process.stdout.write("every open ask in the tenant:\n");
-else if (scope.kind === "unmatched") process.stdout.write(`every open ask (your Linear identity is not matched yet — an admin matches it in Settings → Members):\n`);
-else process.stdout.write("every open ask (connected with the tenant's account key, which names no person — log in with your personal key to see only yours):\n");
+else if (scope.kind === "anyone") process.stdout.write("every open ask in the account:\n");
+else if (scope.kind === "unmatched") process.stdout.write(`every open ask (your Linear identity is not matched yet; match it with: catalyst identity linear set):\n`);
+else process.stdout.write("every open ask (connected with the account key, which names no person — log in with your personal key to see only yours):\n");
 if (wanted.length === 0) {
-  process.stdout.write(scope.kind === "mine" ? "nothing needs you: no open asks assigned to you (--anyone lists the tenant's)\n" : "nothing needs anyone: no open asks\n");
+  process.stdout.write(scope.kind === "mine" ? "nothing needs you: no open asks assigned to you (--anyone lists everyone's)\n" : "nothing needs anyone: no open asks\n");
   process.exit(0);
 }
 const holding = wanted.filter((r) => r.blocks.length > 0);
@@ -45,7 +46,7 @@ const idle = wanted.filter((r) => r.blocks.length === 0);
 let n = 0;
 for (const r of holding) {
   n += 1;
-  process.stdout.write(`${n}. ${r.identifier}  holds ${r.blocks.length} (weight ${r.score}): ${r.blocks.join(", ")}\n   ${r.title}\n`);
+  process.stdout.write(`${n}. ${r.identifier}  holds ${r.blocks.length}: ${r.blocks.join(", ")}\n   ${r.title}\n`);
 }
 if (idle.length && (flags.all || holding.length === 0)) {
   process.stdout.write(`${holding.length ? "\n" : ""}asks that hold nothing (not shown in Waiting on me until they block something):\n`);

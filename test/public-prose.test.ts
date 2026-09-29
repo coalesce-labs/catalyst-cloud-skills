@@ -17,6 +17,7 @@ const PLANTED: Record<string, string> = {
   "dated-history": "since 2026-09-27 the file is ignored",
   "retired-cli": "run `catalyst-skills login`",
   "private-reference": "see coalesce-labs/catalyst-cloud/docs",
+  "tenant-word": "Move the card on the tenant's board.",
 };
 
 describe("public prose", () => {
@@ -33,6 +34,18 @@ describe("public prose", () => {
       "Run `catalyst login`, or `npx -p @catalyst-cloud/cli catalyst login` without a global install.",
       "A ticket id looks like ENG-123.",
       "Install the Cloud pack (`coalesce-labs/catalyst-cloud-skills`).",
+    ].join("\n");
+    expect(scanText(clean)).toEqual([]);
+  });
+
+  test("the tenant word fires in prose and spares identifiers: inline code, link targets and fenced examples", () => {
+    expect(scanText("Every tenant gets one.").map((f) => f.rule)).toEqual(["tenant-word"]);
+    expect(scanText("Two Tenants share nothing.").map((f) => f.rule)).toEqual(["tenant-word"]);
+    const clean = [
+      "Move the card on your cloud account's board; the route is `/v1/tenant/:id` and the field `tenantId`.",
+      "See [the contract](https://example.com/tenant-contract).",
+      "```\ncatalyst query issue ENG-1 --tenant tenant-0\n```",
+      "The contract range is `tenantContractRange`.",
     ].join("\n");
     expect(scanText(clean)).toEqual([]);
   });

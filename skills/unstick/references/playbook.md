@@ -1,14 +1,14 @@
 # The unstick playbook
 
-This reference restates how a person's release of a stuck ticket works and the order you follow. The cloud does the deciding: it reads every governor holding the ticket and either releases all of them or releases nothing and names, for each one it refuses, the action that does fix it. Your job is to read, judge whether the cause is fixed, and say so honestly.
+The cloud does the deciding: it reads every governor holding the ticket and either releases all of them or releases nothing and names, for each one it refuses, the action that does fix it. Your job is to read, judge whether the cause is fixed, and say so honestly.
 
 ## The order
 
 1. **Why is nothing running?** `catalyst explain <ticket>`. If the reason is not a park or a hold (for example `blocked`, `not_at_dispatch_stage`, an ask, a missing environment check, `scope_overlap`), there is nothing to release: follow the `whats-happening` skill's why-is-it-stuck reference instead and stop here.
 2. **What holds it, and has it been released before?** `catalyst explain <ticket> --history`. Read three things: the "Held by" lines (each governor and what releases it), the last failure (its class and summary), and the "Releases" lines (who released it before, why, and what happened).
 3. **Is the cause fixed?** Decide from evidence, in this order:
-   - a push to the ticket's branch, a comment on the ticket that says what to change, or main moving on since the park: the cloud can see these, and a release goes through;
-   - a change the cloud cannot see (a provider outage that ended, a rotated secret, a re-enrolled coding account, a fixed tenant setting): release with `--retry-unchanged`, and the reason you give names that change;
+   - a push to the ticket's branch, a comment on the ticket that says what to change, or main moving on since the park: the cloud can see these, and a release goes through. A validate-budget hold needs exactly this (a push or a comment since the hold), or `--retry-unchanged` with the change named;
+   - a change the cloud cannot see (a provider outage that ended, a rotated secret, a re-enrolled coding account, a fixed account setting): release with `--retry-unchanged`, and the reason you give names that change;
    - nothing changed: do not release. Tell the person what failed and what would have to change.
    If a previous release in the history named the same failure and nothing has changed since, the next release will fail the same way. Do not release again; raise an ask.
 4. **Preview.** `catalyst release <ticket> --dry-run`. It prints what a release would clear and what it would refuse, and changes nothing.
@@ -23,10 +23,10 @@ This reference restates how a person's release of a stuck ticket works and the o
 | `lease_held` | a phase is running on the ticket right now | nobody; wait for the phase's outcome comment, then look again |
 | `branch_still_missing` | the ticket's branch was never pushed | it releases itself when the branch appears; check the earlier phases through `catalyst-linear` |
 | `human_owned_pr` | a person opened the pull request this ticket would work on | that person closes or merges it, or hands it to Catalyst; never close a person's pull request yourself |
-| `review_not_converging` | review and repair kept finding new problems | a person reads the findings (`catalyst-github`) and comments on the ticket to resume; raise an ask for that read |
-| `round_threshold` | the ticket spent its lifetime repair budget | a person answers the ask the cloud already raised, or pushes a fix; point at that ask, do not raise a second one |
-| `base_revision_lost` | the ticket's base commit is gone | whoever administers the tenant re-pins it; raise one ask |
-| `remediate_cap` | this tenant keeps the repair-round cap for an administrator | whoever administers the tenant; raise one ask |
+| `review_not_converging` | validate and repair cycles kept finding new problems | a person reads the findings (`catalyst-github`) and comments on the ticket: the comment resumes at validate, and `catalyst: resume implement` resumes at implement. A push alone does not clear it, and it has no ask and no default. Raise an ask for that read |
+| `round_threshold` | the ticket spent its lifetime repair budget | a person answers the ask the cloud already raised, or pushes a fix the fleet did not make; each grants one more cycle, and a comment does not. After 48 hours unanswered, the ask's default (re-plan) applies. Point at that ask; do not raise a second one |
+| `base_revision_lost` | the ticket's base commit is gone | an operator re-pins it; raise one ask |
+| `remediate_cap` | this account keeps the repair-round cap for an administrator | a workspace owner or admin; raise one ask |
 | `unknown_park` | a park this bundle does not know | raise one ask with the ticket id and the park name, verbatim |
 | `held_beyond_class` | a class release reached a ticket held by more than that class | release that ticket on its own, from step 1 |
 | `team_changed` (the ticket moved teams during the check) | the release was checked for one team and the ticket is now on another | run the release again |

@@ -94,10 +94,10 @@ describe("dispatcher", () => {
   });
   test("install places the skills and names a skipped foreign dir", async () => {
     const dir = join(home, "sk");
-    mkdirSync(join(dir, "connect-me"), { recursive: true });
-    writeFileSync(join(dir, "connect-me", "SKILL.md"), "mine");
+    mkdirSync(join(dir, "unstick"), { recursive: true });
+    writeFileSync(join(dir, "unstick", "SKILL.md"), "mine");
     expect(await main(["install", "--skills-dir", dir], ctx)).toBe(0);
-    expect(ctx.out.join("\n")).toContain('Skipped "connect-me"');
+    expect(ctx.out.join("\n")).toContain('Skipped "unstick"');
     expect(ctx.out.join("\n")).toContain("Skills installed to");
     const allForeign = join(home, "foreign");
     for (const name of CUSTOMER_SKILLS) {

@@ -1,60 +1,43 @@
 # Making work ready
 
-This reference restates invariants of how Catalyst takes work. The tenant's own values (which Linear state is the dispatch column, which state is the backlog, the ask and release label ids, the round cap and the park threshold) are read live from `catalyst contract`; the scripts here never name a stage.
-
-## The steward's two moves
-
-Catalyst does not take work by being asked. It takes work by finding a card in the team's dispatch column and offering that card's next phase to a runner. So the steward's dispatch verb is a card move, and its stop verb is a card move:
+Catalyst takes work by finding a card in the team's dispatch column and offering its next phase to a runner. So the steward's dispatch and stop verbs are both card moves:
 
 ```sh
-node scripts/make-ready.mjs ENG-41            # move into the dispatch column; the cloud offers the next phase
-node scripts/make-ready.mjs ENG-41 --park     # move into the team's backlog-type state; nothing further is offered
+node scripts/make-ready.mjs ENG-41            # into the dispatch column
+node scripts/make-ready.mjs ENG-41 --park     # into the team's backlog-type state
 node scripts/make-ready.mjs ENG-41 --park --note "waiting on the vendor's API change"
 ```
 
-Dispatch resolves the dispatch slot on the ticket's team from the contract. Parking resolves the team's first backlog-type state from its live workflow states, because the backlog is deliberately not one of the eleven slots. Those are the only two state moves you make. Every other stage move on a ticket in the ladder is the cloud's, written when a phase completes; moving a card forward by hand does not run a phase, it only confuses the advance table, and moving it backwards by hand does not undo one.
+Dispatch resolves the team's dispatch slot from the contract; parking resolves the team's first backlog-type state from its live workflow, since the backlog is not a slot. Every other stage on a ticket in the ladder is the cloud's record of what ran: a hand move forward runs nothing, and a hand move back undoes nothing.
 
 ## What a dispatchable ticket carries
 
-Before the move, the ticket needs, in the record itself:
+A phase agent reads the ticket, not your chat. Read it in full, then check it has:
 
-- A title that states the outcome. A phase agent reads the ticket, not your chat.
-- A description that says what done looks like: the behaviour, the constraints, the files or surfaces if you know them, acceptance criteria a validate phase can check.
-- The right team. The team key is the ticket prefix, and the team's stage map and labels are what the cloud will use.
-- A priority. Queue order inside a team is priority first, then creation time, then identifier, so an unset priority sorts last.
-- No live blocking relation. A ticket with an open blocker is excluded as `blocked` until the blocker closes.
-- No ask on it. A ticket that carries the ask label, or whose own text reads as a decision request (an ask-shaped title, lettered options, a "default if silent" line), is excluded as a question rather than work. If a real ticket trips the shape detector, a human applies the release label named in the contract's vocabulary; you can also rewrite the text so it reads as work.
-- Declared scope when the team enforces it: a ticket whose declared files overlap a ticket already in flight is held as `scope_overlap` for the implement phase.
+- a title stating the outcome, and a description of what done looks like (behaviour, constraints, files or surfaces, acceptance criteria validate can check);
+- the right team (the prefix; its stage map and labels are what the cloud uses) and a priority (unset sorts last);
+- no live blocking relation, which excludes it as `blocked`;
+- no ask: an ask label, or text that reads as a decision request, excludes it as a question. A human applies the contract's release label to a false positive; you can rewrite the text so it reads as work;
+- declared scope when the team enforces it, and no file overlap with a ticket in flight (`scope_overlap`). Serialise two tickets that touch the same files.
 
-A ticket does not need a branch, a PR, or any artifact to be dispatched: the ladder creates those. A ticket that has never entered the ladder starts at intake when the tenant enables it, otherwise at research.
+It needs no branch, PR or artifact; the ladder makes those, starting at intake when the account has it on, else research.
 
 ## After the move
 
-`make-ready.mjs` asks the eligibility explainer as soon as the move lands and prints the verdict. Read it as follows:
-
-- `offered` or `eligible` with a queue position: done; a runner will pick it up in the next dispatch pass, ordered by priority, then age, then identifier, with tickets already mid-ladder ahead of fresh ones.
-- An ordering that is stale or never published: the cloud re-derives the team's queue within a pass of the move; ask again in a minute with `catalyst explain <ticket>`.
-- Any other exclusion reason: the paragraph names it and what releases it. The reasons and what unblocks each are in `how-catalyst-works` and in `whats-happening`'s "why is it stuck" reference.
+`make-ready.mjs` prints the explainer's verdict. A queue position means a runner will pick it up in order. A stale or unpublished ordering is re-derived within a pass; ask again in a minute with `catalyst explain <ticket>`. Any other reason is in the `whats-happening` skill's `references/why-is-it-stuck.md`.
 
 ## Evidence a phase ran
 
-Do not infer progress from time passing. A phase leaves three kinds of evidence on the ticket, and a card move alone is not one of them:
+Time passing proves nothing. A phase leaves three kinds of evidence on the ticket:
 
-1. **The outcome comment.** The cloud posts a card per phase: a completed phase names the phase, the attempt, and its artifact; a failed phase names the phase, the attempt, and the failure class, and may carry a park or hold block. A remediate round posts its own attempt card with the round number and the class it is repairing. These arrive as comment frames on the watch.
-2. **The attachment and document.** Each artifact-bearing phase (research, plan, implement, validate, pr, remediate) is projected to a Linear document titled with the ticket, the phase, the attempt and the date, attached to the ticket, with a short link comment. Research and plan on a ticket with a project also appear as a project link.
-3. **The agent session.** The ticket's agent session carries the ladder as its plan, with the phases before the current one completed, the current one in progress, and the rest pending; its activities are the phase start, the gate, artifacts written, the PR opened, and the report.
+1. **The outcome comment.** Per phase: the phase, the attempt, and its artifact, or on failure the failure class and any park or hold block. A remediate round posts its own card with the round number. These arrive as comment frames.
+2. **The document.** Each artifact-bearing phase attaches a Linear document with a short link comment.
+3. **The agent session.** Its plan is the ladder, with the current phase in progress; its activities are the phase start, the gate, the artifacts, the PR, and the report.
 
-The card's stage is the fourth, weakest signal: a completed phase moves the card to the stage the advance table names, a failed phase writes no stage at all, and Done is written only when the pull request actually merges, by the merge webhook, never by a phase. A card sitting in a stage tells you which phase last finished, not whether the next one is running; `scripts/scope-status.mjs` shows running and leased phases beside the stage for exactly that reason.
+The card's stage is the weakest signal: a completed phase moves it, a failed one writes nothing, and Done is written only when the pull request merges. `scope-status.mjs` shows running and leased phases beside each stage for that reason.
 
-## Parking, and what it does not do
+## Parking
 
-Parking is the lever that stops the cloud offering more rounds on a ticket: moved out of the dispatch column and the ladder's stages, the ticket is excluded at the next offer. It does not kill a phase that is already running under a lease; that container finishes its phase, posts its outcome, and the next offer finds the card parked. If you park a ticket the cloud has itself parked (three consecutive failures, or the remediate round cap), record why in a bookkeeping note. Releasing a cloud park is not a card move: once its cause is fixed, the `unstick` skill releases it with `catalyst release <ticket>`, and only a refusal that names a person's action becomes an ask.
+Parking stops the cloud offering further rounds: the card is excluded at the next offer. A phase already running under a lease finishes and posts its outcome first. Un-parking is the dispatch move again, and counted attempts and rounds carry over. A cloud park (three consecutive failures, or the round cap) is not a card move: once its cause is fixed, the `unstick` skill releases it with `catalyst release <ticket>`, and only a refusal that names a person's action becomes an ask. When you park a ticket the cloud already parked, record why in a bookkeeping note.
 
-Un-parking is the same dispatch move again. The counted attempts and rounds do not reset when a card comes back; the contract's thresholds say how many remain.
-
-## What you never do to make work ready
-
-- Never move a card into a research, plan, implement, validate, PR, done or canceled stage by hand to "skip ahead". The cloud reads those stages as the record of what ran.
-- Never remove an ask label or apply the release label yourself; a human decides whether a ticket is a question.
-- Never dispatch two tickets that touch the same files at once; serialise them or let the second one wait as `scope_overlap`.
-- Never dispatch a ticket you have not read in full.
+Ask labels and the release label are a human's call; leave them as you find them.

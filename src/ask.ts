@@ -97,8 +97,9 @@ export function inboxScope(cfg: { user?: { label: string; linearUserId: string |
   return { kind: "mine", linearUserId: cfg.user.linearUserId, label: cfg.user.label };
 }
 
-/** Rank open asks by the priority-weighted count of open tickets each one blocks. Priority 1 (urgent)
- *  weighs 4, 4 (low) weighs 1, 0 (none) weighs 1. */
+/** Rank open asks the way the cloud's own Waiting-on-me feed does: the most open tickets blocked
+ *  first, then the oldest ask first, then the identifier. `score` is the count of open tickets the
+ *  ask blocks. Priority is not a weight here, and age only breaks a tie. */
 export function rankAsks(issues: Record<string, unknown>[], doc: TenantContract, openState: (issue: Record<string, unknown>) => boolean): RankedAsk[] {
   const askIds = new Set<string>();
   for (const team of doc.teams) for (const l of team.labels.ask) for (const id of [l.unscopedId, l.teamScopedId, l.preferredId]) if (id) askIds.add(id);
@@ -108,11 +109,16 @@ export function rankAsks(issues: Record<string, unknown>[], doc: TenantContract,
   };
   const byIdentifier = new Map<string, Record<string, unknown>>();
   for (const i of issues) if (typeof i.identifier === "string") byIdentifier.set(i.identifier, i);
-  const weight = (issue: Record<string, unknown> | undefined): number => {
-    const p = typeof issue?.priority === "number" ? issue.priority : 0;
-    return p >= 1 && p <= 4 ? 5 - p : 1;
+  // The cloud's age key: created, else updated; an ask with neither sorts after every dated one.
+  const ageKey = (issue: Record<string, unknown>): number => {
+    for (const k of ["created_at", "updated_at"]) {
+      const v = issue[k];
+      if (typeof v === "number" && Number.isFinite(v)) return v;
+      if (typeof v === "string" && Number.isFinite(Date.parse(v))) return Date.parse(v);
+    }
+    return Number.POSITIVE_INFINITY;
   };
-  const out: RankedAsk[] = [];
+  const ranked: { ask: RankedAsk; age: number }[] = [];
   for (const issue of issues) {
     if (!isAsk(issue) || !openState(issue)) continue;
     const relations = Array.isArray(issue.relations) ? (issue.relations as { type?: unknown; issue_identifier?: unknown; related_identifier?: unknown }[]) : [];
@@ -123,16 +129,20 @@ export function rankAsks(issues: Record<string, unknown>[], doc: TenantContract,
         const t = byIdentifier.get(id);
         return !t || openState(t);
       });
-    out.push({
-      identifier: String(issue.identifier),
-      title: String(issue.title ?? ""),
-      state: String(issue.state ?? ""),
-      blocks: blocked,
-      score: blocked.reduce((sum, id) => sum + weight(byIdentifier.get(id)), 0),
-      assigneeId: typeof issue.assignee_id === "string" && issue.assignee_id !== "" ? issue.assignee_id : null,
+    ranked.push({
+      age: ageKey(issue),
+      ask: {
+        identifier: String(issue.identifier),
+        title: String(issue.title ?? ""),
+        state: String(issue.state ?? ""),
+        blocks: blocked,
+        score: blocked.length,
+        assigneeId: typeof issue.assignee_id === "string" && issue.assignee_id !== "" ? issue.assignee_id : null,
+      },
     });
   }
-  return out.sort((a, b) => b.score - a.score || a.identifier.localeCompare(b.identifier));
+  ranked.sort((a, b) => b.ask.score - a.ask.score || (a.age === b.age ? 0 : a.age < b.age ? -1 : 1) || a.ask.identifier.localeCompare(b.ask.identifier));
+  return ranked.map((r) => r.ask);
 }
 
 async function list(args: ParsedArgs, ctx: Ctx, doc: TenantContract, api: ApiClient, cfg: CustomerConfig): Promise<number> {
@@ -151,14 +161,14 @@ async function list(args: ParsedArgs, ctx: Ctx, doc: TenantContract, api: ApiCli
     return 0;
   }
   if (scope.kind === "unmatched") {
-    ctx.stderr(`[catalyst] your Linear identity is not matched yet (an admin matches it in Settings → Members), so this is every open ask, not only yours`);
+    ctx.stderr(`[catalyst] your Linear identity is not matched yet (match it with: catalyst identity linear options, then catalyst identity linear set <linearUserId>), so this is every open ask, not only yours`);
   } else if (scope.kind === "no-person") {
-    ctx.stderr(`[catalyst] connected with the tenant's account key, which names no person — this is every open ask; log in with your personal key to see only yours`);
+    ctx.stderr(`[catalyst] connected with your cloud account's shared key, which names no person — this is every open ask; log in with your personal key to see only yours`);
   }
   if (ranked.length === 0) {
-    ctx.stdout(scope.kind === "mine" ? `no open asks assigned to ${scope.label} (${all.length} open in the tenant — add --anyone to see them)` : "no open asks");
+    ctx.stdout(scope.kind === "mine" ? `no open asks assigned to ${scope.label} (${all.length} open in your cloud account — add --anyone to see them)` : "no open asks");
     return 0;
   }
-  for (const a of ranked) ctx.stdout(`${a.identifier}  holds ${a.blocks.length} ticket${a.blocks.length === 1 ? "" : "s"} (weight ${a.score})${a.blocks.length ? `: ${a.blocks.join(", ")}` : ""}  ${a.title}`);
+  for (const a of ranked) ctx.stdout(`${a.identifier}  holds ${a.blocks.length} ticket${a.blocks.length === 1 ? "" : "s"}${a.blocks.length ? `: ${a.blocks.join(", ")}` : ""}  ${a.title}`);
   return 0;
 }

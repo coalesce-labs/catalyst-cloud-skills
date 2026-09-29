@@ -1,6 +1,6 @@
 # Writing to Linear: identity, budget, slots, labels
 
-This reference restates the write mechanism. The live values it depends on — the route table, the daily write budget, the stage map, the label ids — are read by the CLI from the contract (`routes`, `thresholds`, `teams[].stages`, `teams[].labels`) on every write. Nothing here is a literal to copy.
+The CLI reads the route table, write budget, stage map and label ids from the contract on every write; nothing here is a literal to copy.
 
 ## Every write is one script
 
@@ -12,21 +12,19 @@ This reference restates the write mechanism. The live values it depends on — t
 | a new ticket | `node scripts/create-ticket.mjs --team <key> --title <text> [--description <text> \| --stdin]` |
 | a decision for a human | not here: the `what-needs-me` skill raises an ask with options, a default and what it blocks |
 
-Each script wraps one `catalyst write` verb, which posts to the route the contract names, as the tenant's app actor, with the personal key this machine connected with — so the write carries the person's identity for attribution, and an ask names them. No script composes a URL, and none needs a Linear credential of its own.
+Each script wraps one `catalyst write` verb, which posts to the contract's route as the app actor with this machine's personal key, so the write is attributed to the person.
 
 ## App actor versus personal identity
 
-Every write goes out as the tenant's Catalyst app actor by default. That identity is what the cloud's own comment-wake trigger recognises as "not a human", so an app-actor comment never wakes an agent to reply to it, never needs the bookkeeping marker to be safe, and reads to the human as Catalyst speaking. `--as-user` switches a comment or a new ticket to the personal identity behind the key; use it only when the human asked for that attribution, and then mark any machine record with `--bookkeeping`, because on that path the record is indistinguishable from the human typing it.
-
-Reply where the message arrived: a comment inside a thread is answered with `--parent <commentId>`, in that thread, and never as a new ticket. Never post as the human; you speak as Catalyst, or as yourself by role.
+Writes go out as the app actor by default, which the comment-wake trigger recognises as not human, so an app-actor comment never wakes an agent and reads as Catalyst speaking. `--as-user` switches a comment or new ticket to the person's identity; use it only when they asked for that attribution, and then mark any machine record with `--bookkeeping`, because it is otherwise indistinguishable from them typing it. Answer a thread in that thread with `--parent <commentId>`.
 
 ## The daily write budget
 
-Every write route spends one unit of a per-host daily budget the contract publishes as `thresholds.hostDailyWriteBudget`; a label call spends one unit whatever the label count; reads spend none. When the budget is spent, the CLI refuses with exit 2 and a line that names the budget and the retry time. Do not retry in a loop; report it, and batch what you can into fewer writes (one comment, not five).
+Every write spends one unit of the per-host daily budget (`thresholds.hostDailyWriteBudget`), a label call one unit whatever its count; reads spend none. A spent budget exits 2 naming the retry time: report it, and batch into fewer writes.
 
 ## State moves are by slot, never by name
 
-`--slot <slot>` names one of the eleven slots; the CLI resolves it to this team's live state id from the contract. It refuses when the slot is unmapped for the team, and when the mapped state no longer exists in Linear (the map needs fixing in tenant settings first). Moving to `dispatch` is how work is dispatched; nothing is offered from any other column. Backlog is not a slot: `--state-type backlog` resolves the team's first backlog-type state from its live workflow states, and moving a card there parks it and stops remediation rounds. A move never fabricates a state id, and a move by stage name is not offered because names are display fields that survive re-imports while ids do not.
+`--slot <slot>` resolves to the team's live state id from the contract, and refuses when the slot is unmapped or its state is gone (re-map first: `catalyst team map <KEY>`). Moving to `dispatch` dispatches work. `--state-type backlog` resolves the team's first backlog-type state and parks the card, stopping remediation rounds. Names are display fields that survive re-imports while ids do not, so there is no move by name.
 
 ## Labels are by contract id
 
@@ -36,8 +34,8 @@ Two labels are a human's, not yours: the release label (which frees a ticket the
 
 ## A new ticket takes the team key
 
-`create-ticket.mjs --team <key>` names the team by the prefix its identifiers carry; the CLI resolves the team id from the contract and the cloud fences the write to your tenant on the team, not only on the credential. A ticket's body goes in `--description`, or on stdin with `--stdin` when it runs to several lines; a title with no body gives whoever picks the ticket up nothing to act on. Cite the identifier only after the script prints it; a guessed number is usually a real, unrelated ticket. Do not file a question for a human this way: a ticket whose text reads as a decision request is held out of dispatch by shape until someone releases it, and it would never reach the human's inbox with what it blocks.
+`create-ticket.mjs --team <key>` takes the identifier prefix; the CLI resolves the team from the contract. Give it a body (`--description`, or `--stdin` for several lines), since a bare title leaves nothing to act on. Cite the identifier only after the script prints it; a guessed number is usually a real, unrelated ticket. A question for a human filed this way is held out of dispatch by shape and never reaches their inbox; raise it through `what-needs-me`.
 
 ## What is never offered
 
-Delegation (assigning a ticket to an agent) is an operator action, not a tenant write. Answering an ask on the human's behalf is not a write you make; the human answers, and `what-needs-me` records the acceptance. Editing another actor's comment is not available.
+Delegating a ticket to an agent is an operator action. The human answers their own asks (`what-needs-me` records the acceptance). Another actor's comment cannot be edited.

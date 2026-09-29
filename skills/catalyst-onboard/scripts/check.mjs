@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 // check.mjs — "am I set up?" in one verdict: the machine checks the CLI runs (Node, the connection,
 // the cached contract, the CLI path, the skills, the SDK, the optional replica) plus every team's
-// readiness vector from the tenant contract, then the list of who can click what. Wraps
+// readiness from the account's contract, then the list of who can click what. Wraps
 // `catalyst ready --json`; reports, never repairs. Exit 0 READY, 1 NOT READY, 2 not connected.
-import { parseJson, runCli } from "./lib/cli.mjs";
+import { runCli, tryJson } from "./lib/cli.mjs";
 
 const HELP = `Usage: node scripts/check.mjs [--json]
 
@@ -12,7 +12,8 @@ verdict, and a "who can click what" list grouped by the person or role each fix 
 A note never flips the verdict (the replica is optional; an informational readiness check is a note).
 
 --json prints the CLI's report document {ready, checks[]} unchanged.
-Exit 0 READY, 1 NOT READY, 2 this machine is not connected to a tenant yet.`;
+Exit 0 READY, 1 NOT READY, 2 this machine is not connected yet or the CLI could not run.
+How to read each line: references/reading-ready.md.`;
 
 const args = process.argv.slice(2);
 if (args.includes("--help") || args.includes("-h")) {
@@ -27,11 +28,11 @@ if (unknown.length > 0) {
 }
 
 const res = runCli(["ready", "--json"]);
-if (res.code === 2) {
+const report = tryJson(res.stdout);
+if (!res.ran || (res.code === 2 && !report)) {
   console.error(res.stderr.trim() || "catalyst ready refused");
   process.exit(2);
 }
-const report = parseJson(res.stdout);
 if (!report || !Array.isArray(report.checks)) {
   console.error(res.stderr.trim() || res.stdout.trim() || "catalyst ready printed no report");
   process.exit(res.code === 0 ? 1 : res.code);
@@ -70,6 +71,6 @@ if (failures.length > 0) {
 const notes = report.checks.filter((c) => c.note && !c.ok);
 if (notes.length > 0) {
   console.log("");
-  console.log(`Notes that do not block: ${notes.map((c) => c.id).join(", ")} — see references/what-each-check-means.md`);
+  console.log(`Notes that do not block: ${notes.map((c) => c.id).join(", ")} — see references/reading-ready.md`);
 }
 process.exit(report.ready ? 0 : 1);

@@ -1,6 +1,6 @@
 # Is it mergeable?
 
-The rule is invariant; the policy that applies to a repository is not. The policy names, the default, each repository's resolved policy and its source (repository setting, tenant setting, or the default), the reviewer login and the required check names all come from the contract's `merge` block at run time. `node scripts/is-it-mergeable.mjs <ticket>` reads them and prints one line per leg; the text below explains what those lines mean.
+The rule is invariant; the policy that applies to a repository is not. The policy names, the default, each repository's resolved policy and its source (repository setting, account setting, or the default), the reviewer login and the required check names all come from the contract's `merge` block at run time. `node scripts/is-it-mergeable.mjs <ticket>` reads them and prints one line per leg; the text below explains what those lines mean.
 
 ## Prerequisites before any leg counts
 
@@ -28,7 +28,13 @@ Three policy names are served on `merge.policies`; the default is `merge.default
 | the strict variant | a clean pass at the current head, always. Findings on an earlier head keep blocking until the reviewer looks again. |
 | checks and threads only | the reviewer requirement is dropped entirely; the two unconditional legs decide. |
 
-A clean pass is a reaction: a thumbs-up from the reviewer login posted at or after the head commit's own timestamp. The comment-shaped clean pass ("no major issues" in place of threads) is honoured only if `cleanPassShapes[]` says so for that kind; the script does not judge it either way.
+A clean pass is one of three signals from the reviewer login, most reliable first:
+
+1. **A GitHub review on the exact head commit.** A review names the commit it was submitted against, so it cannot be mistaken for an earlier head.
+2. **A 👍 reaction**, which counts only if it was given after the current head commit was made. The reaction carries no commit, so the cloud compares its time with the head commit's date, and that date is set by whoever made the commit. A push of a commit made before the 👍 (a force-push back to an older commit, a commit prepared earlier) can read as covered. A normal rebase or amend stamps a fresh date, so the everyday path works.
+3. **A clean-pass comment** ("no major issues" in place of threads), honoured only if `cleanPassShapes[]` says so for that kind, with the same timing rule as the 👍.
+
+A new push needs a fresh signal at the new head. The script judges none of these three itself.
 
 ## What the script can and cannot see
 
