@@ -2,18 +2,19 @@
 // validator. Unlike every other verb in this file's siblings, `cmdEnv` never calls `requireConfig` or
 // `apiClient` — it needs neither a login nor a network call, which is the whole point of the feature:
 // a person reviews what a repository declares without connecting anything first.
-import { existsSync, readFileSync, statSync, type Stats } from "node:fs";
-import { resolve } from "node:path";
-import { positionals, type ParsedArgs } from "./args.js";
+import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync, type Stats } from "node:fs";
+import { dirname, join, resolve } from "node:path";
+import { flagBool, flagString, positionals, type ParsedArgs } from "./args.js";
 import type { Ctx } from "./config.js";
 import { validateSettingsToml } from "./env/settings-toml.js";
 import { convertLegacyEnvironmentJson } from "./env/legacy.js";
+import { draftEnvironment } from "./env/draft.js";
 import { inventoryRepo } from "./env/inventory.js";
 import { inventoryToJson, renderInventory } from "./env/render.js";
 import type { ScanDeps } from "./env/types.js";
 import { UsageError } from "./errors.js";
 
-export type EnvDeps = Partial<ScanDeps>;
+export type EnvDeps = Partial<ScanDeps> & { writeFile?: (path: string, content: string) => void };
 
 export async function cmdEnv(
   args: ParsedArgs,
@@ -22,7 +23,57 @@ export async function cmdEnv(
 ): Promise<number> {
   const [sub, ...rest] = positionals(args);
   if (sub === undefined)
-    throw new UsageError("env needs a subcommand: inventory | check | migrate");
+    throw new UsageError("env needs a subcommand: inventory | check | migrate | draft");
+
+  if (sub === "draft") {
+    if (rest.length > 0) throw new UsageError("env draft takes no positional arguments; use --root DIR");
+    const root = resolve(flagString(args, "root") ?? ".");
+    const target = join(root, ".catalyst/catalyst.toml");
+    const draft = draftEnvironment(root, deps);
+    if (draft.state === "invalid") {
+      if (args.json) ctx.stdout(JSON.stringify(draft));
+      else for (const error of draft.errors) ctx.stderr(error);
+      return 1;
+    }
+    const summary = {
+      state: "valid" as const,
+      names: draft.names,
+      secretNames: draft.secretNames,
+      setupCount: draft.setup.length,
+      verifyCount: draft.verify.length,
+      sources: draft.sources,
+      destination: ".catalyst/catalyst.toml",
+      toml: draft.toml,
+    };
+    const write = flagBool(args, "write");
+    if (write && existsSync(target)) {
+      ctx.stderr(`${summary.destination} already exists; no file was written. Review the draft with --diff and merge it by hand.`);
+      return 1;
+    }
+    if (write) {
+      const checked = validateSettingsToml(draft.toml);
+      if (checked.state !== "valid") {
+        ctx.stderr(`draft failed local validation: ${checked.state === "invalid" ? checked.errors.join("; ") : "no environment table"}`);
+        return 1;
+      }
+      if (deps.writeFile) deps.writeFile(target, draft.toml);
+      else {
+        mkdirSync(dirname(target), { recursive: true });
+        writeFileSync(target, draft.toml, { encoding: "utf8", flag: "wx" });
+      }
+    }
+    if (args.json) ctx.stdout(JSON.stringify({ ...summary, written: write }));
+    else if (flagBool(args, "diff")) {
+      ctx.stdout(`--- /dev/null\n+++ b/${summary.destination} (draft)\n@@\n${draft.toml.split("\n").filter(Boolean).map((line) => `+${line}`).join("\n")}`);
+    } else {
+      ctx.stdout(`Drafted ${summary.destination} from ${draft.sources.length ? draft.sources.join(", ") : "no environment sources"}.`);
+      ctx.stdout(`Names: ${draft.names.length} (${draft.secretNames.length} secret; all optional)`);
+      ctx.stdout(`Setup: ${draft.setup.length}; verify: ${draft.verify.length}`);
+      ctx.stdout(draft.toml);
+    }
+    if (write && !args.json) ctx.stdout(`Wrote ${summary.destination}; review and commit it through your repository's pull request.`);
+    return 0;
+  }
 
   if (sub === "migrate") {
     if (rest.length > 1)
@@ -126,5 +177,5 @@ export async function cmdEnv(
     return result.state === "invalid" ? 1 : 0;
   }
 
-  throw new UsageError(`unknown env subcommand "${sub}": inventory | check | migrate`);
+  throw new UsageError(`unknown env subcommand "${sub}": inventory | check | migrate | draft`);
 }

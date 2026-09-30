@@ -25,6 +25,7 @@ import { requireConfig, type Ctx } from "./config.js";
 import { CliError, UsageError } from "./errors.js";
 import { promptSecret, stdinIsTty } from "./prompt.js";
 import { apiClient } from "./transport.js";
+import { filterEnvFileNames } from "./env/parse-env.js";
 
 export const SECRETS_PATH = "/me/secrets";
 export const SECRETS_IMPORT_PATH = "/me/secrets/import";
@@ -137,7 +138,17 @@ export async function cmdSecret(args: ParsedArgs, ctx: Ctx, deps: SecretDeps = {
     throw new UsageError(sub === "set" ? "secret set takes one NAME" : "secret import takes one file (a .env file)");
   }
   const repo = requireRepo(args, sub);
-  return sub === "set" ? setOne(args, ctx, deps, rest[0], repo) : importFile(args, ctx, rest[0], repo);
+  return sub === "set" ? setOne(args, ctx, deps, rest[0], repo) : importFile(args, ctx, rest[0], repo, requestedNames(args));
+}
+
+function requestedNames(args: ParsedArgs): string[] | undefined {
+  const raw = flagList(args, "names");
+  if (raw.length === 0) return undefined;
+  const names = [...new Set(raw.flatMap((part) => part.split(",").map((name) => name.trim())).filter(Boolean))].sort();
+  if (names.length === 0) throw new UsageError("--names needs one or more variable names");
+  const invalid = names.find((name) => !NAME_RE.test(name));
+  if (invalid !== undefined) throw new UsageError(`--names includes an invalid env-style name: ${invalid}`);
+  return names;
 }
 
 async function setOne(args: ParsedArgs, ctx: Ctx, deps: SecretDeps, name: string, repo: string): Promise<number> {
@@ -181,7 +192,7 @@ async function setOne(args: ParsedArgs, ctx: Ctx, deps: SecretDeps, name: string
   return 0;
 }
 
-async function importFile(args: ParsedArgs, ctx: Ctx, file: string, repo: string): Promise<number> {
+async function importFile(args: ParsedArgs, ctx: Ctx, file: string, repo: string, names?: string[]): Promise<number> {
   if (flagString(args, "command") !== undefined) throw new UsageError("--command belongs to secret set");
   let text: string;
   try {
@@ -189,6 +200,8 @@ async function importFile(args: ParsedArgs, ctx: Ctx, file: string, repo: string
   } catch (err) {
     throw new UsageError(`could not read ${file}: ${err instanceof Error ? err.message : String(err)}`);
   }
+  const filtered = names === undefined ? { text, found: [] as string[] } : filterEnvFileNames(text, new Set(names));
+  if (names !== undefined) text = filtered.text;
   const cfg = requireConfig(ctx);
   const rotate = flagList(args, "rotate");
   const res = await apiClient(cfg, ctx).postJson<ImportResponse>(
@@ -206,12 +219,16 @@ async function importFile(args: ParsedArgs, ctx: Ctx, file: string, repo: string
   const rotated = body.rotated ?? [];
   const errors = body.errors ?? [];
   if (args.json) {
-    ctx.stdout(JSON.stringify({ repo, created, rotated, errors, declared: body.declared ?? null }));
+    ctx.stdout(JSON.stringify({ repo, created, rotated, errors, declared: body.declared ?? null, ...(names === undefined ? {} : { requested: names, notFoundInFile: names.filter((name) => !filtered.found.includes(name)) }) }));
     return errors.length > 0 ? 1 : 0;
   }
   const stored = created.length + rotated.length;
   ctx.stdout(stored === 0 ? `stored nothing for ${repo}` : `stored ${stored} for ${repo}: ${[...created, ...rotated].join(", ")}`);
   if (rotated.length > 0) ctx.stdout(`  replaced: ${rotated.join(", ")}`);
+  if (names !== undefined) {
+    const missing = names.filter((name) => !filtered.found.includes(name));
+    if (missing.length > 0) ctx.stdout(`not found in ${basename(file)}: ${missing.join(", ")}`);
+  }
   for (const e of errors) ctx.stdout(`not stored: ${e.name} (${IMPORT_REASONS[e.reason] ?? e.reason})`);
   for (const line of renderDeclared(body.declared, repo)) ctx.stdout(line);
   return errors.length > 0 ? 1 : 0;
