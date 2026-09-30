@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.14.1
+
+Legacy cleanup keeps all shared Catalyst config and data folders, including with the historical --data flag. It no longer removes ~/.catalyst/bin wholesale or recursively deletes directories. The onboarding skill keeps data and no longer offers data deletion.
+
 ## 0.14.0
 
 The `catalyst onboard` command starts a resumable setup journal, migrates the installer receipt, and safely coordinates with the install script through an owner-token lock. It supports JSON plans, dry runs, step selection and resume validation. The first executable slice checks legacy local runtime files while preserving user data; provider and project steps remain staged for later releases.

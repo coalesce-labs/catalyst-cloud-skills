@@ -108,7 +108,6 @@ describe("detection", () => {
       "marketplace:catalyst",
       "job:com.catalyst.agent",
       "job:com.catalyst.role.concierge",
-      "bin:~/.catalyst/bin",
       "bin:~/.local/bin/catalyst-hud",
       "data:~/.catalyst",
       "data:~/.config/catalyst",
@@ -120,10 +119,10 @@ describe("detection", () => {
     ctx.out.length = 0;
     expect(await main(["legacy"], ctx, deps())).toBe(1);
     const text = ctx.out.join("\n");
-    expect(ctx.out[0]).toBe("Leftovers of the old local Catalyst runtime on this machine (10):");
+    expect(ctx.out[0]).toBe("Leftovers of the old local Catalyst runtime on this machine (9):");
     expect(text).toContain("  plugin: catalyst-dev@catalyst");
     expect(text).toContain("  job: com.catalyst.agent — ");
-    expect(text).toContain("  data: ~/.config/catalyst (kept unless --data)");
+    expect(text).toContain("  data: ~/.config/catalyst (kept: shared current state)");
     expect(text).toMatch(/Remove them: the cloud runtime replaced them, and left in place they can start old jobs or shadow current commands\./);
     expect(text).toContain("catalyst legacy --remove");
     expect(text).not.toContain("housekeeping");
@@ -146,7 +145,7 @@ describe("removal", () => {
     expect(await main(["legacy", "--remove"], ctx, deps())).toBe(1);
     expect(calls).toEqual([]);
     expect(existsSync(join(home, "Library", "LaunchAgents", "com.catalyst.agent.plist"))).toBe(true);
-    expect(ctx.out.at(-1)).toBe("nothing removed: no terminal to ask on; run catalyst legacy --remove --yes to remove these without a question (add --data for the data folders)");
+    expect(ctx.out.at(-1)).toBe("nothing removed: no terminal to ask on; run catalyst legacy --remove --yes to remove these without a question (all data folders are kept)");
   });
 
   test("--remove --yes removes plugins, then the marketplace, jobs and bins through their own tools, keeps data, re-checks and exits 0", async () => {
@@ -162,7 +161,7 @@ describe("removal", () => {
     expect(existsSync(join(home, "Library", "LaunchAgents", "com.catalyst.agent.plist"))).toBe(false);
     expect(existsSync(join(home, "Library", "LaunchAgents", "com.catalyst.role.concierge.plist"))).toBe(false);
     expect(existsSync(join(home, "Library", "LaunchAgents", "dev.catalystcloud.housekeeping.plist"))).toBe(true);
-    expect(existsSync(join(home, ".catalyst", "bin"))).toBe(false);
+    expect(existsSync(join(home, ".catalyst", "bin"))).toBe(true);
     expect(existsSync(join(home, ".local", "bin", "catalyst-hud"))).toBe(false);
     expect(existsSync(join(home, ".local", "bin", "catalyst"))).toBe(true);
     expect(existsSync(join(home, ".config", "catalyst", "config.json"))).toBe(true);
@@ -170,17 +169,17 @@ describe("removal", () => {
     const text = ctx.out.join("\n");
     expect(text).toContain("removed: plugin catalyst-dev@catalyst");
     expect(text).toContain("removed: job com.catalyst.agent");
-    expect(text).toContain("kept: data ~/.config/catalyst (run with --data to delete it)");
-    expect(ctx.out.at(-1)).toBe("re-checked: nothing of the old runtime remains except the data folders you kept");
+    expect(text).toContain("kept: data ~/.config/catalyst (shared current state; always kept)");
+    expect(ctx.out.at(-1)).toBe("re-checked: nothing of the old runtime remains; all shared data folders were kept");
   });
 
-  test("--remove --yes --data also deletes the data folders and leaves the current config alone", async () => {
+  test("--remove --yes --data always keeps shared data folders and current config", async () => {
     oldMachine();
     expect(await main(["legacy", "--remove", "--yes", "--data"], ctx, deps())).toBe(0);
-    expect(existsSync(join(home, ".config", "catalyst"))).toBe(false);
-    expect(existsSync(join(home, ".local", "state", "catalyst-ledger"))).toBe(false);
+    expect(existsSync(join(home, ".config", "catalyst"))).toBe(true);
+    expect(existsSync(join(home, ".local", "state", "catalyst-ledger"))).toBe(true);
     expect(existsSync(join(home, ".config", "catalyst-cloud", "customer.json"))).toBe(true);
-    expect(ctx.out.at(-1)).toBe("re-checked: nothing of the old runtime remains");
+    expect(ctx.out.at(-1)).toBe("re-checked: nothing of the old runtime remains; all shared data folders were kept");
   });
 
   test("a tool that fails leaves the item reported as still present, exit 1, and nothing else is skipped", async () => {
