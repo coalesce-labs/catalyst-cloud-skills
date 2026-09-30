@@ -1404,12 +1404,14 @@ describe("the settings reference names the screen, the route and the rule", () =
     [...text.matchAll(ROUTE_TOKEN)].map((m) => normalizeRoute(m[0]));
 
   test("⭐ positive control: the route matcher extracts a settings route and normalises an id segment, on fixed strings", () => {
-    expect(routesIn("`<their cloud>/settings/projects`" )).toEqual([
+    expect(routesIn("`<their cloud>/settings/projects`")).toEqual([
       "/settings/projects",
     ]);
     expect(routesIn("Settings → Your projects")).toEqual([]);
     expect(
-      routesIn("`<their cloud>/settings/projects/$projectId/repositories/$repoId/merging`"),
+      routesIn(
+        "`<their cloud>/settings/projects/$projectId/repositories/$repoId/merging`",
+      ),
     ).toEqual(["/settings/projects/$projectId/repositories/$repoId/merging"]);
   });
 
@@ -1689,7 +1691,9 @@ describe("every settings route in customer prose is on the vendored roster, and 
 
   test("⭐ positive control: the route matcher reads a route and normalises an id segment, on fixed strings", () => {
     expect(
-      normalizeRoute("/settings/projects/$projectId/repositories/$repoId/merging"),
+      normalizeRoute(
+        "/settings/projects/$projectId/repositories/$repoId/merging",
+      ),
     ).toBe("/settings/projects/$projectId/repositories/$repoId/merging");
     expect(
       normalizeRoute("/settings/projects/abc123/repositories/xyz/merging"),
