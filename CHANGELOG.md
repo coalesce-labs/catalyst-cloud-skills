@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.14.0
+
+The `catalyst onboard` command starts a resumable setup journal, migrates the installer receipt, and safely coordinates with the install script through an owner-token lock. It supports JSON plans, dry runs, step selection and resume validation. The first executable slice checks legacy local runtime files while preserving user data; provider and project steps remain staged for later releases.
+
 ## 0.13.1
 
 The Cloud pack now has eight skills. catalyst-onboard includes connection and setup, and whats-happening includes the guide to how Catalyst works. The guides use the catalyst command and call a tenant your cloud account. They explain asks, holds and the 48-hour fallback from the running code. Install and refresh remove retired Cloud-pack skills that carry the pack's provenance.

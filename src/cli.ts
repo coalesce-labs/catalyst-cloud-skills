@@ -73,9 +73,10 @@ import { cmdTeam, type TeamDeps } from "./team.js";
 import { cmdCapabilities } from "./capabilities.js";
 import { cmdProject } from "./project.js";
 import { cmdRepo } from "./repo.js";
-import { cmdLegacy, type LegacyDeps } from "./legacy.js";
+import { cmdLegacy, findLegacy, type LegacyDeps } from "./legacy.js";
 import { cmdIdentity, type IdentityDeps } from "./identity.js";
 import { cmdConnections, type ConnectionsDeps } from "./connections.js";
+import { cmdOnboard } from "./onboard.js";
 
 export {
   CONFIG_MODE,
@@ -145,6 +146,7 @@ export function usageText(): string {
     "  catalyst login --key <personal-key> [--base-url <url>]   (or CATALYST_CLOUD_TOKEN, for a key)",
     "  catalyst join ...   (deprecated alias of login; removed in the next minor version)",
     "  catalyst install [--skills-dir <dir>] [--force]   (repair path; your agent's own command installs the skills)",
+    "  catalyst onboard [--resume-from <step>] [--only <step>] [--yes] [--dry-run] [--json]",
     "  catalyst status | notice | me | ready | accounts",
     "  catalyst mcp add|list|remove (vault references only)",
     "  catalyst contract [--refresh] [--path <a.b.c>]",
@@ -340,6 +342,52 @@ export async function main(
         return await cmdLogin(args, ctx, deps);
       case "install":
         return cmdInstall(args, ctx);
+      case "onboard":
+        return await cmdOnboard(
+          args,
+          ctx,
+          {
+            runStep: async (id, stepCtx) => {
+              if (id !== "legacy") return { state: "skipped" };
+              const before = findLegacy(stepCtx.home, process.platform).filter(
+                (item) => !item.data,
+              ).length;
+              const safeCtx = args.json
+                ? { ...stepCtx, stdout: stepCtx.stderr }
+                : stepCtx;
+              const legacyArgs: ParsedArgs = {
+                ...args,
+                command: "legacy",
+                subcommand: null,
+                rest: [],
+                flags: { remove: true, yes: true },
+                json: false,
+                help: false,
+                version: false,
+              };
+              const code = await cmdLegacy(
+                legacyArgs,
+                safeCtx,
+                deps.legacy ?? {},
+              );
+              if (code !== 0)
+                throw new CliError(
+                  "legacy cleanup did not finish",
+                  "onboard-legacy-failed",
+                  10,
+                );
+              const after = findLegacy(stepCtx.home, process.platform).filter(
+                (item) => !item.data,
+              ).length;
+              return {
+                state: after === 0 ? "done" : "skipped",
+                evidence: { found: before, remaining: after },
+              };
+            },
+            isTty: deps.isTty ?? stdinIsTty,
+          },
+          readManifest().version,
+        );
       case "notice":
         return 0;
       case "status":
@@ -466,6 +514,7 @@ const VERB_HELP_KNOWN: Record<string, true> = Object.fromEntries(
     "project",
     "repo",
     "legacy",
+    "onboard",
   ].map((v) => [v, true]),
 );
 
