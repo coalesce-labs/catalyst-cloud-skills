@@ -1,0 +1,1 @@
+Separate the existing Change-Id footer from the validation paragraph so future managed amendments retain this same review target; source and verified package bytes are unchanged.
