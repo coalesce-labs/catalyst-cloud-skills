@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.14.0
+
+`catalyst onboard` runs setup steps with a private saved record and resumes by checking their current state. `--dry-run --json` prints a plan without changing files; `--only` completes a named step without claiming full onboarding. Sign-in validates the live person and workspace, and fake-HOME runs preserve legacy services and data.
+
+`catalyst ready --onboarding` distinguishes failed checks from missing evidence and reports observed work separately. Local sync is optional and can be included with `--local-sync`. Steps whose cloud capabilities are unavailable remain unfinished with a supported resume command. The installer handoff stays gated until its live prerequisites are verified.
+
 ## 0.13.1
 
 The Cloud pack now has eight skills. catalyst-onboard includes connection and setup, and whats-happening includes the guide to how Catalyst works. The guides use the catalyst command and call a tenant your cloud account. They explain asks, holds and the 48-hour fallback from the running code. Install and refresh remove retired Cloud-pack skills that carry the pack's provenance.
