@@ -22,6 +22,8 @@ export interface Capability {
   routes: readonly { method: "GET" | "POST"; path: string }[];
   /** The CLI version the verb first shipped in. */
   since: string;
+  /** The installer may hand over its receipt and lock only for this resumable entry point. */
+  bootstrapHandoff?: boolean;
 }
 
 const agent = (method: "GET" | "POST", name: string) => ({ method, path: `/api/v1/agent/${name}` }) as const;
@@ -30,6 +32,7 @@ const agent = (method: "GET" | "POST", name: string) => ({ method, path: `/api/v
  *  the person, the workspace, the project, the repository, then work. A new verb is a new row here
  *  in the same change, or `catalyst capabilities` lies to every guide that reads it. */
 export const CAPABILITIES: readonly Capability[] = [
+  { verb: "onboard", does: "run and resume Catalyst setup with a saved step record", needs: "member", routes: [], since: "0.14.0", bootstrapHandoff: true },
   { verb: "status", does: "say whether this machine is connected, as whom, and to which cloud", needs: "member", routes: [], since: "0.1.0" },
   { verb: "me", does: "read the person's seat, role and Linear identity", needs: "member", routes: [], since: "0.1.0" },
   { verb: "ready", does: "read the machine and the workspace's per-project readiness in one verdict", needs: "member", routes: [], since: "0.1.0" },
