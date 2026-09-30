@@ -233,7 +233,7 @@ function isoNow(ctx: Ctx, deps: OnboardDeps): string {
   return (deps.now ?? ctx.now)().toISOString();
 }
 
-function safeRead(path: string): unknown | null {
+function safeRead(path: string): unknown | undefined {
   try {
     if (lstatSync(path).isSymbolicLink())
       throw new CliError(
@@ -244,7 +244,7 @@ function safeRead(path: string): unknown | null {
     return JSON.parse(readFileSync(path, "utf8")) as unknown;
   } catch (err) {
     if (err instanceof CliError) throw err;
-    if (object(err)?.code === "ENOENT") return null;
+    if (object(err)?.code === "ENOENT") return undefined;
     throw new CliError(
       `the saved setup record at ${path} is not valid JSON; keep it and move it aside before trying again`,
       "onboard-state-corrupt",
@@ -362,7 +362,7 @@ export function readOnboardJournal(
   now = new Date(),
 ): OnboardJournal | null {
   const raw = safeRead(path);
-  if (raw === null) return null;
+  if (raw === undefined) return null;
   const value = object(raw);
   if (!value || !Array.isArray(value.steps))
     throw new CliError(
@@ -516,23 +516,17 @@ function readLockOwner(path: string): LockOwner | null {
   return null;
 }
 
-function removeStaleLock(lockPath: string, owner: LockOwner | null): boolean {
+function removeStaleLock(lockPath: string, owner: LockOwner): boolean {
   try {
     const before = lstatSync(lockPath);
     if (!before.isDirectory() || before.isSymbolicLink()) return false;
     const current = readLockOwner(lockPath);
-    if (
-      (current?.pid ?? null) !== (owner?.pid ?? null) ||
-      (current?.token ?? "") !== (owner?.token ?? "")
-    )
+    if (current?.pid !== owner.pid || current?.token !== owner.token)
       return false;
-    const stalePath = `${lockPath}.stale-${owner?.pid ?? "unknown"}-${randomBytes(4).toString("hex")}`;
+    const stalePath = `${lockPath}.stale-${owner.pid}-${randomBytes(4).toString("hex")}`;
     renameSync(lockPath, stalePath);
     const moved = readLockOwner(stalePath);
-    if (
-      (moved?.pid ?? null) !== (owner?.pid ?? null) ||
-      (moved?.token ?? "") !== (owner?.token ?? "")
-    ) {
+    if (moved?.pid !== owner.pid || moved?.token !== owner.token) {
       try {
         renameSync(stalePath, lockPath);
       } catch {
