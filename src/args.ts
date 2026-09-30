@@ -357,7 +357,7 @@ export const FLAG_TABLES: Record<string, FlagTable> = {
     },
     data: {
       value: false,
-      help: "with --remove: delete the old runtime's data folders too",
+      help: "historical flag; shared data folders are always kept",
     },
     yes: {
       value: false,

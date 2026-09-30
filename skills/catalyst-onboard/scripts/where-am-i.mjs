@@ -236,9 +236,9 @@ if (verbAvailable("legacy")) {
     const machine = parts.find((p) => p.part === "machine");
     const names = found.map((f) => `${f.kind} ${f.name}`);
     machine?.lines.push(
-      `note leftovers of the old local Catalyst runtime (${found.length}): ${names.slice(0, 6).join(", ")}${found.length > 6 ? ", …" : ""}; removing them is strongly recommended: catalyst legacy --remove (the data folders are a separate yes, --data)`,
+      `note leftovers of the old local Catalyst runtime (${found.length}): ${names.slice(0, 6).join(", ")}${found.length > 6 ? ", …" : ""}; removing them is strongly recommended: catalyst legacy --remove (all data folders are kept)`,
     );
-    legacyNote = `this machine still carries ${found.length} piece${found.length === 1 ? "" : "s"} of the old local Catalyst runtime (${names.slice(0, 4).join(", ")}${found.length > 4 ? ", …" : ""}); offer catalyst legacy --remove once, strongly recommended, then --data as a separate question`;
+    legacyNote = `this machine still carries ${found.length} piece${found.length === 1 ? "" : "s"} of the old local Catalyst runtime (${names.slice(0, 4).join(", ")}${found.length > 4 ? ", …" : ""}); offer catalyst legacy --remove once, strongly recommended, keep all shared data folders`;
   }
 }
 
