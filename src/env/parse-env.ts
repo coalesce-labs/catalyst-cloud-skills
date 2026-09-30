@@ -17,6 +17,21 @@ export function filterEnvFileNames(text: string, selected: ReadonlySet<string>):
   return { text: lines.length === 0 ? "" : `${lines.join("\n")}\n`, found: [...found].sort((a, b) => a.localeCompare(b, "en")) };
 }
 
+/** List dotenv assignment names without returning or logging values. */
+export function envFileNames(text: string): string[] {
+  const names = new Set<string>();
+  for (const line of text.split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (trimmed === "" || trimmed.startsWith("#")) continue;
+    const assignment = trimmed.startsWith("export ") ? trimmed.slice("export ".length) : trimmed;
+    const equals = assignment.indexOf("=");
+    if (equals < 0) continue;
+    const name = assignment.slice(0, equals).trim();
+    if (name !== "") names.add(name);
+  }
+  return [...names].sort((a, b) => a.localeCompare(b, "en"));
+}
+
 /** Parse dotenv assignments using the mirror import grammar, after the caller has locally selected
  * names. Values stay in this process and are posted one at a time to the documented write route. */
 export function parseEnvAssignments(text: string, selected?: ReadonlySet<string>): Array<{ name: string; value: string }> {
