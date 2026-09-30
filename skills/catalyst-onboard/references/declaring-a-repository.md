@@ -1,17 +1,24 @@
-# Declaring what one repository's containers need
+# Drafting one repository's settings
 
-The cloud containers build and test the repository and need the names of the variables and secrets it reads. You write the names; the person enters the values in the app. Never read or print a value. Say which files you will read and what you will write, and wait for a yes. An existing file gets verified against the inventory, not rewritten.
+The assistant prepares `.catalyst/catalyst.toml` from the repository. Never ask the person to write TOML or copy environment names by hand. Never read or print values from `.env`, CI secrets, or other local secret stores.
 
-## The inventory, in order
+## Inspect before drafting
 
-1. Start from what builds and tests the repository: the README's setup section, the scripts in `package.json` or its equivalent, and CI's build and test steps. A name none of them reads does not belong in the file.
-2. Tie each name to the file it came from: a `.env.example` (never `.env`, which holds live values), a CI secret in a workflow's `env:` block, or a platform binding. A name you cannot tie to a file is a guess; say so instead of listing it.
-3. Leave out platform bindings and deploy-only secrets, since containers build and test but never deploy, unless the person says the build needs one.
-4. Write the names into `.catalyst/catalyst.toml`, the only file the cloud reads, and open a pull request. Each merged change to it is proposed as a new revision. An owner or admin approves it at Settings → Your projects → the project → Repositories → the repository → Environment → Setup declaration → Approve this revision. The person enters values on that page's Environment variables and Secrets tabs. The direct route is `/settings/projects/$projectId/repositories/$repoId/environment/declaration`; use the project and repository ids from Catalyst instead of guessing them.
+1. Check `.catalyst/catalyst.toml` and `catalyst.env.json` in the selected repository. Classify it as missing, legacy-only, valid TOML, or invalid TOML. `catalyst env check --json` checks the TOML environment table; when only the legacy file exists, it reports that the JSON declaration is no longer read.
+2. For a legacy file, run `catalyst env migrate [path-to-catalyst.env.json]`. It prints a TOML environment table containing names only; every name is optional, and names identified as secrets are marked `secret = true`. Do not copy JSON values or provenance into the new file.
+3. For missing or invalid declarations, inspect the repository's package manager files, README setup instructions, `package.json` scripts or equivalent, build and test workflows, `.env.example`, and source references. Use `catalyst env inventory [repo] --json` as supporting evidence. Do not inspect `.env` values or run repository scripts just to infer settings.
+4. Draft `#:schema https://staging.catalystcloud.dev/schemas/catalyst.schema.json`, `[project]` with the mapped project's `linear_team`, the environment variables evidenced by build/test/setup, and setup/verify steps based on the repository's real package manager and build/test commands. Exclude deploy-only variables and platform bindings unless build or tests use them. Mark known secrets with `secret = true`. Set `required = false` on every variable; never make a phase depend on a newly declared value by default.
+5. Validate the complete draft against the live schema at the URL in its `#:schema` line, then run `catalyst env check <path>`. The environment check is an additional check; it does not replace full schema validation. If a live-schema validator is unavailable or either check fails, fix the draft or report the exact blocker without claiming it is valid.
 
-## The file's shape
+## Ask before writing or opening the PR
 
-`[project]` with `linear_team` is required; every other section is optional.
+Show a short preview with the project/team, setup and verify commands, variable names, which are marked secret, and confirmation that every variable is optional. Do not include values. Ask the person to approve this exact draft. Before approval, do not write or replace `.catalyst/catalyst.toml`, remove `catalyst.env.json`, or open a settings PR.
+
+After approval, write the validated file. When converting a legacy-only repository, remove `catalyst.env.json` in the same change. Open the settings PR, then offer to watch it merge. Once merged, give the owner or admin a direct link to approve the new declaration revision at Settings → Your projects → the project → Repositories → the repository → Environment → Setup declaration → Approve this revision. The direct route is `/settings/projects/$projectId/repositories/$repoId/environment/declaration`; use the project and repository ids from Catalyst instead of guessing them.
+
+## File shape
+
+`[project]` with `linear_team` is required; other sections are optional. Environment names belong under `[[environment.variables]]`:
 
 ```toml
 #:schema https://staging.catalystcloud.dev/schemas/catalyst.schema.json
@@ -21,11 +28,11 @@ linear_team = "ENG"
 
 [[environment.variables]]
 name = "DATABASE_URL"
-required = true
+required = false
 
 [[environment.variables]]
 name = "STRIPE_API_KEY"
-required = true
+required = false
 secret = true
 
 [[environment.setup]]
@@ -33,4 +40,4 @@ name = "install"
 run = ["npm", "ci"]
 ```
 
-`linear_team` is the Linear team's key. `run` is an argument list, not a shell string, and `name` is kebab-case; `verify` steps share the shape and carry the test commands. The schema lists the optional tables (`toolchains`, `system_packages`, `services`). After the merge, `catalyst ready` reports `environment_declared` with the next step.
+`run` is an argument list, not a shell string. `verify` steps use the same shape and carry the repository's test commands. Secret and variable values belong in Catalyst Cloud, never in this file.

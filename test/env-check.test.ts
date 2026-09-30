@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { describe, expect, test } from "vitest";
 import { main } from "../src/cli";
 import { validateSettingsToml } from "../src/env/settings-toml";
+import { convertLegacyEnvironmentJson } from "../src/env/legacy";
 import { makeCtx, tempHome } from "./helpers";
 
 const valid = `[project]\nlinear_team = "CTC"\n\n[environment]\n[[environment.variables]]\nname = "BUILD_TOKEN"\nsecret = true\nrequired = false\n`;
@@ -72,5 +73,52 @@ describe("repo settings TOML check", () => {
     expect(printed).toContain("legacy declaration");
     expect(printed).toContain(".catalyst/catalyst.toml");
     expect(printed).not.toContain("do-not-print");
+  });
+
+  test(
+    "converts legacy names without values, marks likely secrets, and makes every name optional",
+    async () => {
+      const dir = mkdtempSync(join(tmpdir(), "catalyst-settings-migrate-"));
+      const file = join(dir, "catalyst.env.json");
+      writeFileSync(
+        file,
+        JSON.stringify({
+          environment: [
+            {
+              name: "DATABASE_URL",
+              required: true,
+              provenanceIds: ["source-1"],
+            },
+            {
+              name: "PAYMENT_API_KEY",
+              required: true,
+              value: "never-print-this",
+            },
+          ],
+        }),
+      );
+      const ctx = makeCtx(tempHome());
+
+      expect(await main(["env", "migrate", file], ctx)).toBe(0);
+      const output = ctx.out.join("\n");
+      expect(output).toContain('name = "DATABASE_URL"');
+      expect(output).toContain('name = "PAYMENT_API_KEY"');
+      expect(output).toContain("secret = true");
+      expect(output).toContain("required = false");
+      expect(output).not.toContain("never-print-this");
+      expect(output).not.toContain("provenanceIds");
+      expect(readFileSync(file, "utf8")).toContain("never-print-this");
+    },
+  );
+
+  test("rejects malformed legacy declarations without echoing their contents", () => {
+    const result = convertLegacyEnvironmentJson(
+      '{"environment":[{"name":"BAD-NAME","value":"do-not-print"}]}',
+    );
+    expect(result).toEqual({
+      state: "invalid",
+      errors: ["environment[0].name is not a valid environment variable name"],
+    });
+    expect(JSON.stringify(result)).not.toContain("do-not-print");
   });
 });

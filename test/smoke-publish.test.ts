@@ -36,6 +36,15 @@ function run(cmd: string, args: string[], opts: { cwd?: string; env?: NodeJS.Pro
   });
 }
 
+function fixtureEnv(home: string): NodeJS.ProcessEnv {
+  return {
+    ...process.env,
+    HOME: home,
+    XDG_CONFIG_HOME: join(home, ".config"),
+    CATALYST_SKILLS_HOME: home,
+  };
+}
+
 // Async on purpose: the fixture /me server lives in THIS process, so a spawnSync child would
 // block the event loop that has to answer it (measured: join times out at its own 15s budget).
 function runAsync(
@@ -100,7 +109,7 @@ test(
       NODE,
       [binPath, "login", "--key", "fixture-key", "--base-url", server.url],
       {
-        env: { ...process.env, HOME: fakeHome, CATALYST_SKILLS_HOME: fakeHome },
+        env: fixtureEnv(fakeHome),
       },
     );
     expect(connected.status, `login failed:\n${connected.stdout}\n${connected.stderr}`).toBe(0);
@@ -117,7 +126,7 @@ test(
     // tarball, which is the publish-facing seam this test exists to catch.
     expect(existsSync(join(fakeHome, ".claude", "skills")), "login must copy no skills").toBe(false);
     const repaired = await runAsync(NODE, [binPath, "install"], {
-      env: { ...process.env, HOME: fakeHome, CATALYST_SKILLS_HOME: fakeHome },
+      env: fixtureEnv(fakeHome),
     });
     expect(repaired.status, `install failed:\n${repaired.stdout}\n${repaired.stderr}`).toBe(0);
     const placed = readdirSync(join(fakeHome, ".claude", "skills"), { withFileTypes: true })
@@ -127,7 +136,7 @@ test(
     expect(placed).toEqual([...CUSTOMER_SKILLS]);
 
     const status = await runAsync(NODE, [binPath, "status"], {
-      env: { ...process.env, HOME: fakeHome, CATALYST_SKILLS_HOME: fakeHome },
+      env: fixtureEnv(fakeHome),
     });
     expect(status.status).toBe(0);
     expect(status.stdout).toContain(FIXTURE_ME_BODY.name);
@@ -136,19 +145,19 @@ test(
     // `ready` proves the SDK loads under plain node (the type-stripping loader over the TS-source
     // dependencies) and names the replica as absent rather than failing on it.
     const help = await runAsync(NODE, [binPath, "contract", "--help"], {
-      env: { ...process.env, HOME: fakeHome, CATALYST_SKILLS_HOME: fakeHome },
+      env: fixtureEnv(fakeHome),
     });
     expect(help.status, help.stderr).toBe(0);
     expect(help.stdout).toContain("--refresh");
     const ready = await runAsync(NODE, [binPath, "ready"], {
-      env: { ...process.env, HOME: fakeHome, CATALYST_SKILLS_HOME: fakeHome },
+      env: fixtureEnv(fakeHome),
     });
     expect(ready.stdout, ready.stderr).toMatch(/^ok {3}sdk: loads/m);
     expect(ready.stdout).toMatch(/^note {2}replica: absent/m);
     expect(ready.stdout.trim().split("\n").at(-1)).toBe("READY");
     expect(ready.status).toBe(0);
     const schema = await runAsync(NODE, [binPath, "replica", "schema"], {
-      env: { ...process.env, HOME: fakeHome, CATALYST_SKILLS_HOME: fakeHome },
+      env: fixtureEnv(fakeHome),
     });
     expect(schema.status).toBe(3);
   },
@@ -167,7 +176,13 @@ async function deprecatedNameLine(): Promise<string> {
 }
 
 function globalEnv(prefix: string, home: string): NodeJS.ProcessEnv {
-  return { ...process.env, npm_config_prefix: prefix, HOME: home, CATALYST_SKILLS_HOME: home };
+  return {
+    ...process.env,
+    npm_config_prefix: prefix,
+    HOME: home,
+    XDG_CONFIG_HOME: join(home, ".config"),
+    CATALYST_SKILLS_HOME: home,
+  };
 }
 
 test(
