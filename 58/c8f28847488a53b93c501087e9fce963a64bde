@@ -1,1 +1,1 @@
-address Q4 safety review: reject duplicate export assignments, contain writer errors, keep invalid inputs value-free, recheck the authoritative allowlist, and bind the reviewed selection to the source snapshot
+address Q4 safety review and keep only snapshot-bound plans executable; reject duplicate export assignments, contain writer errors, sanitize invalid names, require the authoritative allowlist, and bind writes to reviewed source bytes
