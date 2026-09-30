@@ -337,4 +337,57 @@ describe("onboarding production runtime", () => {
     expect(existsSync(opened)).toBe(false);
   });
 
+  test("personal GitHub status server failure cannot become a pending consent or expose its error body", async () => {
+    const f = fixture(); f.seed();
+    const secret = "private-github-provider-error";
+    f.ctx.fetch = (async (input: Parameters<typeof fetch>[0]) => String(input).endsWith("/api/v1/me")
+      ? Response.json(me) : Response.json({ error: secret }, { status: 500 })) as typeof fetch;
+    const args = parseArgs(["onboard", "--only", "github.personal", "--yes", "--json"]);
+    const runtime = createOnboardRuntime(args, f.ctx, f.hooks);
+    expect(await cmdOnboard(args, f.ctx, runtime)).toBe(10);
+    const stored = readFileSync(onboardStatePath(f.home), "utf8");
+    const receipt = JSON.parse(stored);
+    expect(receipt.steps.find((step: { id: string }) => step.id === "github.personal")).toMatchObject({ state: "failed", reason: "personal_status_failed" });
+    expect(stored).not.toContain(secret);
+    expect(f.transcript.join("\n")).not.toContain(secret);
+  });
+
+  test("nonboolean GitHub connected status is invalid evidence rather than consent completion", async () => {
+    const f = fixture(); f.seed();
+    f.ctx.fetch = (async () => Response.json({ connected: 1 })) as typeof fetch;
+    const runtime = createOnboardRuntime(parseArgs(["onboard"]), f.ctx, f.hooks);
+    expect(await runtime.adapters!["github.personal"]!.check(f.ctx, f.journal)).toMatchObject({ state: "failed", reason: "personal_status_shape" });
+  });
+
+  test.each([
+    [409, "waiting", "github_workspace_required"],
+    [500, "failed", "personal_consent_start_failed"],
+  ] as const)("GitHub start %s does not open a browser or claim connection", async (status, state, reason) => {
+    const f = fixture(); f.seed();
+    const opened = join(f.home, "github-start-error-browser");
+    const secret = "private-github-start-error";
+    f.ctx.fetch = (async () => Response.json({ error: secret }, { status })) as typeof fetch;
+    const runtime = createOnboardRuntime(parseArgs(["onboard", "--json"]), f.ctx, { ...f.hooks, openBrowser: url => writeFileSync(opened, url) });
+    expect(await runtime.adapters!["github.personal"]!.act!(f.ctx, f.journal)).toMatchObject({ state, reason });
+    expect(existsSync(opened)).toBe(false);
+    expect(f.transcript.join("\n")).not.toContain(secret);
+  });
+
+  test("retryable Linear status outage during consent can recover without another browser opening", async () => {
+    const f = fixture(); f.seed();
+    const recovered = join(f.home, "linear-status-recovered");
+    const opened = join(f.home, "linear-recovery-browser");
+    const handoff = `${baseUrl}/connect/linear/personal/start?handoff=recovery-fixture`;
+    f.ctx.fetch = (async (input: Parameters<typeof fetch>[0]) => {
+      if (String(input).endsWith("/connect/linear/personal/start")) return Response.json({ authorizationUrl: handoff, expiresAt: Date.now() + 60000 });
+      return existsSync(recovered) ? Response.json({ connected: true }) : Response.json({ error: "linear_grant_check_unavailable" }, { status: 503 });
+    }) as typeof fetch;
+    const runtime = createOnboardRuntime(parseArgs(["onboard"]), f.ctx, { ...f.hooks,
+      openBrowser: url => writeFileSync(opened, url), sleep: async () => { writeFileSync(recovered, "usable"); },
+    });
+    expect(await runtime.adapters!["linear.personal"]!.act!(f.ctx, f.journal)).toMatchObject({ state: "done" });
+    expect(readFileSync(opened, "utf8")).toBe(handoff);
+    expect(existsSync(recovered)).toBe(true);
+  });
+
 });
