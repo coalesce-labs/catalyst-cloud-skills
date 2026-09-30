@@ -1,0 +1,6 @@
+Revision history for #174:
+
+rev 2 (content) 2026-09-30 15:46 UTC
+rev 1 (initial) 2026-09-30 15:46 UTC
+
+<!-- mergify-revision-data: {"schema_version":1,"pull_number":174,"entries":[{"number":1,"change_type":"initial","old_sha":null,"new_sha":"5b0268aa79f1d8719ebe862ac44307e21c0869aa","timestamp_iso":"2026-09-30T15:46:05Z","reason":"","replay_sha":null,"compare_url":null},{"number":2,"change_type":"content","old_sha":"5b0268aa79f1d8719ebe862ac44307e21c0869aa","new_sha":"ffc07ed7c439fe74c58b431e25f2ebfe52e31875","timestamp_iso":"2026-09-30T15:46:05Z","reason":"","replay_sha":"e5af7366408b3a03149077fdee3bc222953ece50","compare_url":"https://github.com/coalesce-labs/catalyst-cloud-skills/compare/5b0268aa79f1d8719ebe862ac44307e21c0869aa...e5af7366408b3a03149077fdee3bc222953ece50"}]} -->
