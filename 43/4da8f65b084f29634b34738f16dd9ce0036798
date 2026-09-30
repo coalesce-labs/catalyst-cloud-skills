@@ -1,6 +1,1 @@
-Revision history for #182:
-
-rev 2 (rebase) 2026-09-30 18:38 UTC — Separate the nonclosing Part of reference from the current single Change-Id trailer to preserve managed draft182 identity on future amendments. Metadata only; tested product tree unchanged.
-rev 1 (initial) 2026-09-30 18:38 UTC
-
-<!-- mergify-revision-data: {"schema_version":1,"pull_number":182,"entries":[{"number":1,"change_type":"initial","old_sha":null,"new_sha":"0def2c4048e2ea485ae2cbe76f37681639a213e8","timestamp_iso":"2026-09-30T18:38:28Z","reason":"","replay_sha":null,"compare_url":null},{"number":2,"change_type":"rebase","old_sha":"0def2c4048e2ea485ae2cbe76f37681639a213e8","new_sha":"6c3ac1fd7c5d02a1dfb78194fefadff849e604eb","timestamp_iso":"2026-09-30T18:38:28Z","reason":"Separate the nonclosing Part of reference from the current single Change-Id trailer to preserve managed draft182 identity on future amendments. Metadata only; tested product tree unchanged.","replay_sha":null,"compare_url":"https://github.com/coalesce-labs/catalyst-cloud-skills/compare/0def2c4048e2ea485ae2cbe76f37681639a213e8...6c3ac1fd7c5d02a1dfb78194fefadff849e604eb"}]} -->
+Bound native onboarding sign-in to one ten-minute budget, guard delayed response-body cache/output side effects, and verify actual terminal success/resume plus cancellation. Full remote gate1472pass1skip and85.28% branches; ordinary login rounds unchanged.
