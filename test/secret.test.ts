@@ -65,6 +65,24 @@ describe("Scenario: import a .env file from the CLI", () => {
     expect(write?.body).toMatchObject({ repo: "acme/app", source: "import: .env", rotateExisting: [] });
   });
 
+  test("--names sends only selected assignment lines and names requested values absent from the file", async () => {
+    const selectedValue = placeholder(21);
+    const unselectedValue = placeholder(22);
+    const file = envFile([`DATABASE_URL=${selectedValue}`, `OTHER_SECRET=${unselectedValue}`]);
+    const code = await main(["secret", "import", file, "--repo", "acme/app", "--names", "DATABASE_URL,NOT_PRESENT"], ctx);
+
+    expect(code).toBe(0);
+    expect(server.secrets.stored.get("acme/app:DATABASE_URL")?.value).toBe(selectedValue);
+    expect(server.secrets.stored.has("acme/app:OTHER_SECRET")).toBe(false);
+    expect(ctx.out).toContain("not found in .env: NOT_PRESENT");
+    expect(printed()).not.toContain(selectedValue);
+    expect(printed()).not.toContain(unselectedValue);
+    const body = secretWrites()[0]?.body as { text?: string } | undefined;
+    expect(body?.text).toContain("DATABASE_URL");
+    expect(body?.text).not.toContain("OTHER_SECRET");
+    expect(body?.text).not.toContain(unselectedValue);
+  });
+
   test("a name already set is reported, not replaced, until --rotate names it", async () => {
     server.secrets.stored.set("acme/app:A_TOKEN", { value: placeholder(1), version: 1, source: null });
     const file = envFile([`A_TOKEN=${placeholder(2)}`]);
