@@ -1314,10 +1314,10 @@ describe("where-am-i.mjs: leftovers of the old local runtime, from the CLI's own
     const doc = json(home) as Doc & { notes: string[] };
     expect(part(doc, "machine").verdict).toBe("ok");
     expect(part(doc, "machine").lines.at(-1)).toBe(
-      "note leftovers of the old local Catalyst runtime (3): plugin catalyst-dev@catalyst, job com.catalyst.agent, data ~/.config/catalyst; removing them is strongly recommended: catalyst legacy --remove (the data folders are a separate yes, --data)",
+      "note leftovers of the old local Catalyst runtime (3): plugin catalyst-dev@catalyst, job com.catalyst.agent, data ~/.config/catalyst; removing them is strongly recommended: catalyst legacy --remove (all data folders are kept)",
     );
     expect(doc.notes).toContain(
-      "this machine still carries 3 pieces of the old local Catalyst runtime (plugin catalyst-dev@catalyst, job com.catalyst.agent, data ~/.config/catalyst); offer catalyst legacy --remove once, strongly recommended, then --data as a separate question",
+      "this machine still carries 3 pieces of the old local Catalyst runtime (plugin catalyst-dev@catalyst, job com.catalyst.agent, data ~/.config/catalyst); offer catalyst legacy --remove once, strongly recommended, keep all shared data folders",
     );
     expect(doc.next?.part).not.toBe("machine");
     expect(run(home, ["--next"]).stdout).toMatch(

@@ -12,7 +12,7 @@ Only when the script says the machine is not connected: ask "Shall I start the l
 
 ## 1b. Leftovers of the old local runtime
 
-Only when the script notes them (from the CLI's fixed list; current jobs are never on it); left in place they can start old jobs or shadow current commands. Ask once, recommending it: "Shall I remove the old runtime's leftovers now? It keeps your data folders." On a yes, run `catalyst legacy --remove --yes` and read back its `removed:` and `re-checked:` lines; offer `--data` separately. On a no, the note stays.
+Only when the script notes them (from the CLI's fixed list; current jobs are never on it); left in place they can start old jobs or shadow current commands. Ask once, recommending it: "Shall I remove the old runtime's leftovers now? It keeps your data folders." On a yes, run `catalyst legacy --remove --yes` and read back its `removed:` and `re-checked:` lines; keep all shared data folders. Never offer data deletion. On a no, the note stays.
 
 ## 2. A coding account
 

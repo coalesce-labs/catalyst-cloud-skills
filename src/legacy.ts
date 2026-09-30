@@ -6,8 +6,8 @@
 //
 // The list is fixed on purpose. A prefix match would one day catch a current job (the housekeeping
 // job, the sandbox credit guard, jobs a person made); this matches names the old runtime installed,
-// read at the source commit below, and nothing else. Data folders are a separate yes (--data).
-import { existsSync, lstatSync, readFileSync, readdirSync, rmSync, unlinkSync } from "node:fs";
+// read at the source commit below, and nothing else. Shared data folders are always kept. The historical --data flag cannot remove them.
+import { existsSync, lstatSync, readFileSync, readdirSync, unlinkSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { join } from "node:path";
 import { flagBool, positionals, type ParsedArgs } from "./args.js";
@@ -49,8 +49,8 @@ const OLD_ROLE_PREFIX = "com.catalyst.role.";
 export const OLD_USER_UNITS: readonly string[] = ["catalyst.service", "catalyst-monitor.service"];
 /** Command files the old runtime put on the person's PATH. `~/.local/bin/catalyst` is NOT one: that
  *  name belongs to the current CLI wherever npm put it. */
-export const OLD_BINS: readonly string[] = [".catalyst/bin", ".local/bin/catalyst-events", ".local/bin/catalyst-filter", ".local/bin/catalyst-hud", ".local/bin/catalyst-monitor", ".local/bin/catalyst-myown"];
-/** State the old runtime kept. `~/.config/catalyst-cloud` is the current CLI's and never touched. */
+export const OLD_BINS: readonly string[] = [".local/bin/catalyst-events", ".local/bin/catalyst-filter", ".local/bin/catalyst-hud", ".local/bin/catalyst-monitor", ".local/bin/catalyst-myown"];
+/** Shared roots also hold current skills, logs, hosts and seats. Never remove these directories. */
 export const OLD_DATA_DIRS: readonly string[] = [".catalyst", ".config/catalyst", ".local/state/catalyst", ".local/state/catalyst-fleet-runner", ".local/state/catalyst-ledger"];
 
 export type LegacyKind = "plugin" | "marketplace" | "job" | "bin" | "data";
@@ -59,7 +59,7 @@ export interface LegacyItem {
   /** What a person recognises: `name@marketplace`, a label, a unit, or a ~-relative path. */
   name: string;
   path: string;
-  /** A data folder: kept unless --data. */
+  /** A shared data folder: always kept. */
   data?: boolean;
 }
 export type LegacyRun = (cmd: string, args: string[]) => { status: number; stdout: string; stderr: string };
@@ -158,9 +158,9 @@ function remove(item: LegacyItem, run: LegacyRun, platform: NodeJS.Platform, uid
       unlinkSync(item.path);
       return null;
     }
-    // a bin or a data folder: a file goes with unlink, a directory (~/.catalyst/bin, the data) with rm -rf
-    if (lstatSync(item.path).isDirectory()) rmSync(item.path, { recursive: true, force: true });
-    else unlinkSync(item.path);
+    // CTC-4496: even explicit --data cannot delete shared roots. Unknown directories stay too.
+    if (item.data || lstatSync(item.path).isDirectory()) return "directory kept; shared data is protected";
+    unlinkSync(item.path);
     return null;
   } catch (err) {
     return `could not remove: ${err instanceof Error ? err.message : String(err)}`;
@@ -183,10 +183,10 @@ export async function cmdLegacy(args: ParsedArgs, ctx: Ctx, deps: LegacyDeps = {
   }
   const listLines = [
     `Leftovers of the old local Catalyst runtime on this machine (${found.length}):`,
-    ...found.map((f) => `  ${f.kind}: ${f.name}${f.kind === "job" ? ` — ${f.path}` : f.data ? " (kept unless --data)" : ""}`),
+    ...found.map((f) => `  ${f.kind}: ${f.name}${f.kind === "job" ? ` — ${f.path}` : f.data ? " (kept: shared current state)" : ""}`),
   ];
   if (!wantRemove) {
-    emit({ sourceCommit: LEGACY_SOURCE_COMMIT, found, removed: [], remaining: found }, [...listLines, RECOMMEND, "Run: catalyst legacy --remove (add --data to delete its data folders too)"]);
+    emit({ sourceCommit: LEGACY_SOURCE_COMMIT, found, removed: [], remaining: found }, [...listLines, RECOMMEND, "Run: catalyst legacy --remove (all data folders are kept)"]);
     return 1;
   }
   // the one question, only on a terminal; --yes answers it without asking
@@ -194,12 +194,12 @@ export async function cmdLegacy(args: ParsedArgs, ctx: Ctx, deps: LegacyDeps = {
   if (!go) {
     const tty = (deps.isTty ?? stdinIsTty)();
     if (!tty) {
-      emit({ sourceCommit: LEGACY_SOURCE_COMMIT, found, removed: [], remaining: found, asked: false }, [...listLines, RECOMMEND, "nothing removed: no terminal to ask on; run catalyst legacy --remove --yes to remove these without a question (add --data for the data folders)"]);
+      emit({ sourceCommit: LEGACY_SOURCE_COMMIT, found, removed: [], remaining: found, asked: false }, [...listLines, RECOMMEND, "nothing removed: no terminal to ask on; run catalyst legacy --remove --yes to remove these without a question (all data folders are kept)"]);
       return 1;
     }
     for (const l of listLines) ctx.stdout(l);
     ctx.stdout(RECOMMEND);
-    const answer = (await (deps.prompt ?? ((q: string) => promptSecret(q)))(`Remove ${found.length} item${found.length === 1 ? "" : "s"}${withData ? ", data folders included" : ", keeping the data folders"}? [y/N] `)).trim().toLowerCase();
+    const answer = (await (deps.prompt ?? ((q: string) => promptSecret(q)))(`Remove ${found.length} item${found.length === 1 ? "" : "s"}, keeping all data folders? [y/N] `)).trim().toLowerCase();
     go = answer === "y" || answer === "yes";
     if (!go) {
       emit({ sourceCommit: LEGACY_SOURCE_COMMIT, found, removed: [], remaining: found, asked: true }, ["nothing removed; run catalyst legacy --remove again when ready"]);
@@ -211,14 +211,14 @@ export async function cmdLegacy(args: ParsedArgs, ctx: Ctx, deps: LegacyDeps = {
   const kept: LegacyItem[] = [];
   const lines: string[] = [];
   for (const item of found) {
-    if (item.data && !withData) { kept.push(item); lines.push(`kept: ${item.kind} ${item.name} (run with --data to delete it)`); continue; }
+    if (item.data) { kept.push(item); lines.push(`kept: ${item.kind} ${item.name} (shared current state; always kept)`); continue; }
     const why = remove(item, run, platform, uid);
     if (why === null) { removed.push(item); lines.push(`removed: ${item.kind} ${item.name}`); }
     else { failed.push({ item, why }); lines.push(`still present: ${item.kind} ${item.name} (${why})`); }
   }
   // re-check from the same list, so the report says what the machine holds now, not what was attempted
-  const remaining = findLegacy(ctx.home, platform).filter((f) => !(f.data && !withData));
-  const keptNote = kept.length > 0 ? " except the data folders you kept" : "";
+  const remaining = findLegacy(ctx.home, platform).filter((f) => !f.data);
+  const keptNote = kept.length > 0 ? "; all shared data folders were kept" : "";
   lines.push(remaining.length === 0 ? `re-checked: nothing of the old runtime remains${keptNote}` : `re-checked: ${remaining.length} item${remaining.length === 1 ? "" : "s"} of the old runtime remain${remaining.length === 1 ? "s" : ""}${keptNote}: ${remaining.map((r) => `${r.kind} ${r.name}`).join(", ")}`);
   emit({ sourceCommit: LEGACY_SOURCE_COMMIT, found, removed, remaining: [...remaining, ...kept], kept, failed }, lines);
   return remaining.length === 0 ? 0 : 1;
