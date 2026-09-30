@@ -43,6 +43,7 @@ describe("the table itself", () => {
         expect(["GET", "POST"]).toContain(r.method);
       }
     }
+    expect(CAPABILITIES.find((c) => c.verb === "onboard")?.bootstrapHandoff).toBe(true);
   });
 
   test("every verb the table names is one the dispatcher knows (the first word), and the verb has usage and a flag table", () => {
