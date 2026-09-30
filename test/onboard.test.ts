@@ -300,6 +300,21 @@ describe("catalyst onboard", () => {
     expect(() => readFileSync(join(lock, "owner.json"))).toThrow();
   });
 
+  test("reclaims a lock from this process only when the bootstrap token does not match", async () => {
+    const path = home();
+    const lock = onboardLockPath(path);
+    mkdirSync(lock, { recursive: true });
+    writeFileSync(join(lock, "owner.json"), JSON.stringify({ pid: 101, token: "old-run" }));
+    expect(
+      await cmdOnboard(
+        parseArgs(["onboard", "--only", "legacy", "--yes"]),
+        context(path),
+        { processId: 101, token: () => "new-run" },
+      ),
+    ).toBe(0);
+    expect(() => readFileSync(join(lock, "owner.json"))).toThrow();
+  });
+
   test("reads legacy PID-only locks and protects a reused live installer PID", async () => {
     const staleHome = home();
     const staleLock = onboardLockPath(staleHome);
@@ -784,5 +799,364 @@ describe("catalyst onboard", () => {
         { id: "legacy", state: "done", at: "updated", reason: "safe_reason" },
       ],
     });
+  });
+
+  test.each([null, [], { schema: 1 }, { schema: 1, steps: "pending" }])(
+    "refuses an unknown journal shape without replacing it: %s",
+    (value) => {
+      const path = home();
+      const statePath = onboardStatePath(path);
+      mkdirSync(join(path, ".local", "state", "catalyst", "install"), {
+        recursive: true,
+      });
+      const original = JSON.stringify(value);
+      writeFileSync(statePath, original);
+      expect(() => readOnboardJournal(statePath)).toThrow(/unknown shape/);
+      expect(readFileSync(statePath, "utf8")).toBe(original);
+    },
+  );
+
+  test("refuses a symlinked lock path without following it", async () => {
+    const path = home();
+    const lock = onboardLockPath(path);
+    const outside = join(path, "outside-lock");
+    mkdirSync(join(path, ".local", "state", "catalyst"), { recursive: true });
+    mkdirSync(outside);
+    writeFileSync(join(outside, "owner.json"), JSON.stringify({ pid: 99, token: "outside" }));
+    symlinkSync(outside, lock);
+    const errors: string[] = [];
+    expect(
+      await cmdOnboard(
+        parseArgs(["onboard", "--only", "legacy", "--yes"]),
+        context(path, [], errors),
+      ),
+    ).toBe(12);
+    expect(errors.join("\n")).toContain("not a real directory");
+    expect(readFileSync(join(outside, "owner.json"), "utf8")).toContain("outside");
+  });
+
+  test("refuses a regular file at the lock path and preserves it", async () => {
+    const path = home();
+    const lock = onboardLockPath(path);
+    mkdirSync(join(path, ".local", "state", "catalyst"), { recursive: true });
+    writeFileSync(lock, "operator evidence");
+    const errors: string[] = [];
+    expect(
+      await cmdOnboard(
+        parseArgs(["onboard", "--only", "legacy", "--yes"]),
+        context(path, [], errors),
+      ),
+    ).toBe(12);
+    expect(errors.join("\n")).toContain("not a real directory");
+    expect(readFileSync(lock, "utf8")).toBe("operator evidence");
+  });
+
+  test("refuses a symlinked journal instead of treating it as a saved run", () => {
+    const path = home();
+    const statePath = onboardStatePath(path);
+    mkdirSync(join(path, ".local", "state", "catalyst", "install"), {
+      recursive: true,
+    });
+    const outside = join(path, "outside-journal.json");
+    writeFileSync(outside, JSON.stringify({ schema: 1, steps: [] }));
+    symlinkSync(outside, statePath);
+    expect(() => readOnboardJournal(statePath)).toThrow(/symbolic link/);
+  });
+
+  test("does not reclaim a dead lock after its owner token changes during the liveness check", async () => {
+    const path = home();
+    const lock = onboardLockPath(path);
+    mkdirSync(lock, { recursive: true });
+    writeFileSync(join(lock, "owner.json"), JSON.stringify({ pid: 4243, token: "old" }));
+    const errors: string[] = [];
+    const code = await cmdOnboard(
+      parseArgs(["onboard", "--only", "legacy", "--yes"]),
+      context(path, [], errors),
+      {
+        processId: 101,
+        isProcessAlive: () => {
+          writeFileSync(join(lock, "owner.json"), JSON.stringify({ pid: 4243, token: "replacement" }));
+          return false;
+        },
+      },
+    );
+    expect(code).toBe(12);
+    expect(errors.join("\n")).toContain("could not be safely reclaimed");
+    expect(readFileSync(join(lock, "owner.json"), "utf8")).toContain("replacement");
+  });
+
+  test("does not reclaim a lock path replaced with a file during the liveness check", async () => {
+    const path = home();
+    const lock = onboardLockPath(path);
+    mkdirSync(lock, { recursive: true });
+    writeFileSync(join(lock, "owner.json"), JSON.stringify({ pid: 4243, token: "old" }));
+    const errors: string[] = [];
+    expect(
+      await cmdOnboard(
+        parseArgs(["onboard", "--only", "legacy", "--yes"]),
+        context(path, [], errors),
+        {
+          processId: 101,
+          isProcessAlive: () => {
+            rmSync(lock, { recursive: true });
+            writeFileSync(lock, "replacement file");
+            return false;
+          },
+        },
+      ),
+    ).toBe(12);
+    expect(errors.join("\n")).toContain("could not be safely reclaimed");
+    expect(readFileSync(lock, "utf8")).toBe("replacement file");
+  });
+
+  test("release leaves a replacement file at the lock path untouched", async () => {
+    const path = home();
+    const lock = onboardLockPath(path);
+    const code = await cmdOnboard(
+      parseArgs(["onboard", "--only", "legacy", "--yes"]),
+      context(path),
+      {
+        processId: 101,
+        token: () => "owner-token",
+        runStep: async () => {
+          rmSync(lock, { recursive: true });
+          writeFileSync(lock, "replacement file");
+          return { state: "done" };
+        },
+      },
+    );
+    expect(code).toBe(0);
+    expect(readFileSync(lock, "utf8")).toBe("replacement file");
+  });
+
+  test.each([
+    ["membership", { membershipId: "member-b" }],
+    ["cloud", { baseUrl: "https://other.example" }],
+  ])("refuses to resume under a different %s", async (_kind, changed) => {
+    const path = home();
+    mkdirSync(join(path, ".local", "state", "catalyst", "install"), {
+      recursive: true,
+    });
+    writeFileSync(
+      onboardStatePath(path),
+      JSON.stringify({
+        schema: 1,
+        runId: "saved",
+        cli: "0.14.0",
+        tenant: "tenant-a",
+        account: "tenant-a",
+        membershipId: "member-a",
+        baseUrl: "https://staging.catalystcloud.dev",
+        steps: [],
+        changes: [],
+      }),
+    );
+    const errors: string[] = [];
+    expect(
+      await cmdOnboard(
+        parseArgs(["onboard", "--only", "legacy", "--yes"]),
+        context(path, [], errors),
+        {
+          identity: async () => ({
+            account: "tenant-a",
+            membershipId: "member-a",
+            baseUrl: "https://staging.catalystcloud.dev",
+            role: "owner" as const,
+            ...changed,
+          }),
+        },
+      ),
+    ).toBe(12);
+    expect(errors.join("\n")).toContain("belongs to another workspace or member");
+    expect(() => readFileSync(join(onboardLockPath(path), "owner.json"))).toThrow();
+  });
+
+  test("a generic identity lookup failure leaves existing setup state untouched", async () => {
+    const path = home();
+    const statePath = onboardStatePath(path);
+    mkdirSync(join(path, ".local", "state", "catalyst", "install"), {
+      recursive: true,
+    });
+    const original = JSON.stringify({ schema: 1, runId: "saved", steps: [] });
+    writeFileSync(statePath, original);
+    const errors: string[] = [];
+    expect(
+      await cmdOnboard(
+        parseArgs(["onboard", "--only", "legacy", "--yes"]),
+        context(path, [], errors),
+        { identity: async () => { throw new Error("transport detail"); } },
+      ),
+    ).toBe(10);
+    expect(errors.join("\n")).toContain("Could not verify your Catalyst membership");
+    expect(errors.join("\n")).not.toContain("transport detail");
+    expect(readFileSync(statePath, "utf8")).toBe(original);
+  });
+
+  test("resume-from checks earlier steps without acting on them", async () => {
+    const path = home();
+    const actions: string[] = [];
+    const adapters = Object.fromEntries(
+      ["machine", "cli", "skills", "legacy", "signin", "linear.workspace", "linear.personal", "linear.team", "linear.adopt", "linear.automations", "github.install", "github.repos", "projects", "accounts", "settings", "values", "capacity", "daemon", "housekeeping", "first-ticket", "ready"].map((id) => [id, {
+        check: async () => id === "legacy" || id === "signin" ? { state: "pending" as const } : { state: "done" as const },
+        act: async () => { actions.push(id); return { state: "done" as const }; },
+      }]),
+    );
+    expect(
+      await cmdOnboard(
+        parseArgs(["onboard", "--resume-from", "signin", "--yes"]),
+        context(path),
+        { adapters },
+      ),
+    ).toBe(11);
+    expect(actions).toContain("signin");
+    expect(actions).not.toContain("legacy");
+  });
+
+  test("the install handoff resume inherits consent and checks only sign-in", async () => {
+    const path = home();
+    const errors: string[] = [];
+    const ctx = context(path, [], errors);
+    ctx.env.CATALYST_INSTALL_LOCK_TOKEN = "bootstrap-token";
+    expect(
+      await cmdOnboard(
+        parseArgs(["onboard", "--resume-from", "install", "--only", "signin"]),
+        ctx,
+        { adapters: { signin: { check: async () => ({ state: "done" }) } } },
+      ),
+    ).toBe(0);
+    expect(errors.join("\n")).not.toContain("Nothing was changed");
+    expect(readOnboardJournal(onboardStatePath(path))?.steps).toContainEqual(
+      expect.objectContaining({ id: "signin", state: "done" }),
+    );
+  });
+
+  test("first-ticket dependency closure visits shared prerequisites once and verifies them", async () => {
+    const path = home();
+    const adapters = Object.fromEntries(
+      ["machine", "cli", "skills", "legacy", "signin", "linear.workspace", "linear.personal", "linear.team", "linear.adopt", "linear.automations", "github.install", "github.repos", "projects", "accounts", "settings", "values", "capacity", "daemon", "housekeeping", "first-ticket", "ready"].map((id) => [id, { check: async () => ({ state: "done" as const }) }]),
+    );
+    expect(
+      await cmdOnboard(
+        parseArgs(["onboard", "--only", "first-ticket", "--yes"]),
+        context(path),
+        { adapters },
+      ),
+    ).toBe(0);
+    const steps = readOnboardJournal(onboardStatePath(path))!.steps;
+    expect(steps.map((step) => step.id)).toEqual([...new Set(steps.map((step) => step.id))]);
+    expect(steps.find((step) => step.id === "first-ticket")?.state).toBe("done");
+  });
+
+  test("rejects an invalid bootstrap state path before reading or writing a journal", async () => {
+    const path = home();
+    const ctx = context(path);
+    ctx.env.CATALYST_INSTALL_STATE_DIR = "relative-state";
+    await expect(
+      cmdOnboard(parseArgs(["onboard", "--dry-run"]), ctx),
+    ).rejects.toBeInstanceOf(CliError);
+    expect(() => readFileSync(onboardStatePath(path))).toThrow();
+  });
+
+  test("uses the documented yes default when no terminal is attached", async () => {
+    const path = home();
+    const errors: string[] = [];
+    expect(
+      await cmdOnboard(
+        parseArgs(["onboard", "--only", "legacy"]),
+        context(path, [], errors),
+      ),
+    ).toBe(0);
+    expect(errors.join("\n")).toContain("No terminal is attached; using the default answer Yes");
+    expect(readOnboardJournal(onboardStatePath(path))?.steps).toContainEqual(
+      expect.objectContaining({ id: "legacy", state: "skipped" }),
+    );
+  });
+
+  test("a confirmed prompt can proceed with an injected terminal reader", async () => {
+    const path = home();
+    const prompts: string[] = [];
+    expect(
+      await cmdOnboard(
+        parseArgs(["onboard", "--only", "legacy"]),
+        context(path),
+        {
+          isTty: () => true,
+          confirm: async (question) => { prompts.push(question); return true; },
+        },
+      ),
+    ).toBe(0);
+    expect(prompts).toEqual(["Continue? [Y/n] "]);
+  });
+
+  test("accepts a resumed action that is still waiting on an external consent", async () => {
+    const path = home();
+    const code = await cmdOnboard(
+      parseArgs(["onboard", "--only", "linear.workspace", "--yes"]),
+      context(path),
+      {
+        adapters: {
+          signin: { check: async () => ({ state: "done" }) },
+          "linear.workspace": {
+            check: async () => ({ state: "pending" }),
+            act: async () => ({ state: "waiting", reason: "consent_pending" }),
+          },
+        },
+      },
+    );
+    expect(code).toBe(11);
+    expect(readOnboardJournal(onboardStatePath(path))?.steps).toContainEqual(
+      expect.objectContaining({ id: "linear.workspace", state: "waiting", reason: "consent_pending" }),
+    );
+  });
+
+  test.each([
+    ["--only", "not-a-step"],
+    ["--resume-from", "not-a-step"],
+  ])("rejects an unknown requested onboarding step (%s)", async (flag, value) => {
+    await expect(
+      cmdOnboard(
+        parseArgs(["onboard", flag, value, "--yes"]),
+        context(home()),
+      ),
+    ).rejects.toBeInstanceOf(UsageError);
+  });
+
+  test("a workspace change after lock acquisition refuses before running a step", async () => {
+    const path = home();
+    const statePath = onboardStatePath(path);
+    mkdirSync(join(path, ".local", "state", "catalyst", "install"), { recursive: true });
+    writeFileSync(statePath, JSON.stringify({
+      schema: 1,
+      runId: "saved",
+      cli: "0.14.0",
+      tenant: "tenant-a",
+      account: "tenant-a",
+      membershipId: "member-a",
+      baseUrl: "https://staging.catalystcloud.dev",
+      steps: [],
+      changes: [],
+    }));
+    let reads = 0;
+    const errors: string[] = [];
+    expect(
+      await cmdOnboard(
+        parseArgs(["onboard", "--only", "legacy", "--yes"]),
+        context(path, [], errors),
+        {
+          identity: async () => {
+            reads += 1;
+            return {
+              account: "tenant-a",
+              membershipId: "member-a",
+              baseUrl: reads === 1 ? "https://staging.catalystcloud.dev" : "https://other.example",
+              role: "owner",
+            };
+          },
+          runStep: async () => { throw new Error("must not run"); },
+        },
+      ),
+    ).toBe(12);
+    expect(errors.join("\n")).toContain("onboard_identity_mismatch");
+    expect(reads).toBe(2);
   });
 });
