@@ -261,7 +261,15 @@ export const FLAG_TABLES: Record<string, FlagTable> = {
     },
   },
   accounts: {},
-  env: {},
+  env: {
+    root: { value: true, help: "draft: repository directory (default: current directory)" },
+    write: { value: false, help: "draft: write a new .catalyst/catalyst.toml; refuse to overwrite" },
+    diff: { value: false, help: "draft: show the generated TOML as an additions-only diff" },
+  },
+  var: {
+    repo: { value: true, help: "repository scope (owner/name); omit for tenant scope" },
+    names: { value: true, repeat: true, help: "import: only send these names (repeatable or comma-separated)" },
+  },
   team: {
     all: { value: false, help: "check every team, one request at a time" },
     stage: {
@@ -321,6 +329,11 @@ export const FLAG_TABLES: Record<string, FlagTable> = {
       value: true,
       repeat: true,
       help: "import: replace this name if it is already set (repeatable)",
+    },
+    names: {
+      value: true,
+      repeat: true,
+      help: "import: only send these names from the local file (repeatable or comma-separated)",
     },
   },
   identity: {},
@@ -419,11 +432,12 @@ export const VERB_USAGE: Record<string, string> = {
   mcp: "mcp <add <name> --url URL <--auth none|--bearer SECRET_NAME|--header NAME=SECRET_NAME...>|list|remove <name>> [--json]",
   team: "team <list|check <KEY>|check --all|map <KEY> [--stage role=StateName]... [--yes --plan-hash H]|adopt <KEY> [--undo] [--yes --plan-hash H]|migrate <KEY> [--choice sourceId=destinationId]... [--retire] [--yes --plan-hash H]|checklist <KEY>> [--json]",
   env:
-    "env <inventory [path] | check <file> | migrate [catalyst.env.json]> [--json]   (THIS repository, offline — no login, no network)",
+    "env <inventory [path] | check <file> | migrate [catalyst.env.json] | draft [--root DIR] [--diff] [--write]> [--json]   (THIS repository, offline — no login, no network)",
   environment:
     "environment [read] [--json] | environment propose --file <path>|--stdin [--expect-revision N] [--approve] [--json] | environment approve [--revision N --hash H] [--json]   (your ACCOUNT's declaration; needs login)",
   secret:
-    "secret set <NAME> --repo <owner/name> [--command '<cmd>'] [--json]   (value from --command, stdin, or a hidden prompt) | secret import <file> --repo <owner/name> [--rotate NAME]... [--json]",
+    "secret set <NAME> --repo <owner/name> [--command '<cmd>'] [--json]   (value from --command, stdin, or a hidden prompt) | secret import <file> --repo <owner/name> [--names NAME[,NAME...]] [--rotate NAME]... [--json]",
+  var: "var <set NAME|import <file>> [--repo <owner/name>] [--names NAME[,NAME...]] [--json]   (plain environment variables; set reads stdin or a hidden prompt)",
   identity: "identity linear <status|options|set> [<linearUserId>] [--json]",
   capabilities: "capabilities [--json]",
   project:
