@@ -39,12 +39,11 @@ describe("catalyst var", () => {
     const writes: Array<{ path: string; body: unknown }> = [];
     const client = { postJson: async (path: string, body: unknown) => {
       writes.push({ path, body });
-      return { status: 200, body: { created: ["PUBLIC_ENDPOINT"] } };
+      return { status: 201, body: { created: true } };
     } } as unknown as Pick<ApiClient, "postJson">;
     const code = await main(["var", "import", file, "--names", "PUBLIC_ENDPOINT,ABSENT"], ctx, { var: { client } });
     expect(code).toBe(0);
-    expect(writes[0]?.path).toBe("/me/env-vars/import");
-    expect(writes[0]?.body).toMatchObject({ scope: "tenant", text: "PUBLIC_ENDPOINT=https://example.invalid\n" });
+    expect(writes).toEqual([{ path: "/me/env-vars", body: { scope: "tenant", name: "PUBLIC_ENDPOINT", value: "https://example.invalid" } }]);
     expect(JSON.stringify(writes[0]?.body)).not.toContain("placeholder-value-02");
     expect([...ctx.out, ...ctx.err].join("\n")).not.toContain("https://example.invalid");
     expect(ctx.out.join("\n")).toContain("ABSENT");

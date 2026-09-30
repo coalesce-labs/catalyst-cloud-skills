@@ -4,13 +4,13 @@ import { readFileSync } from "node:fs";
 import { basename } from "node:path";
 import { flagList, flagString, positionals, type ParsedArgs } from "./args.js";
 import { requireConfig, type Ctx } from "./config.js";
+import { readContractCache } from "./contract.js";
 import { UsageError } from "./errors.js";
-import { filterEnvFileNames } from "./env/parse-env.js";
+import { parseEnvAssignments } from "./env/parse-env.js";
 import { promptSecret, stdinIsTty } from "./prompt.js";
 import { apiClient, type ApiClient } from "./transport.js";
 
 export const ENV_VARS_PATH = "/me/env-vars";
-export const ENV_VARS_IMPORT_PATH = "/me/env-vars/import";
 const NAME_RE = /^[A-Z][A-Z0-9_]*$/;
 const REPO_RE = /^[^/\s]+\/[^/\s]+$/;
 const ACCEPT = [400, 401, 403, 404, 409, 422];
@@ -18,13 +18,6 @@ const ACCEPT = [400, 401, 403, 404, 409, 422];
 interface WriteReply {
   name?: string;
   created?: boolean;
-  error?: string;
-  message?: string;
-}
-interface ImportReply {
-  created?: string[];
-  updated?: string[];
-  errors?: Array<{ name: string; reason: string }>;
   error?: string;
   message?: string;
 }
@@ -51,6 +44,15 @@ function selectedNames(args: ParsedArgs): string[] | undefined {
   return names;
 }
 
+function scopeBody(target: ReturnType<typeof scope>, ctx: Ctx): { scope: "tenant" } | { scope: "repo"; repoId: string } {
+  if (target.scope === "tenant") return { scope: "tenant" };
+  const [owner, name] = target.repo!.split("/");
+  const repositories = readContractCache(ctx.home)?.doc.merge.repositories ?? [];
+  const repo = repositories.find((entry) => entry.owner.toLocaleLowerCase() === owner!.toLocaleLowerCase() && entry.name.toLocaleLowerCase() === name!.toLocaleLowerCase());
+  if (!repo) throw new UsageError(`--repo ${target.repo} is not in the cached workspace contract; refresh catalyst contract and try again`);
+  return { scope: "repo", repoId: repo.repoId };
+}
+
 async function stdinText(): Promise<string> {
   const chunks: Buffer[] = [];
   for await (const chunk of process.stdin) chunks.push(Buffer.from(chunk));
@@ -62,6 +64,7 @@ export async function cmdVar(args: ParsedArgs, ctx: Ctx, deps: VarDeps = {}): Pr
   if (sub !== "set" && sub !== "import") throw new UsageError(`unknown var subcommand "${sub ?? ""}": set | import`);
   if (rest.length !== 1) throw new UsageError(sub === "set" ? "var set takes one NAME" : "var import takes one file (a .env file)");
   const target = scope(args);
+  const writeScope = scopeBody(target, ctx);
   const cfg = requireConfig(ctx);
   const client = deps.client ?? apiClient(cfg, ctx);
   if (sub === "set") {
@@ -72,7 +75,7 @@ export async function cmdVar(args: ParsedArgs, ctx: Ctx, deps: VarDeps = {}): Pr
       : await (deps.readStdin ?? stdinText)();
     const value = raw.endsWith("\r\n") ? raw.slice(0, -2) : raw.endsWith("\n") ? raw.slice(0, -1) : raw;
     if (value.length === 0) throw new UsageError("var set needs a non-empty value");
-    const reply = await client.postJson<WriteReply>(ENV_VARS_PATH, { ...target, name, value }, { accept: ACCEPT });
+    const reply = await client.postJson<WriteReply>(ENV_VARS_PATH, { ...writeScope, name, value }, { accept: ACCEPT });
     if (reply.status !== 200 && reply.status !== 201) {
       ctx.stderr(`var set refused (${reply.status}): ${reply.body.message ?? reply.body.error ?? "no reason given"}`);
       return 1;
@@ -86,21 +89,19 @@ export async function cmdVar(args: ParsedArgs, ctx: Ctx, deps: VarDeps = {}): Pr
   try { text = readFileSync(rest[0]!, "utf8"); }
   catch (err) { throw new UsageError(`could not read ${rest[0]}: ${err instanceof Error ? err.message : String(err)}`); }
   const names = selectedNames(args);
-  const filtered = names === undefined ? { text, found: [] as string[] } : filterEnvFileNames(text, new Set(names));
-  if (names !== undefined) text = filtered.text;
-  const reply = await client.postJson<ImportReply>(ENV_VARS_IMPORT_PATH, {
-    ...target,
-    text,
-    source: `import: ${basename(rest[0]!)}`,
-  }, { accept: ACCEPT });
-  if (reply.status !== 200) {
-    ctx.stderr(`var import refused (${reply.status}): ${reply.body.message ?? reply.body.error ?? "no reason given"}`);
-    return 1;
+  const entries = parseEnvAssignments(text, names === undefined ? undefined : new Set(names));
+  const found = new Set(entries.map(({ name }) => name));
+  const created: string[] = [];
+  const updated: string[] = [];
+  const errors: Array<{ name: string; reason: string }> = [];
+  for (const entry of entries) {
+    const reply = await client.postJson<WriteReply>(ENV_VARS_PATH, { ...writeScope, ...entry }, { accept: ACCEPT });
+    if (reply.status !== 200 && reply.status !== 201) {
+      errors.push({ name: entry.name, reason: reply.body.message ?? reply.body.error ?? `HTTP ${reply.status}` });
+    } else if (reply.body.created) created.push(entry.name);
+    else updated.push(entry.name);
   }
-  const created = reply.body.created ?? [];
-  const updated = reply.body.updated ?? [];
-  const errors = reply.body.errors ?? [];
-  const absent = names?.filter((name) => !filtered.found.includes(name)) ?? [];
+  const absent = names?.filter((name) => !found.has(name)) ?? [];
   if (args.json) ctx.stdout(JSON.stringify({ scope: target.scope, repo: target.repo ?? null, created, updated, errors, ...(names === undefined ? {} : { requested: names, notFoundInFile: absent }) }));
   else {
     const count = created.length + updated.length;
