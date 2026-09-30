@@ -73,10 +73,12 @@ import { cmdTeam, type TeamDeps } from "./team.js";
 import { cmdCapabilities } from "./capabilities.js";
 import { cmdProject } from "./project.js";
 import { cmdRepo } from "./repo.js";
-import { cmdLegacy, findLegacy, type LegacyDeps } from "./legacy.js";
+import { cmdLegacy, type LegacyDeps } from "./legacy.js";
 import { cmdIdentity, type IdentityDeps } from "./identity.js";
 import { cmdConnections, type ConnectionsDeps } from "./connections.js";
-import { cmdOnboard } from "./onboard.js";
+import { cmdOnboard, onboardErrorJournal } from "./onboard.js";
+import { createOnboardRuntime } from "./onboard-runtime.js";
+import { onboardingReadyReport, observeCloudOnboarding } from "./onboard-ready.js";
 
 export {
   CONFIG_MODE,
@@ -335,59 +337,32 @@ export async function main(
     return 0;
   }
   try {
-    migrateLegacyCliPath(ctx);
-    maybePrintUpdateNotice(args, ctx);
+    if (args.command !== "onboard") {
+      migrateLegacyCliPath(ctx);
+      maybePrintUpdateNotice(args, ctx);
+    }
     switch (args.command) {
       case "login":
         return await cmdLogin(args, ctx, deps);
       case "install":
         return cmdInstall(args, ctx);
       case "onboard":
-        return await cmdOnboard(
-          args,
-          ctx,
-          {
-            runStep: async (id, stepCtx) => {
-              if (id !== "legacy") return { state: "skipped" };
-              const before = findLegacy(stepCtx.home, process.platform).filter(
-                (item) => !item.data,
-              ).length;
-              const safeCtx = args.json
-                ? { ...stepCtx, stdout: stepCtx.stderr }
-                : stepCtx;
-              const legacyArgs: ParsedArgs = {
-                ...args,
-                command: "legacy",
-                subcommand: null,
-                rest: [],
-                flags: { remove: true, yes: true },
-                json: false,
-                help: false,
-                version: false,
-              };
-              const code = await cmdLegacy(
-                legacyArgs,
-                safeCtx,
-                deps.legacy ?? {},
-              );
-              if (code !== 0)
-                throw new CliError(
-                  "legacy cleanup did not finish",
-                  "onboard-legacy-failed",
-                  10,
-                );
-              const after = findLegacy(stepCtx.home, process.platform).filter(
-                (item) => !item.data,
-              ).length;
-              return {
-                state: after === 0 ? "done" : "skipped",
-                evidence: { found: before, remaining: after },
-              };
+        return await cmdOnboard(args, ctx, {
+          ...createOnboardRuntime(args, ctx, {
+            login: stepCtx => cmdLogin({ ...args, command: "login", flags: {}, json: false }, stepCtx, { ...deps, isTty: () => true }, true),
+            ready: async (stepCtx, journal) => {
+              const report = await onboardingReadyReport(stepCtx, { localSync: args.flags["local-sync"] === true || journal?.localSync === true, observe: observeCloudOnboarding });
+              const failed = report.checks.some(check => check.required && check.state === "fail");
+              return { state: report.state === "complete" ? "done" : failed ? "failed" : "waiting", reason: report.state === "complete" ? undefined : "onboarding_checks_pending",
+                evidence: { checks: report.checks.length, passed: report.checks.filter(check => check.state === "pass").length } };
             },
-            isTty: deps.isTty ?? stdinIsTty,
-          },
-          readManifest().version,
-        );
+            legacy: deps.legacy,
+            openBrowser: deps.openBrowser,
+            sleep: deps.sleep,
+            skillNames: CUSTOMER_SKILLS,
+          }),
+          ...(deps.isTty ? { isTty: deps.isTty } : {}),
+        }, readManifest().version);
       case "notice":
         return 0;
       case "status":
@@ -470,6 +445,8 @@ export async function main(
       return 1;
     }
     if (err instanceof CliError) {
+      if (args.command === "onboard" && args.json)
+        ctx.stdout(JSON.stringify(onboardErrorJournal(ctx, manifest.version, err.exitCode)));
       ctx.stderr(`catalyst: ${err.message}`);
       return err.exitCode;
     }
@@ -522,6 +499,7 @@ async function cmdLogin(
   args: ParsedArgs,
   ctx: Ctx,
   deps: MainDeps,
+  personalOnly = false,
 ): Promise<number> {
   const manifest = readManifest();
   const key = (args.key ?? ctx.env.CATALYST_CLOUD_TOKEN ?? "").trim();
@@ -539,6 +517,8 @@ async function cmdLogin(
         sleep: deps.sleep,
       })).accessToken;
   const me = await fetchMe(baseUrl, bearer, ctx.fetch);
+  if (personalOnly && !me.user)
+    throw new CliError("onboarding needs your personal login; sign in as yourself", "onboard-person-required", 12);
   let existing: CustomerConfig | null;
   try {
     existing = loadConfig(ctx.home);

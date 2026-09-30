@@ -70,6 +70,7 @@ export const FLAG_TABLES: Record<string, FlagTable> = {
   },
   install: {},
   onboard: {
+    "local-sync": { value: false, help: "include the optional local sync setup in this plan" },
     "resume-from": { value: true, help: "resume at a verified onboarding step" },
     only: { value: true, help: "run only the named onboarding step" },
     yes: { value: false, help: "accept the plan's default choices" },
@@ -261,6 +262,8 @@ export const FLAG_TABLES: Record<string, FlagTable> = {
     role: { value: true, help: "accept: the role recording the answer" },
   },
   ready: {
+    onboarding: { value: false, help: "check current onboarding evidence and observed project work" },
+    "local-sync": { value: false, help: "include the selected local sync mode" },
     offline: {
       value: false,
       help: "skip the published-release check (no network)",
@@ -412,7 +415,7 @@ export const FLAG_TABLES: Record<string, FlagTable> = {
 export const VERB_USAGE: Record<string, string> = {
   login:
     "login [--base-url <url>] [--start-replica]   (keyless; or --key <personal-key> / CATALYST_CLOUD_TOKEN)",
-  onboard: "onboard [--resume-from <step>] [--only <step>] [--yes] [--dry-run] [--json]",
+  onboard: "onboard [--resume-from <step>] [--only <step>] [--local-sync] [--yes] [--dry-run] [--json]",
   install: "install [--skills-dir <dir>] [--force]",
   status: "status",
   notice: "notice",
@@ -434,7 +437,7 @@ export const VERB_USAGE: Record<string, string> = {
   write:
     "write <comment <ticket> --body|--stdin [--parent] [--bookkeeping] [--as-user] | state <ticket> --slot|--state-id|--state-type | label <ticket> --add... --remove... | create --team --title [--description|--stdin] [--label] [--priority] | reaction <ticket>|--comment <id> --emoji <e> | attachment <ticket> --title --url | session <ticket> [--title] [--plan-file] [--activity]>",
   ask: "ask <raise --team --title [--context] [--option]... [--default] --blocks <ticket>...|--nothing-to-block [--ask-key] | accept <askTicket> --answer <commentId> --role <role> | list [--anyone] [--json]>",
-  ready: "ready [--json] [--offline]",
+  ready: "ready [--onboarding] [--local-sync] [--json] [--offline]",
   accounts: "accounts [--json]",
   mcp: "mcp <add <name> --url URL <--auth none|--bearer SECRET_NAME|--header NAME=SECRET_NAME...>|list|remove <name>> [--json]",
   team: "team <list|check <KEY>|check --all|map <KEY> [--stage role=StateName]... [--yes --plan-hash H]|adopt <KEY> [--undo] [--yes --plan-hash H]|migrate <KEY> [--choice sourceId=destinationId]... [--retire] [--yes --plan-hash H]|checklist <KEY>> [--json]",
