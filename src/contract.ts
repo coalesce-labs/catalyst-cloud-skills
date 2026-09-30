@@ -73,6 +73,8 @@ export function assertContractRange(version: string, range: string): void {
 
 export interface LoadContractOptions {
   refresh?: boolean;
+  /** Cancel before committing a response whose body finished after its caller stopped. */
+  signal?: AbortSignal;
   /** Skip the network entirely: use the cache if any, else refuse. */
   offline?: boolean;
 }
@@ -89,6 +91,8 @@ export async function loadContract(
   cfg: CustomerConfig,
   opts: LoadContractOptions = {},
 ): Promise<LoadedContract> {
+  const cancelled = () => { if (opts.signal?.aborted) throw new CliError("Sign-in paused. Run the same command to resume.", "login-cancelled", 11); };
+  cancelled();
   const path = contractPathFor(ctx.home);
   const cached = readContractCache(ctx.home);
   const nowMs = ctx.now().getTime();
@@ -112,6 +116,7 @@ export async function loadContract(
   try {
     res = await api.getJson<TenantContract>(CONTRACT_ROUTE, { etag: cached?.etag ?? null, accept: [304] });
   } catch (err) {
+    cancelled();
     if (err instanceof CliError && err.status === 403) {
       throw new CliError(
         `GET ${CONTRACT_ROUTE} refused (403): this cloud is older than the bundle and does not yet admit a personal key on the contract — update the cloud, or log in with the tenant's account key until it is`,
@@ -133,6 +138,7 @@ export async function loadContract(
     throw err;
   }
 
+  cancelled();
   if (res.status === 304) {
     if (!cached) throw new CliError(`GET ${CONTRACT_ROUTE} answered 304 with no cache to revalidate`, "contract-shape");
     assertContractRange(cached.contractVersion, range);

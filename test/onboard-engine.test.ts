@@ -26,6 +26,23 @@ function completeAdapters(): NonNullable<OnboardDeps["adapters"]> {
 afterEach(() => { for (const home of homes.splice(0)) rmSync(home, { recursive: true, force: true }); });
 
 describe("onboarding engine contracts", () => {
+  test("the local sync choice persists across resume", async () => {
+    const f = fixture();
+    await cmdOnboard(parseArgs(["onboard", "--only", "legacy", "--yes", "--local-sync"]), f.ctx);
+    expect(f.receipt().localSync).toBe(true);
+    await cmdOnboard(parseArgs(["onboard", "--only", "legacy", "--yes"]), f.ctx);
+    expect(f.receipt().localSync).toBe(true);
+  });
+
+  test("JSON identity refusal emits one safe result without touching the saved receipt", async () => {
+    const f = fixture(); f.seed();
+    const before = readFileSync(onboardStatePath(f.home), "utf8");
+    const code = await cmdOnboard(parseArgs(["onboard", "--yes", "--json"]), f.ctx, { identity: async () => ({ ...identity, account: "other" }) });
+    expect(code).toBe(12);
+    expect(f.output).toHaveLength(1);
+    expect(JSON.parse(f.output[0]!)).toMatchObject({ schema: 1, exit: 12, complete: false });
+    expect(readFileSync(onboardStatePath(f.home), "utf8")).toBe(before);
+  });
   test("default unsupported run waits and records the full plan instead of reporting complete", async () => {
     const f = fixture();
     const code = await cmdOnboard(parseArgs(["onboard", "--yes", "--json"]), f.ctx, { identity: async () => identity });

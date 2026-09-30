@@ -114,6 +114,20 @@ A keyless session's access token is short-lived and rotates on its own: every re
 
 The setup skill Catalyst seeds into your repository ends by pointing at this same command. That served skill lives in the Catalyst Cloud application, not here; this is the only connect step a customer runs. Your cloud account's **account key** (Settings → Account keys, admin-minted) is a different credential — for a host or daemon that runs unattended — and is not what a person connects their own agent with: it would strip your name from everything your agent writes, and `login` says so if you use one.
 
+## Run and resume setup
+
+Run `catalyst onboard` for the steps supported by your installed CLI and cloud. The command shows its plan, opens supported browser consent links and saves progress. Resume with the same command; it rechecks completed steps before continuing. A missing cloud capability stays unfinished. In an interactive terminal, use the arrow keys to review the plan and choose cloud reads or optional local sync. Browser waits show progress. `--yes`, `--json`, `--dry-run` and non-terminal output stay plain.
+
+```sh
+catalyst onboard --dry-run --json
+catalyst onboard
+catalyst ready --onboarding --json
+```
+
+The dry run writes no files. `--only <step>` runs one step and reports its scope separately from full onboarding. Exit 10 means a failed step, 11 means waiting, and 12 means a guard refused the action. The private receipt is `install/last-run.json` under your machine's Catalyst state directory; credentials stay in the login config. A fake HOME reports old services and keeps them intact.
+
+Local sync is optional. Include it in the plan with `--local-sync` when you need local SQL or offline access. A resume keeps that choice. Readiness distinguishes failed checks from missing evidence and reports observed project work separately from unfinished setup.
+
 ## Requirements
 
 - Node 22.15 or newer (Node 26 works), or bun 1.4 or newer. The bundle uses Node's built-in SQLite module (and, on bun, bun's own `node:sqlite`) for the optional local replica, so there is no native dependency to build; if `better-sqlite3` resolves on the machine it is used instead. `catalyst ready` names the exact reason when the runtime is too old, and `catalyst runtime install` installs a pinned Node under this CLI's own cache — without touching your machine's default Node — if you would rather not upgrade it.

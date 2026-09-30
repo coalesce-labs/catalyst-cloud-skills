@@ -4,7 +4,7 @@
 import { accessSync, constants, existsSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { basename, delimiter, dirname, join } from "node:path";
 import type { ParsedArgs } from "./args.js";
-import { LEGACY_PACKAGE_NAME, PACKAGE_NAME, defaultSkillsDirFor, loadConfig, readManifest, upgradeCommand, type Ctx, type CustomerConfig } from "./config.js";
+import { LEGACY_PACKAGE_NAME, PACKAGE_NAME, defaultSkillsDirFor, loadConfig, normalizeBaseUrl, readManifest, upgradeCommand, type Ctx, type CustomerConfig } from "./config.js";
 import { contractVersionInRange, readContractCache } from "./contract.js";
 import type { ContractReadinessCheck, TenantContract } from "./contract-types.js";
 import { CliError } from "./errors.js";
@@ -15,6 +15,9 @@ import { FIX_COMMAND, detectRuntime, runtimeVerdict, supportedRangeText, type Ru
 import { semverOlder } from "./semver.js";
 import { FIRST_STAMPED_VERSION } from "./skill-shape.js";
 import { installedBundleVersion } from "./skills.js";
+import { onboardingReadyReport, observeCloudOnboarding, type OnboardingReadyDeps } from "./onboard-ready.js";
+import { selectedOnboardTeam } from "./onboard-existing.js";
+import { onboardStatePath, readOnboardJournal } from "./onboard.js";
 
 export { semverOlder };
 
@@ -125,6 +128,7 @@ export function catalystCommandCheck(env: NodeJS.ProcessEnv, platform: NodeJS.Pl
 }
 
 export interface ReadyDeps {
+  onboarding?: OnboardingReadyDeps;
   /** CTC-2158: replaces `nodeMajor`. A check called `node` cannot honestly describe bun, and under
    *  bun it used to print bun's Node-*compat* major as if it were Node. Test seam; defaults to the
    *  real process's runtime. */
@@ -415,6 +419,26 @@ export async function readyReport(ctx: Ctx, deps: ReadyDeps): Promise<ReadyRepor
 }
 
 export async function cmdReady(args: ParsedArgs, ctx: Ctx, deps: ReadyDeps): Promise<number> {
+  if (args.flags.onboarding === true) {
+    let onboarding = deps.onboarding;
+    if (!onboarding) {
+      const cfg = loadConfig(ctx.home);
+      const journal = readOnboardJournal(onboardStatePath(ctx.home, ctx.env), readManifest().version, ctx.now());
+      const bound = cfg?.user && journal && (journal.account ?? journal.tenant) === cfg.account &&
+        journal.membershipId === cfg.user.id && typeof journal.baseUrl === "string" && normalizeBaseUrl(journal.baseUrl) === normalizeBaseUrl(cfg.baseUrl);
+      const team = bound ? selectedOnboardTeam(journal) : undefined;
+      onboarding = { teamIds: team ? [team] : undefined, localSync: args.flags["local-sync"] === true || Boolean(bound && journal.localSync), observe: observeCloudOnboarding };
+    }
+    const report = await onboardingReadyReport(ctx, onboarding);
+    if (args.json) ctx.stdout(JSON.stringify(report));
+    else {
+      for (const check of report.checks) ctx.stdout(`${check.state === "pass" ? "ok" : check.state === "fail" ? "needs attention" : "waiting for evidence"}  ${check.id}${check.reason ? `: ${check.reason}` : ""}`);
+      if (report.work.state === "observed") ctx.stdout(`Work observed${report.work.ticket ? ` on ${report.work.ticket}` : ""}.`);
+      else ctx.stdout("Fresh project work has not been verified by this check.");
+      ctx.stdout(report.state === "complete" ? "Onboarding complete." : "Setup still needs checks. Resume: catalyst onboard");
+    }
+    return report.state === "complete" ? 0 : report.checks.some(check => check.required && check.state === "fail") ? 10 : 11;
+  }
   const report = await readyReport(ctx, deps);
   if (args.json) {
     ctx.stdout(JSON.stringify(report));
