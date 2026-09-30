@@ -13,6 +13,8 @@ import type { ContractRoute } from "./contract-types.js";
 export type CapabilityRole = "member" | "admin";
 
 export interface Capability {
+  /** Explicit support for the bootstrap's state and lock transfer contract. */
+  bootstrapHandoff?: boolean;
   /** The verb as typed after `catalyst`. */
   verb: string;
   /** One line a guide can say to the person. */
@@ -22,8 +24,6 @@ export interface Capability {
   routes: readonly { method: "GET" | "POST"; path: string }[];
   /** The CLI version the verb first shipped in. */
   since: string;
-  /** The installer may hand over its receipt and lock only for this resumable entry point. */
-  bootstrapHandoff?: boolean;
 }
 
 const agent = (method: "GET" | "POST", name: string) => ({ method, path: `/api/v1/agent/${name}` }) as const;

@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.14.1
+
+Interactive onboarding uses Clack for the shared plan choice, grouped progress and browser-wait spinners. Local sync is offered within the plan; unattended, JSON and dry-run output keep their plain defaults. Cancelling saves resumable progress and releases only the current setup lock.
+
+`catalyst onboard` runs setup steps with a private saved record and resumes by checking their current state. `--dry-run --json` prints a plan without changing files; `--only` completes a named step without claiming full onboarding. Sign-in validates the live person and workspace, and fake-HOME runs preserve legacy services and data.
+
+`catalyst ready --onboarding` distinguishes failed checks from missing evidence and reports observed work separately. Local sync is optional and can be included with `--local-sync`. Steps whose cloud capabilities are unavailable remain unfinished with a supported resume command. The installer handoff stays gated until its live prerequisites are verified.
+
 ## 0.14.0
 
 The `catalyst onboard` command starts a resumable setup journal, migrates the installer receipt, and safely coordinates with the install script through an owner-token lock. It supports JSON plans, dry runs, step selection and resume validation. The first executable slice checks legacy local runtime files while preserving user data; provider and project steps remain staged for later releases.

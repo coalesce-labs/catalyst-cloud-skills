@@ -4,11 +4,20 @@ description: >-
   Set up Catalyst Cloud and say whether setup is working. Walks a person from nothing to their first ticket running, one step at a time: the coding account, the project, the integrations and connected accounts, each repository's settings file, then one real ticket moving. Also logs this machine in, reads the readiness verdict with who can fix each failure, and checks the optional local replica. Use when someone says "set me up", "onboard me", "I just signed up", "get me started", "what do I do first", "log me in", "which account is this machine on", "am I set up", "what is missing", "why does nothing happen" or "is the replica running", when a login expired, or when a skill script exits 2 saying this machine is not connected. Does every step a key can do through the catalyst CLI, hands over the exact page for the steps only a browser can do, and never claims a step it did not watch succeed.
 allowed-tools: Bash(catalyst:*) Bash(npx -p @catalyst-cloud/cli catalyst:*)
 ---
-<!-- vendored-from: @catalyst-cloud/catalyst-skills@0.14.0 — written in this repository for customer accounts -->
+<!-- vendored-from: @catalyst-cloud/catalyst-skills@0.14.1 — written in this repository for customer accounts -->
 
 # Onboard me
 
-You are the guide a new member gets on day one and comes back to when they ask whether setup still works: one step and one question at a time, saying why each step matters and checking it landed. The path has five stops, in order: a **coding account**, one **project** (which needs the Linear integration first), the **integrations** and the person's own **connected accounts**, each repository's **settings file**, then a green `ready` with **one real ticket moving**.
+Guide setup through the same `catalyst onboard` flow that the installer runs. The command owns its plan, questions, browser handoffs and saved progress. Read back what it observed, and help with the next unfinished check.
+
+## Use the onboarding command
+
+1. Run `catalyst capabilities --json`. If its `onboard` entry is available and advertises `bootstrapHandoff: true`, use this path. If absent, use the older step-by-step references below and name the CLI update needed for the continuous flow.
+2. For a requested setup, run `catalyst onboard`. To inspect first, run `catalyst onboard --dry-run --json`. Resume with `catalyst onboard`; the command rechecks saved results. Do not ask the person to confirm completed browser steps or add a separate approval before the command's plan question.
+3. For the current onboarding checks, run `catalyst ready --onboarding --json`. A failed check needs attention. An unknown check needs evidence. Report observed project work separately from incomplete setup; an unknown setup check does not prove work stopped.
+4. Exit 0 completes the requested scope. Exit 10 means a failed step, 11 means waiting, and 12 means a guard refused the action. A successful `--only` step does not mean onboarding is complete. Keep the command's safe fix and supported resume command in your reply.
+
+Use cloud reads for ordinary workstation setup checks. Offer local sync for local SQL, offline access or sustained reads inside the plan review. It is optional; do not make an absent replica a setup failure. Browser approval belongs to the person. Missing bearer capabilities stay unfinished; never call a session-only route from the CLI or invent a command.
 
 **Words:** **Workspace** is the person's whole cloud account (a command that prints `Tenant:` means it). **Project** is one Linear team plus its registered repositories. **Integration** is a workspace connection (Linear, the GitHub App); a **connected account** is the person's own login. **Coding account** is the AI provider login the work runs on.
 
@@ -18,7 +27,7 @@ You are the guide a new member gets on day one and comes back to when they ask w
 - **Not connected, a login expired, "which account is this?"** `references/connecting-this-machine.md`.
 - **"Is the replica running?", or local SQL.** `node scripts/local-sync.mjs`, then `references/local-sync.md`.
 
-## How a turn goes on the path (first day, "what do I do first")
+## Older CLI: step-by-step setup
 
 1. Run `node scripts/where-am-i.mjs --next` and read its one line; trust it over your memory of the last turn. A `note:` after it is worth one clause.
 2. Say what the step is for.
@@ -49,11 +58,11 @@ Scripts are run, never read; each prints `--help`.
 
 ## Rules
 
-- **One step, then stop.** Open with the step. One question has one answer: a yes-or-no, or one fact. State who can do a step instead of asking ("this needs an owner or admin, which you are").
+- **The command owns the continuous flow.** For an older CLI, open with the current step and ask one question at a time. One question has one answer: a yes-or-no, or one fact. State who can do a step instead of asking ("this needs an owner or admin, which you are").
 - **Report what you observed.** Every number and name comes from output; `status`, not an opened URL, proves a grant landed. Name accounts by their label; no slot id, step number, file name or "the script" reaches the person.
 - **Each part by its own instrument;** a project problem is never a machine problem. Not ready is a question of who: name the check, the owner and where, and stop if that is someone else.
 - **Previews before project writes.** `team map`, `team adopt` and `team migrate` preview; pass `--yes --plan-hash` only after the person approves that exact plan.
-- **Their machine and their repository need a yes,** a login included. Say what you will write and where, then wait.
+- **The plan explains changes before they happen.** The onboarding command owns that review. In the older manual path, say what you will write and where before asking for its approval.
 - **Local sync is opt-in.** Every skill works through the API without it; a started process is not proof of freshness.
 - **Stop at a wall.** A suspended workspace, an inactive seat, an owner or admin needed where the person is neither, a blocked command: say what you found and who can act, then stop. An older cloud is not a broken command. A person with no account joins one by invitation from its admin.
 - **Write like a capable colleague:** plain words, short sentences, warm and unhurried.
