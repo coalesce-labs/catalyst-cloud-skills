@@ -69,6 +69,12 @@ export const FLAG_TABLES: Record<string, FlagTable> = {
     },
   },
   install: {},
+  onboard: {
+    "resume-from": { value: true, help: "resume at a verified onboarding step" },
+    only: { value: true, help: "run only the named onboarding step" },
+    yes: { value: false, help: "accept the plan's default choices" },
+    "dry-run": { value: false, help: "print the plan without taking the lock or changing files" },
+  },
   status: {},
   notice: {},
   me: {},
@@ -406,6 +412,7 @@ export const FLAG_TABLES: Record<string, FlagTable> = {
 export const VERB_USAGE: Record<string, string> = {
   login:
     "login [--base-url <url>] [--start-replica]   (keyless; or --key <personal-key> / CATALYST_CLOUD_TOKEN)",
+  onboard: "onboard [--resume-from <step>] [--only <step>] [--yes] [--dry-run] [--json]",
   install: "install [--skills-dir <dir>] [--force]",
   status: "status",
   notice: "notice",
