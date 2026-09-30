@@ -19,6 +19,9 @@ export interface CliDiscovery {
 }
 
 export interface DeviceFlowDeps {
+  signal?: AbortSignal;
+  /** Render the live approval wait only after the browser instructions have been written. */
+  waitForApproval?: <T>(run: () => Promise<T>) => Promise<T>;
   /** Whether a terminal is attached — a TTY gets its browser opened at the completion URL. */
   isTty?: () => boolean;
   openBrowser?: (url: string) => void;
@@ -73,7 +76,9 @@ function isDiscovery(v: unknown): v is CliDiscovery {
   return ["clientId", "issuer", "deviceAuthorizationUrl", "tokenUrl", "jwksUrl"].every((k) => typeof d[k] === "string");
 }
 
-export async function fetchDiscovery(ctx: Ctx, baseUrl: string, opts: { refresh?: boolean } = {}): Promise<CliDiscovery> {
+export async function fetchDiscovery(ctx: Ctx, baseUrl: string, opts: { refresh?: boolean; signal?: AbortSignal } = {}): Promise<CliDiscovery> {
+  const cancelled = () => { if (opts.signal?.aborted) throw new CliError("Sign-in paused. Run the same command to resume.", "login-cancelled", 11); };
+  cancelled();
   const base = normalizeBaseUrl(baseUrl);
   const nowMs = ctx.now().getTime();
   const fresh = (e: DiscoveryCacheEntry | null): e is DiscoveryCacheEntry => e !== null && e.baseUrl === base && nowMs - e.fetchedAt < DISCOVERY_TTL_MS;
@@ -91,6 +96,7 @@ export async function fetchDiscovery(ctx: Ctx, baseUrl: string, opts: { refresh?
     throw new CliError(`could not read the login discovery document (${res.status}) at ${url} — is this a Catalyst Cloud origin?`, "discovery-failed");
   }
   const doc = (await parseJson(res, url)) as unknown;
+  cancelled();
   if (!isDiscovery(doc)) throw new CliError(`the login discovery document at ${url} is not the expected shape`, "discovery-shape");
   const entry: DiscoveryCacheEntry = { baseUrl: base, fetchedAt: nowMs, doc };
   memo = entry;
@@ -134,12 +140,23 @@ export const MAX_DEVICE_CODES = 3;
  * expires, a fresh one is minted and printed, up to MAX_DEVICE_CODES in all.
  */
 export async function deviceFlowLogin(ctx: Ctx, baseUrl: string, deps: DeviceFlowDeps = {}): Promise<OauthAuth> {
-  const sleep = deps.sleep ?? defaultSleep;
-  const discovery = await fetchDiscovery(ctx, baseUrl);
+  const cancelled = () => { if (deps.signal?.aborted) throw new CliError("Sign-in paused. Run the same command to resume.", "login-cancelled", 11); };
+  cancelled();
+  if (deps.signal) {
+    const fetchImpl = ctx.fetch;
+    const signal = deps.signal;
+    ctx = { ...ctx, fetch: ((input: Parameters<typeof fetch>[0], init?: RequestInit) => fetchImpl(input, {
+      ...init, signal: init?.signal ? AbortSignal.any([signal, init.signal]) : signal,
+    })) as typeof fetch };
+  }
+  const discovery = await fetchDiscovery(ctx, baseUrl, { signal: deps.signal });
+  cancelled();
   // The browser rule is decided on the first code; a later code re-opens it only when the first did.
   let browserOpened = false;
   for (let round = 1; round <= MAX_DEVICE_CODES; round++) {
+    cancelled();
     const auth = await deviceAuthorize(ctx, discovery);
+    cancelled();
     if (round > 1) ctx.stdout(`That code expired. Here is a new one (${round} of ${MAX_DEVICE_CODES}):`);
     ctx.stdout("");
     ctx.stdout(`To connect this machine, visit:  ${auth.verification_uri}`);
@@ -155,7 +172,9 @@ export async function deviceFlowLogin(ctx: Ctx, baseUrl: string, deps: DeviceFlo
       }
     }
     ctx.stdout("Waiting for you to approve… (Ctrl-C to cancel)");
-    const tokens = await pollDeviceCode(ctx, discovery, auth, sleep);
+    const poll = () => pollDeviceCode(ctx, discovery, auth, deps.sleep, deps.signal);
+    const tokens = deps.waitForApproval ? await deps.waitForApproval(poll) : await poll();
+    cancelled();
     if (tokens !== "expired") return tokensToAuth(ctx, tokens.access_token, tokens.refresh_token);
   }
   // Every code lapsed unapproved. The exit code (2, CliError's default) and the `login-expired` code are
@@ -171,11 +190,16 @@ export async function deviceFlowLogin(ctx: Ctx, baseUrl: string, deps: DeviceFlo
  * a non-transient error) throw; expiry, by the server's `expired_token` or the code's own
  * `expires_in` lapsing, returns "expired" so the caller can mint the next code.
  */
-async function pollDeviceCode(ctx: Ctx, discovery: CliDiscovery, auth: DeviceAuthorization, sleep: (ms: number) => Promise<void>): Promise<TokenPair | "expired"> {
+async function pollDeviceCode(ctx: Ctx, discovery: CliDiscovery, auth: DeviceAuthorization, sleep?: (ms: number) => Promise<void>, external?: AbortSignal): Promise<TokenPair | "expired"> {
   const deadline = AbortSignal.timeout(auth.expires_in * 1_000);
+  const signal = external ? AbortSignal.any([external, deadline]) : deadline;
+  const cancelled = () => { if (external?.aborted) throw new CliError("Sign-in paused. Run the same command to resume.", "login-cancelled", 11); };
   let intervalMs = Math.max(1, auth.interval) * 1_000;
   for (;;) {
-    await sleep(intervalMs);
+    cancelled();
+    try { await devicePollDelay(intervalMs, signal, sleep); }
+    catch (error) { cancelled(); if (deadline.aborted) return "expired"; throw error; }
+    cancelled();
     // The device code's own lifetime bounds the loop: once it lapses, treat it as expired rather than
     // letting the next fetch's aborted signal surface as a generic network error (Codex P2).
     if (deadline.aborted) return "expired";
@@ -185,9 +209,11 @@ async function pollDeviceCode(ctx: Ctx, discovery: CliDiscovery, auth: DeviceAut
         ctx,
         discovery.tokenUrl,
         { method: "POST", headers: formHeaders(), body: form({ grant_type: "urn:ietf:params:oauth:grant-type:device_code", device_code: auth.device_code, client_id: discovery.clientId }) },
-        deadline,
+        signal,
       );
+      cancelled();
     } catch (err) {
+      cancelled();
       // The deadline firing mid-fetch is an expiry, not a failure; anything else is a transient
       // network blip — retry with backoff until the deadline, never abandon the login (CTC-2112 P1).
       if (deadline.aborted) return "expired";
@@ -218,6 +244,23 @@ async function pollDeviceCode(ctx: Ctx, discovery: CliDiscovery, auth: DeviceAut
     }
     throw new CliError(`login failed (${res.status}): ${err}`, "login-failed");
   }
+}
+
+/** Clear the real timer on cancellation; an injected slow callback is bounded by the same signal. */
+function devicePollDelay(ms: number, signal: AbortSignal, sleep?: (ms: number) => Promise<void>): Promise<void> {
+  return new Promise((resolve, reject) => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const clean = () => { clearTimeout(timer); signal.removeEventListener("abort", abort); };
+    const abort = () => { clean(); reject(new Error("device_poll_stopped")); };
+    if (signal.aborted) { abort(); return; }
+    signal.addEventListener("abort", abort, { once: true });
+    if (sleep) {
+      Promise.resolve().then(() => sleep(ms)).then(
+        () => { clean(); resolve(); },
+        error => { clean(); reject(error); },
+      );
+    } else timer = setTimeout(() => { clean(); resolve(); }, ms);
+  });
 }
 
 /** Grow the poll interval on a transient failure, capped, so retries never hammer the endpoint. */
