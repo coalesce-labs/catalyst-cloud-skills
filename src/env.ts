@@ -7,6 +7,7 @@ import { resolve } from "node:path";
 import { positionals, type ParsedArgs } from "./args.js";
 import type { Ctx } from "./config.js";
 import { validateSettingsToml } from "./env/settings-toml.js";
+import { convertLegacyEnvironmentJson } from "./env/legacy.js";
 import { inventoryRepo } from "./env/inventory.js";
 import { inventoryToJson, renderInventory } from "./env/render.js";
 import type { ScanDeps } from "./env/types.js";
@@ -21,7 +22,31 @@ export async function cmdEnv(
 ): Promise<number> {
   const [sub, ...rest] = positionals(args);
   if (sub === undefined)
-    throw new UsageError("env needs a subcommand: inventory | check");
+    throw new UsageError("env needs a subcommand: inventory | check | migrate");
+
+  if (sub === "migrate") {
+    if (rest.length > 1)
+      throw new UsageError(
+        `env migrate takes at most one file (got an extra "${rest[1]}")`,
+      );
+    const file = rest[0] ?? "catalyst.env.json";
+    let text: string;
+    try {
+      text = readFileSync(file, "utf8");
+    } catch {
+      ctx.stderr(`could not read legacy declaration ${file}`);
+      return 1;
+    }
+    const result = convertLegacyEnvironmentJson(text);
+    if (result.state === "invalid") {
+      if (args.json) ctx.stdout(JSON.stringify(result));
+      else for (const error of result.errors) ctx.stderr(error);
+      return 1;
+    }
+    if (args.json) ctx.stdout(JSON.stringify(result));
+    else ctx.stdout(result.toml);
+    return 0;
+  }
 
   if (sub === "inventory") {
     if (rest.length > 1)
@@ -101,5 +126,5 @@ export async function cmdEnv(
     return result.state === "invalid" ? 1 : 0;
   }
 
-  throw new UsageError(`unknown env subcommand "${sub}": inventory | check`);
+  throw new UsageError(`unknown env subcommand "${sub}": inventory | check | migrate`);
 }

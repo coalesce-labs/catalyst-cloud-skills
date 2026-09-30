@@ -418,7 +418,8 @@ export const VERB_USAGE: Record<string, string> = {
   accounts: "accounts [--json]",
   mcp: "mcp <add <name> --url URL <--auth none|--bearer SECRET_NAME|--header NAME=SECRET_NAME...>|list|remove <name>> [--json]",
   team: "team <list|check <KEY>|check --all|map <KEY> [--stage role=StateName]... [--yes --plan-hash H]|adopt <KEY> [--undo] [--yes --plan-hash H]|migrate <KEY> [--choice sourceId=destinationId]... [--retire] [--yes --plan-hash H]|checklist <KEY>> [--json]",
-  env: "env <inventory [path] | check <file>> [--json]   (THIS repository, offline — no login, no network)",
+  env:
+    "env <inventory [path] | check <file> | migrate [catalyst.env.json]> [--json]   (THIS repository, offline — no login, no network)",
   environment:
     "environment [read] [--json] | environment propose --file <path>|--stdin [--expect-revision N] [--approve] [--json] | environment approve [--revision N --hash H] [--json]   (your ACCOUNT's declaration; needs login)",
   secret:
