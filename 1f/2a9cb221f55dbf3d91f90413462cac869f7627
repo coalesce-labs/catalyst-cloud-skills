@@ -1,0 +1,1 @@
+Fix actual direct-terminal Ctrl-C exit0/lock leak by keeping progress cancellation in the engine, pass signal through device polling, and retain the approval spinner after browser instructions. Fresh real PTY probes at120/24columns and full1457-test85.16% release gate pass on this exact candidate.
