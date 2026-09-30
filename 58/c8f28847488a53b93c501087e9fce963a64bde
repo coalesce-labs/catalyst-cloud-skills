@@ -1,0 +1,1 @@
+address Q4 safety review: reject duplicate export assignments, contain writer errors, keep invalid inputs value-free, recheck the authoritative allowlist, and bind the reviewed selection to the source snapshot
