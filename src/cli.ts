@@ -68,6 +68,7 @@ import { cmdRelease } from "./release.js";
 import { cmdEnvironment, type EnvironmentDeps } from "./environment.js";
 import { cmdEnv, type EnvDeps } from "./env.js";
 import { cmdSecret, type SecretDeps } from "./secret.js";
+import { cmdVar, type VarDeps } from "./var.js";
 import { cmdTeam, type TeamDeps } from "./team.js";
 import { cmdCapabilities } from "./capabilities.js";
 import { cmdProject } from "./project.js";
@@ -157,8 +158,9 @@ export function usageText(): string {
     "  catalyst ask <raise|accept|list> ...",
     "  catalyst release <ticket> --because <what changed> [--retry-unchanged] [--dry-run] | release --class <c> --team <K> ...",
     "  catalyst environment [read] | environment propose --file <path>|--stdin [--approve] | environment approve   (your account; needs login)",
-    "  catalyst env <inventory [path] | check <file>>   (this repository, offline — no login, no network)",
-    "  catalyst secret set <NAME> --repo <owner/name> [--command '<cmd>'] | secret import <file> --repo <owner/name>",
+    "  catalyst env <inventory [path] | check <file> | migrate [catalyst.env.json] | draft [--root DIR] [--diff] [--write]> [--json]   (this repository, offline — no login, no network)",
+    "  catalyst secret set <NAME> --repo <owner/name> [--command '<cmd>'] | secret import <file> --repo <owner/name> [--names NAME[,NAME...]]",
+    "  catalyst var set <NAME> | var import <file> [--repo <owner/name>] [--names NAME[,NAME...]]   (plain environment variables)",
     "  catalyst team <list|check|map|adopt|migrate|checklist> ...",
     "  catalyst capabilities [--json]   (what this CLI can do, the role each verb needs, and whether this cloud serves it)",
     "  catalyst project list [--json]   (all tenant projects, including those with no stage mapping)",
@@ -192,6 +194,7 @@ export interface MainDeps {
   environment?: EnvironmentDeps;
   env?: EnvDeps;
   secret?: SecretDeps;
+  var?: VarDeps;
   connections?: ConnectionsDeps;
   identity?: IdentityDeps;
   team?: TeamDeps;
@@ -387,6 +390,8 @@ export async function main(
         return await cmdEnv(args, ctx, deps.env ?? {});
       case "secret":
         return await cmdSecret(args, ctx, deps.secret ?? {});
+      case "var":
+        return await cmdVar(args, ctx, deps.var ?? {});
       case "team":
         return await cmdTeam(args, ctx, deps.team);
       case "capabilities":
