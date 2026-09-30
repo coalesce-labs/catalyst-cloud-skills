@@ -1,1 +1,6 @@
-Separate the existing Change-Id footer from the validation paragraph so future managed amendments retain this same review target; source and verified package bytes are unchanged.
+Revision history for #184:
+
+rev 2 (rebase) 2026-09-30 21:13 UTC — Separate the existing Change-Id footer from the validation paragraph so future managed amendments retain this same review target; source and verified package bytes are unchanged.
+rev 1 (initial) 2026-09-30 21:13 UTC
+
+<!-- mergify-revision-data: {"schema_version":1,"pull_number":184,"entries":[{"number":1,"change_type":"initial","old_sha":null,"new_sha":"196c2a346d01514d2533417c34c04b1da96b99f6","timestamp_iso":"2026-09-30T21:13:52Z","reason":"","replay_sha":null,"compare_url":null},{"number":2,"change_type":"rebase","old_sha":"196c2a346d01514d2533417c34c04b1da96b99f6","new_sha":"2fb7784e7f3157fc98ca24a9b64bc6007354df9b","timestamp_iso":"2026-09-30T21:13:52Z","reason":"Separate the existing Change-Id footer from the validation paragraph so future managed amendments retain this same review target; source and verified package bytes are unchanged.","replay_sha":null,"compare_url":"https://github.com/coalesce-labs/catalyst-cloud-skills/compare/196c2a346d01514d2533417c34c04b1da96b99f6...2fb7784e7f3157fc98ca24a9b64bc6007354df9b"}]} -->
