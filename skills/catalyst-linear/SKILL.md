@@ -4,7 +4,7 @@ description: >-
   Catalyst's view of Linear on the customer's own cloud account. Reads a ticket with its comments, relations, labels, linked pull requests and agent sessions inline, from the local replica when it is fresh and the origin-fresh API otherwise, always naming the source; searches tickets, PRs, projects and initiatives; writes comments, card moves, labels and new tickets through the account's agent proxy as the app actor, with every route, stage id, label id and marker read from the account's contract. Knows what a ticket accumulates as Catalyst works it (phase-outcome comments, the document per phase, the agent session, the labels, the single blocks relation, the bookkeeping marker, the eyes acknowledgement). Use when a person says "show me the ticket", "what did Catalyst write on it", "comment on it", "move it", "label it" or "file a ticket". Not for raising a decision for a human (what-needs-me) and not for pull requests (catalyst-github).
 allowed-tools: Bash(catalyst:*) Bash(npx -p @catalyst-cloud/cli catalyst:*)
 ---
-<!-- vendored-from: @catalyst-cloud/catalyst-skills@0.14.2 — written in this repository for customer accounts -->
+<!-- vendored-from: @catalyst-cloud/catalyst-skills@0.14.3 — written in this repository for customer accounts -->
 
 # Catalyst Linear
 
