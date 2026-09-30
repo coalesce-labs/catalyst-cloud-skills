@@ -133,12 +133,13 @@ describe("onboarding production runtime", () => {
   });
 
   test("a contract without exact workspace bearer routes cannot enable browser-session calls", async () => {
-    const f = fixture(); f.seed();
+    const f = fixture(); f.seed({ user: { ...user, role: "owner" } });
     writeFileSync(contractPathFor(f.home), JSON.stringify({ schema: 1, routes: ["/connect/linear", "/connect/github"] }));
     const forbidden = join(f.home, "workspace-session-called");
     f.ctx.fetch = (async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
       const url = String(input instanceof Request ? input.url : input);
       if (url === `${baseUrl}/api/v1/me`) return Response.json(me);
+      if (url === `${baseUrl}/api/v1/me/connections/linear/workspace`) return Response.json({ error: "not_shipped" }, { status: 404 });
       if (url === `${baseUrl}/api/v1/agent/teams` && (!init?.method || init.method === "GET"))
         return Response.json({ teams: [], liveTeamRead: { attempted: false, error: null } });
       writeFileSync(forbidden, url); return Response.json({ connected: true });

@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.14.3
+
+- Setup can open the workspace's Linear approval from a personal login and wait for a fresh connection check before continuing. A saved credential alone does not count as connected.
+- Workspace approval links stay out of logs and receipts. Interrupted setup resumes with a fresh check, and older clouds keep their supported read-only verification path.
+
 ## 0.14.2
 
 Choose an existing Linear team and its accessible repositories in the setup flow. Saved repository choices are checked again against current access and IDs before later setup.
