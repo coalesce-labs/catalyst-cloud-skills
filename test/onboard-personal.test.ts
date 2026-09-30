@@ -1,0 +1,304 @@
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterEach, describe, expect, it } from "vitest";
+import {
+  configPathFor,
+  defaultCtx,
+  loadConfig,
+  writeConfig,
+} from "../src/config.js";
+import { personalConsentAdapter } from "../src/onboard-personal.js";
+import type { OnboardJournal } from "../src/onboard.js";
+
+const origin = "https://cloud.example.test";
+const now = Date.parse("2026-09-30T22:00:00Z");
+const homes: string[] = [];
+function fixture(provider: "linear" | "github" = "linear") {
+  const home = mkdtempSync(join(tmpdir(), "personal-consent-"));
+  homes.push(home);
+  const logs: string[] = [];
+  const opened: string[] = [];
+  const reads: Array<{ path: string; init?: RequestInit }> = [];
+  const ctx = {
+    ...defaultCtx(),
+    home,
+    env: {},
+    now: () => new Date(now),
+    stdout: (line: string) => logs.push(line),
+    stderr: (line: string) => logs.push(line),
+  };
+  writeConfig(home, {
+    baseUrl: origin,
+    account: "account-a",
+    slug: "fixture",
+    name: "Fixture",
+    principal: "session",
+    permissions: null,
+    user: {
+      id: "person-a",
+      role: "member",
+      label: "Fixture",
+      email: null,
+      linearUserId: null,
+    },
+    key: "ctc_user_fixture",
+    joinedAt: new Date(now).toISOString(),
+    lastSkillBundleVersion: "0.14.3",
+  });
+  const journal: OnboardJournal = {
+    schema: 1,
+    runId: "fixture",
+    installer: null,
+    cli: "0.14.3",
+    tenant: "account-a",
+    account: "account-a",
+    membershipId: "person-a",
+    baseUrl: origin,
+    steps: [],
+    changes: [],
+    exit: null,
+  };
+  const statusPath = `/api/v1/me/connections/${provider}/personal`;
+  const startPath = `/connect/${provider}/personal/start`;
+  let status: unknown = { connected: false };
+  let code = 200;
+  let start: unknown = {
+    authorizationUrl: `${origin}${startPath}?handoff=opaque-fixture`,
+    expiresAt: now + 600_000,
+  };
+  let startCode = 200;
+  ctx.fetch = (async (input, init) => {
+    const path = new URL(String(input)).pathname;
+    reads.push({ path, init });
+    if (path === statusPath)
+      return Response.json(opened.length ? { connected: true } : status, {
+        status: code,
+      });
+    if (path === startPath) return Response.json(start, { status: startCode });
+    throw new Error("private provider diagnostic");
+  }) as typeof fetch;
+  const options = {
+    provider,
+    openBrowser: (url: string) => {
+      opened.push(url);
+    },
+    sleep: async () => {},
+    requestTimeoutMs: 20,
+    consentTimeoutMs: 50,
+  };
+  return {
+    ctx,
+    home,
+    journal,
+    logs,
+    opened,
+    reads,
+    options,
+    statusPath,
+    startPath,
+    adapter: () => personalConsentAdapter(options),
+    status: (body: unknown, http = 200) => {
+      status = body;
+      code = http;
+    },
+    start: (body: unknown, http = 200) => {
+      start = body;
+      startCode = http;
+    },
+  };
+}
+afterEach(() => {
+  for (const home of homes.splice(0))
+    rmSync(home, { recursive: true, force: true });
+});
+
+describe("owned personal consent", () => {
+  it.each(["linear", "github"] as const)(
+    "uses %s's actual signed path and keeps the credential out of logs",
+    async (provider) => {
+      const f = fixture(provider);
+      const before = readFileSync(configPathFor(f.home));
+      expect(await f.adapter().act!(f.ctx, f.journal)).toMatchObject({
+        state: "done",
+        evidence: { provider, checkedAt: now },
+      });
+      expect(f.opened).toEqual([
+        `${origin}${f.startPath}?handoff=opaque-fixture`,
+      ]);
+      expect(f.logs.join("\n")).not.toContain("handoff");
+      expect(f.logs.join("\n")).not.toContain("opaque-fixture");
+      expect(f.reads).toHaveLength(3);
+      expect(
+        f.reads.every(
+          (row) => row.init?.method === "GET" && row.init.redirect === "error",
+        ),
+      ).toBe(true);
+      expect(readFileSync(configPathFor(f.home))).toEqual(before);
+    },
+  );
+
+  it("rechecks an available grant without opening another consent", async () => {
+    const f = fixture();
+    f.status({ connected: true });
+    expect((await f.adapter().act!(f.ctx, f.journal)).state).toBe("done");
+    expect(f.opened).toEqual([]);
+  });
+
+  it.each([
+    [],
+    { connected: "true" },
+    { connected: true, reason: "lapsed" },
+    { connected: false, reason: ["lapsed"] },
+  ])("rejects malformed or contradictory grant status", async (status) => {
+    const f = fixture();
+    f.status(status);
+    expect((await f.adapter().act!(f.ctx, f.journal)).state).toBe("failed");
+    expect(f.opened).toEqual([]);
+  });
+
+  it.each([401, 403, 404, 503, 500])(
+    "does not mint consent after status HTTP%s",
+    async (code) => {
+      const f = fixture();
+      f.status({ error: "private diagnostic" }, code);
+      expect((await f.adapter().act!(f.ctx, f.journal)).state).not.toBe("done");
+      expect(f.reads).toHaveLength(1);
+      expect(f.opened).toEqual([]);
+      expect(f.logs).toEqual([]);
+    },
+  );
+
+  it.each([
+    `${origin}/connect/linear/personal/start?handoff=one&handoff=two`,
+    `${origin}/connect/linear/personal/start?handoff=one&next=https://evil.test`,
+    `${origin}/connect/github/personal/start?handoff=one`,
+    `${origin}/connect/linear/personal/start?handoff=one#fragment`,
+    `${origin}/connect/linear/personal/start?handoff=bad%0Atoken`,
+    `${origin}/connect/linear/personal/start?handoff=`,
+    `${origin}/connect/linear/personal/start?handoff=one\n`,
+    "https://evil.test/connect/linear/personal/start?handoff=one",
+    "https://user@cloud.example.test/connect/linear/personal/start?handoff=one",
+  ])(
+    "refuses an invalid signed continuation without launching it",
+    async (authorizationUrl) => {
+      const f = fixture();
+      f.start({ authorizationUrl, expiresAt: now + 60_000 });
+      expect(await f.adapter().act!(f.ctx, f.journal)).toMatchObject({
+        state: "refused",
+        reason: "personal_consent_handoff",
+      });
+      expect(f.opened).toEqual([]);
+    },
+  );
+
+  it.each([now, now - 1, now + 630_001, "future", null])(
+    "refuses invalid or expired handoff expiry",
+    async (expiresAt) => {
+      const f = fixture();
+      f.start({
+        authorizationUrl: `${origin}${f.startPath}?handoff=opaque`,
+        expiresAt,
+      });
+      expect((await f.adapter().act!(f.ctx, f.journal)).state).toBe("refused");
+      expect(f.opened).toEqual([]);
+    },
+  );
+
+  it.each(["account", "person", "origin"])(
+    "refuses a config %s change before browser launch",
+    async (change) => {
+      const f = fixture();
+      const original = f.ctx.fetch;
+      f.ctx.fetch = (async (input, init) => {
+        const response = await original(input, init);
+        if (String(input).endsWith(f.startPath)) {
+          const cfg = loadConfig(f.home)!;
+          if (change === "account") cfg.account = "other-account";
+          if (change === "person") cfg.user!.id = "other-person";
+          if (change === "origin") cfg.baseUrl = "https://other.example.test";
+          writeConfig(f.home, cfg);
+        }
+        return response;
+      }) as typeof fetch;
+      expect((await f.adapter().act!(f.ctx, f.journal)).state).toBe("refused");
+      expect(f.opened).toEqual([]);
+    },
+  );
+
+  it("refuses a journal mismatch before network or local OAuth refresh", async () => {
+    const f = fixture();
+    const cfg = loadConfig(f.home)!;
+    delete cfg.key;
+    cfg.auth = {
+      kind: "oauth",
+      accessToken: "old-fixture",
+      refreshToken: "refresh-fixture",
+      sessionId: "fixture-session",
+      expiresAt: new Date(now - 1).toISOString(),
+    };
+    writeConfig(f.home, cfg);
+    const before = readFileSync(configPathFor(f.home));
+    expect(
+      (
+        await f
+          .adapter()
+          .check(f.ctx, { ...f.journal, account: "other-account" })
+      ).state,
+    ).toBe("refused");
+    expect((await f.adapter().check(f.ctx, f.journal)).state).toBe("waiting");
+    expect(f.reads).toEqual([]);
+    expect(readFileSync(configPathFor(f.home))).toEqual(before);
+  });
+
+  it.each(["headers", "body"])(
+    "bounds a stalled %s and ignores late success",
+    async (stall) => {
+      const f = fixture();
+      let completeHeaders!: (value: Response) => void;
+      let completeBody!: (value: unknown) => void;
+      f.ctx.fetch = (async () =>
+        stall === "headers"
+          ? await new Promise<Response>((resolve) => {
+              completeHeaders = resolve;
+            })
+          : {
+              status: 200,
+              json: () =>
+                new Promise<unknown>((resolve) => {
+                  completeBody = resolve;
+                }),
+            }) as typeof fetch;
+      expect(await f.adapter().check(f.ctx, f.journal)).toMatchObject({
+        state: "waiting",
+        reason: "personal_status_unavailable",
+      });
+      if (stall === "headers")
+        completeHeaders(Response.json({ connected: true }));
+      else completeBody({ connected: true });
+      await Promise.resolve();
+      expect(f.opened).toEqual([]);
+      expect(f.logs).toEqual([]);
+    },
+  );
+
+  it("external cancellation stops start-body wait before browser launch", async () => {
+    const f = fixture();
+    const original = f.ctx.fetch;
+    const abort = new AbortController();
+    f.ctx.fetch = (async (input, init) => {
+      if (!String(input).endsWith(f.startPath)) return original(input, init);
+      return {
+        status: 200,
+        json: () => {
+          abort.abort();
+          return new Promise(() => {});
+        },
+      } as Response;
+    }) as typeof fetch;
+    expect(
+      await f.adapter().act!(f.ctx, f.journal, abort.signal),
+    ).toMatchObject({ state: "waiting", reason: "interrupted" });
+    expect(f.opened).toEqual([]);
+  });
+});

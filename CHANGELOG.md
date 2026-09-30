@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.14.4
+
+- Personal Linear and GitHub approval links stay out of logs and receipts. Setup validates the signed browser destination and its expiry before opening it.
+- Personal connection checks and browser waits stop on interruption or a deadline. Setup rechecks the current person and workspace, and keeps existing approval when its status is available.
+
 ## 0.14.3
 
 - Setup can open the workspace's Linear approval from a personal login and wait for a fresh connection check before continuing. A saved credential alone does not count as connected.
