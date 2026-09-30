@@ -187,7 +187,7 @@ describe("native existing Linear workspace and explicit team selection", () => {
     const original = f.ctx.fetch; const authorization: Array<string | null> = [];
     f.ctx.fetch = (async (input: Parameters<typeof fetch>[0], init?: RequestInit) => { authorization.push(new Headers(init?.headers).get("authorization")); return original(input, init); }) as typeof fetch;
     expect(await f.runtime.adapters!["linear.workspace"]!.check(f.ctx, f.journal)).toMatchObject({ state: "done" });
-    expect(authorization).toEqual(["Bearer fixture-access", "Bearer fixture-access"]);
+    expect(authorization).toEqual(["Bearer fixture-access", "Bearer fixture-access", "Bearer fixture-access"]);
     expect(readFileSync(configPathFor(f.home), "utf8")).toBe(before);
   });
 

@@ -10,6 +10,7 @@ import { bearerFor } from "./oauth.js";
 import { pollConsent, type ConsentStatus } from "./onboard-consent.js";
 import { boundedOnboardSignin } from "./onboard-signin.js";
 import { existingLinearAdapters } from "./onboard-existing.js";
+import { linearWorkspaceAdapter } from "./onboard-workspace.js";
 import { existingRepositoryAdapter } from "./onboard-repositories.js";
 import type { OnboardAdapter, OnboardDeps, OnboardIdentity, OnboardJournal, OnboardStepResult } from "./onboard.js";
 import type { OnboardUi } from "./onboard-ui.js";
@@ -102,6 +103,7 @@ export function createOnboardRuntime(args: ParsedArgs, ctx: Ctx, hooks: OnboardR
         return hooks.ui ? hooks.ui.wait(`Waiting for your ${provider === "linear" ? "Linear" : "GitHub"} approval`, poll) : poll();
     }
   });
+  const linear = existingLinearAdapters(args, hooks.ui?.chooseTeam ? teams => hooks.ui!.chooseTeam!(teams.map(team => ({ ...team }))) : undefined);
   return {
     identity: journal => identity(ctx, journal), bindSignals: true, ui: hooks.ui,
     adapters: {
@@ -129,7 +131,9 @@ export function createOnboardRuntime(args: ParsedArgs, ctx: Ctx, hooks: OnboardR
       }, act: async (stepCtx, _journal, signal) => {
         return boundedOnboardSignin({ ...stepCtx, stdout: stepCtx.stderr }, hooks.login, signal, hooks.signinTimeoutMs);
       } },
-      ...existingLinearAdapters(args, hooks.ui?.chooseTeam ? teams => hooks.ui!.chooseTeam!(teams.map(team => ({ ...team }))) : undefined),
+      ...linear,
+      "linear.workspace": linearWorkspaceAdapter({ fallback: linear["linear.workspace"], openBrowser: hooks.openBrowser ?? openBrowser,
+        wait: hooks.ui ? (message, work) => hooks.ui!.wait(message, work) : undefined, sleep: hooks.sleep }),
       "github.install": unsupported,
       "github.repos": existingRepositoryAdapter(args, hooks.ui?.chooseRepositories ? repositories => hooks.ui!.chooseRepositories!(repositories.map(row => ({ ...row }))) : undefined),
       "linear.personal": personalAdapter("linear"),
