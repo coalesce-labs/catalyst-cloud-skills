@@ -1,1 +1,1 @@
-Use Part of CTC-4477 in title and body as Lantern instructed so this slice cannot auto-close the parent before M8. Message only; verified product source bytes unchanged.
+Separate the nonclosing Part of reference from the current single Change-Id trailer to preserve managed draft182 identity on future amendments. Metadata only; tested product tree unchanged.
