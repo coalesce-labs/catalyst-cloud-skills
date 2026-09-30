@@ -1,0 +1,6 @@
+Revision history for #181:
+
+rev 2 (content) 2026-09-30 18:22 UTC — Fix actual direct-terminal Ctrl-C exit0/lock leak by keeping progress cancellation in the engine, pass signal through device polling, and retain the approval spinner after browser instructions. Fresh real PTY probes at120/24columns and full1457-test85.16% release gate pass on this exact candidate.
+rev 1 (initial) 2026-09-30 18:22 UTC
+
+<!-- mergify-revision-data: {"schema_version":1,"pull_number":181,"entries":[{"number":1,"change_type":"initial","old_sha":null,"new_sha":"44cfebb86e65f643c4185635229620f0a74d7a57","timestamp_iso":"2026-09-30T18:22:34Z","reason":"","replay_sha":null,"compare_url":null},{"number":2,"change_type":"content","old_sha":"44cfebb86e65f643c4185635229620f0a74d7a57","new_sha":"1f2a9cb221f55dbf3d91f90413462cac869f7627","timestamp_iso":"2026-09-30T18:22:34Z","reason":"Fix actual direct-terminal Ctrl-C exit0/lock leak by keeping progress cancellation in the engine, pass signal through device polling, and retain the approval spinner after browser instructions. Fresh real PTY probes at120/24columns and full1457-test85.16% release gate pass on this exact candidate.","replay_sha":null,"compare_url":"https://github.com/coalesce-labs/catalyst-cloud-skills/compare/44cfebb86e65f643c4185635229620f0a74d7a57...1f2a9cb221f55dbf3d91f90413462cac869f7627"}]} -->
