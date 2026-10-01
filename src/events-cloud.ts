@@ -1,0 +1,222 @@
+// The backbone cursor belongs to tenant_events, never the replica's change_log.
+import { normalizeBaseUrl, requireConfig, type Ctx } from "./config.js";
+import { CliError } from "./errors.js";
+import { bearerFor } from "./oauth.js";
+import type { CachedEvent } from "./events.js";
+
+const headHeader = "x-catalyst-event-backbone-head-seq";
+const maxLine = 1_048_576;
+export interface EventSocket extends EventTarget {
+  readyState: number;
+  send(data: string): void;
+  close(): void;
+}
+export interface CloudEventDeps {
+  socket?: (url: string) => EventSocket;
+}
+
+function sequence(value: unknown): value is number {
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
+}
+function protocol(message: string): CliError {
+  return new CliError(message, "events-protocol");
+}
+function responseHead(response: Response): number {
+  const raw = response.headers.get(headHeader);
+  const head = raw === null || raw.trim() === "" ? NaN : Number(raw);
+  if (!sequence(head)) throw protocol("cloud event head could not be verified");
+  return head;
+}
+async function request(ctx: Ctx, since: number, signal: AbortSignal): Promise<Response> {
+  const cfg = requireConfig(ctx);
+  const url = new URL(`${normalizeBaseUrl(cfg.baseUrl)}/api/v1/events/backbone`);
+  url.searchParams.set("since", String(since));
+  const response = await ctx.fetch(url, {
+    headers: { authorization: `Bearer ${await bearerFor(ctx, cfg)}`, accept: "application/x-ndjson" },
+    signal: AbortSignal.any([signal, AbortSignal.timeout(15_000)]),
+    redirect: "error",
+  });
+  if (response.status === 401 || response.status === 403) {
+    await response.body?.cancel();
+    throw new CliError("cloud event access refused; check catalyst status and sign in again", "events-auth", 2, response.status);
+  }
+  if (response.status !== 200 && response.status !== 409) {
+    await response.body?.cancel();
+    if (response.status >= 500 || response.status === 429) throw new Error("cloud event service unavailable");
+    throw new CliError(`cloud event request refused (HTTP ${response.status})`, "events-http", 2, response.status);
+  }
+  return response;
+}
+
+/** Probe the head without downloading the backlog. An ahead-of-head cursor is deliberate. */
+export async function cloudEventHead(ctx: Ctx, signal: AbortSignal = AbortSignal.timeout(15_000)): Promise<number> {
+  const response = await request(ctx, Number.MAX_SAFE_INTEGER, signal);
+  try {
+    const head = responseHead(response);
+    // A successful empty response is possible only at the maximum safe sequence.
+    if (response.status !== 409 && head !== Number.MAX_SAFE_INTEGER)
+      throw protocol("cloud event head probe did not return an ahead-of-head response");
+    return head;
+  } finally { await response.body?.cancel(); }
+}
+
+async function* replay(ctx: Ctx, after: number, signal: AbortSignal): AsyncGenerator<CachedEvent, number> {
+  const response = await request(ctx, after, signal);
+  let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
+  try {
+    const head = responseHead(response);
+    if (response.status === 409)
+      throw new CliError(`cloud refused event cursor ${after} (head ${head}); history may be missing or the cursor may be ahead. Inspect events status before choosing a new --after cursor`, "events-gap", 2, 409);
+    if (head < after) throw protocol("cloud event head moved behind the requested cursor");
+    if (!response.body) throw protocol("cloud event replay body is absent");
+    reader = response.body.getReader();
+    const decoder = new TextDecoder("utf-8", { fatal: true });
+    let buffer = "";
+    let cursor = after;
+    const parse = (line: string): CachedEvent => {
+      let value: unknown;
+      try { value = JSON.parse(line); } catch { throw protocol("cloud event replay contains invalid JSON"); }
+      if (!value || typeof value !== "object") throw protocol("cloud event replay contains an invalid event");
+      const event = value as Partial<CachedEvent>;
+      if (event.tenantId !== requireConfig(ctx).account || !sequence(event.sequence) || event.sequence <= cursor || typeof event.eventId !== "string" || typeof event.type !== "string" || typeof event.recordedAt !== "string" || !("payload" in event))
+        throw protocol("cloud event replay contains an invalid tenant or event sequence");
+      cursor = event.sequence;
+      return event as CachedEvent;
+    };
+    while (true) {
+      signal.throwIfAborted();
+      const { done, value } = await reader.read();
+      try { buffer += decoder.decode(value, { stream: !done }); }
+      catch { throw protocol("cloud event replay contains invalid UTF-8"); }
+      let newline: number;
+      while ((newline = buffer.indexOf("\n")) >= 0) {
+        if (newline > maxLine) throw protocol("cloud event exceeds the replay line limit");
+        const line = buffer.slice(0, newline).trim();
+        buffer = buffer.slice(newline + 1);
+        if (line) yield parse(line);
+      }
+      if (buffer.length > maxLine) throw protocol("cloud event exceeds the replay line limit");
+      if (done) break;
+    }
+    if (buffer.trim()) yield parse(buffer.trim());
+    if (cursor === after && cursor < head) throw protocol("cloud event replay made no progress toward its head");
+    return Math.max(cursor, head);
+  } finally {
+    if (reader) { await reader.cancel().catch(() => {}); reader.releaseLock(); }
+    else await response.body?.cancel();
+  }
+}
+
+function pause(ms: number, signal: AbortSignal, wakes?: EventTarget): Promise<void> {
+  if (signal.aborted) return Promise.resolve();
+  return new Promise((resolve) => {
+    const done = () => {
+      clearTimeout(timer);
+      signal.removeEventListener("abort", done);
+      wakes?.removeEventListener("wake", done);
+      resolve();
+    };
+    const timer = setTimeout(done, ms);
+    signal.addEventListener("abort", done, { once: true });
+    wakes?.addEventListener("wake", done, { once: true });
+  });
+}
+
+/** Foreground push subscription with durable replay, reconnecting from the last yielded cursor. */
+export async function* cloudEvents(ctx: Ctx, options: { after?: number; signal: AbortSignal }, deps: CloudEventDeps = {}): AsyncGenerator<CachedEvent> {
+  const { signal } = options;
+  let cursor = options.after;
+  let backoff = 1_000;
+  while (!signal.aborted) {
+    let socket: EventSocket | undefined;
+    let heartbeat: ReturnType<typeof setInterval> | undefined;
+    let openTimer: ReturnType<typeof setTimeout> | undefined;
+    const wakes = new EventTarget();
+    let failure: Error | undefined;
+    let opened = false;
+    let notifiedHead = 0;
+    const wake = () => wakes.dispatchEvent(new Event("wake"));
+    const stop = () => { socket?.close(); wake(); };
+    const failed = () => { failure ??= new Error("cloud event connection interrupted"); wake(); };
+    const closed = (event: Event) => {
+      failure = "code" in event && event.code === 4401
+        ? new CliError("cloud event session expired; sign in again", "events-auth")
+        : new Error("cloud event connection closed");
+      wake();
+    };
+    const message = (event: Event) => {
+      if (!("data" in event) || typeof event.data !== "string" || event.data.length > maxLine) return;
+      let frame: unknown;
+      try { frame = JSON.parse(event.data); } catch { return; }
+      if (!frame || typeof frame !== "object") return;
+      const head = frame as { type?: unknown; accountId?: unknown; seq?: unknown };
+      if (head.type !== "event-backbone-head") return;
+      if (head.accountId !== requireConfig(ctx).account || !sequence(head.seq)) {
+        failure = protocol("cloud event notification has an invalid tenant or head");
+        wake();
+        return;
+      }
+      notifiedHead = Math.max(notifiedHead, head.seq);
+      wake();
+    };
+    const open = () => { opened = true; wake(); };
+    try {
+      // Capture the future-only start before connecting, then replay to close the handshake race.
+      const head = await cloudEventHead(ctx, signal);
+      cursor ??= head;
+      if (cursor > head) throw new CliError(`cloud refused event cursor ${cursor} (head ${head}); inspect events status before choosing a new --after cursor`, "events-gap", 2, 409);
+      if (signal.aborted) break;
+      const cfg = requireConfig(ctx);
+      const url = new URL(`${normalizeBaseUrl(cfg.baseUrl)}/api/v1/connect`);
+      url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
+      url.searchParams.set("account", cfg.account);
+      url.searchParams.set("token", await bearerFor(ctx, cfg));
+      socket = (deps.socket ?? ((address) => new WebSocket(address)))(url.toString());
+      socket.addEventListener("open", open);
+      socket.addEventListener("message", message);
+      socket.addEventListener("close", closed);
+      socket.addEventListener("error", failed);
+      signal.addEventListener("abort", stop, { once: true });
+      openTimer = setTimeout(failed, 15_000);
+      while (!opened && !failure && !signal.aborted) await pause(15_000, signal, wakes);
+      clearTimeout(openTimer);
+      if (failure) throw failure;
+      if (signal.aborted) break;
+      backoff = 1_000;
+      heartbeat = setInterval(() => {
+        try { socket?.send(JSON.stringify({ type: "ping" })); } catch { failed(); }
+      }, 10_000);
+      while (!signal.aborted) {
+        if (failure) throw failure;
+        const page = replay(ctx, cursor, signal);
+        let result = await page.next();
+        try {
+          while (!result.done) {
+            cursor = result.value.sequence;
+            yield result.value;
+            result = await page.next();
+          }
+        } finally { await page.return(cursor); }
+        if (failure) throw failure;
+        if (cursor < result.value || cursor < notifiedHead) continue;
+        // A bounded replay also catches a lost notification or a silent half-open socket.
+        await pause(30_000, signal, wakes);
+      }
+    } catch (error) {
+      if (signal.aborted) return;
+      if (error instanceof CliError) throw error;
+      // Never propagate socket URLs or transport exceptions: they can contain bearer credentials.
+    } finally {
+      clearInterval(heartbeat);
+      clearTimeout(openTimer);
+      signal.removeEventListener("abort", stop);
+      socket?.removeEventListener("open", open);
+      socket?.removeEventListener("message", message);
+      socket?.removeEventListener("close", closed);
+      socket?.removeEventListener("error", failed);
+      socket?.close();
+    }
+    await pause(backoff, signal);
+    backoff = Math.min(backoff * 2, 30_000);
+  }
+}
