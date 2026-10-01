@@ -1,5 +1,6 @@
 // config.ts — ~/.config/catalyst-cloud/customer.json and its siblings. The ONLY place the base URL
 // and the `/api/v1` prefix are joined: the SDK wants the base with the prefix, GET /me without.
+import type { NdjsonSink } from "./events-cloud-tail.js";
 import { chmodSync, existsSync, lstatSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { randomBytes } from "node:crypto";
 import { dirname, join } from "node:path";
@@ -83,6 +84,9 @@ export interface Ctx {
   env: NodeJS.ProcessEnv;
   home: string;
   stdout: (line: string) => void;
+  /** The process's own stdout stream, for output that must flush line by line and notice a closed
+   *  pipe (`events tail`). Absent in tests, which read `stdout` lines instead. */
+  stdoutStream?: NdjsonSink;
   stderr: (line: string) => void;
   fetch: typeof fetch;
   now: () => Date;
@@ -93,6 +97,7 @@ export function defaultCtx(): Ctx {
     env: process.env,
     home: process.env.CATALYST_SKILLS_HOME ?? process.env.HOME ?? "/",
     stdout: (line) => console.log(line),
+    stdoutStream: process.stdout,
     stderr: (line) => console.error(line),
     fetch: fetch,
     now: () => new Date(),

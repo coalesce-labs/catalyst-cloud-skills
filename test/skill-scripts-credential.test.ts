@@ -187,7 +187,7 @@ describe("every skill's scripts run for either credential", () => {
       report.parts.find((part) => part.part === "machine")?.lines.join("\n"),
     ).toContain("note optional local sync absent");
     expect(calls()).toContainEqual(["replica", "status", "--probe", "--json"]);
-    expect(calls()).toContainEqual(["events", "status", "--probe", "--json"]);
+    expect(calls()).toContainEqual(["events", "status", "--from-cache", "--probe", "--json"]);
   });
 
   // One skill deliberately runs `status` even with no usable config, because asking the CLI whether

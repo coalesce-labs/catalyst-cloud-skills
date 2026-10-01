@@ -167,7 +167,7 @@ export function usageText(): string {
     "  catalyst query <issues|issue <id>|pulls|pull <id>|projects|cycles|search <terms>|changes --since <cursor|head>>",
     '  catalyst replica <start [--detach]|stop|status [--probe]|sql "<select>"|schema [table]>',
     "  catalyst runtime <status [--json]|install|path|uninstall>   (a pinned Node this CLI manages itself)",
-    "  catalyst events <tail|wait-for|query|status [--probe]> [--type NAME] [--ticket CTC-N] [--after SEQUENCE]",
+    "  catalyst events <tail|wait-for|query|status> [--type NAME] [--ticket CTC-N] [--after SEQUENCE] [--from-cache]",
     "  catalyst explain <ticket> | history <ticket> | running [--ticket T --phase P] | queue [--team K]",
     "  catalyst watch [--team K] [--ticket T]... [--project P] [--exec CMD]",
     "  catalyst write <comment|state|label|create|reaction|attachment|session> ...",

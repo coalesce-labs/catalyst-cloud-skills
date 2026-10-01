@@ -30,7 +30,7 @@ const SPEC = {
 };
 const NOTES = [
   "Reads, in this order: `status` (machine), `ready --json` (machine checks and project checks, kept apart),",
-  "`replica status --probe --json` and `events status --probe --json` (optional local freshness),",
+  "`replica status --probe --json` and `events status --from-cache --probe --json` (optional local freshness),",
   "`me --json` and personal connection statuses (person), `contract --path …` for the account, the projects and the repositories,",
   "`contract --path codingAccounts` and `accounts --json` (coding accounts, and which one needs a new credential), and each",
   "project's hosts_current check with its fixedWhere (host), and each project's environment_declared check with its per-repository notes (repository declarations). The teams read is refreshed, so a mapping just saved reads back mapped.",
