@@ -6,8 +6,8 @@ import type {
 } from "./onboard.js";
 import { pollConsent, type ConsentStatus } from "./onboard-consent.js";
 
-const STATUS = "/api/v1/me/connections/linear/workspace";
-const HANDOFF = "/connect/linear/workspace/handoff";
+const STATUS = "/api/v1/me/connections/github/workspace";
+const HANDOFF = "/connect/github/workspace/handoff";
 const idPattern = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/;
 const states = new Set([
   "connected",
@@ -15,14 +15,6 @@ const states = new Set([
   "expired-or-revoked",
   "unreachable",
   "not-connected",
-]);
-const warmth = new Set([
-  "warm",
-  "absent",
-  "expired",
-  "renewal-due",
-  "no-expiry",
-  "unavailable",
 ]);
 const object = (v: unknown): Record<string, unknown> | null =>
   v !== null && typeof v === "object" && !Array.isArray(v)
@@ -33,16 +25,13 @@ const waiting = (reason: string): OnboardStepResult => ({
   reason,
 });
 const nullableText = (v: unknown) => v === null || typeof v === "string";
-const nullableTime = (v: unknown) =>
-  v === null || (typeof v === "number" && Number.isFinite(v) && v >= 0);
 
 type Read = { status: number; body?: unknown } | { reason: string };
 interface WorkspaceObservation {
   result: OnboardStepResult;
   unsupported?: boolean;
 }
-export interface WorkspaceAdapterOptions {
-  fallback: OnboardAdapter;
+export interface GithubInstallationOptions {
   openBrowser: (url: string) => void;
   wait?: <T>(message: string, work: () => Promise<T>) => Promise<T>;
   sleep?: (ms: number) => Promise<void>;
@@ -60,14 +49,14 @@ async function read(
 ): Promise<Read> {
   const cfg = loadConfig(ctx.home);
   if (!cfg?.user) return { reason: "personal_login_required" };
+  const personId = cfg.user.id;
   if (
-    ((journal.account ?? journal.tenant) &&
-      (journal.account ?? journal.tenant) !== cfg.account) ||
-    (journal.membershipId && journal.membershipId !== cfg.user.id) ||
-    (journal.baseUrl &&
-      normalizeBaseUrl(journal.baseUrl) !== normalizeBaseUrl(cfg.baseUrl))
+    (journal.account ?? journal.tenant) !== cfg.account ||
+    journal.membershipId !== cfg.user.id ||
+    !journal.baseUrl ||
+    normalizeBaseUrl(journal.baseUrl) !== normalizeBaseUrl(cfg.baseUrl)
   )
-    return { reason: "workspace_identity_refused" };
+    return { reason: "github_installation_identity_refused" };
   const expiry = cfg.auth
     ? Date.parse(cfg.auth.expiresAt) - ctx.now().getTime()
     : 0;
@@ -76,7 +65,7 @@ async function read(
     (cfg.auth && Number.isFinite(expiry) && expiry > 30_000
       ? cfg.auth.accessToken
       : undefined);
-  if (!bearer) return { reason: "workspace_login_refresh_required" };
+  if (!bearer) return { reason: "github_installation_login_refresh_required" };
   const deadline = new AbortController();
   const timer = setTimeout(() => deadline.abort(), timeoutMs);
   const signal = external
@@ -89,7 +78,7 @@ async function read(
         resolve({
           reason: external?.aborted
             ? "interrupted"
-            : "workspace_status_unavailable",
+            : "github_installation_status_unavailable",
         });
       if (signal.aborted) {
         stopped();
@@ -114,14 +103,23 @@ async function read(
           );
           // Refusal bodies and provider diagnostics are never parsed, returned or printed.
           if (response.status !== 200) return { status: response.status };
-          return { status: 200, body: (await response.json()) as unknown };
+          const body: unknown = await response.json();
+          const current = loadConfig(ctx.home);
+          if (
+            !current?.user ||
+            current.account !== cfg.account ||
+            current.user.id !== personId ||
+            normalizeBaseUrl(current.baseUrl) !== normalizeBaseUrl(cfg.baseUrl)
+          )
+            return { reason: "github_installation_identity_refused" };
+          return { status: 200, body };
         })
         .then(
           (value) => (signal.aborted ? stopped() : resolve(value)),
           () =>
             signal.aborted
               ? stopped()
-              : resolve({ reason: "workspace_status_unavailable" }),
+              : resolve({ reason: "github_installation_status_unavailable" }),
         );
     });
   } finally {
@@ -132,72 +130,106 @@ async function read(
 
 function readFailure(value: Read): OnboardStepResult | null {
   if ("reason" in value)
-    return value.reason === "workspace_identity_refused" ||
+    return value.reason === "github_installation_identity_refused" ||
       value.reason === "personal_login_required"
       ? { state: "refused", reason: value.reason }
       : waiting(value.reason);
   if (value.status === 401 || value.status === 403)
-    return { state: "refused", reason: "workspace_consent_refused" };
-  return value.status === 200 ? null : waiting("workspace_status_unavailable");
+    return { state: "refused", reason: "github_installation_consent_refused" };
+  return value.status === 200
+    ? null
+    : waiting("github_installation_status_unavailable");
 }
 
-/** Live liveness plus stored grant scopes is a connection verdict, not live workspace identity. */
+/** Every reported installation must have a fresh live installation/App-permission probe.
+ * This proves installation connectivity, not access to repositories selected later in Q3. */
 function observation(body: unknown, now: number): OnboardStepResult {
   const row = object(body);
-  const workspace = object(row?.workspace);
-  const credential = object(row?.credential);
-  const verification = object(row?.verification);
   if (
     !row ||
     typeof row.connected !== "boolean" ||
-    !workspace ||
-    typeof workspace.bound !== "boolean" ||
-    !nullableText(workspace.workspaceId) ||
-    !nullableText(workspace.workspaceSlug) ||
-    !nullableText(workspace.workspaceName) ||
-    !credential ||
-    ![true, false, null].includes(credential.stored as boolean | null) ||
-    !nullableTime(credential.updatedAt) ||
-    !nullableTime(credential.expiresAt) ||
-    typeof credential.warmth !== "string" ||
-    !warmth.has(credential.warmth) ||
-    !verification
+    !Array.isArray(row.installations) ||
+    !Array.isArray(row.pending) ||
+    row.installations.length + row.pending.length > 100
   )
-    return waiting("workspace_status_shape");
-  if (
-    verification.source === "none" &&
-    verification.state === "not-run" &&
-    verification.checkedAt === null &&
-    row.connected === false
-  )
-    return waiting("workspace_status_unavailable");
-  if (
-    verification.source !== "live-probe" ||
-    typeof verification.state !== "string" ||
-    !states.has(verification.state) ||
-    typeof verification.checkedAt !== "number" ||
-    !Number.isFinite(verification.checkedAt) ||
-    verification.checkedAt < now - 120_000 ||
-    verification.checkedAt > now + 30_000 ||
-    row.connected !== (verification.state === "connected")
-  )
-    return waiting("workspace_status_shape");
-  if (verification.state === "unreachable")
-    return waiting("workspace_status_unavailable");
-  if (!row.connected) return { state: "pending" };
-  // A working credential alone cannot prove this account has a bound Linear workspace.
-  if (
-    !workspace.bound ||
-    typeof workspace.workspaceId !== "string" ||
-    !idPattern.test(workspace.workspaceId)
-  )
-    return waiting("linear_workspace_unverified");
+    return waiting("github_installation_status_shape");
+  const ids: string[] = [];
+  let unknown = false;
+  let allConnected = row.installations.length > 0;
+  let checkedAt = now + 30_000;
+  for (const value of row.installations) {
+    const item = object(value);
+    const verification = object(item?.verification);
+    if (
+      !item ||
+      typeof item.installationId !== "string" ||
+      !idPattern.test(item.installationId) ||
+      ids.includes(item.installationId) ||
+      !nullableText(item.githubOrg) ||
+      (typeof item.githubOrg === "string" &&
+        !/^[A-Za-z0-9][A-Za-z0-9-]{0,127}$/.test(item.githubOrg)) ||
+      !verification
+    )
+      return waiting("github_installation_status_shape");
+    ids.push(item.installationId);
+    if (
+      verification.source === "none" &&
+      verification.state === "not-run" &&
+      verification.checkedAt === null
+    ) {
+      unknown = true;
+      allConnected = false;
+      continue;
+    }
+    if (
+      verification.source !== "live-probe" ||
+      typeof verification.state !== "string" ||
+      !states.has(verification.state) ||
+      typeof verification.checkedAt !== "number" ||
+      !Number.isFinite(verification.checkedAt) ||
+      verification.checkedAt < now - 120_000 ||
+      verification.checkedAt > now + 30_000
+    )
+      return waiting("github_installation_status_shape");
+    if (
+      verification.missing !== undefined &&
+      (!Array.isArray(verification.missing) ||
+        verification.missing.length > 128 ||
+        !verification.missing.every(
+          (name) =>
+            typeof name === "string" &&
+            (/^[A-Za-z0-9_-]{1,128}$/.test(name) ||
+              /^[A-Za-z0-9_-]{1,80} \((?:read|write|admin)\)$/.test(name)),
+        ))
+    )
+      return waiting("github_installation_status_shape");
+    checkedAt = Math.min(checkedAt, verification.checkedAt);
+    if (verification.state === "unreachable") unknown = true;
+    if (verification.state !== "connected") allConnected = false;
+  }
+  for (const value of row.pending) {
+    const pending = object(value);
+    if (
+      !pending ||
+      !nullableText(pending.githubOrg) ||
+      (typeof pending.githubOrg === "string" &&
+        !/^[A-Za-z0-9][A-Za-z0-9-]{0,127}$/.test(pending.githubOrg)) ||
+      typeof pending.requestedAt !== "number" ||
+      !Number.isFinite(pending.requestedAt) ||
+      pending.requestedAt < 0
+    )
+      return waiting("github_installation_status_shape");
+  }
+  if (row.connected !== allConnected)
+    return waiting("github_installation_status_shape");
+  if (unknown) return waiting("github_installation_status_unavailable");
+  if (!allConnected) return { state: "pending" };
   return {
     state: "done",
     evidence: {
-      provider: "linear",
-      workspace: workspace.workspaceId,
-      checkedAt: verification.checkedAt,
+      provider: "github",
+      installation: JSON.stringify(ids),
+      checkedAt,
     },
   };
 }
@@ -242,9 +274,9 @@ function safeHandoff(body: unknown, ctx: Ctx): string | null {
   }
 }
 
-/** Uses personal bearer twins; missing routes wait without an ungated readiness fallback. */
-export function linearWorkspaceAdapter(
-  options: WorkspaceAdapterOptions,
+/** Uses personal bearer App-install routes. Older clouds wait without a browser/session fallback. */
+export function githubInstallationAdapter(
+  options: GithubInstallationOptions,
 ): OnboardAdapter {
   const timeoutMs = options.requestTimeoutMs ?? 30_000;
   const consentTimeoutMs = options.consentTimeoutMs ?? 600_000;
@@ -256,7 +288,7 @@ export function linearWorkspaceAdapter(
     consentTimeoutMs < 1 ||
     consentTimeoutMs > 600_000
   )
-    throw new Error("workspace_timeout_invalid");
+    throw new Error("github_installation_timeout_invalid");
   const inspect = async (
     ctx: Ctx,
     journal: OnboardJournal,
@@ -284,7 +316,10 @@ export function linearWorkspaceAdapter(
     act: async (ctx, journal, signal) => {
       const cfg = loadConfig(ctx.home);
       if (!cfg?.user || !["owner", "admin"].includes(cfg.user.role))
-        return { state: "refused", reason: "workspace_admin_required" };
+        return {
+          state: "refused",
+          reason: "github_installation_admin_required",
+        };
       if (signal?.aborted) return waiting("interrupted");
       const before = await inspect(ctx, journal, signal);
       if (before.result.state !== "pending") return before.result;
@@ -302,7 +337,10 @@ export function linearWorkspaceAdapter(
       if (failure) return failure;
       const url = safeHandoff("body" in start ? start.body : undefined, ctx);
       if (!url)
-        return { state: "refused", reason: "workspace_consent_handoff" };
+        return {
+          state: "refused",
+          reason: "github_installation_consent_handoff",
+        };
       if (signal?.aborted) return waiting("interrupted");
       const current = loadConfig(ctx.home);
       if (
@@ -311,19 +349,27 @@ export function linearWorkspaceAdapter(
         current.user.id !== cfg.user.id ||
         normalizeBaseUrl(current.baseUrl) !== normalizeBaseUrl(cfg.baseUrl)
       )
-        return { state: "refused", reason: "workspace_identity_refused" };
+        return {
+          state: "refused",
+          reason: "github_installation_identity_refused",
+        };
       if (!["owner", "admin"].includes(current.user.role))
-        return { state: "refused", reason: "workspace_admin_required" };
+        return {
+          state: "refused",
+          reason: "github_installation_admin_required",
+        };
       ctx.stderr(
-        "Approve the organization's Linear connection in your browser. Your personal approval follows.",
+        "Approve the GitHub App installation in your browser. Your personal GitHub connection is checked separately.",
       );
       // The signed URL is transient credential material: only the browser receives it.
       try {
         options.openBrowser(url);
       } catch {
-        return waiting("workspace_browser_unavailable");
+        return waiting("github_installation_browser_unavailable");
       }
-      let latest: OnboardStepResult = waiting("workspace_status_unavailable");
+      let latest: OnboardStepResult = waiting(
+        "github_installation_status_unavailable",
+      );
       const run = () =>
         pollConsent({
           timeoutMs: consentTimeoutMs,
@@ -346,7 +392,7 @@ export function linearWorkspaceAdapter(
           },
         });
       const result = options.wait
-        ? await options.wait("Waiting for workspace approval", run)
+        ? await options.wait("Waiting for GitHub App approval", run)
         : await run();
       return result.state === "done" ? latest : result;
     },
