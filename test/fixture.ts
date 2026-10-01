@@ -72,6 +72,9 @@ export interface FixtureServer {
   pulls?: Record<string, unknown>[];
   /** The server-side page cap the keyset routes (`/issues`, `/pulls`) enforce (production: 500). */
   pageCap?: number;
+  /** CTC-4556 — serve `/issues` as a mirror before `state_name` and `x-mirror-scope`: team and
+   *  state params narrow nothing and no scope header is sent. */
+  legacyIssueScope?: boolean;
   /** A whole `/api/v1/work-eligibility` body served for one team key instead of the ENG fixture. */
   eligibilityByTeam: Record<string, Record<string, unknown>>;
   /** The contract's `ticket-release` route answers this (status + body) when set; `{outcome: "released"}` otherwise. */
@@ -1056,16 +1059,41 @@ export async function startMeFixture(
       });
     }
     if (path === "/api/v1/issues") {
+      // The mirror's contract (CTC-4556): `team_key` and `state_name` narrow, `team` and a state
+      // name in `state` do not, and `x-mirror-scope` lists the params that narrowed.
       let rows = state.issues;
-      const team = url.searchParams.get("team");
+      const applied: string[] = [];
+      // The mirror compares trimmed, lowercased names and nothing more: "In_Progress" is not "In Progress".
+      const nameKey = (v: unknown) =>
+        String(v ?? "")
+          .trim()
+          .toLowerCase();
+      const teamKey = url.searchParams.get("team_key");
+      const stateName = url.searchParams.get("state_name");
       const project = url.searchParams.get("project");
-      if (team)
-        rows = rows.filter((r) => String(r.identifier).startsWith(`${team}-`));
-      if (project) rows = rows.filter((r) => r.project_id === project);
+      if (teamKey && !state.legacyIssueScope) {
+        rows = rows.filter(
+          (r) =>
+            nameKey(r.team_key ?? String(r.identifier).split("-")[0]) ===
+            nameKey(teamKey),
+        );
+        applied.push("team_key");
+      }
+      if (stateName && !state.legacyIssueScope) {
+        rows = rows.filter((r) => nameKey(r.state) === nameKey(stateName));
+        applied.push("state_name");
+      }
+      if (project) {
+        rows = rows.filter((r) => r.project_id === project);
+        applied.push("project");
+      }
       const p = keysetPage(rows, url, state, "/api/v1/issues");
+      const headers = state.legacyIssueScope
+        ? p.headers
+        : { ...p.headers, "x-mirror-scope": applied.join(",") };
       return p.bad
         ? send(400, { error: p.bad })
-        : send(200, { rows: p.rows, total: p.total }, p.headers);
+        : send(200, { rows: p.rows, total: p.total }, headers);
     }
     const issueMatch = /^\/api\/v1\/issues\/([^/]+)$/.exec(path);
     if (issueMatch) {

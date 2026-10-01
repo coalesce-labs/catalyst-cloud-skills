@@ -59,9 +59,10 @@ export async function cmdQuery(
     );
   const cfg = requireConfig(ctx);
   const filters: Filters = {
-    team: flagString(args, "team"),
-    project: flagString(args, "project"),
-    state: flagString(args, "state"),
+    // CTC-4556 — trimmed here, so the value sent and the value compared are the one the mirror reads.
+    team: trimmedFlag(args, "team"),
+    project: trimmedFlag(args, "project"),
+    state: trimmedFlag(args, "state"),
     limit: flagInt(args, "limit", 50),
     all: flagBool(args, "all"),
   };
@@ -184,23 +185,29 @@ async function fromApi(
   args: ParsedArgs,
 ): Promise<unknown> {
   const api = apiClient(cfg, ctx);
-  const common = {
-    team: f.team,
+  // CTC-4556 — the mirror narrows `/issues` by `team_key` and `state_name`; `team` and a state name
+  // in `state` narrow nothing there.
+  const issueScope = {
+    team_key: f.team,
     project: f.project,
-    state: f.state,
-    limit: f.limit,
+    state_name: f.state,
   };
   switch (sub) {
     case "issues": {
       if (f.all) {
-        const { rows } = await fetchAllPages(api, "/api/v1/issues", {
-          team: f.team,
-          project: f.project,
-          state: f.state,
-        });
+        const { rows, scope } = await fetchAllPages(
+          api,
+          "/api/v1/issues",
+          issueScope,
+        );
+        requireIssueScope(scope, f);
         return applyFilters(rows, f); // no .slice — --all means the whole scope
       }
-      const page = await fetchPage(api, "/api/v1/issues", common);
+      const page = await fetchPage(api, "/api/v1/issues", {
+        ...issueScope,
+        limit: f.limit,
+      });
+      requireIssueScope(page.scope, f);
       const rows = applyFilters(page.rows, f).slice(0, f.limit);
       const notice = truncationNotice(page);
       if (notice) ctx.stderr(notice);
@@ -338,6 +345,34 @@ function needArg(rest: string[], usage: string): string {
   return v;
 }
 
+/** CTC-4556 — refuse a page the cloud did not narrow by a filter the user asked for. Filtering it
+ *  here would print the matches among the newest rows and call that the answer. */
+function requireIssueScope(scope: string[] | null, f: Filters): void {
+  const asked: [string, string, string | undefined][] = [
+    ["--team", "team_key", f.team],
+    ["--state", "state_name", f.state],
+    ["--project", "project", f.project],
+  ];
+  for (const [flag, param, value] of asked) {
+    if (!value || scope?.includes(param)) continue;
+    throw new CliError(
+      `the cloud did not apply ${flag} (${scope === null ? "it sent no x-mirror-scope header" : `it applied: ${scope.join(", ") || "nothing"}`}), so the page is not that scope; nothing printed. Read it with --source replica, or drop ${flag}`,
+      "filter-not-applied",
+      1,
+    );
+  }
+}
+
+function trimmedFlag(args: ParsedArgs, name: string): string | undefined {
+  const value = flagString(args, name)?.trim();
+  return value === "" ? undefined : value;
+}
+
+/** The mirror's comparison for team keys and state names: trimmed and lowercased, nothing more.
+ *  "In Progress" and "In_Progress" stay different names. */
+const sameName = (a: unknown, b: string) =>
+  String(a ?? "").trim().toLowerCase() === b.trim().toLowerCase();
+
 export function applyFilters(
   rows: Record<string, unknown>[],
   f: Partial<Filters>,
@@ -350,16 +385,12 @@ export function applyFilters(
           .toUpperCase()
           .startsWith(`${f.team.toUpperCase()}-`) ||
         r.team_id === f.team ||
-        r.team_key === f.team
+        sameName(r.team_key, f.team)
       )
     )
       return false;
     if (f.project && r.project_id !== f.project) return false;
-    if (
-      f.state &&
-      String(r.state ?? "").toLowerCase() !== f.state.toLowerCase()
-    )
-      return false;
+    if (f.state && !sameName(r.state, f.state)) return false;
     return true;
   });
 }
