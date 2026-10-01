@@ -1,6 +1,6 @@
 # Status
 
-Open with takenAt, source and replica cursor/API reason. Then:
+Open with takenAt and the cloud source. Include a replica cursor only when optional local diagnostics were requested. Then:
 
 1. In flight: ticket, phase and elapsed time from running.
 2. Blocked: reason and release actor.

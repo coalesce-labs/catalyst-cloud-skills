@@ -12,17 +12,24 @@ import {
 } from "./config.js";
 import { CliError } from "./errors.js";
 import { cmdLegacy, findLegacy, type LegacyDeps } from "./legacy.js";
-import { bearerFor } from "./oauth.js";
 import { personalConsentAdapter } from "./onboard-personal.js";
 import { boundedOnboardSignin } from "./onboard-signin.js";
 import { existingLinearAdapters } from "./onboard-existing.js";
 import { linearWorkspaceAdapter } from "./onboard-workspace.js";
-import { existingRepositoryAdapter } from "./onboard-repositories.js";
+import { firstProjectAdapters } from "./onboard-projects.js";
+import { onboardCapacityAdapter } from "./onboard-capacity.js";
+import { onboardAutomationManagementAdapter } from "./onboard-automation-management.js";
+import { onboardWorkflowVerificationAdapter } from "./onboard-workflow.js";
+import { onboardAccountsAdapter } from "./onboard-accounts.js";
 import { githubInstallationAdapter } from "./onboard-github.js";
 import {
   guardOnboardCapabilities,
   type OnboardCapabilityOptions,
 } from "./onboard-capabilities.js";
+import {
+  onboardSettingsAdapter,
+  type OnboardSettingsHooks,
+} from "./onboard-settings.js";
 import type {
   OnboardDeps,
   OnboardIdentity,
@@ -34,8 +41,12 @@ import type { OnboardUi } from "./onboard-ui.js";
 import { fetchMe } from "./transport.js";
 
 export interface OnboardRuntimeHooks {
+  settings?: OnboardSettingsHooks;
   ui?: OnboardUi;
   login: (ctx: Ctx, signal?: AbortSignal) => Promise<number>;
+  stageSignin?: (
+    signal?: AbortSignal,
+  ) => Promise<import("./onboard-login-candidate.js").OnboardLoginCandidate>;
   signinTimeoutMs?: number;
   ready: (ctx: Ctx, journal?: OnboardJournal) => Promise<OnboardStepResult>;
   legacy?: LegacyDeps;
@@ -98,11 +109,81 @@ export function createOnboardRuntime(
         "onboard-identity-mismatch",
         12,
       );
-    const me = await fetchMe(
-      cfg.baseUrl,
-      await bearerFor(stepCtx, cfg),
-      stepCtx.fetch,
-    );
+    // The Q1 preview reads the current token directly; stopping setup must not rotate saved credentials.
+    const expiry = cfg.auth
+      ? Date.parse(cfg.auth.expiresAt) - stepCtx.now().getTime()
+      : 0;
+    const bearer =
+      cfg.key ||
+      (cfg.auth && Number.isFinite(expiry) && expiry > 30_000
+        ? cfg.auth.accessToken
+        : undefined);
+    if (!bearer)
+      throw new CliError(
+        "Renew your login with catalyst login, then run catalyst onboard.",
+        "onboard-login-refresh-required",
+        11,
+      );
+    const owned = new AbortController();
+    const signal = hooks.ui
+      ? AbortSignal.any([owned.signal, hooks.ui.signal])
+      : owned.signal;
+    const timer = setTimeout(() => owned.abort(), 30_000);
+    let remove = () => {};
+    let me: Awaited<ReturnType<typeof fetchMe>>;
+    try {
+      me = await new Promise<Awaited<ReturnType<typeof fetchMe>>>(
+        (resolve, reject) => {
+          const stopped = () =>
+            reject(
+              new CliError(
+                "Your membership could not be checked. Run catalyst onboard to retry.",
+                "onboard-membership-unavailable",
+                11,
+              ),
+            );
+          if (signal.aborted) {
+            stopped();
+            return;
+          }
+          signal.addEventListener("abort", stopped, { once: true });
+          remove = () => signal.removeEventListener("abort", stopped);
+          const boundedFetch = ((
+            url: Parameters<typeof fetch>[0],
+            init?: RequestInit,
+          ) => {
+            if (signal.aborted)
+              return Promise.reject(new Error("membership_read_stopped"));
+            return stepCtx.fetch(url, {
+              ...init,
+              redirect: "error",
+              signal: init?.signal
+                ? AbortSignal.any([signal, init.signal])
+                : signal,
+            });
+          }) as typeof fetch;
+          fetchMe(cfg.baseUrl, bearer, boundedFetch).then(
+            (value) => (signal.aborted ? stopped() : resolve(value)),
+            reject,
+          );
+        },
+      );
+    } finally {
+      clearTimeout(timer);
+      remove();
+    }
+    const current = loadConfig(stepCtx.home);
+    if (
+      !current?.user ||
+      current.account !== cfg.account ||
+      current.user.id !== cfg.user.id ||
+      normalizeBaseUrl(current.baseUrl) !== normalizeBaseUrl(cfg.baseUrl)
+    )
+      throw new CliError(
+        "Your saved login changed while membership was checked. Run catalyst onboard again.",
+        "onboard-identity-mismatch",
+        12,
+      );
     if (!me.user || me.account !== cfg.account || me.user.id !== cfg.user.id)
       throw new CliError(
         "the saved login and live member do not match",
@@ -115,6 +196,12 @@ export function createOnboardRuntime(
       membershipId: me.user.id,
       baseUrl: normalizeBaseUrl(cfg.baseUrl),
       role: me.user.role,
+      display: {
+        personLabel: me.user.label,
+        email: me.user.email,
+        workspaceName: me.name,
+        workspaceSlug: me.slug,
+      },
     };
   };
   const legacyCheck = async (stepCtx: Ctx): Promise<OnboardStepResult> => {
@@ -242,15 +329,38 @@ export function createOnboardRuntime(
         : undefined,
       sleep: hooks.sleep,
     }),
-    "github.repos": existingRepositoryAdapter(
-      args,
-      hooks.ui?.chooseRepositories
-        ? (repositories) =>
-            hooks.ui!.chooseRepositories!(
-              repositories.map((row) => ({ ...row })),
-            )
+    settings: onboardSettingsAdapter({
+      ...hooks.settings,
+      review: hooks.ui?.reviewSettings
+        ? (summaries) => hooks.ui!.reviewSettings!(summaries)
+        : hooks.settings?.review,
+      message: hooks.ui
+        ? (text) => hooks.ui!.message(text)
+        : (text) => ctx.stderr(text),
+    }),
+    ...firstProjectAdapters(args, {
+      chooseExisting: hooks.ui?.chooseRepositories
+        ? (rows) =>
+            hooks.ui!.chooseRepositories!(rows.map((row) => ({ ...row })))
         : undefined,
-    ),
+      chooseFirst: hooks.ui?.chooseFirstRepository
+        ? (rows) =>
+            hooks.ui!.chooseFirstRepository!(rows.map((row) => ({ ...row })))
+        : undefined,
+      message: (text) => (hooks.ui ? hooks.ui.message(text) : ctx.stderr(text)),
+    }),
+    accounts: onboardAccountsAdapter({
+      message: (text) => (hooks.ui ? hooks.ui.message(text) : ctx.stderr(text)),
+    }),
+    capacity: onboardCapacityAdapter({
+      message: (text) => (hooks.ui ? hooks.ui.message(text) : ctx.stderr(text)),
+    }),
+    "linear.adopt": onboardWorkflowVerificationAdapter({
+      message: (text) => (hooks.ui ? hooks.ui.message(text) : ctx.stderr(text)),
+    }),
+    "linear.automations": onboardAutomationManagementAdapter({
+      message: (text) => (hooks.ui ? hooks.ui.message(text) : ctx.stderr(text)),
+    }),
     "linear.personal": personalAdapter("linear"),
     "github.personal": personalAdapter("github"),
     daemon: {
@@ -310,11 +420,19 @@ export function createOnboardRuntime(
         ],
         fallback: "connections",
       },
-      "linear.automations": {
-        check: [get("/api/v1/agent/tenant/readiness")],
+      "github.repos": {
+        check: [get("/api/v1/repos"), get("/api/v1/agent/contract")],
         fallback: "connections",
       },
-      "github.repos": {
+      settings: {
+        check: [
+          get("/api/v1/agent/teams"),
+          get("/api/v1/repos"),
+          get("/api/v1/agent/contract"),
+        ],
+        fallback: "connections",
+      },
+      projects: {
         check: [get("/api/v1/repos"), get("/api/v1/agent/contract")],
         fallback: "connections",
       },
@@ -337,6 +455,7 @@ export function createOnboardRuntime(
   // tenant-bound step guards can run. Unsupported/local-only steps make no endpoint requests.
   return {
     identity: (journal) => identity(ctx, journal),
+    ...(hooks.stageSignin ? { stageSignin: hooks.stageSignin } : {}),
     bindSignals: true,
     ui: hooks.ui,
     adapters,

@@ -46,6 +46,9 @@ jobs:
       - name: Install (frozen)
         run: bun install --frozen-lockfile
 
+      - name: Shared settings validator provenance
+        run: bun run settings:check
+
       - name: Test suite with coverage, including the pack-and-install smoke
         run: bun run test:coverage
 

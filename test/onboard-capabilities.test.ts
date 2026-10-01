@@ -9,7 +9,10 @@ import {
   writeConfig,
   type Ctx,
 } from "../src/config.js";
-import { guardOnboardCapabilities } from "../src/onboard-capabilities.js";
+import {
+  guardOnboardCapabilities,
+  verifyOnboardRoutes,
+} from "../src/onboard-capabilities.js";
 import { linearWorkspaceAdapter } from "../src/onboard-workspace.js";
 import type { OnboardAdapter, OnboardJournal } from "../src/onboard.js";
 
@@ -303,6 +306,102 @@ describe("fresh capability before onboarding requests", () => {
       "interrupted",
     );
     expect(f.requests).toEqual([]);
+    expect(f.adapter.act).not.toHaveBeenCalled();
+  });
+});
+
+describe("only the advertised coding-account validation template is supported", () => {
+  const template = "/api/v1/coding-accounts/:slot/validate";
+  const advertised = {
+    method: "POST" as const,
+    path: template,
+    personalBearer: true,
+  };
+  test("the actual server template permits capability verification without any provider request", async () => {
+    const f = fixture();
+    f.body({
+      ...document(),
+      onboarding: { schema: 1, routes: [status, advertised], web },
+    });
+    expect(
+      await verifyOnboardRoutes(f.ctx, f.journal, [
+        { method: "POST", path: template },
+      ]),
+    ).toEqual({ origin });
+    expect(await verifyOnboardRoutes(f.ctx, f.journal, [status])).toEqual({
+      origin,
+    });
+    expect(f.requests).toEqual([
+      `${origin}/api/v1/agent/contract`,
+      `${origin}/api/v1/agent/contract`,
+    ]);
+    expect(f.adapter.check).not.toHaveBeenCalled();
+    expect(f.adapter.act).not.toHaveBeenCalled();
+  });
+  test.each([
+    "/api/v1/coding-accounts/:other/validate",
+    "/api/v1/coding-accounts/:slot/validate/extra",
+    "/api/v1/coding-accounts/:slot/revoke",
+    "/api/v1/foreign/:slot/validate",
+    "/api/v1/coding-accounts/%3Aslot/validate",
+    "/api/v1/coding-accounts/%253Aslot/validate",
+    "/api/v1/coding-accounts/../:slot/validate",
+    "/api/v1/coding-accounts/:slot/validate?account=other",
+    "https://foreign.invalid/api/v1/coding-accounts/:slot/validate",
+    "//foreign.invalid/api/v1/coding-accounts/:slot/validate",
+  ])(
+    "template-like path %s cannot authorize even an unrelated valid read",
+    async (path) => {
+      const f = fixture();
+      f.body({
+        ...document(),
+        onboarding: {
+          schema: 1,
+          routes: [status, { ...advertised, path }],
+          web,
+        },
+      });
+      expect(await verifyOnboardRoutes(f.ctx, f.journal, [status])).toEqual({
+        reason: "onboarding_capability_unavailable",
+        origin,
+      });
+      expect(f.requests).toEqual([`${origin}/api/v1/agent/contract`]);
+      expect(f.adapter.check).not.toHaveBeenCalled();
+      expect(f.adapter.act).not.toHaveBeenCalled();
+    },
+  );
+  test("the known template still requires an explicit personal bearer advertisement", async () => {
+    const f = fixture();
+    f.body({
+      ...document(),
+      onboarding: {
+        schema: 1,
+        routes: [{ ...advertised, personalBearer: false }],
+        web,
+      },
+    });
+    expect(
+      await verifyOnboardRoutes(f.ctx, f.journal, [
+        { method: "POST", path: template },
+      ]),
+    ).toEqual({ reason: "onboarding_capability_unavailable", origin });
+    expect(f.requests).toEqual([`${origin}/api/v1/agent/contract`]);
+  });
+  test("GET advertisement does not authorize the real POST template", async () => {
+    const f = fixture();
+    f.body({
+      ...document(),
+      onboarding: {
+        schema: 1,
+        routes: [{ ...advertised, method: "GET" }],
+        web,
+      },
+    });
+    const support = await verifyOnboardRoutes(f.ctx, f.journal, [
+      { method: "POST", path: template },
+    ]);
+    expect(support).toEqual({ reason: "cloud_capability_unavailable", origin });
+    expect(f.requests).toEqual([`${origin}/api/v1/agent/contract`]);
     expect(f.adapter.act).not.toHaveBeenCalled();
   });
 });

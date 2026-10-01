@@ -1,12 +1,28 @@
 // query.ts — `query issues|issue|pulls|pull|projects|cycles|search|changes`: the replica when it is
-// fresh, else the API, with the source named on stderr every time. Output shape is the read-model
+// explicitly selected, otherwise the API, with the source named on stderr every time. Output shape is the read-model
 // view either way. `pull`, `cycles`, `search` and `changes` are API-only (the SDK wraps no view for
 // them and the read-model package is not a declared dependency of this bundle).
-import { flagBool, flagInt, flagString, positionals, type ParsedArgs } from "./args.js";
-import { requireConfig, replicaDbPath, type Ctx, type CustomerConfig } from "./config.js";
+import {
+  flagBool,
+  flagInt,
+  flagString,
+  positionals,
+  type ParsedArgs,
+} from "./args.js";
+import {
+  requireConfig,
+  replicaDbPath,
+  type Ctx,
+  type CustomerConfig,
+} from "./config.js";
 import { CliError, UsageError } from "./errors.js";
 import { apiClient } from "./transport.js";
-import { fetchAllPages, fetchPage, rowsOf, truncationNotice } from "./pagination.js";
+import {
+  fetchAllPages,
+  fetchPage,
+  rowsOf,
+  truncationNotice,
+} from "./pagination.js";
 import { engineFor, replicaStatus, type EngineDeps } from "./replica.js";
 import { loadSdk } from "./sdk.js";
 
@@ -31,9 +47,16 @@ interface Filters {
   all: boolean;
 }
 
-export async function cmdQuery(args: ParsedArgs, ctx: Ctx, deps: QueryDeps = {}): Promise<number> {
+export async function cmdQuery(
+  args: ParsedArgs,
+  ctx: Ctx,
+  deps: QueryDeps = {},
+): Promise<number> {
   const [sub, ...rest] = positionals(args);
-  if (!sub) throw new UsageError("query needs a subcommand: issues | issue <id> | pulls | pull <id> | projects | cycles | search <terms> | changes --since <n>");
+  if (!sub)
+    throw new UsageError(
+      "query needs a subcommand: issues | issue <id> | pulls | pull <id> | projects | cycles | search <terms> | changes --since <n>",
+    );
   const cfg = requireConfig(ctx);
   const filters: Filters = {
     team: flagString(args, "team"),
@@ -43,18 +66,26 @@ export async function cmdQuery(args: ParsedArgs, ctx: Ctx, deps: QueryDeps = {})
     all: flagBool(args, "all"),
   };
   const forced = flagString(args, "source");
-  if (forced && forced !== "replica" && forced !== "api") throw new UsageError("--source must be replica or api");
+  if (forced && forced !== "replica" && forced !== "api")
+    throw new UsageError("--source must be replica or api");
   if (filters.all && !PAGINATED.has(sub)) {
-    throw new UsageError(`--all follows the cloud's keyset pages, which only ${[...PAGINATED].join(" and ")} have`);
+    throw new UsageError(
+      `--all follows the cloud's keyset pages, which only ${[...PAGINATED].join(" and ")} have`,
+    );
   }
   if (filters.all && forced === "replica") {
-    throw new UsageError("--all follows the cloud's page cursor; --source replica reads a local mirror that has none. Pick one.");
+    throw new UsageError(
+      "--all follows the cloud's page cursor; --source replica reads a local mirror that has none. Pick one.",
+    );
   }
   if (filters.all && flagString(args, "limit") !== undefined) {
     ctx.stderr("--all reads the whole scope, so --limit is ignored");
   }
 
-  const status = replicaStatus(ctx, cfg);
+  const status =
+    forced === "replica" && REPLICA_CAPABLE.has(sub)
+      ? replicaStatus(ctx, cfg)
+      : null;
   let source: QuerySource;
   let why: string;
   if (!REPLICA_CAPABLE.has(sub)) {
@@ -66,19 +97,24 @@ export async function cmdQuery(args: ParsedArgs, ctx: Ctx, deps: QueryDeps = {})
   } else if (filters.all) {
     source = "api";
     why = "--all follows the cloud's pages";
-  } else if (status.verdict === "fresh") {
-    source = "replica";
-    why = `cursor ${status.cursor}`;
   } else {
     source = "api";
-    why = `replica ${status.verdict}`;
+    why = "cloud reads by default";
   }
-  ctx.stderr(source === "replica" ? `source: replica (${why})` : `source: api (${why})`);
+  ctx.stderr(
+    source === "replica" ? `source: replica (${why})` : `source: api (${why})`,
+  );
 
   let result: unknown;
   if (source === "replica") {
-    if (status.verdict === "absent" || status.verdict === "not-configured") {
-      throw new UsageError(`--source replica but the replica is ${status.verdict}`);
+    if (
+      !status ||
+      status.verdict === "absent" ||
+      status.verdict === "not-configured"
+    ) {
+      throw new UsageError(
+        `--source replica but the replica is ${status?.verdict ?? "unavailable"}`,
+      );
     }
     result = await fromReplica(ctx, cfg, sub, rest, filters, deps);
   } else {
@@ -92,23 +128,45 @@ export async function cmdQuery(args: ParsedArgs, ctx: Ctx, deps: QueryDeps = {})
   return 0;
 }
 
-async function fromReplica(ctx: Ctx, cfg: CustomerConfig, sub: string, rest: string[], f: Filters, deps: QueryDeps): Promise<unknown> {
+async function fromReplica(
+  ctx: Ctx,
+  cfg: CustomerConfig,
+  sub: string,
+  rest: string[],
+  f: Filters,
+  deps: QueryDeps,
+): Promise<unknown> {
   const sdk = await loadSdk();
   const dbPath = replicaDbPath(cfg, ctx.home, ctx.env);
-  const engine = await engineFor(sdk, dbPath, ctx, { ...deps.engineDeps, readonly: true });
-  const replica = await sdk.CatalystReplica.openReadOnly({ dbPath, engine, log: () => {} });
+  const engine = await engineFor(sdk, dbPath, ctx, {
+    ...deps.engineDeps,
+    readonly: true,
+  });
+  const replica = await sdk.CatalystReplica.openReadOnly({
+    dbPath,
+    engine,
+    log: () => {},
+  });
   try {
     switch (sub) {
       case "issues": {
         const rows = replica.issues({ limit: Math.max(f.limit, 200) });
-        return applyFilters(rows as unknown as Record<string, unknown>[], f).slice(0, f.limit);
+        return applyFilters(
+          rows as unknown as Record<string, unknown>[],
+          f,
+        ).slice(0, f.limit);
       }
       case "issue":
         return replica.issue(needArg(rest, "issue <identifier>"));
       case "pulls":
         return replica.pulls({ limit: f.limit });
       case "projects":
-        return applyFilters(replica.projects({ limit: Math.max(f.limit, 200) }) as unknown as Record<string, unknown>[], { limit: f.limit, state: f.state }).slice(0, f.limit);
+        return applyFilters(
+          replica.projects({
+            limit: Math.max(f.limit, 200),
+          }) as unknown as Record<string, unknown>[],
+          { limit: f.limit, state: f.state },
+        ).slice(0, f.limit);
       default:
         throw new UsageError(`${sub} is not readable from the replica`);
     }
@@ -117,13 +175,29 @@ async function fromReplica(ctx: Ctx, cfg: CustomerConfig, sub: string, rest: str
   }
 }
 
-async function fromApi(ctx: Ctx, cfg: CustomerConfig, sub: string, rest: string[], f: Filters, args: ParsedArgs): Promise<unknown> {
+async function fromApi(
+  ctx: Ctx,
+  cfg: CustomerConfig,
+  sub: string,
+  rest: string[],
+  f: Filters,
+  args: ParsedArgs,
+): Promise<unknown> {
   const api = apiClient(cfg, ctx);
-  const common = { team: f.team, project: f.project, state: f.state, limit: f.limit };
+  const common = {
+    team: f.team,
+    project: f.project,
+    state: f.state,
+    limit: f.limit,
+  };
   switch (sub) {
     case "issues": {
       if (f.all) {
-        const { rows } = await fetchAllPages(api, "/api/v1/issues", { team: f.team, project: f.project, state: f.state });
+        const { rows } = await fetchAllPages(api, "/api/v1/issues", {
+          team: f.team,
+          project: f.project,
+          state: f.state,
+        });
         return applyFilters(rows, f); // no .slice — --all means the whole scope
       }
       const page = await fetchPage(api, "/api/v1/issues", common);
@@ -134,7 +208,10 @@ async function fromApi(ctx: Ctx, cfg: CustomerConfig, sub: string, rest: string[
     }
     case "issue": {
       const id = needArg(rest, "issue <identifier>");
-      const res = await api.getJson<unknown>(`/api/v1/issues/${encodeURIComponent(id)}`, { accept: [404] });
+      const res = await api.getJson<unknown>(
+        `/api/v1/issues/${encodeURIComponent(id)}`,
+        { accept: [404] },
+      );
       return res.status === 404 ? null : res.body;
     }
     case "pulls": {
@@ -143,7 +220,10 @@ async function fromApi(ctx: Ctx, cfg: CustomerConfig, sub: string, rest: string[
         const { rows } = await fetchAllPages(api, "/api/v1/pulls", { ticket });
         return rows;
       }
-      const page = await fetchPage(api, "/api/v1/pulls", { limit: f.limit, ticket });
+      const page = await fetchPage(api, "/api/v1/pulls", {
+        limit: f.limit,
+        ticket,
+      });
       const rows = page.rows.slice(0, f.limit);
       const notice = truncationNotice(page);
       if (notice) ctx.stderr(notice);
@@ -151,26 +231,38 @@ async function fromApi(ctx: Ctx, cfg: CustomerConfig, sub: string, rest: string[
     }
     case "pull": {
       const id = needArg(rest, "pull <node id>");
-      const res = await api.getJson<unknown>(`/api/v1/pulls/${encodeURIComponent(id)}`, { accept: [404] });
+      const res = await api.getJson<unknown>(
+        `/api/v1/pulls/${encodeURIComponent(id)}`,
+        { accept: [404] },
+      );
       return res.status === 404 ? null : res.body;
     }
     case "projects": {
-      const res = await api.getJson<unknown>("/api/v1/projects", { query: { limit: f.limit } });
+      const res = await api.getJson<unknown>("/api/v1/projects", {
+        query: { limit: f.limit },
+      });
       return rowsOf(res.body).slice(0, f.limit);
     }
     case "cycles": {
-      const res = await api.getJson<unknown>("/api/v1/cycles", { query: { team: f.team, limit: f.limit } });
+      const res = await api.getJson<unknown>("/api/v1/cycles", {
+        query: { team: f.team, limit: f.limit },
+      });
       return rowsOf(res.body);
     }
     case "search": {
       const q = rest.join(" ").trim();
       if (!q) throw new UsageError("search needs terms: query search <terms>");
-      const res = await api.getJson<unknown>("/api/v1/search", { query: { q, limit: f.limit } });
+      const res = await api.getJson<unknown>("/api/v1/search", {
+        query: { q, limit: f.limit },
+      });
       return searchRows(res.body);
     }
     case "changes": {
       const since = flagString(args, "since");
-      if (since === undefined) throw new UsageError("changes needs --since <cursor>, or --since head to start from now");
+      if (since === undefined)
+        throw new UsageError(
+          "changes needs --since <cursor>, or --since head to start from now",
+        );
       return await readChanges(api, since, f.limit);
     }
     default:
@@ -191,7 +283,11 @@ const HEAD_SEQ_HEADER = "x-catalyst-head-seq";
  * failed (409)" that left the customer with no way to learn a usable cursor. The head is stamped on
  * the refusal itself, so there is always something actionable to say.
  */
-async function readChanges(api: ReturnType<typeof apiClient>, since: string, limit: number): Promise<unknown> {
+async function readChanges(
+  api: ReturnType<typeof apiClient>,
+  since: string,
+  limit: number,
+): Promise<unknown> {
   const resolved = since === "head" ? String(await headCursor(api)) : since;
   // ⛔ NDJSON ON 200, JSON ON A REFUSAL — see `getNdjson`. Reading this with `getJson` turned every
   // real success into "returned a non-JSON body" while every refusal parsed, which is why the verb
@@ -202,7 +298,11 @@ async function readChanges(api: ReturnType<typeof apiClient>, since: string, lim
   });
   const head = res.headers.get(HEAD_SEQ_HEADER);
   if (res.status !== 409) {
-    return { since: Number(resolved), head: head === null ? null : Number(head), changes: res.body };
+    return {
+      since: Number(resolved),
+      head: head === null ? null : Number(head),
+      changes: res.body,
+    };
   }
   const where = head === null ? "" : ` The feed's live cursor is ${head}.`;
   throw new CliError(
@@ -216,7 +316,10 @@ async function readChanges(api: ReturnType<typeof apiClient>, since: string, lim
 /** The live head, read off any `/changes` response's own header — a 409 carries it too, which is
  *  what makes this work on a tenant whose log has rotated past every cursor the caller could guess. */
 async function headCursor(api: ReturnType<typeof apiClient>): Promise<number> {
-  const probe = await api.getNdjson<unknown>("/api/v1/changes", { query: { since: "0", limit: 1 }, accept: [409] });
+  const probe = await api.getNdjson<unknown>("/api/v1/changes", {
+    query: { since: "0", limit: 1 },
+    accept: [409],
+  });
   const raw = probe.headers.get(HEAD_SEQ_HEADER);
   const head = raw === null ? Number.NaN : Number(raw);
   if (!Number.isFinite(head)) {
@@ -235,11 +338,28 @@ function needArg(rest: string[], usage: string): string {
   return v;
 }
 
-export function applyFilters(rows: Record<string, unknown>[], f: Partial<Filters>): Record<string, unknown>[] {
+export function applyFilters(
+  rows: Record<string, unknown>[],
+  f: Partial<Filters>,
+): Record<string, unknown>[] {
   return rows.filter((r) => {
-    if (f.team && !(String(r.identifier ?? "").toUpperCase().startsWith(`${f.team.toUpperCase()}-`) || r.team_id === f.team || r.team_key === f.team)) return false;
+    if (
+      f.team &&
+      !(
+        String(r.identifier ?? "")
+          .toUpperCase()
+          .startsWith(`${f.team.toUpperCase()}-`) ||
+        r.team_id === f.team ||
+        r.team_key === f.team
+      )
+    )
+      return false;
     if (f.project && r.project_id !== f.project) return false;
-    if (f.state && String(r.state ?? "").toLowerCase() !== f.state.toLowerCase()) return false;
+    if (
+      f.state &&
+      String(r.state ?? "").toLowerCase() !== f.state.toLowerCase()
+    )
+      return false;
     return true;
   });
 }
@@ -247,25 +367,41 @@ export function applyFilters(rows: Record<string, unknown>[], f: Partial<Filters
 /** The hub answers search in four groups (`issues`, `pulls`, `projects`, `initiatives`, the read
  *  model's SearchView). `rowsOf` returns only the first array it finds, so it dropped every match that
  *  was not a ticket. Every group comes back here, flattened, each row tagged with its `kind`. */
-const SEARCH_GROUPS: [string, string][] = [["issues", "issue"], ["pulls", "pull"], ["projects", "project"], ["initiatives", "initiative"]];
+const SEARCH_GROUPS: [string, string][] = [
+  ["issues", "issue"],
+  ["pulls", "pull"],
+  ["projects", "project"],
+  ["initiatives", "initiative"],
+];
 export function searchRows(body: unknown): Record<string, unknown>[] {
   if (Array.isArray(body)) return body as Record<string, unknown>[];
   if (!body || typeof body !== "object") return [];
   const b = body as Record<string, unknown>;
   if (SEARCH_GROUPS.some(([group]) => Array.isArray(b[group]))) {
     return SEARCH_GROUPS.flatMap(([group, kind]) =>
-      Array.isArray(b[group]) ? (b[group] as Record<string, unknown>[]).map((row) => ({ kind, ...row })) : [],
+      Array.isArray(b[group])
+        ? (b[group] as Record<string, unknown>[]).map((row) => ({
+            kind,
+            ...row,
+          }))
+        : [],
     );
   }
   return rowsOf(body);
 }
 
-function printResult(ctx: Ctx, args: ParsedArgs, sub: string, result: unknown): void {
+function printResult(
+  ctx: Ctx,
+  args: ParsedArgs,
+  sub: string,
+  result: unknown,
+): void {
   if (args.json || !Array.isArray(result)) {
     ctx.stdout(JSON.stringify(result, null, args.json ? 0 : 2));
     return;
   }
-  for (const row of result as Record<string, unknown>[]) ctx.stdout(summaryLine(sub, row));
+  for (const row of result as Record<string, unknown>[])
+    ctx.stdout(summaryLine(sub, row));
 }
 
 export function summaryLine(sub: string, r: Record<string, unknown>): string {

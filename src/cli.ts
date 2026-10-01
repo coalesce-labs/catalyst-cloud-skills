@@ -45,6 +45,7 @@ import { cmdReady } from "./ready.js";
 import { cmdReplica, type ReplicaDeps } from "./replica.js";
 import { cmdRuntime, type RuntimeVerbDeps } from "./runtime-verb.js";
 import { cmdEvents, type EventDeps } from "./events.js";
+import { stageOnboardLogin } from "./onboard-login-candidate.js";
 import { stdinIsTty } from "./prompt.js";
 import {
   FIRST_STAMPED_VERSION,
@@ -78,9 +79,17 @@ import { cmdLegacy, type LegacyDeps } from "./legacy.js";
 import { cmdIdentity, type IdentityDeps } from "./identity.js";
 import { cmdConnections, type ConnectionsDeps } from "./connections.js";
 import { cmdOnboard, onboardErrorJournal } from "./onboard.js";
-import { createClackOnboardUi, shouldUseOnboardUi, type OnboardUi } from "./onboard-ui.js";
+import type { OnboardBootstrapPreview } from "./onboard-bootstrap.js";
+import {
+  createClackOnboardUi,
+  shouldUseOnboardUi,
+  type OnboardUi,
+} from "./onboard-ui.js";
 import { createOnboardRuntime } from "./onboard-runtime.js";
-import { onboardingReadyReport, observeCloudOnboarding } from "./onboard-ready.js";
+import {
+  onboardingReadyReport,
+  observeCloudOnboarding,
+} from "./onboard-ready.js";
 import { selectedOnboardTeam } from "./onboard-existing.js";
 
 export {
@@ -193,6 +202,8 @@ export function usageText(): string {
 }
 
 export interface MainDeps {
+  /** Internal staged entrypoint passes an owned preview; installed CLI leaves this absent. */
+  onboardBootstrap?: OnboardBootstrapPreview;
   onboardSigninTimeoutMs?: number;
   signal?: AbortSignal;
   waitForApproval?: <T>(run: () => Promise<T>) => Promise<T>;
@@ -361,41 +372,126 @@ export async function main(
           if (!input.isTTY) {
             try {
               const fd = openSync("/dev/tty", "r");
-              try { terminal = new TerminalInput(fd); input = terminal; }
-              catch (error) { closeSync(fd); throw error; }
+              try {
+                terminal = new TerminalInput(fd);
+                input = terminal;
+              } catch (error) {
+                closeSync(fd);
+                throw error;
+              }
+            } catch {
+              ctx.stderr(
+                "No controlling terminal is available; using the displayed defaults.",
+              );
             }
-            catch { ctx.stderr("No controlling terminal is available; using the displayed defaults."); }
           }
           if (input.isTTY) {
-            try { ui = createClackOnboardUi(await import("@clack/prompts"), { input, output: process.stdout }); }
-            catch (error) { terminal?.destroy(); throw error; }
+            try {
+              ui = createClackOnboardUi(await import("@clack/prompts"), {
+                input,
+                output: process.stdout,
+              });
+            } catch (error) {
+              terminal?.destroy();
+              throw error;
+            }
           }
         }
-        try { return await cmdOnboard(args, ctx, {
-          ...createOnboardRuntime(args, ctx, {
-            ui,
-            signinTimeoutMs: deps.onboardSigninTimeoutMs,
-            login: (stepCtx, signal) => cmdLogin({ ...args, command: "login", flags: {}, json: false }, stepCtx, {
-              ...deps, signal, isTty: () => true,
-              waitForApproval: ui ? run => ui.wait("Waiting for Catalyst approval", run) : undefined,
-            }, true),
-            ready: async (stepCtx, journal) => {
-              const team = selectedOnboardTeam(journal);
-              const report = await onboardingReadyReport(stepCtx, { teamIds: team ? [team] : undefined, localSync: journal?.localSync ?? args.flags["local-sync"] === true, observe: observeCloudOnboarding });
-              const failed = report.checks.some(check => check.required && check.state === "fail");
-              return { state: report.state === "complete" ? "done" : failed ? "failed" : "waiting", reason: report.state === "complete" ? undefined : "onboarding_checks_pending",
-                evidence: { checks: report.checks.length, passed: report.checks.filter(check => check.state === "pass").length } };
+        try {
+          return await cmdOnboard(
+            args,
+            ctx,
+            {
+              ...createOnboardRuntime(args, ctx, {
+                ui,
+                signinTimeoutMs: deps.onboardSigninTimeoutMs,
+                stageSignin: (signal) => {
+                  if (args.key || ctx.env.CATALYST_CLOUD_TOKEN)
+                    throw new CliError(
+                      "Connect your personal key with catalyst login, then run catalyst onboard. Setup will not replace a supplied key with browser sign-in.",
+                      "onboard-person-required",
+                      12,
+                    );
+                  return stageOnboardLogin(
+                    { ...ctx, stdout: ctx.stderr },
+                    {
+                      baseUrl: args.baseUrl,
+                      signal,
+                      timeoutMs: deps.onboardSigninTimeoutMs,
+                      device: {
+                        isTty:
+                          deps.isTty ?? (() => Boolean(process.stdout.isTTY)),
+                        openBrowser: deps.openBrowser ?? defaultOpenBrowser,
+                        sleep: deps.sleep,
+                        waitForApproval: ui
+                          ? (run) =>
+                              ui.wait("Waiting for Catalyst approval", run)
+                          : undefined,
+                      },
+                    },
+                  );
+                },
+                login: (stepCtx, signal) =>
+                  cmdLogin(
+                    { ...args, command: "login", flags: {}, json: false },
+                    stepCtx,
+                    {
+                      ...deps,
+                      signal,
+                      isTty: () => true,
+                      waitForApproval: ui
+                        ? (run) => ui.wait("Waiting for Catalyst approval", run)
+                        : undefined,
+                    },
+                    true,
+                  ),
+                ready: async (stepCtx, journal) => {
+                  const team = selectedOnboardTeam(journal);
+                  const report = await onboardingReadyReport(stepCtx, {
+                    teamIds: team ? [team] : undefined,
+                    localSync:
+                      journal?.localSync ?? args.flags["local-sync"] === true,
+                    observe: observeCloudOnboarding,
+                  });
+                  const failed = report.checks.some(
+                    (check) => check.required && check.state === "fail",
+                  );
+                  return {
+                    state:
+                      report.state === "complete"
+                        ? "done"
+                        : failed
+                          ? "failed"
+                          : "waiting",
+                    reason:
+                      report.state === "complete"
+                        ? undefined
+                        : "onboarding_checks_pending",
+                    evidence: {
+                      checks: report.checks.length,
+                      passed: report.checks.filter(
+                        (check) => check.state === "pass",
+                      ).length,
+                    },
+                  };
+                },
+                legacy: deps.legacy,
+                openBrowser: deps.openBrowser,
+                sleep: deps.sleep,
+                skillNames: CUSTOMER_SKILLS,
+              }),
+              ...(deps.onboardBootstrap
+                ? { bootstrap: deps.onboardBootstrap }
+                : {}),
+              ...(deps.isTty ? { isTty: deps.isTty } : {}),
+              ...(deps.signal ? { signal: deps.signal } : {}),
             },
-            legacy: deps.legacy,
-            openBrowser: deps.openBrowser,
-            sleep: deps.sleep,
-            skillNames: CUSTOMER_SKILLS,
-          }),
-          ...(deps.isTty ? { isTty: deps.isTty } : {}),
-        }, readManifest().version);
+            readManifest().version,
+          );
         } finally {
           ui?.dispose();
-          if (input.isTTY && input.isRaw !== originalRaw) input.setRawMode(originalRaw);
+          if (input.isTTY && input.isRaw !== originalRaw)
+            input.setRawMode(originalRaw);
           terminal?.destroy();
         }
       }
@@ -482,7 +578,11 @@ export async function main(
     }
     if (err instanceof CliError) {
       if (args.command === "onboard" && args.json)
-        ctx.stdout(JSON.stringify(onboardErrorJournal(ctx, manifest.version, err.exitCode)));
+        ctx.stdout(
+          JSON.stringify(
+            onboardErrorJournal(ctx, manifest.version, err.exitCode),
+          ),
+        );
       ctx.stderr(`catalyst: ${err.message}`);
       return err.exitCode;
     }
@@ -538,7 +638,12 @@ async function cmdLogin(
   personalOnly = false,
 ): Promise<number> {
   const checkCancelled = () => {
-    if (deps.signal?.aborted) throw new CliError("Sign-in paused. Run the same command to resume.", "login-cancelled", 11);
+    if (deps.signal?.aborted)
+      throw new CliError(
+        "Sign-in paused. Run the same command to resume.",
+        "login-cancelled",
+        11,
+      );
   };
   checkCancelled();
   const manifest = readManifest();
@@ -562,7 +667,11 @@ async function cmdLogin(
   const me = await fetchMe(baseUrl, bearer, ctx.fetch);
   checkCancelled();
   if (personalOnly && !me.user)
-    throw new CliError("onboarding needs your personal login; sign in as yourself", "onboard-person-required", 12);
+    throw new CliError(
+      "onboarding needs your personal login; sign in as yourself",
+      "onboard-person-required",
+      12,
+    );
   let existing: CustomerConfig | null;
   try {
     existing = loadConfig(ctx.home);
@@ -612,7 +721,10 @@ async function cmdLogin(
   );
   ctx.stdout(`Tenant contract range: ${manifest.tenantContractRange}`);
   try {
-    const loaded = await loadContract(ctx, config, { refresh: true, signal: deps.signal });
+    const loaded = await loadContract(ctx, config, {
+      refresh: true,
+      signal: deps.signal,
+    });
     checkCancelled();
     ctx.stdout(
       `Tenant contract ${loaded.doc.contractVersion} cached at ${loaded.path}`,

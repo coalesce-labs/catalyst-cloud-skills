@@ -12,7 +12,7 @@ const HELP = `Usage: node scripts/read-pr.mjs <ticket | pr-node-id> [--all] [--j
   --json         print the raw detail document instead of the summary
 
 Exit 0 shown, 1 not found or no PR yet, 2 this machine is not connected to a tenant.
-The first stderr line names the source the CLI read from (a fresh replica, or the API).`;
+The first stderr line names the source the CLI read from (the API by default, or an explicitly selected replica).`;
 
 const args = process.argv.slice(2);
 if (args.length === 0 || args.includes("--help") || args.includes("-h")) {
@@ -52,8 +52,15 @@ if (all) {
     process.exit(1);
   }
   for (const p of pulls) {
-    const flags = [truthy(p.draft) ? "draft" : null, truthy(p.merged) ? "merged" : null].filter(Boolean).join(" ");
-    console.log(`${fmt(p.repo_id)}#${fmt(p.number)}  ${fmt(p.state)}${flags ? ` ${flags}` : ""}  ${fmt(p.title, "")}  [${fmt(p.node_id, "")}]`);
+    const flags = [
+      truthy(p.draft) ? "draft" : null,
+      truthy(p.merged) ? "merged" : null,
+    ]
+      .filter(Boolean)
+      .join(" ");
+    console.log(
+      `${fmt(p.repo_id)}#${fmt(p.number)}  ${fmt(p.state)}${flags ? ` ${flags}` : ""}  ${fmt(p.title, "")}  [${fmt(p.node_id, "")}]`,
+    );
   }
   process.exit(0);
 }
@@ -66,23 +73,44 @@ if (json) {
 
 const checks = Array.isArray(detail.checks) ? detail.checks : [];
 const reviews = Array.isArray(detail.reviews) ? detail.reviews : [];
-const statuses = Array.isArray(detail.commit_statuses) ? detail.commit_statuses : [];
-const state = [fmt(detail.state), truthy(detail.draft) ? "draft" : null, truthy(detail.merged) ? `merged ${when(detail.merged_at)}` : null].filter(Boolean).join(", ");
+const statuses = Array.isArray(detail.commit_statuses)
+  ? detail.commit_statuses
+  : [];
+const state = [
+  fmt(detail.state),
+  truthy(detail.draft) ? "draft" : null,
+  truthy(detail.merged) ? `merged ${when(detail.merged_at)}` : null,
+]
+  .filter(Boolean)
+  .join(", ");
 
-console.log(`${fmt(detail.repo_id)}#${fmt(detail.number)}  ${fmt(detail.title, "(no title yet)")}`);
-console.log(`state: ${state}  by ${fmt(detail.author_login)}  opened ${when(detail.created_at)}  updated ${when(detail.updated_at)}`);
-console.log(`branch: ${fmt(detail.head_ref)} → ${fmt(detail.base_ref)}  head ${fmt(detail.head_sha).slice(0, 12)}`);
-console.log(`ticket: ${fmt(ticket ?? detail.linear_issue_identifier, "none named")}${detail.linked_issue_state ? ` (stage: ${detail.linked_issue_state})` : ""}`);
-console.log(`github says: mergeable=${fmt(detail.mergeable, "unknown")} state=${fmt(detail.mergeable_state, "unknown")} auto-merge=${truthy(detail.auto_merge) ? "on" : "off"}`);
+console.log(
+  `${fmt(detail.repo_id)}#${fmt(detail.number)}  ${fmt(detail.title, "(no title yet)")}`,
+);
+console.log(
+  `state: ${state}  by ${fmt(detail.author_login)}  opened ${when(detail.created_at)}  updated ${when(detail.updated_at)}`,
+);
+console.log(
+  `branch: ${fmt(detail.head_ref)} → ${fmt(detail.base_ref)}  head ${fmt(detail.head_sha).slice(0, 12)}`,
+);
+console.log(
+  `ticket: ${fmt(ticket ?? detail.linear_issue_identifier, "none named")}${detail.linked_issue_state ? ` (stage: ${detail.linked_issue_state})` : ""}`,
+);
+console.log(
+  `github says: mergeable=${fmt(detail.mergeable, "unknown")} state=${fmt(detail.mergeable_state, "unknown")} auto-merge=${truthy(detail.auto_merge) ? "on" : "off"}`,
+);
 if (detail.blocked_on_ask && typeof detail.blocked_on_ask === "object") {
   const b = detail.blocked_on_ask;
-  console.log(`blocked on an ask: ${fmt(b.identifier ?? b.id, "")} ${fmt(b.title, "")}`.trim());
+  console.log(
+    `blocked on an ask: ${fmt(b.identifier ?? b.id, "")} ${fmt(b.title, "")}`.trim(),
+  );
 }
 console.log(`node id: ${fmt(detail.node_id)}`);
 
 console.log(`checks (${checks.length}):`);
 if (checks.length === 0) console.log("  none reported at this head yet");
-for (const c of checks) console.log(`  ${fmt(c.status)}/${fmt(c.conclusion, "-")}  ${fmt(c.name)}`);
+for (const c of checks)
+  console.log(`  ${fmt(c.status)}/${fmt(c.conclusion, "-")}  ${fmt(c.name)}`);
 
 if (statuses.length > 0) {
   console.log(`commit statuses (${statuses.length}):`);
@@ -90,8 +118,16 @@ if (statuses.length > 0) {
 }
 
 console.log(`reviews (${reviews.length}):`);
-if (reviews.length === 0) console.log("  none mirrored; a reviewer's clean pass is a reaction, which this read does not carry");
-for (const r of reviews) console.log(`  ${fmt(r.state)}  ${fmt(r.reviewer_name, fmt(r.reviewer_id))}  ${when(r.submitted_at)}`);
+if (reviews.length === 0)
+  console.log(
+    "  none mirrored; a reviewer's clean pass is a reaction, which this read does not carry",
+  );
+for (const r of reviews)
+  console.log(
+    `  ${fmt(r.state)}  ${fmt(r.reviewer_name, fmt(r.reviewer_id))}  ${when(r.submitted_at)}`,
+  );
 
-console.log("not mirrored here: PR labels (holds, queue attestation) and the reviewer's reaction — see references/what-a-pr-accumulates.md");
+console.log(
+  "not mirrored here: PR labels (holds, queue attestation) and the reviewer's reaction — see references/what-a-pr-accumulates.md",
+);
 process.exit(0);

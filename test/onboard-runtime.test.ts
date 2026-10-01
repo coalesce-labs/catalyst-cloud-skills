@@ -8,7 +8,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, describe, expect, test } from "vitest";
+import { afterEach, describe, expect, test, vi } from "vitest";
 import { main } from "../src/cli.js";
 import { parseArgs } from "../src/args.js";
 import {
@@ -21,9 +21,12 @@ import {
 import {
   cmdOnboard,
   onboardStatePath,
+  onboardLockPath,
+  type OnboardIdentity,
   type OnboardJournal,
 } from "../src/onboard.js";
 import { createOnboardRuntime } from "../src/onboard-runtime.js";
+import type { OnboardUi } from "../src/onboard-ui.js";
 
 const homes: string[] = [];
 const baseUrl = "https://staging.catalystcloud.dev";
@@ -132,6 +135,8 @@ function fixture() {
   return { home, ctx, seed, journal, hooks, transcript, supportedFetch };
 }
 afterEach(() => {
+  vi.restoreAllMocks();
+  vi.useRealTimers();
   for (const home of homes.splice(0))
     rmSync(home, { recursive: true, force: true });
 });
@@ -1061,5 +1066,464 @@ describe("onboarding production runtime", () => {
     expect(
       await runtime.adapters!.skills!.check(f.ctx, f.journal),
     ).toMatchObject({ state: "done", evidence: { path: skillsDir, count: 1 } });
+  });
+});
+
+function deferred<T>() {
+  let resolve: (value: T) => void = () => {
+    throw new Error("deferred not initialized");
+  };
+  const promise = new Promise<T>((accept) => {
+    resolve = accept;
+  });
+  return { promise, resolve };
+}
+
+function previewUi(proceed = false) {
+  const controller = new AbortController();
+  const identities: Array<OnboardIdentity | null | undefined> = [];
+  const events: string[] = [];
+  const messages: string[] = [];
+  const ui: OnboardUi = {
+    signal: controller.signal,
+    plan: (_journal, identity) => {
+      identities.push(identity);
+      events.push("plan");
+    },
+    confirmPlan: async (localSync) => {
+      events.push("Q1");
+      return { proceed, localSync };
+    },
+    stepStart: (id) => {
+      events.push(`start:${id}`);
+    },
+    stepEnd: (step) => {
+      events.push(`end:${step.id}`);
+    },
+    message: (text) => {
+      messages.push(text);
+    },
+    finish: () => {
+      events.push("finish");
+    },
+    wait: async (_text, work) => work(),
+    dispose: () => controller.abort(),
+  };
+  return { ui, controller, identities, events, messages };
+}
+
+function seedPreviewReceipt(
+  f: ReturnType<typeof fixture>,
+  extra: Partial<OnboardJournal> = {},
+) {
+  const path = onboardStatePath(f.home);
+  mkdirSync(join(path, ".."), { recursive: true });
+  writeFileSync(
+    path,
+    JSON.stringify(
+      {
+        ...f.journal,
+        account: me.account,
+        tenant: me.account,
+        membershipId: user.id,
+        baseUrl,
+        ...extra,
+      },
+      null,
+      2,
+    ) + "\n",
+  );
+  return readFileSync(path);
+}
+
+function previewOauth(expiresAt: string) {
+  return {
+    kind: "oauth" as const,
+    accessToken: "preview-access-fixture",
+    refreshToken: "preview-refresh-fixture",
+    expiresAt,
+    sessionId: "preview-session-fixture",
+  };
+}
+
+describe("Q1 live identity preview", () => {
+  test("current me display and role replace stale saved labels before Q1, and Stop preserves both files", async () => {
+    const f = fixture();
+    f.seed({
+      name: "Stale Workspace",
+      slug: "stale-slug",
+      user: {
+        ...user,
+        label: "Stale Person",
+        email: "stale@example.com",
+        role: "owner",
+      },
+      key: undefined,
+      auth: previewOauth("2026-09-30T14:00:45Z"),
+    });
+    const configBefore = readFileSync(configPathFor(f.home));
+    const receiptBefore = seedPreviewReceipt(f);
+    const requests: Array<{ url: string; init?: RequestInit }> = [];
+    f.ctx.fetch = (async (input, init) => {
+      requests.push({ url: String(input), init });
+      return Response.json(me);
+    }) as typeof fetch;
+    const screen = previewUi();
+    const args = parseArgs(["onboard"]);
+    const runtime = createOnboardRuntime(args, f.ctx, {
+      ...f.hooks,
+      ui: screen.ui,
+    });
+    expect(
+      await cmdOnboard(args, f.ctx, { ...runtime, bindSignals: false }),
+    ).toBe(0);
+    expect(screen.identities).toEqual([
+      expect.objectContaining({
+        role: "member",
+        display: {
+          personLabel: user.label,
+          email: user.email,
+          workspaceName: me.name,
+          workspaceSlug: me.slug,
+        },
+      }),
+    ]);
+    expect(screen.events).toEqual(["plan", "Q1"]);
+    expect(requests.map((request) => request.url)).toEqual([
+      `${baseUrl}/api/v1/me`,
+    ]);
+    expect(requests[0]!.init).toMatchObject({
+      redirect: "error",
+      headers: { authorization: "Bearer preview-access-fixture" },
+    });
+    expect(readFileSync(configPathFor(f.home))).toEqual(configBefore);
+    expect(readFileSync(onboardStatePath(f.home))).toEqual(receiptBefore);
+    expect(existsSync(onboardLockPath(f.home))).toBe(false);
+    expect(existsSync(contractPathFor(f.home))).toBe(false);
+  });
+
+  test.each(["2026-09-30T14:00:30Z", "2026-09-30T13:59:59Z", "invalid-expiry"])(
+    "a saved OAuth token at %s waits for explicit renewal without discovery or refresh IO",
+    async (expiresAt) => {
+      const f = fixture();
+      f.seed({ key: undefined, auth: previewOauth(expiresAt) });
+      const configBefore = readFileSync(configPathFor(f.home));
+      const receiptBefore = seedPreviewReceipt(f);
+      const fetch = vi.fn(async () => Response.json(me));
+      f.ctx.fetch = fetch;
+      const screen = previewUi();
+      const args = parseArgs(["onboard"]);
+      const runtime = createOnboardRuntime(args, f.ctx, {
+        ...f.hooks,
+        ui: screen.ui,
+      });
+      expect(
+        await cmdOnboard(args, f.ctx, { ...runtime, bindSignals: false }),
+      ).toBe(11);
+      expect(fetch).not.toHaveBeenCalled();
+      expect(screen.events).toEqual([]);
+      expect(f.transcript.join("\n")).toContain(
+        "Renew your login with catalyst login",
+      );
+      expect(readFileSync(configPathFor(f.home))).toEqual(configBefore);
+      expect(readFileSync(onboardStatePath(f.home))).toEqual(receiptBefore);
+      expect(existsSync(onboardLockPath(f.home))).toBe(false);
+    },
+  );
+
+  test("expiry during Q1 waits with the supported renewal command and never refreshes saved credentials", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-09-30T14:00:00Z"));
+    const f = fixture();
+    f.ctx.now = () => new Date();
+    f.seed({ key: undefined, auth: previewOauth("2026-09-30T14:00:45Z") });
+    const configBefore = readFileSync(configPathFor(f.home));
+    seedPreviewReceipt(f);
+    const requests: string[] = [];
+    f.ctx.fetch = (async (input) => {
+      requests.push(String(input));
+      return Response.json(me);
+    }) as typeof fetch;
+    const screen = previewUi(true);
+    screen.ui.confirmPlan = async (localSync) => {
+      screen.events.push("Q1");
+      await vi.advanceTimersByTimeAsync(16_000);
+      return { proceed: true, localSync };
+    };
+    const args = parseArgs(["onboard", "--only", "signin"]);
+    const runtime = createOnboardRuntime(args, f.ctx, {
+      ...f.hooks,
+      ui: screen.ui,
+    });
+    expect(
+      await cmdOnboard(args, f.ctx, { ...runtime, bindSignals: false }),
+    ).toBe(11);
+    expect(screen.identities[0]).toMatchObject({
+      display: { personLabel: user.label },
+    });
+    expect(requests).toEqual([`${baseUrl}/api/v1/me`]);
+    expect(screen.messages.join("\n")).toContain(
+      "Renew your login with catalyst login, then run catalyst onboard",
+    );
+    expect(readFileSync(configPathFor(f.home))).toEqual(configBefore);
+    const receipt = JSON.parse(readFileSync(onboardStatePath(f.home), "utf8"));
+    expect(receipt).toMatchObject({ exit: 11, complete: false });
+    expect(
+      receipt.steps.find((step: { id: string }) => step.id === "signin"),
+    ).toMatchObject({
+      state: "waiting",
+      reason: "onboard_login_refresh_required",
+    });
+    expect(existsSync(onboardLockPath(f.home))).toBe(false);
+  });
+
+  test("a first run has no fabricated person before Q1 and stopping makes no login or receipt", async () => {
+    const f = fixture();
+    const fetch = vi.fn(async () => Response.json(me));
+    const login = vi.fn(async () => 0);
+    f.ctx.fetch = fetch;
+    const screen = previewUi();
+    const args = parseArgs(["onboard"]);
+    const runtime = createOnboardRuntime(args, f.ctx, {
+      ...f.hooks,
+      login,
+      ui: screen.ui,
+    });
+    expect(
+      await cmdOnboard(args, f.ctx, { ...runtime, bindSignals: false }),
+    ).toBe(0);
+    expect(screen.identities).toEqual([null]);
+    expect(screen.events).toEqual(["plan", "Q1"]);
+    expect(fetch).not.toHaveBeenCalled();
+    expect(login).not.toHaveBeenCalled();
+    expect(existsSync(configPathFor(f.home))).toBe(false);
+    expect(existsSync(onboardStatePath(f.home))).toBe(false);
+    expect(existsSync(onboardLockPath(f.home))).toBe(false);
+  });
+
+  test.each([
+    { account: "foreign-account", tenant: "foreign-account" },
+    { membershipId: "foreign-person" },
+    { baseUrl: "https://another-cloud.example.com" },
+  ])(
+    "foreign receipt binding %j still refuses before any network request or Q1",
+    async (binding) => {
+      const f = fixture();
+      f.seed();
+      const configBefore = readFileSync(configPathFor(f.home));
+      const receiptBefore = seedPreviewReceipt(f, binding);
+      const fetch = vi.fn(async () => Response.json(me));
+      f.ctx.fetch = fetch;
+      const screen = previewUi();
+      const args = parseArgs(["onboard"]);
+      const runtime = createOnboardRuntime(args, f.ctx, {
+        ...f.hooks,
+        ui: screen.ui,
+      });
+      expect(
+        await cmdOnboard(args, f.ctx, { ...runtime, bindSignals: false }),
+      ).toBe(12);
+      expect(fetch).not.toHaveBeenCalled();
+      expect(screen.events).toEqual([]);
+      expect(readFileSync(configPathFor(f.home))).toEqual(configBefore);
+      expect(readFileSync(onboardStatePath(f.home))).toEqual(receiptBefore);
+    },
+  );
+
+  test("a newer saved person while me is pending rejects the old result and preserves that login", async () => {
+    const f = fixture();
+    f.seed();
+    const receiptBefore = seedPreviewReceipt(f);
+    const response = deferred<Response>();
+    const fetch = vi.fn(async () => response.promise);
+    f.ctx.fetch = fetch;
+    const screen = previewUi();
+    const args = parseArgs(["onboard"]);
+    const runtime = createOnboardRuntime(args, f.ctx, {
+      ...f.hooks,
+      ui: screen.ui,
+    });
+    const run = cmdOnboard(args, f.ctx, { ...runtime, bindSignals: false });
+    expect(fetch).toHaveBeenCalledTimes(1);
+    f.seed({ key: "new-login-fixture", user: { ...user, id: "new-person" } });
+    const newConfig = readFileSync(configPathFor(f.home));
+    response.resolve(Response.json(me));
+    expect(await run).toBe(12);
+    expect(screen.events).toEqual([]);
+    expect(readFileSync(configPathFor(f.home))).toEqual(newConfig);
+    expect(readFileSync(onboardStatePath(f.home))).toEqual(receiptBefore);
+  });
+
+  test.each(["headers", "body"] as const)(
+    "the owned 30-second budget bounds stalled %s and ignores its late result",
+    async (phase) => {
+      vi.useFakeTimers();
+      const f = fixture();
+      f.seed();
+      const configBefore = readFileSync(configPathFor(f.home));
+      const receiptBefore = seedPreviewReceipt(f);
+      const headers = deferred<Response>();
+      const body = deferred<unknown>();
+      const response = Response.json(me);
+      if (phase === "body")
+        vi.spyOn(response, "json").mockReturnValue(body.promise);
+      let requestSignal: AbortSignal | null | undefined;
+      const fetch = vi.fn(
+        async (
+          _input: Parameters<typeof globalThis.fetch>[0],
+          init?: RequestInit,
+        ) => {
+          requestSignal = init?.signal;
+          return phase === "headers" ? headers.promise : response;
+        },
+      );
+      f.ctx.fetch = fetch;
+      const screen = previewUi();
+      const args = parseArgs(["onboard"]);
+      const runtime = createOnboardRuntime(args, f.ctx, {
+        ...f.hooks,
+        ui: screen.ui,
+      });
+      const run = cmdOnboard(args, f.ctx, { ...runtime, bindSignals: false });
+      let settled = false;
+      void run.then(
+        () => {
+          settled = true;
+        },
+        () => {
+          settled = true;
+        },
+      );
+      await vi.advanceTimersByTimeAsync(29_999);
+      expect(settled).toBe(false);
+      expect(screen.events).toEqual([]);
+      expect(readFileSync(configPathFor(f.home))).toEqual(configBefore);
+      await vi.advanceTimersByTimeAsync(1);
+      expect(await run).toBe(11);
+      expect(requestSignal?.aborted).toBe(true);
+      expect(screen.events).toEqual([]);
+      headers.resolve(response);
+      body.resolve(me);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(fetch).toHaveBeenCalledTimes(1);
+      expect(screen.events).toEqual([]);
+      expect(readFileSync(configPathFor(f.home))).toEqual(configBefore);
+      expect(readFileSync(onboardStatePath(f.home))).toEqual(receiptBefore);
+      expect(existsSync(onboardLockPath(f.home))).toBe(false);
+    },
+  );
+
+  test("an already-cancelled preview does no network IO and preserves saved state", async () => {
+    const f = fixture();
+    f.seed();
+    const configBefore = readFileSync(configPathFor(f.home));
+    const receiptBefore = seedPreviewReceipt(f);
+    const fetch = vi.fn(async () => Response.json(me));
+    f.ctx.fetch = fetch;
+    const screen = previewUi();
+    screen.controller.abort();
+    const args = parseArgs(["onboard"]);
+    const runtime = createOnboardRuntime(args, f.ctx, {
+      ...f.hooks,
+      ui: screen.ui,
+    });
+    expect(
+      await cmdOnboard(args, f.ctx, { ...runtime, bindSignals: false }),
+    ).toBe(11);
+    expect(fetch).not.toHaveBeenCalled();
+    expect(screen.events).toEqual([]);
+    expect(readFileSync(configPathFor(f.home))).toEqual(configBefore);
+    expect(readFileSync(onboardStatePath(f.home))).toEqual(receiptBefore);
+    expect(existsSync(onboardLockPath(f.home))).toBe(false);
+  });
+
+  test("cancelling a pending body aborts the request and never renders late identity", async () => {
+    vi.useFakeTimers();
+    const f = fixture();
+    f.seed();
+    const configBefore = readFileSync(configPathFor(f.home));
+    const body = deferred<unknown>();
+    const response = Response.json(me);
+    const bodyStarted = deferred<void>();
+    const json = vi.spyOn(response, "json").mockImplementation(() => {
+      bodyStarted.resolve(undefined);
+      return body.promise;
+    });
+    let requestSignal: AbortSignal | null | undefined;
+    f.ctx.fetch = (async (_input, init) => {
+      requestSignal = init?.signal;
+      return response;
+    }) as typeof fetch;
+    const screen = previewUi();
+    const args = parseArgs(["onboard"]);
+    const runtime = createOnboardRuntime(args, f.ctx, {
+      ...f.hooks,
+      ui: screen.ui,
+    });
+    const run = cmdOnboard(args, f.ctx, { ...runtime, bindSignals: false });
+    await bodyStarted.promise;
+    expect(json).toHaveBeenCalledTimes(1);
+    screen.controller.abort();
+    expect(await run).toBe(11);
+    expect(requestSignal?.aborted).toBe(true);
+    body.resolve(me);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(screen.events).toEqual([]);
+    expect(readFileSync(configPathFor(f.home))).toEqual(configBefore);
+    expect(existsSync(onboardStatePath(f.home))).toBe(false);
+    expect(existsSync(onboardLockPath(f.home))).toBe(false);
+  });
+
+  test("first sign-in and a JSON recheck render live identity only outside the single receipt object", async () => {
+    const f = fixture();
+    const out: string[] = [];
+    const err: string[] = [];
+    f.ctx.stdout = (line) => out.push(line);
+    f.ctx.stderr = (line) => err.push(line);
+    const args = parseArgs(["onboard", "--only", "signin", "--yes", "--json"]);
+    const runtime = createOnboardRuntime(args, f.ctx, {
+      ...f.hooks,
+      login: async () => {
+        f.seed();
+        return 0;
+      },
+    });
+    expect(
+      await cmdOnboard(args, f.ctx, { ...runtime, bindSignals: false }),
+    ).toBe(0);
+    expect(out).toHaveLength(1);
+    const receiptText = readFileSync(onboardStatePath(f.home), "utf8");
+    expect(JSON.parse(out[0]!)).toEqual(JSON.parse(receiptText));
+    expect(err.join("\n")).toContain(
+      `Signed in as ${user.label} (${user.email})`,
+    );
+    expect(err.join("\n")).toContain(
+      `Workspace: ${me.name} (${me.slug}) · member`,
+    );
+    for (const text of [out[0]!, receiptText]) {
+      expect(text).not.toContain(user.email);
+      expect(text).not.toContain(user.label);
+      expect(text).not.toContain(me.name);
+      expect(text).not.toContain("personLabel");
+      expect(text).not.toContain("workspaceName");
+      expect(text).not.toContain("ctc_user_test_fixture");
+    }
+    out.length = 0;
+    err.length = 0;
+    const login = vi.fn(async () => {
+      throw new Error("saved login must be rechecked without a new sign-in");
+    });
+    const recheck = createOnboardRuntime(args, f.ctx, { ...f.hooks, login });
+    expect(
+      await cmdOnboard(args, f.ctx, { ...recheck, bindSignals: false }),
+    ).toBe(0);
+    expect(login).not.toHaveBeenCalled();
+    expect(out).toHaveLength(1);
+    expect(JSON.parse(out[0]!)).toEqual(
+      JSON.parse(readFileSync(onboardStatePath(f.home), "utf8")),
+    );
+    expect(err.filter((line) => line.startsWith("Signed in as "))).toHaveLength(
+      2,
+    );
   });
 });

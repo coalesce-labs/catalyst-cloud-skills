@@ -6,9 +6,12 @@ import {
 } from "./onboard-progress.js";
 import type { ExistingOnboardTeam } from "./onboard-existing.js";
 import type { ExistingOnboardRepository } from "./onboard-repositories.js";
+import type { OnboardSettingsSummary } from "./onboard-settings.js";
 import {
   ONBOARD_STEPS,
   ONBOARD_TITLES,
+  onboardIdentityLines,
+  type OnboardIdentity,
   type OnboardJournal,
   type OnboardStep,
   type OnboardStepId,
@@ -17,14 +20,21 @@ import {
 /** Rendering cannot approve a step: the receipt engine owns execution and evidence. */
 export interface OnboardUi {
   readonly signal: AbortSignal;
-  plan(journal: OnboardJournal): void;
+  plan(journal: OnboardJournal, identity?: OnboardIdentity | null): void;
   confirmPlan(
     localSync: boolean,
-  ): Promise<{ proceed: boolean; localSync: boolean }>;
+    signin?: "saved" | "required" | "unavailable",
+  ): Promise<{ proceed: boolean; localSync: boolean; signin?: boolean }>;
   chooseTeam?(teams: ExistingOnboardTeam[]): Promise<string | null>;
   chooseRepositories?(
     repositories: ExistingOnboardRepository[],
   ): Promise<string[] | null>;
+  reviewSettings?(
+    summaries: readonly OnboardSettingsSummary[],
+  ): Promise<"keep" | "cancel">;
+  chooseFirstRepository?(
+    repositories: Array<{ owner: string; name: string }>,
+  ): Promise<string | null>;
   stepStart(id: OnboardStepId): void;
   stepEnd(step: OnboardStep): void;
   message(text: string): void;
@@ -119,12 +129,14 @@ export function createClackOnboardUi(
   };
   return {
     signal: abort.signal,
-    plan(journal) {
+    plan(journal, identity) {
       stop();
       if (!introduced) {
         prompts.intro("Catalyst setup", { output: streams.output });
         introduced = true;
       }
+      if (identity !== undefined)
+        for (const line of onboardIdentityLines(identity)) message(line);
       const steps = new Map(journal.steps.map((step) => [step.id, step]));
       message(
         ONBOARD_STEPS.map(
@@ -133,22 +145,41 @@ export function createClackOnboardUi(
         ).join("\n"),
       );
       message(
-        "Use cloud reads by default. Local sync is optional for SQL, offline work or sustained reads.",
+        "Use cloud reads by default. Local sync is optional for SQL or sustained local reads.",
+      );
+      message(
+        "Setup may check one stored Claude account using a one-token provider request. This may use Claude quota. It does not refresh Codex credentials.",
       );
     },
-    async confirmPlan(localSync) {
+    async confirmPlan(localSync, signin = "unavailable") {
       stop();
       const answer = await prompts.select({
         ...options,
         message: "Continue with this plan?",
-        initialValue: localSync ? "local" : "cloud",
+        initialValue:
+          signin === "required" ? "signin" : localSync ? "local" : "cloud",
         options: [
-          {
-            value: "cloud",
-            label: "Continue using cloud reads",
-            hint: "default",
-          },
-          { value: "local", label: "Continue and set up local sync" },
+          ...(signin === "required"
+            ? []
+            : [
+                {
+                  value: "cloud",
+                  label: "Continue using cloud reads",
+                  hint: "default",
+                },
+                { value: "local", label: "Continue and set up local sync" },
+              ]),
+          ...(signin === "unavailable"
+            ? []
+            : [
+                {
+                  value: "signin",
+                  label:
+                    signin === "saved"
+                      ? "Sign in again before continuing"
+                      : "Sign in and review this plan",
+                },
+              ]),
           { value: "stop", label: "Stop without changes" },
         ],
       });
@@ -159,6 +190,7 @@ export function createClackOnboardUi(
       return {
         proceed: answer === "cloud" || answer === "local",
         localSync: answer === "local",
+        ...(answer === "signin" ? { signin: true } : {}),
       };
     },
     async chooseTeam(teams) {
@@ -201,6 +233,47 @@ export function createClackOnboardUi(
           },
         }
       : {}),
+    async reviewSettings(summaries) {
+      stop();
+      if (!summaries.length || abort.signal.aborted) return "cancel";
+      const answer = await prompts.select({
+        ...options,
+        message:
+          "Review settings for all selected repositories. Keep private copies of new drafts for review?",
+        initialValue: "keep",
+        options: [
+          {
+            value: "keep",
+            label: "Keep private draft copies",
+            hint: "default; repository files stay unchanged; approval and value import stay pending",
+          },
+          { value: "stop", label: "Stop without keeping new copies" },
+        ],
+      });
+      if (prompts.isCancel(answer) || answer === "stop") {
+        abort.abort();
+        return "cancel";
+      }
+      return answer === "keep" ? "keep" : "cancel";
+    },
+    async chooseFirstRepository(repositories) {
+      stop();
+      if (!repositories.length || abort.signal.aborted) return null;
+      const answer = await prompts.select({
+        ...options,
+        message: "Which repository should start this project?",
+        initialValue: `${repositories[0]!.owner}/${repositories[0]!.name}`,
+        options: repositories.map((row) => ({
+          value: `${row.owner}/${row.name}`,
+          label: `${row.owner}/${row.name}`,
+        })),
+      });
+      if (prompts.isCancel(answer)) {
+        abort.abort();
+        return null;
+      }
+      return typeof answer === "string" ? answer : null;
+    },
     stepStart(id) {
       const next = ["machine", "cli", "skills", "legacy"].includes(id)
         ? "This computer"
@@ -222,11 +295,37 @@ export function createClackOnboardUi(
     stepEnd(step) {
       stop();
       const reasons: Record<string, string> = {
+        account_enrollment_required:
+          "No coding account is enrolled. An administrator can add one in the workspace's coding-account settings, then run catalyst onboard again.",
+        account_identity_unverified:
+          "Your login changed while coding accounts were checked. Run catalyst onboard again to verify your person and workspace.",
+        account_inventory_unavailable:
+          "Coding accounts could not be read. Run catalyst onboard again to retry.",
+        account_inventory_unverified:
+          "The server did not return a fresh supported coding-account list. Run catalyst onboard after the server update.",
+        account_validation_admin_required:
+          "An administrator must check the workspace's coding-account access.",
+        account_login_refresh_required:
+          "Renew your login with catalyst login, then run catalyst onboard.",
+        account_validation_unavailable:
+          "The provider check could not finish. Run catalyst onboard again to retry.",
+        account_validation_unverified:
+          "The server did not return a fresh provider check. Run catalyst onboard after the server update.",
+        account_provider_access_unverified:
+          "Coding-account provider access is not freshly verified. Check the account in the workspace's coding-account settings, then resume setup.",
+        codex_provider_access_unverified:
+          "Codex credentials are stored, but provider access is not freshly verified. Setup did not refresh or rotate the Codex login.",
+        account_provider_walled:
+          "Claude's usage limit is spent for now. Check the account's reset time, then run catalyst onboard again.",
+        account_provider_rejected:
+          "Claude refused the stored login. Replace it in the workspace's coding-account settings, then resume setup.",
         personal_consent_handoff:
           "The browser approval link could not be verified. Run catalyst onboard to try again.",
         personal_identity_refused:
           "Your current login no longer matches this setup. Resume with the original workspace and person.",
         personal_login_refresh_required:
+          "Renew your login with catalyst login, then run catalyst onboard to resume.",
+        onboard_login_refresh_required:
           "Renew your login with catalyst login, then run catalyst onboard to resume.",
         personal_status_unavailable:
           "Your personal connection could not be checked. Run catalyst onboard to try again.",
@@ -276,6 +375,24 @@ export function createClackOnboardUi(
           "The cloud returned a team list that could not be verified.",
         team_read_unavailable:
           "Your existing Linear teams could not be read. Run catalyst onboard to try again.",
+        team_read_identity_unverified:
+          "Your login changed while setup was reading this workspace. Resume with the original workspace and person.",
+        project_identity_unverified:
+          "Your login changed while setup was checking this project. Resume with the original workspace and person.",
+        project_options_unavailable:
+          "Available teams and repositories could not be checked. Run catalyst onboard to try again.",
+        project_provider_inventory_unavailable:
+          "Linear or GitHub access could not be verified. Check this workspace's connections, then resume.",
+        project_options_unverified:
+          "The server returned a team or repository list that could not be verified.",
+        project_registration_visibility_pending:
+          "Your project exists, but its repository binding is not visible yet. Run catalyst onboard to check again.",
+        project_binding_conflict:
+          "This team or repository is already bound to a project. Ask your workspace administrator to check its binding, then resume.",
+        project_login_refresh_required:
+          "Renew your login with catalyst onboard, then review the plan before creating this project.",
+        project_create_unverified:
+          "Project creation could not be confirmed. Run catalyst onboard to check for the project before trying again.",
         team_read_login_refresh_required:
           "Your login needs a refresh. Run catalyst onboard to resume.",
         team_choice_required:
@@ -300,6 +417,16 @@ export function createClackOnboardUi(
           "A repository's Linear team binding is ambiguous. Your administrator needs to check it.",
         repository_identity_unverified:
           "Sign in to the original workspace to choose repositories.",
+        settings_review_timeout:
+          "The settings review timed out. Run catalyst onboard to resume.",
+        settings_checkout_unverified:
+          "A selected repository's local checkout or full settings file could not be verified. Resume from its checkout.",
+        settings_draft_storage_unavailable:
+          "A private settings draft could not be kept. Run catalyst onboard to retry.",
+        settings_draft_storage_timeout:
+          "Keeping your settings draft took too long. Run catalyst onboard to retry.",
+        settings_approval_unverified:
+          "Settings still need review and approval. Kept drafts and local validation do not approve them.",
         repository_selection_unverified:
           "Your selected repositories could not be verified. Run catalyst onboard --repo <owner/name> to choose again.",
       };

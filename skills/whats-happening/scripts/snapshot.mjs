@@ -2,25 +2,48 @@
 // snapshot.mjs — one call that answers "where are we?": the account's contract (trimmed to what a
 // status reply needs), what is running, what is queued, what is waiting on a human, and whether the
 // local replica is fresh. Prints ONE JSON document on stdout and the source line on stderr.
-import { mustRun, parseFlags, parseJson, printHelp, runCli } from "./lib/cli.mjs";
+import {
+  mustRun,
+  parseFlags,
+  parseJson,
+  printHelp,
+  runCli,
+} from "./lib/cli.mjs";
 
 const SPEC = {
   team: { value: true, help: "limit the queue and the board to this team key" },
-  board: { value: false, help: "also include open tickets grouped by stage, in the contract's slot order" },
+  board: {
+    value: false,
+    help: "also include open tickets grouped by stage, in the contract's slot order",
+  },
   limit: { value: true, help: "board: max tickets to read (default 200)" },
-  "full-contract": { value: false, help: "include the whole contract instead of the trimmed `tenant` block" },
-  accounts: { value: false, help: "also include the coding accounts: provider, state, usage windows, walls, quarantine (never a credential)" },
+  "full-contract": {
+    value: false,
+    help: "include the whole contract instead of the trimmed `tenant` block",
+  },
+  accounts: {
+    value: false,
+    help: "also include the coding accounts: provider, state, usage windows, walls, quarantine (never a credential)",
+  },
+  replica: {
+    value: false,
+    help: "also read optional local replica diagnostics",
+  },
 };
 
 const { help, flags } = parseFlags(process.argv.slice(2), SPEC);
 if (help) {
-  printHelp("node scripts/snapshot.mjs [--team K] [--board] [--accounts] [--limit N] [--full-contract] [--help]", SPEC, [
-    "Runs, in order: catalyst contract, running, queue, ask list, replica status (query issues with --board,",
-    "accounts with --accounts).",
-    "Output: one JSON document {takenAt, source, tenant, running, queue, waitingOnHuman, board?, accounts?, errors?}.",
-    "A section the cloud refused is reported under errors and the rest still prints; exit 1 in that case.",
-    "Every account fact (stage names, thresholds, teams) comes from the contract in this output, never from prose.",
-  ]);
+  printHelp(
+    "node scripts/snapshot.mjs [--team K] [--board] [--accounts] [--limit N] [--full-contract] [--help]",
+    SPEC,
+    [
+      "Reads catalyst contract, running, queue and ask list from the cloud (query issues with --board,",
+      "accounts with --accounts, optional local diagnostics with --replica).",
+      "Output: one JSON document {takenAt, source, tenant, running, queue, waitingOnHuman, board?, accounts?, errors?}.",
+      "A section the cloud refused is reported under errors and the rest still prints; exit 1 in that case.",
+      "Every account fact (stage names, thresholds, teams) comes from the contract in this output, never from prose.",
+    ],
+  );
   process.exit(0);
 }
 
@@ -28,26 +51,40 @@ const errors = {};
 const section = (name, args) => {
   const r = runCli(args);
   if (r.code !== 0) {
-    errors[name] = (r.stderr || r.stdout || `exit ${r.code}`).trim().split("\n").at(-1);
+    errors[name] = (r.stderr || r.stdout || `exit ${r.code}`)
+      .trim()
+      .split("\n")
+      .at(-1);
     return null;
   }
   return parseJson(r.stdout, name);
 };
 
-const contract = parseJson(mustRun(["contract", "--json"], { quiet: true }).stdout, "contract");
+const contract = parseJson(
+  mustRun(["contract", "--json"], { quiet: true }).stdout,
+  "contract",
+);
 // `replica status` exits 0 fresh, 1 stale, 3 absent — all three are verdicts with JSON on stdout,
 // not failures; only a non-JSON answer is an error.
 const replica = (() => {
+  if (!flags.replica)
+    return { verdict: "not-selected", cursor: null, heartbeatAgeMs: null };
   const r = runCli(["replica", "status", "--json"]);
   try {
     return JSON.parse(r.stdout.trim());
   } catch {
-    errors.replica = (r.stderr || r.stdout || `exit ${r.code}`).trim().split("\n").at(-1);
+    errors.replica = (r.stderr || r.stdout || `exit ${r.code}`)
+      .trim()
+      .split("\n")
+      .at(-1);
     return { verdict: "unknown", cursor: null, heartbeatAgeMs: null };
   }
 })();
 const running = section("running", ["running", "--json"]);
-const queue = section("queue", flags.team ? ["queue", "--team", flags.team, "--json"] : ["queue", "--json"]);
+const queue = section(
+  "queue",
+  flags.team ? ["queue", "--team", flags.team, "--json"] : ["queue", "--json"],
+);
 const asks = section("waitingOnHuman", ["ask", "list", "--json"]);
 
 const out = {
@@ -58,7 +95,9 @@ const out = {
     replicaCursor: replica.cursor ?? null,
     replicaHeartbeatAgeMs: replica.heartbeatAgeMs ?? null,
   },
-  tenant: flags["full-contract"] ? contract : trimContract(contract, flags.team),
+  tenant: flags["full-contract"]
+    ? contract
+    : trimContract(contract, flags.team),
   running,
   queue,
   waitingOnHuman: asks,
@@ -67,14 +106,23 @@ const out = {
 if (flags.accounts) out.accounts = section("accounts", ["accounts", "--json"]);
 
 if (flags.board) {
-  const args = ["query", "issues", "--limit", String(flags.limit ?? 200), "--json"];
+  const args = [
+    "query",
+    "issues",
+    "--source",
+    "api",
+    "--limit",
+    String(flags.limit ?? 200),
+    "--json",
+  ];
   if (flags.team) args.push("--team", flags.team);
   const r = runCli(args);
   const sourceLine = (r.stderr.match(/^source: .*$/m) ?? [null])[0];
   // A board read is a window (`--limit` stays the default), and a window the cloud cut short must
   // say so rather than reading as the whole team.
   const truncatedLine = (r.stderr.match(/^truncated at .*$/m) ?? [null])[0];
-  if (r.code !== 0) errors.board = (r.stderr || `exit ${r.code}`).trim().split("\n").at(-1);
+  if (r.code !== 0)
+    errors.board = (r.stderr || `exit ${r.code}`).trim().split("\n").at(-1);
   else {
     const rows = parseJson(r.stdout, "issues");
     out.board = groupByStage(rows, contract, flags.team);
@@ -84,18 +132,27 @@ if (flags.board) {
 }
 
 if (Object.keys(errors).length) out.errors = errors;
-process.stderr.write(`source: api for running/queue/asks; replica ${replica.verdict}${replica.cursor != null ? ` (cursor ${replica.cursor})` : ""}${out.source.board ? `; board from ${out.source.board}` : ""}\n`);
+process.stderr.write(
+  `source: api for running/queue/asks; replica ${replica.verdict}${replica.cursor != null ? ` (cursor ${replica.cursor})` : ""}${out.source.board ? `; board from ${out.source.board}` : ""}\n`,
+);
 process.stdout.write(JSON.stringify(out, null, 2) + "\n");
 process.exit(Object.keys(errors).length ? 1 : 0);
 
 /** The contract facts a status reply needs, and nothing a reply should not paste. */
 function trimContract(doc, teamKey) {
-  const teams = (doc.teams ?? []).filter((t) => !teamKey || String(t.key ?? "").toUpperCase() === teamKey.toUpperCase());
+  const teams = (doc.teams ?? []).filter(
+    (t) =>
+      !teamKey || String(t.key ?? "").toUpperCase() === teamKey.toUpperCase(),
+  );
   return {
     contractVersion: doc.contractVersion,
     account: { slug: doc.account?.slug, name: doc.account?.name },
     slots: doc.slots,
-    ladder: { phases: doc.ladder?.phases, intakeEnabled: doc.ladder?.intakeEnabled, keying: doc.ladder?.keying },
+    ladder: {
+      phases: doc.ladder?.phases,
+      intakeEnabled: doc.ladder?.intakeEnabled,
+      keying: doc.ladder?.keying,
+    },
     thresholds: doc.thresholds,
     mergeDefaultPolicy: doc.merge?.defaultPolicy,
     teams: teams.map((t) => ({
@@ -106,7 +163,14 @@ function trimContract(doc, teamKey) {
       stages: Object.fromEntries(
         (doc.slots ?? Object.keys(t.stages ?? {}))
           .filter((slot) => t.stages?.[slot])
-          .map((slot) => [slot, { name: t.stages[slot].name, type: t.stages[slot].type, stateStillExists: t.stages[slot].stateStillExists }]),
+          .map((slot) => [
+            slot,
+            {
+              name: t.stages[slot].name,
+              type: t.stages[slot].type,
+              stateStillExists: t.stages[slot].stateStillExists,
+            },
+          ]),
       ),
       labels: {
         ask: (t.labels?.ask ?? []).map((l) => l.name),
@@ -124,11 +188,19 @@ function groupByStage(rows, doc, teamKey) {
   const seen = new Set();
   const terminal = new Set();
   for (const t of doc.teams ?? []) {
-    if (teamKey && String(t.key ?? "").toUpperCase() !== teamKey.toUpperCase()) continue;
+    if (teamKey && String(t.key ?? "").toUpperCase() !== teamKey.toUpperCase())
+      continue;
     for (const slot of doc.slots ?? []) {
       const s = t.stages?.[slot];
       if (!s?.name) continue;
-      if (slot === "done" || slot === "canceled" || ["completed", "canceled", "cancelled"].includes(String(s.type ?? "").toLowerCase())) terminal.add(s.name);
+      if (
+        slot === "done" ||
+        slot === "canceled" ||
+        ["completed", "canceled", "cancelled"].includes(
+          String(s.type ?? "").toLowerCase(),
+        )
+      )
+        terminal.add(s.name);
       else if (!seen.has(s.name)) {
         seen.add(s.name);
         order.push(s.name);
@@ -148,6 +220,12 @@ function groupByStage(rows, doc, teamKey) {
       projectId: r.project_id ?? null,
     });
   }
-  const extra = Object.keys(byStage).filter((s) => !seen.has(s)).sort();
-  return { stageOrder: [...order, ...extra], byStage, terminalStagesDropped: [...terminal] };
+  const extra = Object.keys(byStage)
+    .filter((s) => !seen.has(s))
+    .sort();
+  return {
+    stageOrder: [...order, ...extra],
+    byStage,
+    terminalStagesDropped: [...terminal],
+  };
 }
