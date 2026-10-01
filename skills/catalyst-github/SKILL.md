@@ -23,6 +23,8 @@ Both read through `catalyst query` and `contract` from the cloud by default; the
 | -- | -- |
 | the person asks what Catalyst did to the branch or PR, why the title changed, why history was rewritten, what a label means, or what happens on merge | `references/what-a-pr-accumulates.md` |
 | the person asks why a PR has not merged, what the queue needs, what a clean review pass looks like, or what a policy requires | `references/is-it-mergeable.md` |
+| which command answers a PR question from the cloud, and what the cloud detail cannot see | `references/reading-from-the-cloud.md` |
+| local SQL or `--local-threads`, only when `catalyst replica status --json` reports `configured: true` | `references/local-replica.md` |
 
 ## Rules
 

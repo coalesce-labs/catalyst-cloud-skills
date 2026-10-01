@@ -58,6 +58,7 @@ Scripts are run, never read; each prints `--help`.
 | a browser step, or confirming a page that said it worked | `references/what-the-browser-owns.md` |
 | the repository's `.catalyst/catalyst.toml` and its approval; its AGENTS.md block and agent layout | `references/declaring-a-repository.md`; `references/repository-agent-setup.md` |
 | the replica or event cache | `references/local-sync.md` |
+| local SQL, only when `catalyst replica status --json` reports `configured: true` | `references/local-replica.md` |
 | installing, updating, or migrating Catalyst skills | `references/skill-sources.md` |
 | what Catalyst is, or why the first ticket did not start | the `whats-happening` skill, then `unstick` if something holds it |
 
