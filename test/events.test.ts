@@ -28,7 +28,8 @@ const rows: CachedEvent[] = [
     eventId: "evt-4",
     type: "phase.completed",
     recordedAt: "2026-09-16T20:00:00.000Z",
-    payload: { workItemKey: "CTC-1352" },
+    entity: { type: "ticket", id: "CTC-1352" },
+    payload: { phase: "plan" },
   },
   {
     tenantId: "account-1",
@@ -36,7 +37,8 @@ const rows: CachedEvent[] = [
     eventId: "evt-5",
     type: "pull_request.merged",
     recordedAt: "2026-09-16T20:01:00.000Z",
-    payload: { identifier: "CTC-999" },
+    entity: { type: "ticket", id: "CTC-999" },
+    payload: { phase: "implement" },
   },
 ];
 
@@ -128,6 +130,7 @@ describe("events", () => {
         [
           "events",
           "query",
+          "--from-cache",
           "--type",
           "phase.completed",
           "--ticket",
@@ -154,6 +157,7 @@ describe("events", () => {
         [
           "events",
           "wait-for",
+          "--from-cache",
           "--type",
           "pull_request.merged",
           "--timeout",
@@ -182,7 +186,7 @@ describe("events", () => {
     };
     expect(
       await main(
-        ["events", "wait-for", "--ticket", "CTC-1352", "--timeout", "1"],
+        ["events", "wait-for", "--from-cache", "--ticket", "CTC-1352", "--timeout", "1"],
         ctx,
         { events: { loadSdk: async () => fixture } },
       ),
@@ -192,6 +196,7 @@ describe("events", () => {
         [
           "events",
           "wait-for",
+          "--from-cache",
           "--ticket",
           "CTC-1352",
           "--after",
@@ -206,7 +211,7 @@ describe("events", () => {
     expect(JSON.parse(ctx.out[0]!)).toEqual(rows[0]);
   });
 
-  test("tail honors an explicit cursor and nested ticket references", async () => {
+  test("tail honors an explicit cursor and a ticket named by the lease that caused the event", async () => {
     const fixture = sdk();
     fixture.tailCachedEvents = async function* ({ after, directory, signal }) {
       expect(after).toBe(4);
@@ -214,7 +219,9 @@ describe("events", () => {
       expect(signal.aborted).toBe(false);
       yield {
         ...rows[1]!,
-        payload: { related: [{ issueIdentifier: "ctc-1352" }] },
+        entity: undefined,
+        causationId: "lease:CTC-1352/plan#2",
+        payload: {},
       };
     };
     expect(
@@ -222,6 +229,7 @@ describe("events", () => {
         [
           "events",
           "tail",
+          "--from-cache",
           "--after",
           "4",
           "--ticket",
@@ -240,7 +248,7 @@ describe("events", () => {
     const empty = sdk();
     empty.tailCachedEvents = async function* () {};
     expect(
-      await main(["events", "wait-for", "--timeout", "1"], ctx, {
+      await main(["events", "wait-for", "--from-cache", "--timeout", "1"], ctx, {
         events: { loadSdk: async () => empty },
       }),
     ).toBe(1);
@@ -255,7 +263,7 @@ describe("events", () => {
     const abort = new AbortController();
     abort.abort(new Error("caller stopped"));
     expect(
-      await main(["events", "wait-for", "--timeout", "30"], makeCtx(home), {
+      await main(["events", "wait-for", "--from-cache", "--timeout", "30"], makeCtx(home), {
         events: { loadSdk: async () => waiting, signal: abort.signal },
       }),
     ).toBe(1);
@@ -268,7 +276,7 @@ describe("events", () => {
       throw signal.reason;
     };
     expect(
-      await main(["events", "wait-for", "--timeout", "0"], makeCtx(home), {
+      await main(["events", "wait-for", "--from-cache", "--timeout", "0"], makeCtx(home), {
         events: { loadSdk: async () => timed },
       }),
     ).toBe(1);
@@ -282,11 +290,12 @@ describe("events", () => {
       throw error;
     };
     expect(
-      await main(["events", "tail"], ctx, {
+      await main(["events", "tail", "--from-cache"], ctx, {
         events: { loadSdk: async () => missing },
       }),
     ).toBe(3);
     expect(ctx.err.join("\n")).toContain("replica start --detach");
+    expect(ctx.err.join("\n")).toContain("drop --from-cache to read from the cloud");
   });
 
   test("subcommand and cursor validation fail before reading the cache", async () => {
@@ -294,7 +303,7 @@ describe("events", () => {
     expect(await main(["events", "nope"], makeCtx(home))).toBe(1);
     for (const after of ["-1", "1.5", "not-a-number"]) {
       expect(
-        await main(["events", "query", "--after", after], makeCtx(home), {
+        await main(["events", "query", "--from-cache", "--after", after], makeCtx(home), {
           events: { loadSdk: async () => sdk() },
         }),
       ).toBe(1);
@@ -303,7 +312,7 @@ describe("events", () => {
 
   test("query applies the requested limit after filtering", async () => {
     expect(
-      await main(["events", "query", "--limit", "1"], ctx, {
+      await main(["events", "query", "--from-cache", "--limit", "1"], ctx, {
         events: { loadSdk: async () => sdk() },
       }),
     ).toBe(0);
@@ -322,22 +331,24 @@ describe("events", () => {
     const abort = new AbortController();
     setTimeout(() => abort.abort(new Error("done")), 1);
     expect(
-      await main(["events", "tail", "--type", "never"], ctx, {
+      await main(["events", "tail", "--from-cache", "--type", "never"], ctx, {
         events: { loadSdk: async () => fixture, signal: abort.signal },
       }),
     ).toBe(0);
     expect(ctx.out).toEqual([]);
   });
 
-  test("query ticket matching handles strings, nulls, and unrelated objects", async () => {
+  test("query ticket matching reads the entity, payload.ticket and the lease, as the cloud index does", async () => {
     const fixture = sdk();
     fixture.readCachedEvents = async () => [
-      { ...rows[0]!, payload: "ctc-1352" },
-      { ...rows[1]!, payload: null },
-      { ...rows[1]!, sequence: 6, payload: { ticket: "CTC-OTHER" } },
+      { ...rows[0]! },
+      { ...rows[1]!, entity: undefined, payload: "ctc-1352" },
+      { ...rows[1]!, entity: undefined, payload: null },
+      { ...rows[1]!, sequence: 6, entity: undefined, payload: { ticket: "CTC-OTHER" } },
+      { ...rows[1]!, sequence: 7, entity: undefined, payload: { related: [{ issueIdentifier: "CTC-1352" }] } },
     ];
     expect(
-      await main(["events", "query", "--ticket", "CTC-1352"], ctx, {
+      await main(["events", "query", "--from-cache", "--ticket", "CTC-1352"], ctx, {
         events: { loadSdk: async () => fixture },
       }),
     ).toBe(0);
@@ -350,7 +361,7 @@ describe("events", () => {
       throw new Error("read failed");
     };
     await expect(
-      main(["events", "tail"], ctx, {
+      main(["events", "tail", "--from-cache"], ctx, {
         events: { loadSdk: async () => fixture },
       }),
     ).rejects.toThrow("read failed");
@@ -384,7 +395,7 @@ describe("events", () => {
   test("query can load the published SDK events entry directly", async () => {
     expect(
       await main(
-        ["events", "query", "--directory", `${home}/missing-events`],
+        ["events", "query", "--from-cache", "--directory", `${home}/missing-events`],
         ctx,
       ),
     ).toBe(0);

@@ -25,6 +25,26 @@ export interface CloudEventFilter {
 }
 export interface CloudEventDeps {
   socket?: (url: string) => EventSocket;
+  /** Called after each failed attempt while the cloud is unreachable: consecutive failures, and
+   *  when the first of them happened (epoch ms). */
+  onTrouble?: (state: { failures: number; sinceMs: number }) => void;
+  /** Called once the cloud answers again after a failure. */
+  onHealthy?: () => void;
+}
+
+/** A short, credential-free name for why the cloud could not be reached. */
+export function unreachableKind(error: unknown): string {
+  if (error instanceof RetryRequest) return "service unavailable";
+  const name = (error as { name?: unknown } | null)?.name;
+  if (name === "TimeoutError" || name === "AbortError") return "timed out";
+  if (error instanceof TypeError) return "network error";
+  return "service unavailable";
+}
+
+/** CTC-4554 — an unreachable cloud is a named failure with its own exit code, never a crash. The
+ *  message names only the kind: a transport error can carry a URL with a credential in it. */
+export function unreachableError(error: unknown): CliError {
+  return new CliError(`the cloud event service is unreachable (${unreachableKind(error)}); try again shortly`, "events-unreachable", 4);
 }
 
 function sequence(value: unknown): value is number {
@@ -90,16 +110,29 @@ async function send(ctx: Ctx, url: URL, accept: string, allowed: number[], signa
     throw new CliError("cloud event access refused; check catalyst status and sign in again", "events-auth", 2, response.status);
   }
   if (response.status !== 200 && !allowed.includes(response.status)) {
-    await response.body?.cancel();
     if (response.status >= 500 || response.status === 429) {
+      await response.body?.cancel();
       const raw = response.headers.get("retry-after");
       const seconds = raw === null ? NaN : Number(raw);
       const delay = Number.isFinite(seconds) ? seconds * 1_000 : raw ? Date.parse(raw) - ctx.now().getTime() : 0;
       throw new RetryRequest(Number.isFinite(delay) ? Math.min(300_000, Math.max(0, delay)) : 0);
     }
-    throw new CliError(`cloud event request refused (HTTP ${response.status})`, "events-http", 2, response.status);
+    throw new CliError(`cloud event request refused (HTTP ${response.status}${await refusalReason(response)})`, "events-http", 2, response.status);
   }
   return response;
+}
+
+/** The server's own reason for a refusal, e.g. `: unknown_event_type (nope)`; empty when it gave none. */
+async function refusalReason(response: Response): Promise<string> {
+  try {
+    const text = await response.text();
+    if (text.length > maxLine) return "";
+    const body = JSON.parse(text) as { error?: unknown; types?: unknown };
+    if (typeof body.error !== "string") return "";
+    return `: ${body.error}${Array.isArray(body.types) ? ` (${body.types.join(", ")})` : ""}`;
+  } catch {
+    return "";
+  }
 }
 
 /** Probe the head without downloading the backlog. An ahead-of-head cursor is deliberate. */
@@ -112,6 +145,72 @@ export async function cloudEventHead(ctx: Ctx, signal: AbortSignal = AbortSignal
       throw protocol("cloud event head probe did not return an ahead-of-head response");
     return head;
   } finally { await response.body?.cancel(); }
+}
+
+/** One page of the cloud's filtered events query (CTC-4549), as `catalyst events query` prints it. */
+export interface CloudEventQueryPage {
+  /** Events as the server sent them; one whose archived body is unavailable is a stub with `bodyUnavailable: true`. */
+  events: Record<string, unknown>[];
+  next: { param: "beforeSeq" | "afterSeq"; value: number } | null;
+  coverage: { indexedFromSeq: number | null; indexedToSeq: number | null };
+}
+export interface CloudEventQuery {
+  ticket?: string;
+  type?: string;
+  limit: number;
+  order: "asc" | "desc";
+  afterSeq?: number;
+  beforeSeq?: number;
+}
+
+/** CTC-4554 — read one page of `GET /api/v1/events/query`. A refusal names the server's reason. */
+export async function queryCloudEvents(ctx: Ctx, query: CloudEventQuery, signal: AbortSignal = AbortSignal.timeout(30_000)): Promise<CloudEventQueryPage> {
+  const url = eventsUrl(ctx, "query", {
+    order: query.order,
+    limit: String(query.limit),
+    type: query.type,
+    ticket: query.ticket,
+    afterSeq: query.afterSeq === undefined ? undefined : String(query.afterSeq),
+    beforeSeq: query.beforeSeq === undefined ? undefined : String(query.beforeSeq),
+  });
+  let response: Response;
+  try {
+    response = await send(ctx, url, "application/json", [400, 404, 413], signal);
+  } catch (error) {
+    if (error instanceof CliError) throw error;
+    throw unreachableError(error);
+  }
+  if (response.status === 404) {
+    await response.body?.cancel();
+    throw new CliError("this cloud does not serve the events query yet; read the local cache with --from-cache", "events-unavailable", 2, 404);
+  }
+  const text = await response.text();
+  if (text.length > maxQueryBody) throw protocol("cloud event query response exceeds its size limit");
+  let body: unknown;
+  try { body = JSON.parse(text); } catch { throw protocol("cloud event query returned invalid JSON"); }
+  const page = (body && typeof body === "object" ? body : {}) as Record<string, unknown>;
+  if (response.status !== 200) {
+    const reason = typeof page.error === "string" ? page.error : "no reason given";
+    const detail = Array.isArray(page.types) ? ` (${page.types.join(", ")})` : "";
+    throw new CliError(`the cloud refused the events query: ${reason}${detail} (HTTP ${response.status})`, "events-http", 2, response.status);
+  }
+  const account = requireConfig(ctx).account;
+  if (!Array.isArray(page.events)) throw protocol("cloud event query returned an invalid page");
+  for (const value of page.events) {
+    const event = (value && typeof value === "object" ? value : {}) as Record<string, unknown>;
+    if (event.tenantId !== account || !sequence(event.sequence) || typeof event.eventId !== "string" || typeof event.type !== "string")
+      throw protocol("cloud event query contains an invalid tenant or event");
+  }
+  const next = page.next as { param?: unknown; value?: unknown } | null | undefined;
+  if (next !== null && !(next && (next.param === "beforeSeq" || next.param === "afterSeq") && sequence(next.value)))
+    throw protocol("cloud event query returned an invalid next cursor");
+  const coverage = (page.coverage ?? {}) as { indexedFromSeq?: unknown; indexedToSeq?: unknown };
+  const bound = (v: unknown) => (sequence(v) ? v : null);
+  return {
+    events: page.events as Record<string, unknown>[],
+    next: next === null ? null : { param: next.param as "beforeSeq" | "afterSeq", value: next.value as number },
+    coverage: { indexedFromSeq: bound(coverage.indexedFromSeq), indexedToSeq: bound(coverage.indexedToSeq) },
+  };
 }
 
 interface PageEnd {
@@ -127,9 +226,13 @@ type Fallback = "absent" | "uncovered";
 
 function validEvent(ctx: Ctx, value: unknown, cursor: number): value is CachedEvent {
   if (!value || typeof value !== "object") return false;
-  const event = value as Partial<CachedEvent>;
-  return event.tenantId === requireConfig(ctx).account && sequence(event.sequence) && event.sequence > cursor &&
-    typeof event.eventId === "string" && typeof event.type === "string" && typeof event.recordedAt === "string" && "payload" in event;
+  const event = value as Partial<CachedEvent> & { bodyUnavailable?: unknown };
+  if (event.tenantId !== requireConfig(ctx).account || !sequence(event.sequence) || event.sequence <= cursor ||
+    typeof event.eventId !== "string" || typeof event.type !== "string") return false;
+  // CTC-4554 — an event whose archived body is unavailable arrives as a stub (tenantId, sequence,
+  // eventId, type, ticket, bodyUnavailable, reason). It is printed as is, and the cursor moves past it.
+  if (event.bodyUnavailable === true) return true;
+  return typeof event.recordedAt === "string" && "payload" in event;
 }
 
 // A page closed early by its consumer ends with undefined.
@@ -182,8 +285,17 @@ async function* replay(ctx: Ctx, after: number, signal: AbortSignal): AsyncGener
 // `coverage.indexedToSeq` may trail the head; the reader polls until it catches up.
 async function* queryPage(ctx: Ctx, after: number, filter: CloudEventFilter, signal: AbortSignal): AsyncGenerator<CachedEvent, PageEnd | Fallback | undefined> {
   const url = eventsUrl(ctx, "query", { order: "asc", afterSeq: String(after), limit: String(queryLimit), type: filter.type, ticket: filter.ticket });
-  const response = await send(ctx, url, "application/json", [404], signal);
+  const response = await send(ctx, url, "application/json", [404, 413], signal);
   if (response.status === 404) { await response.body?.cancel(); return "absent"; }
+  if (response.status === 413) {
+    // CTC-4554 — one event over the 1 MiB page limit: skip it with a warning and move past it,
+    // rather than failing the tail and hitting the same event on every resume.
+    let skipped: { sequence?: unknown; eventBytes?: unknown } = {};
+    try { skipped = JSON.parse(await response.text()) as typeof skipped; } catch { /* named below */ }
+    if (!sequence(skipped.sequence) || skipped.sequence <= after) throw protocol("cloud event query refused an over-limit event without naming it");
+    ctx.stderr(`events: skipped event ${skipped.sequence}: it is larger than the 1 MiB page limit${sequence(skipped.eventBytes) ? ` (${skipped.eventBytes} bytes)` : ""}`);
+    return { through: skipped.sequence, more: true };
+  }
   const text = await response.text();
   if (text.length > maxQueryBody) throw protocol("cloud event query response exceeds its size limit");
   let body: unknown;
@@ -267,6 +379,9 @@ export async function* cloudEvents(ctx: Ctx, options: { after?: number; filter?:
   // A filter reads the server's index; a server without the route gets the backbone for the whole run.
   let indexed = Boolean(filter.type || filter.ticket);
   let lagPoll = 1_000;
+  // CTC-4554 — consecutive failed attempts, so a caller can tell an outage from a quiet stream.
+  let failures = 0;
+  let failingSince: number | undefined;
   while (!signal.aborted) {
     let socket: EventSocket | undefined;
     let heartbeat: ReturnType<typeof setInterval> | undefined;
@@ -399,6 +514,11 @@ export async function* cloudEvents(ctx: Ctx, options: { after?: number; filter?:
         if (end === "absent" || end === "uncovered") end = yield* follow(replay(ctx, cursor, signal));
         if (!end) return;
         backoff = 1_000;
+        if (failures > 0) {
+          failures = 0;
+          failingSince = undefined;
+          deps.onHealthy?.();
+        }
         if (failure) throw failure;
         cursor = Math.max(cursor, end.through);
         knownHead = Math.max(knownHead, end.head ?? 0, notifiedHead);
@@ -418,6 +538,9 @@ export async function* cloudEvents(ctx: Ctx, options: { after?: number; filter?:
       if (error instanceof CliError) throw error;
       if (error instanceof RetryRequest) retryDelay = error.delayMs;
       // Never propagate socket URLs or transport exceptions: they can contain bearer credentials.
+      failures += 1;
+      failingSince ??= ctx.now().getTime();
+      deps.onTrouble?.({ failures, sinceMs: failingSince });
     } finally {
       clearInterval(heartbeat);
       clearTimeout(openTimer);

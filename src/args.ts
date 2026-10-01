@@ -136,27 +136,39 @@ export const FLAG_TABLES: Record<string, FlagTable> = {
     },
   },
   events: {
+    "from-cache": {
+      value: false,
+      help: "read the local event cache instead of the cloud (opt-in local sync)",
+    },
     probe: {
       value: false,
-      help: "status: compare the local event cursor with the cloud event head",
+      help: "status --from-cache: compare the local event cursor with the cloud event head",
     },
     type: { value: true, help: "exact event type" },
     ticket: {
       value: true,
-      help: "ticket identifier found in the event payload",
+      help: "ticket identifier found in the event",
     },
     after: {
       value: true,
-      help: "event sequence to read after (tail/wait default to local head)",
+      help: "event sequence to read after (tail and wait-for default to new events only)",
     },
-    limit: { value: true, help: "query: maximum matching events (default 50)" },
+    before: {
+      value: true,
+      help: "query: event sequence to read before (newest-first paging)",
+    },
+    order: { value: true, help: "query: desc (newest first, default) or asc" },
+    limit: {
+      value: true,
+      help: "query: maximum matching events (default 50; at most 200 from the cloud)",
+    },
     timeout: {
       value: true,
       help: "wait-for: bounded wait in seconds (default 300)",
     },
     directory: {
       value: true,
-      help: "event cache directory (default: SDK XDG path)",
+      help: "with --from-cache: event cache directory (default: SDK XDG path)",
     },
   },
   explain: {
