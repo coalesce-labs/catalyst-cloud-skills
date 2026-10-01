@@ -437,3 +437,120 @@ test("a refused filter is reported, not retried", async () => {
   const stream = cloudEvents(ctx, { after: 4, filter: { type: "phase.completed" }, signal: new AbortController().signal }, { socket: () => new Socket() });
   await expect(stream.next()).rejects.toThrow("refused (HTTP 400)");
 });
+
+// CTC-4562 — the events channel: the socket asks for pushed events, and once the cloud acknowledges
+// the channel the reader consumes frames instead of replaying on a timer.
+function pushing(socket: Socket) {
+  socket.dispatchEvent(new MessageEvent("message", { data: JSON.stringify({ type: "channels", channels: ["events"], fields: "full" }) }));
+}
+function frame(socket: Socket, f: { after: number; through: number; events?: unknown[]; gap?: boolean }) {
+  socket.dispatchEvent(new MessageEvent("message", { data: JSON.stringify({ type: "events", events: [], ...f }) }));
+}
+const since = (input: unknown) => {
+  const url = new URL(String(input));
+  return { name: url.pathname.split("/").at(-1), cursor: Number(url.searchParams.get(url.pathname.endsWith("query") ? "afterSeq" : "since")) };
+};
+
+test("the socket asks for the events channel with the filters and full bodies", async () => {
+  const ctx = context();
+  let address = "";
+  ctx.fetch = async (input) => since(input).cursor === Number.MAX_SAFE_INTEGER ? response(5, [], 409) : Response.json({ events: [row(5)], next: null, coverage: { indexedFromSeq: 1, indexedToSeq: 5 } });
+  const stream = cloudEvents(ctx, { after: 4, filter: { type: "relay.phase.completed", ticket: "CTC-1" }, signal: new AbortController().signal }, { socket: (url) => { address = url; return new Socket(); } });
+  await stream.next();
+  await stream.return(undefined);
+  const params = new URL(address).searchParams;
+  expect(params.get("channels")).toBe("events");
+  expect(params.get("type")).toBe("relay.phase.completed");
+  expect(params.get("ticket")).toBe("CTC-1");
+  expect(params.get("fields")).toBe("full");
+});
+
+test("pushed events are yielded in order with no further request, and a replayed overlap is dropped", async () => {
+  const ctx = context();
+  let socket: Socket | undefined;
+  const requested: number[] = [];
+  ctx.fetch = async (input) => {
+    const { cursor } = since(input);
+    if (cursor === Number.MAX_SAFE_INTEGER) return response(5, [], 409);
+    requested.push(cursor);
+    return response(5, []);
+  };
+  const stream = cloudEvents(ctx, { after: 5, signal: new AbortController().signal }, { socket: () => socket = new Socket() });
+  const first = stream.next();
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  pushing(required(socket));
+  frame(required(socket), { after: 5, through: 7, events: [row(6), row(7)] });
+  expect((await first).value?.sequence).toBe(6);
+  expect((await stream.next()).value?.sequence).toBe(7);
+  const next = stream.next();
+  // A frame that overlaps what was already yielded (after 5, the cursor is 7): only 9 is new.
+  frame(required(socket), { after: 5, through: 9, events: [row(6), row(7), row(9)] });
+  expect((await next).value?.sequence).toBe(9);
+  expect(requested).toEqual([5]);
+  await stream.return(undefined);
+});
+
+test.each([
+  ["a frame that starts past the cursor", { after: 8, through: 9, events: [row(9)] }],
+  ["a frame flagged as a gap", { after: 5, through: 9, gap: true }],
+  ["a frame carrying an event too large to push", { after: 5, through: 9, events: [{ tenantId: "tenant-1", sequence: 9, eventId: "evt-9", type: "phase.completed", recordedAt: "2026-10-01T00:00:00Z", payloadOmitted: true }] }],
+])("%s sends the reader back to catch up from its cursor", async (_name, f) => {
+  const ctx = context();
+  let socket: Socket | undefined;
+  const requested: number[] = [];
+  ctx.fetch = async (input) => {
+    const { cursor } = since(input);
+    if (cursor === Number.MAX_SAFE_INTEGER) return response(5, [], 409);
+    requested.push(cursor);
+    return cursor === 5 && requested.length > 1 ? response(9, [row(7), row(9)]) : response(5, []);
+  };
+  const stream = cloudEvents(ctx, { after: 5, signal: new AbortController().signal }, { socket: () => socket = new Socket() });
+  const first = stream.next();
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  pushing(required(socket));
+  frame(required(socket), f);
+  expect((await first).value?.sequence).toBe(7);
+  expect((await stream.next()).value?.sequence).toBe(9);
+  expect(requested).toEqual([5, 5]);
+  await stream.return(undefined);
+});
+
+test("once the channel is acknowledged the safety replay waits ten minutes, not thirty seconds", async () => {
+  vi.useFakeTimers();
+  const ctx = context();
+  let socket: Socket | undefined;
+  const requested: number[] = [];
+  ctx.fetch = async (input) => {
+    const { cursor } = since(input);
+    if (cursor === Number.MAX_SAFE_INTEGER) return response(5, [], 409);
+    requested.push(cursor);
+    return response(5, []);
+  };
+  const abort = new AbortController();
+  const stream = cloudEvents(ctx, { after: 5, signal: abort.signal }, { socket: () => socket = new Socket() });
+  const next = stream.next();
+  await vi.advanceTimersByTimeAsync(0);
+  pushing(required(socket));
+  await vi.advanceTimersByTimeAsync(60_000);
+  expect(requested).toEqual([5]);
+  await vi.advanceTimersByTimeAsync(540_000);
+  expect(requested).toEqual([5, 5]);
+  abort.abort();
+  expect((await next).done).toBe(true);
+});
+
+test.each([
+  ["a frame whose bounds run backwards", { type: "events", after: 9, through: 7, events: [] }],
+  ["a pushed event from another tenant", { type: "events", after: 5, through: 6, events: [{ ...row(6), tenantId: "other" }] }],
+  ["a pushed event outside its frame", { type: "events", after: 5, through: 6, events: [row(8)] }],
+])("%s fails before output", async (_name, f) => {
+  const ctx = context();
+  let socket: Socket | undefined;
+  ctx.fetch = async (input) => since(input).cursor === Number.MAX_SAFE_INTEGER ? response(5, [], 409) : response(5, []);
+  const stream = cloudEvents(ctx, { after: 5, signal: new AbortController().signal }, { socket: () => socket = new Socket() });
+  const first = stream.next();
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  pushing(required(socket));
+  required(socket).dispatchEvent(new MessageEvent("message", { data: JSON.stringify(f) }));
+  await expect(first).rejects.toThrow(/events frame|invalid tenant/);
+});
