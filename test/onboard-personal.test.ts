@@ -157,6 +157,31 @@ describe("owned personal consent", () => {
     expect(f.opened).toEqual([]);
   });
 
+  it.each([404, 405])(
+    "a personal route removed during approval HTTP%s stops waiting immediately",
+    async (code) => {
+      const f = fixture();
+      const adapter = personalConsentAdapter({
+        ...f.options,
+        openBrowser: (url) => {
+          f.opened.push(url);
+          f.status({ connected: false }, code);
+        },
+        sleep: async () => {
+          throw new Error("missing route must not retry");
+        },
+      });
+      expect(await adapter.act!(f.ctx, f.journal)).toMatchObject({
+        state: "waiting",
+        reason: "cloud_capability_unavailable",
+      });
+      expect(f.reads.map((row) => row.path)).toEqual([
+        f.statusPath,
+        f.startPath,
+        f.statusPath,
+      ]);
+    },
+  );
   it.each([401, 403, 404, 503, 500])(
     "does not mint consent after status HTTP%s",
     async (code) => {
