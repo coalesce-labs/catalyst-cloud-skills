@@ -5,15 +5,17 @@ import { bearerFor } from "./oauth.js";
 import type { CachedEvent } from "./events.js";
 
 const headHeader = "x-catalyst-event-backbone-head-seq";
-// A server that filters says how far it looked, so an empty filtered page still moves the cursor.
-const scannedHeader = "x-catalyst-event-backbone-scanned-seq";
 const maxLine = 1_048_576;
+// A filtered page is JSON, sized by the server to about 1 MiB; anything far past that is not ours.
+const maxQueryBody = 16 * maxLine;
+const queryLimit = 200;
+const maxLagPoll = 8_000;
 export interface EventSocket extends EventTarget {
   readyState: number;
   send(data: string): void;
   close(): void;
 }
-/** Narrows the replay on the server when it supports it; callers still filter what arrives. */
+/** Selects the server's filtered events query; callers still filter what arrives. */
 export interface CloudEventFilter {
   type?: string;
   ticket?: string;
@@ -63,17 +65,20 @@ function responseHead(response: Response): number {
   if (!sequence(head)) throw protocol("cloud event head could not be verified");
   return head;
 }
-async function request(ctx: Ctx, since: number, signal: AbortSignal, filter: CloudEventFilter = {}): Promise<Response> {
-  const cfg = requireConfig(ctx);
-  const url = new URL(`${normalizeBaseUrl(cfg.baseUrl)}/api/v1/events/backbone`);
-  url.searchParams.set("since", String(since));
-  if (filter.type) url.searchParams.set("type", filter.type);
-  if (filter.ticket) url.searchParams.set("ticket", filter.ticket);
+function eventsUrl(ctx: Ctx, route: "backbone" | "query", params: Record<string, string | undefined>): URL {
+  const url = new URL(`${normalizeBaseUrl(requireConfig(ctx).baseUrl)}/api/v1/events/${route}`);
+  for (const [name, value] of Object.entries(params)) if (value) url.searchParams.set(name, value);
+  return url;
+}
+async function request(ctx: Ctx, since: number, signal: AbortSignal): Promise<Response> {
+  return send(ctx, eventsUrl(ctx, "backbone", { since: String(since) }), "application/x-ndjson", [409], signal);
+}
+async function send(ctx: Ctx, url: URL, accept: string, allowed: number[], signal: AbortSignal): Promise<Response> {
   const bounded = AbortSignal.any([signal, AbortSignal.timeout(15_000)]);
   const token = await eventBearer(ctx, bounded);
   bounded.throwIfAborted();
   const response = await ctx.fetch(url, {
-    headers: { authorization: `Bearer ${token}`, accept: "application/x-ndjson" },
+    headers: { authorization: `Bearer ${token}`, accept },
     signal: bounded,
     redirect: "error",
   });
@@ -81,7 +86,7 @@ async function request(ctx: Ctx, since: number, signal: AbortSignal, filter: Clo
     await response.body?.cancel();
     throw new CliError("cloud event access refused; check catalyst status and sign in again", "events-auth", 2, response.status);
   }
-  if (response.status !== 200 && response.status !== 409) {
+  if (response.status !== 200 && !allowed.includes(response.status)) {
     await response.body?.cancel();
     if (response.status >= 500 || response.status === 429) {
       const raw = response.headers.get("retry-after");
@@ -106,31 +111,33 @@ export async function cloudEventHead(ctx: Ctx, signal: AbortSignal = AbortSignal
   } finally { await response.body?.cancel(); }
 }
 
-interface ReplayEnd {
-  /** The page's target: the reader asks again until its cursor reaches it. */
-  head: number;
-  /** The last sequence the server examined, when it filtered; absent means every row was sent. */
-  scanned?: number;
+interface PageEnd {
+  /** Every event at or below this sequence was delivered or excluded by the server's filter. */
+  through: number;
+  /** The server has more right now: ask again without waiting. */
+  more: boolean;
+  /** The backbone head the page saw, when it reports one. */
+  head?: number;
+}
+/** The query route cannot serve this cursor: `absent` for good (404), `uncovered` for this page. */
+type Fallback = "absent" | "uncovered";
+
+function validEvent(ctx: Ctx, value: unknown, cursor: number): value is CachedEvent {
+  if (!value || typeof value !== "object") return false;
+  const event = value as Partial<CachedEvent>;
+  return event.tenantId === requireConfig(ctx).account && sequence(event.sequence) && event.sequence > cursor &&
+    typeof event.eventId === "string" && typeof event.type === "string" && typeof event.recordedAt === "string" && "payload" in event;
 }
 
-function responseScanned(response: Response, after: number, head: number): number | undefined {
-  const raw = response.headers.get(scannedHeader);
-  if (raw === null) return undefined;
-  const scanned = raw.trim() === "" ? NaN : Number(raw);
-  if (!sequence(scanned) || scanned < after || scanned > head)
-    throw protocol("cloud event scanned sequence is outside the replayed range");
-  return scanned;
-}
-
-async function* replay(ctx: Ctx, after: number, signal: AbortSignal, filter?: CloudEventFilter): AsyncGenerator<CachedEvent, ReplayEnd> {
-  const response = await request(ctx, after, signal, filter);
+// A page closed early by its consumer ends with undefined.
+async function* replay(ctx: Ctx, after: number, signal: AbortSignal): AsyncGenerator<CachedEvent, PageEnd | undefined> {
+  const response = await request(ctx, after, signal);
   let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
   try {
     const head = responseHead(response);
     if (response.status === 409)
       throw new CliError(`cloud refused event cursor ${after} (head ${head}); history may be missing or the cursor may be ahead. Inspect events status before choosing a new --after cursor`, "events-gap", 2, 409);
     if (head < after) throw protocol("cloud event head moved behind the requested cursor");
-    const scanned = responseScanned(response, after, head);
     if (!response.body) throw protocol("cloud event replay body is absent");
     reader = response.body.getReader();
     const decoder = new TextDecoder("utf-8", { fatal: true });
@@ -140,13 +147,9 @@ async function* replay(ctx: Ctx, after: number, signal: AbortSignal, filter?: Cl
       let value: unknown;
       try { value = JSON.parse(line); } catch { throw protocol("cloud event replay contains invalid JSON"); }
       if (!value || typeof value !== "object") throw protocol("cloud event replay contains an invalid event");
-      const event = value as Partial<CachedEvent>;
-      if (event.tenantId !== requireConfig(ctx).account || !sequence(event.sequence) || event.sequence <= cursor || typeof event.eventId !== "string" || typeof event.type !== "string" || typeof event.recordedAt !== "string" || !("payload" in event))
-        throw protocol("cloud event replay contains an invalid tenant or event sequence");
-      if (scanned !== undefined && event.sequence > scanned)
-        throw protocol("cloud event scanned sequence is short of a delivered row");
-      cursor = event.sequence;
-      return event as CachedEvent;
+      if (!validEvent(ctx, value, cursor)) throw protocol("cloud event replay contains an invalid tenant or event sequence");
+      cursor = value.sequence;
+      return value;
     };
     while (true) {
       signal.throwIfAborted();
@@ -164,12 +167,45 @@ async function* replay(ctx: Ctx, after: number, signal: AbortSignal, filter?: Cl
       if (done) break;
     }
     if (buffer.trim()) { signal.throwIfAborted(); yield parse(buffer.trim()); }
-    if (Math.max(cursor, scanned ?? cursor) === after && after < head) throw protocol("cloud event replay made no progress toward its head");
-    return { head, scanned };
+    if (cursor === after && cursor < head) throw protocol("cloud event replay made no progress toward its head");
+    return { through: cursor, more: cursor < head, head };
   } finally {
     if (reader) { await reader.cancel().catch(() => {}); reader.releaseLock(); }
     else await response.body?.cancel();
   }
+}
+
+// One page of the indexed, filtered query (CTC-4549). The index fills after the archive write, so
+// `coverage.indexedToSeq` may trail the head; the reader polls until it catches up.
+async function* queryPage(ctx: Ctx, after: number, filter: CloudEventFilter, signal: AbortSignal): AsyncGenerator<CachedEvent, PageEnd | Fallback | undefined> {
+  const url = eventsUrl(ctx, "query", { order: "asc", afterSeq: String(after), limit: String(queryLimit), type: filter.type, ticket: filter.ticket });
+  const response = await send(ctx, url, "application/json", [404], signal);
+  if (response.status === 404) { await response.body?.cancel(); return "absent"; }
+  const text = await response.text();
+  if (text.length > maxQueryBody) throw protocol("cloud event query response exceeds its size limit");
+  let body: unknown;
+  try { body = JSON.parse(text); } catch { throw protocol("cloud event query returned invalid JSON"); }
+  const page = (body && typeof body === "object" ? body : {}) as { events?: unknown; next?: unknown; coverage?: { indexedFromSeq?: unknown; indexedToSeq?: unknown } | null };
+  if (!Array.isArray(page.events) || !("next" in page)) throw protocol("cloud event query returned an invalid page");
+  const from = page.coverage?.indexedFromSeq;
+  const to = page.coverage?.indexedToSeq;
+  // Nothing indexed yet, or the cursor sits below the index floor: only the backbone has that range.
+  if (from === null || to === null || from === undefined || to === undefined) return "uncovered";
+  if (!sequence(from) || !sequence(to)) throw protocol("cloud event query coverage is invalid");
+  if (after + 1 < from) return "uncovered";
+  let cursor = after;
+  const events: CachedEvent[] = [];
+  for (const value of page.events) {
+    if (!validEvent(ctx, value, cursor)) throw protocol("cloud event query contains an invalid tenant or event sequence");
+    cursor = value.sequence;
+    events.push(value);
+  }
+  for (const event of events) { signal.throwIfAborted(); yield event; }
+  if (page.next !== null) {
+    if (cursor === after) throw protocol("cloud event query made no progress toward its next page");
+    return { through: cursor, more: true };
+  }
+  return { through: Math.max(cursor, to), more: false };
 }
 
 function pause(ms: number, signal: AbortSignal, wakes?: EventTarget): Promise<void> {
@@ -190,8 +226,12 @@ function pause(ms: number, signal: AbortSignal, wakes?: EventTarget): Promise<vo
 /** Foreground push subscription with durable replay, reconnecting from the last yielded cursor. */
 export async function* cloudEvents(ctx: Ctx, options: { after?: number; filter?: CloudEventFilter; signal: AbortSignal }, deps: CloudEventDeps = {}): AsyncGenerator<CachedEvent> {
   const { signal } = options;
+  const filter = options.filter ?? {};
   let cursor = options.after;
   let backoff = 1_000;
+  // A filter reads the server's index; a server without the route gets the backbone for the whole run.
+  let indexed = Boolean(filter.type || filter.ticket);
+  let lagPoll = 1_000;
   while (!signal.aborted) {
     let socket: EventSocket | undefined;
     let heartbeat: ReturnType<typeof setInterval> | undefined;
@@ -228,6 +268,7 @@ export async function* cloudEvents(ctx: Ctx, options: { after?: number; filter?:
     try {
       // Capture the future-only start before connecting, then replay to close the handshake race.
       const head = await cloudEventHead(ctx, signal);
+      let knownHead = head;
       cursor ??= head;
       if (cursor > head) throw new CliError(`cloud refused event cursor ${cursor} (head ${head}); inspect events status before choosing a new --after cursor`, "events-gap", 2, 409);
       if (signal.aborted) break;
@@ -251,9 +292,7 @@ export async function* cloudEvents(ctx: Ctx, options: { after?: number; filter?:
       heartbeat = setInterval(() => {
         try { socket?.send(JSON.stringify({ type: "ping" })); } catch { failed(); }
       }, 10_000);
-      while (!signal.aborted) {
-        if (failure) throw failure;
-        const page = replay(ctx, cursor, signal, options.filter);
+      const follow = async function* <End>(page: AsyncGenerator<CachedEvent, End | undefined>): AsyncGenerator<CachedEvent, End | undefined> {
         let result = await page.next();
         try {
           while (!result.done) {
@@ -265,12 +304,30 @@ export async function* cloudEvents(ctx: Ctx, options: { after?: number; filter?:
             signal.throwIfAborted();
             result = await page.next();
           }
-        } finally { await page.return({ head: cursor }); }
+        } finally { await page.return(undefined); }
+        return result.value;
+      };
+      while (!signal.aborted) {
+        if (failure) throw failure;
+        const start: number = cursor;
+        let end = indexed ? yield* follow(queryPage(ctx, start, filter, signal)) : yield* follow(replay(ctx, start, signal));
+        const queried = indexed && end !== "absent" && end !== "uncovered";
+        if (end === "absent") indexed = false;
+        if (end === "absent" || end === "uncovered") end = yield* follow(replay(ctx, cursor, signal));
+        if (!end) return;
         backoff = 1_000;
         if (failure) throw failure;
-        // Rows the server filtered out are behind its scanned sequence; never ask for them again.
-        cursor = Math.max(cursor, result.value.scanned ?? cursor);
-        if (cursor < result.value.head || cursor < notifiedHead) continue;
+        cursor = Math.max(cursor, end.through);
+        knownHead = Math.max(knownHead, end.head ?? 0, notifiedHead);
+        if (end.more) continue;
+        if (queried && cursor < knownHead) {
+          // The index trails the archive write; poll it instead of spinning or waiting for a push.
+          lagPoll = cursor > start ? 1_000 : Math.min(lagPoll * 2, maxLagPoll);
+          await pause(lagPoll, signal);
+          continue;
+        }
+        lagPoll = 1_000;
+        if (cursor < knownHead) continue;
         // A bounded replay also catches a lost notification or a silent half-open socket.
         await pause(30_000, signal, wakes);
       }

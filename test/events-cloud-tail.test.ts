@@ -212,6 +212,25 @@ test("a printed line has the same schema and bytes as the local event file's lin
   expect(sink.chunks).toEqual([`${fixture}\n`]);
 });
 
+test("a filtered tail prints the indexed query's events in the same bytes and still filters on the client", async () => {
+  const ctx = context();
+  const fixture = '{"tenantId":"tenant-1","sequence":6,"eventId":"evt-6","type":"relay.phase.completed","schemaVersion":1,"recordedAt":"2026-10-01T00:00:00.000Z","entity":{"type":"ticket","id":"CTC-4511"},"payload":{"ticket":"CTC-4511","phase":"plan"}}';
+  const urls: URL[] = [];
+  ctx.fetch = async (input) => {
+    const url = new URL(String(input));
+    urls.push(url);
+    if (url.searchParams.get("since") === String(Number.MAX_SAFE_INTEGER)) return response(6, [], 409);
+    // A server that over-matches: the client belt drops the other ticket's event.
+    return new Response(`{"events":[${JSON.stringify(row(5, "relay.phase.completed", "CTC-1"))},${fixture}],"next":null,"coverage":{"indexedFromSeq":1,"indexedToSeq":6}}`, { headers: { "content-type": "application/json" } });
+  };
+  const sink = new Sink();
+  const waited = await waitForCloudEvent(ctx, { after: 4, filter: { type: "relay.phase.completed", ticket: "ctc-4511" }, timeoutMs: 60_000, out: sink }, { socket: () => new Socket() });
+  expect(waited.outcome).toBe("matched");
+  expect(sink.chunks).toEqual([`${fixture}\n`]);
+  expect(urls[1]?.pathname).toBe("/api/v1/events/query");
+  expect(urls[1]?.searchParams.get("ticket")).toBe("CTC-4511");
+});
+
 test("a token refresh mid-tail neither repeats nor skips an event", async () => {
   vi.useFakeTimers();
   vi.setSystemTime(new Date("2026-10-01T00:00:00Z"));
@@ -227,20 +246,22 @@ test("a token refresh mid-tail neither repeats nor skips an event", async () => 
   const sink = new Sink();
   const stop = new AbortController();
   let served = 0;
+  let head = 11;
   ctx.fetch = async (input, init) => {
     const url = new URL(String(input));
     if (url.pathname === "/api/v1/auth/cli") return Response.json({ clientId: "cli", issuer: "https://cloud.test", deviceAuthorizationUrl: "https://cloud.test/device", tokenUrl: "https://cloud.test/token", jwksUrl: "https://cloud.test/jwks" });
     if (url.pathname === "/token") return Response.json({ access_token: "new-access", refresh_token: "new-refresh" });
     tokens.push(String((init?.headers as Record<string, string>).authorization));
     const since = Number(url.searchParams.get("since"));
-    if (since === Number.MAX_SAFE_INTEGER) return response(20, [], 409);
+    if (since === Number.MAX_SAFE_INTEGER) return response(head, [], 409);
     served += 1;
-    return response(since + 1, [row(since + 1)]);
+    return response(head, since < head ? [row(since + 1)] : []);
   };
   const refreshing = tailCloudEvents(ctx, { after: 10, out: sink, signal: stop.signal }, { socket: () => { const socket = new Socket(); sockets.push(socket); return socket; } });
   await vi.advanceTimersByTimeAsync(0);
   await vi.waitFor(() => expect(sink.sequences()).toEqual([11]));
   vi.setSystemTime(new Date(Date.now() + 120_000));
+  head = 12;
   sockets[0]?.disconnect(4401);
   await vi.advanceTimersByTimeAsync(1_000);
   await vi.waitFor(() => expect(sink.sequences()).toEqual([11, 12]));
