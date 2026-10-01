@@ -271,3 +271,169 @@ test("invalid notification followed by close refuses even already buffered rows"
   required(socket).disconnect();
   await expect(stream.next()).rejects.toThrow("invalid tenant or head");
 });
+
+// CTC-4549's filtered query: JSON pages from the event index, with the indexed range stated.
+function page(events: unknown[], next: unknown = null, coverage: unknown = { indexedFromSeq: 1, indexedToSeq: 1_000 }) {
+  return Response.json({ events, next, coverage });
+}
+function route(input: unknown) {
+  const url = new URL(String(input));
+  const name = url.pathname.split("/").at(-1);
+  const cursor = Number(url.searchParams.get(name === "query" ? "afterSeq" : "since"));
+  return { url, name, cursor, probe: cursor === Number.MAX_SAFE_INTEGER };
+}
+const filter = { type: "phase.completed", ticket: "CTC-4511" };
+
+test("a filtered reader asks the events query with its filters; the head probe stays unfiltered", async () => {
+  const ctx = context();
+  const urls: URL[] = [];
+  ctx.fetch = async (input) => {
+    const { url, probe } = route(input);
+    urls.push(url);
+    return probe ? response(5, [], 409) : page([row(5)], null, { indexedFromSeq: 1, indexedToSeq: 5 });
+  };
+  const stream = cloudEvents(ctx, { after: 4, filter, signal: new AbortController().signal }, { socket: () => new Socket() });
+  expect((await stream.next()).value).toEqual(row(5));
+  await stream.return(undefined);
+  expect(required(urls[0]).pathname).toBe("/api/v1/events/backbone");
+  expect([...required(urls[0]).searchParams.keys()]).toEqual(["since"]);
+  expect(required(urls[1]).pathname).toBe("/api/v1/events/query");
+  expect(Object.fromEntries(required(urls[1]).searchParams)).toEqual({ order: "asc", afterSeq: "4", limit: "200", type: "phase.completed", ticket: "CTC-4511" });
+});
+
+test("a filtered reader follows next pages, then moves to the indexed sequence and waits for a push", async () => {
+  const ctx = context();
+  let socket: Socket | undefined;
+  const requested: string[] = [];
+  ctx.fetch = async (input) => {
+    const { name, cursor, probe } = route(input);
+    if (probe) return response(9, [], 409);
+    requested.push(`${name}:${cursor}`);
+    if (cursor === 4) return page([row(5)], { param: "afterSeq", value: 5 }, { indexedFromSeq: 1, indexedToSeq: 9 });
+    if (cursor === 5) return page([row(8)], null, { indexedFromSeq: 1, indexedToSeq: 9 });
+    return page([row(12)], null, { indexedFromSeq: 1, indexedToSeq: 12 });
+  };
+  const stream = cloudEvents(ctx, { after: 4, filter, signal: new AbortController().signal }, { socket: () => socket = new Socket() });
+  expect((await stream.next()).value?.sequence).toBe(5);
+  expect((await stream.next()).value?.sequence).toBe(8);
+  const next = stream.next();
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  // Indexed through the head: nothing between 8 and 9 matched, so it waits rather than asking again.
+  expect(requested).toEqual(["query:4", "query:5"]);
+  required(socket).head(12);
+  expect((await next).value?.sequence).toBe(12);
+  expect(requested).toEqual(["query:4", "query:5", "query:9"]);
+  await stream.return(undefined);
+});
+
+test("an empty filtered page still moves the cursor to the indexed sequence", async () => {
+  const ctx = context();
+  let socket: Socket | undefined;
+  const requested: string[] = [];
+  ctx.fetch = async (input) => {
+    const { name, cursor, probe } = route(input);
+    if (probe) return response(9, [], 409);
+    requested.push(`${name}:${cursor}`);
+    return cursor === 4 ? page([], null, { indexedFromSeq: 1, indexedToSeq: 9 }) : page([row(12)], null, { indexedFromSeq: 1, indexedToSeq: 12 });
+  };
+  const stream = cloudEvents(ctx, { after: 4, filter, signal: new AbortController().signal }, { socket: () => socket = new Socket() });
+  const next = stream.next();
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  expect(requested).toEqual(["query:4"]);
+  required(socket).head(12);
+  expect((await next).value?.sequence).toBe(12);
+  expect(requested).toEqual(["query:4", "query:9"]);
+  await stream.return(undefined);
+});
+
+test("while the index trails the head, the reader polls with a capped backoff and prints once it is indexed", async () => {
+  vi.useFakeTimers();
+  const ctx = context();
+  const start = Date.now();
+  const polls: number[] = [];
+  // The event at 6 is appended at t=0 and its index row lands 10 s later (the archive lag).
+  ctx.fetch = async (input) => {
+    const { probe } = route(input);
+    if (probe) return response(6, [], 409);
+    const elapsed = Date.now() - start;
+    polls.push(elapsed);
+    return elapsed >= 10_000 ? page([row(6)], null, { indexedFromSeq: 1, indexedToSeq: 6 }) : page([], null, { indexedFromSeq: 1, indexedToSeq: 5 });
+  };
+  const stream = cloudEvents(ctx, { after: 4, filter, signal: new AbortController().signal }, { socket: () => new Socket() });
+  const next = stream.next();
+  await vi.advanceTimersByTimeAsync(15_000);
+  expect((await next).value?.sequence).toBe(6);
+  // The client adds at most 8 s over the archive lag: 10 s lag, printed at 15 s.
+  expect(polls).toEqual([0, 1_000, 3_000, 7_000, 15_000]);
+  await stream.return(undefined);
+});
+
+test("a server without the query route gets the backbone for the rest of the run", async () => {
+  const ctx = context();
+  let socket: Socket | undefined;
+  const requested: string[] = [];
+  ctx.fetch = async (input) => {
+    const { name, cursor, probe } = route(input);
+    if (probe) return response(6, [], 409);
+    requested.push(`${name}:${cursor}`);
+    if (name === "query") return new Response("not found", { status: 404 });
+    return cursor === 4 ? response(6, [row(5), row(6)]) : response(7, [row(7)]);
+  };
+  const stream = cloudEvents(ctx, { after: 4, filter, signal: new AbortController().signal }, { socket: () => socket = new Socket() });
+  for (const seq of [5, 6]) expect((await stream.next()).value?.sequence).toBe(seq);
+  const next = stream.next();
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  required(socket).head(7);
+  expect((await next).value?.sequence).toBe(7);
+  expect(requested).toEqual(["query:4", "backbone:4", "backbone:6"]);
+  await stream.return(undefined);
+});
+
+test.each([
+  ["below the index floor", { indexedFromSeq: 5, indexedToSeq: 6 }],
+  ["with nothing indexed yet", { indexedFromSeq: null, indexedToSeq: null }],
+  ["with no coverage", null],
+])("a cursor %s reads that range from the backbone, then returns to the query", async (_name, coverage) => {
+  const ctx = context();
+  let socket: Socket | undefined;
+  const requested: string[] = [];
+  ctx.fetch = async (input) => {
+    const { name, cursor, probe } = route(input);
+    if (probe) return response(6, [], 409);
+    requested.push(`${name}:${cursor}`);
+    if (name === "backbone") return response(6, [row(3), row(6)]);
+    return cursor === 2 ? page([row(6)], null, coverage) : page([row(7)], null, { indexedFromSeq: 5, indexedToSeq: 7 });
+  };
+  const stream = cloudEvents(ctx, { after: 2, filter, signal: new AbortController().signal }, { socket: () => socket = new Socket() });
+  for (const seq of [3, 6]) expect((await stream.next()).value?.sequence).toBe(seq);
+  const next = stream.next();
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  required(socket).head(7);
+  expect((await next).value?.sequence).toBe(7);
+  expect(requested).toEqual(["query:2", "backbone:2", "query:6"]);
+  await stream.return(undefined);
+});
+
+test.each([
+  ["invalid JSON", () => new Response("{", { status: 200 }), "invalid JSON"],
+  ["no events array", () => Response.json({ next: null, coverage: { indexedFromSeq: 1, indexedToSeq: 9 } }), "invalid page"],
+  ["no next", () => Response.json({ events: [], coverage: { indexedFromSeq: 1, indexedToSeq: 9 } }), "invalid page"],
+  ["a foreign event", () => page([{ ...row(5), tenantId: "other" }]), "invalid tenant or event sequence"],
+  ["a descending page", () => page([row(6), row(5)]), "invalid tenant or event sequence"],
+  ["an event at the cursor", () => page([row(4)]), "invalid tenant or event sequence"],
+  ["an empty page that claims more", () => page([], { value: 4 }), "made no progress"],
+  ["a coverage that is not a sequence", () => page([], null, { indexedFromSeq: 1, indexedToSeq: "9" }), "coverage is invalid"],
+  ["an oversized body", () => new Response(" ".repeat(16 * 1_048_576 + 1)), "size limit"],
+])("a query page with %s fails before output", async (_name, reply, message) => {
+  const ctx = context();
+  ctx.fetch = async (input) => route(input).probe ? response(9, [], 409) : reply();
+  const stream = cloudEvents(ctx, { after: 4, filter, signal: new AbortController().signal }, { socket: () => new Socket() });
+  await expect(stream.next()).rejects.toThrow(message);
+});
+
+test("a refused filter is reported, not retried", async () => {
+  const ctx = context();
+  ctx.fetch = async (input) => route(input).probe ? response(9, [], 409) : Response.json({ error: "unknown_type" }, { status: 400 });
+  const stream = cloudEvents(ctx, { after: 4, filter: { type: "phase.completed" }, signal: new AbortController().signal }, { socket: () => new Socket() });
+  await expect(stream.next()).rejects.toThrow("refused (HTTP 400)");
+});
