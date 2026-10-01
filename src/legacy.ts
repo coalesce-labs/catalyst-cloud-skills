@@ -7,7 +7,13 @@
 // The list is fixed on purpose. A prefix match would one day catch a current job (the housekeeping
 // job, the sandbox credit guard, jobs a person made); this matches names the old runtime installed,
 // read at the source commit below, and nothing else. Shared data folders are always kept. The historical --data flag cannot remove them.
-import { existsSync, lstatSync, readFileSync, readdirSync, unlinkSync } from "node:fs";
+import {
+  existsSync,
+  lstatSync,
+  readFileSync,
+  readdirSync,
+  unlinkSync,
+} from "node:fs";
 import { spawnSync } from "node:child_process";
 import { join } from "node:path";
 import { flagBool, positionals, type ParsedArgs } from "./args.js";
@@ -46,12 +52,27 @@ export const OLD_LAUNCHD_LABELS: readonly string[] = [
 const OLD_ROLE_PREFIX = "com.catalyst.role.";
 /** systemd user units (~/.config/systemd/user) the old runtime's workstation pieces used on Linux. System
  *  units under /etc/systemd/system are a host's, current, and never looked at. */
-export const OLD_USER_UNITS: readonly string[] = ["catalyst.service", "catalyst-monitor.service"];
+export const OLD_USER_UNITS: readonly string[] = [
+  "catalyst.service",
+  "catalyst-monitor.service",
+];
 /** Command files the old runtime put on the person's PATH. `~/.local/bin/catalyst` is NOT one: that
  *  name belongs to the current CLI wherever npm put it. */
-export const OLD_BINS: readonly string[] = [".local/bin/catalyst-events", ".local/bin/catalyst-filter", ".local/bin/catalyst-hud", ".local/bin/catalyst-monitor", ".local/bin/catalyst-myown"];
+export const OLD_BINS: readonly string[] = [
+  ".local/bin/catalyst-events",
+  ".local/bin/catalyst-filter",
+  ".local/bin/catalyst-hud",
+  ".local/bin/catalyst-monitor",
+  ".local/bin/catalyst-myown",
+];
 /** Shared roots also hold current skills, logs, hosts and seats. Never remove these directories. */
-export const OLD_DATA_DIRS: readonly string[] = [".catalyst", ".config/catalyst", ".local/state/catalyst", ".local/state/catalyst-fleet-runner", ".local/state/catalyst-ledger"];
+export const OLD_DATA_DIRS: readonly string[] = [
+  ".catalyst",
+  ".config/catalyst",
+  ".local/state/catalyst",
+  ".local/state/catalyst-fleet-runner",
+  ".local/state/catalyst-ledger",
+];
 
 export type LegacyKind = "plugin" | "marketplace" | "job" | "bin" | "data";
 export interface LegacyItem {
@@ -62,7 +83,10 @@ export interface LegacyItem {
   /** A shared data folder: always kept. */
   data?: boolean;
 }
-export type LegacyRun = (cmd: string, args: string[]) => { status: number; stdout: string; stderr: string };
+export type LegacyRun = (
+  cmd: string,
+  args: string[],
+) => { status: number; stdout: string; stderr: string };
 export interface LegacyDeps {
   run?: LegacyRun;
   platform?: NodeJS.Platform;
@@ -71,12 +95,15 @@ export interface LegacyDeps {
   prompt?: (question: string) => Promise<string>;
 }
 
-const RECOMMEND = "Remove them: the cloud runtime replaced them, and left in place they can start old jobs or shadow current commands.";
+const RECOMMEND =
+  "Remove them: the cloud runtime replaced them, and left in place they can start old jobs or shadow current commands.";
 
 function readJson(path: string): Record<string, unknown> | null {
   try {
     const v = JSON.parse(readFileSync(path, "utf8")) as unknown;
-    return v !== null && typeof v === "object" ? (v as Record<string, unknown>) : null;
+    return v !== null && typeof v === "object"
+      ? (v as Record<string, unknown>)
+      : null;
   } catch {
     return null;
   }
@@ -89,17 +116,35 @@ function findPlugins(home: string): LegacyItem[] {
   const old = Object.entries(marketplaces)
     .filter(([, v]) => {
       const src = (v as { source?: { repo?: string } } | null)?.source;
-      return typeof src?.repo === "string" && src.repo.toLowerCase() === OLD_MARKETPLACE_REPO;
+      return (
+        typeof src?.repo === "string" &&
+        src.repo.toLowerCase() === OLD_MARKETPLACE_REPO
+      );
     })
     .map(([name]) => name);
   if (old.length === 0) return [];
-  const installed = ((readJson(join(dir, "installed_plugins.json")) ?? {}) as { plugins?: Record<string, unknown> }).plugins ?? {};
+  const installed =
+    (
+      (readJson(join(dir, "installed_plugins.json")) ?? {}) as {
+        plugins?: Record<string, unknown>;
+      }
+    ).plugins ?? {};
   const items: LegacyItem[] = [];
   for (const key of Object.keys(installed)) {
     const at = key.lastIndexOf("@");
-    if (at > 0 && old.includes(key.slice(at + 1))) items.push({ kind: "plugin", name: key, path: join(dir, "installed_plugins.json") });
+    if (at > 0 && old.includes(key.slice(at + 1)))
+      items.push({
+        kind: "plugin",
+        name: key,
+        path: join(dir, "installed_plugins.json"),
+      });
   }
-  for (const name of old) items.push({ kind: "marketplace", name, path: join(dir, "known_marketplaces.json") });
+  for (const name of old)
+    items.push({
+      kind: "marketplace",
+      name,
+      path: join(dir, "known_marketplaces.json"),
+    });
   return items;
 }
 
@@ -115,51 +160,116 @@ function findJobs(home: string, platform: NodeJS.Platform): LegacyItem[] {
     return files
       .filter((f) => f.endsWith(".plist"))
       .map((f) => f.slice(0, -".plist".length))
-      .filter((label) => OLD_LAUNCHD_LABELS.includes(label) || label.startsWith(OLD_ROLE_PREFIX))
+      .filter(
+        (label) =>
+          OLD_LAUNCHD_LABELS.includes(label) ||
+          label.startsWith(OLD_ROLE_PREFIX),
+      )
       .sort()
-      .map((label) => ({ kind: "job" as const, name: label, path: join(dir, `${label}.plist`) }));
+      .map((label) => ({
+        kind: "job" as const,
+        name: label,
+        path: join(dir, `${label}.plist`),
+      }));
   }
   if (platform === "linux") {
     const dir = join(home, ".config", "systemd", "user");
-    return OLD_USER_UNITS.filter((u) => existsSync(join(dir, u))).map((u) => ({ kind: "job" as const, name: u, path: join(dir, u) }));
+    return OLD_USER_UNITS.filter((u) => existsSync(join(dir, u))).map((u) => ({
+      kind: "job" as const,
+      name: u,
+      path: join(dir, u),
+    }));
   }
   return [];
 }
 
 const tilde = (rel: string) => `~/${rel}`;
 function findFiles(home: string): LegacyItem[] {
-  const bins = OLD_BINS.filter((rel) => existsSync(join(home, rel))).map((rel) => ({ kind: "bin" as const, name: tilde(rel), path: join(home, rel) }));
-  const data = OLD_DATA_DIRS.filter((rel) => existsSync(join(home, rel))).map((rel) => ({ kind: "data" as const, name: tilde(rel), path: join(home, rel), data: true }));
+  const bins = OLD_BINS.filter((rel) => existsSync(join(home, rel))).map(
+    (rel) => ({
+      kind: "bin" as const,
+      name: tilde(rel),
+      path: join(home, rel),
+    }),
+  );
+  const data = OLD_DATA_DIRS.filter((rel) => existsSync(join(home, rel))).map(
+    (rel) => ({
+      kind: "data" as const,
+      name: tilde(rel),
+      path: join(home, rel),
+      data: true,
+    }),
+  );
   return [...bins, ...data];
 }
 
 /** Every old piece on this machine, in removal order: plugins, their marketplace, jobs, bins, data. Never writes. */
-export function findLegacy(home: string, platform: NodeJS.Platform): LegacyItem[] {
-  return [...findPlugins(home), ...findJobs(home, platform), ...findFiles(home)];
+export function findLegacy(
+  home: string,
+  platform: NodeJS.Platform,
+): LegacyItem[] {
+  return [
+    ...findPlugins(home),
+    ...findJobs(home, platform),
+    ...findFiles(home),
+  ];
 }
 
 const defaultRun: LegacyRun = (cmd, args) => {
   const r = spawnSync(cmd, args, { encoding: "utf8", timeout: 60_000 });
-  return { status: r.status ?? 1, stdout: r.stdout ?? "", stderr: r.error ? r.error.message : (r.stderr ?? "") };
+  return {
+    status: r.status ?? 1,
+    stdout: r.stdout ?? "",
+    stderr: r.error ? r.error.message : (r.stderr ?? ""),
+  };
 };
 
 /** Remove one item through the tool that owns it. Returns null on success, else the reason it is still there. */
-function remove(item: LegacyItem, run: LegacyRun, platform: NodeJS.Platform, uid: number): string | null {
+function remove(
+  item: LegacyItem,
+  run: LegacyRun,
+  platform: NodeJS.Platform,
+  uid: number,
+): string | null {
   const tool = (cmd: string, args: string[], what: string): string | null => {
     const r = run(cmd, args);
-    return r.status === 0 ? null : `${what} failed: ${(r.stderr || r.stdout).trim().split("\n")[0] || `exit ${r.status}`}`;
+    return r.status === 0
+      ? null
+      : `${what} failed: ${(r.stderr || r.stdout).trim().split("\n")[0] || `exit ${r.status}`}`;
   };
   try {
-    if (item.kind === "plugin") return tool("claude", ["plugin", "uninstall", item.name], "claude plugin uninstall");
-    if (item.kind === "marketplace") return tool("claude", ["plugin", "marketplace", "remove", item.name], "claude plugin marketplace remove");
+    if (item.kind === "plugin")
+      return tool(
+        "claude",
+        ["plugin", "uninstall", item.name],
+        "claude plugin uninstall",
+      );
+    if (item.kind === "marketplace")
+      return tool(
+        "claude",
+        ["plugin", "marketplace", "remove", item.name],
+        "claude plugin marketplace remove",
+      );
     if (item.kind === "job") {
-      const why = platform === "darwin" ? tool("launchctl", ["bootout", `gui/${uid}/${item.name}`], "launchctl bootout") : tool("systemctl", ["--user", "disable", "--now", item.name], "systemctl --user disable --now");
+      const why =
+        platform === "darwin"
+          ? tool(
+              "launchctl",
+              ["bootout", `gui/${uid}/${item.name}`],
+              "launchctl bootout",
+            )
+          : tool(
+              "systemctl",
+              ["--user", "disable", "--now", item.name],
+              "systemctl --user disable --now",
+            );
       if (why !== null) return why;
       unlinkSync(item.path);
       return null;
     }
     // CTC-4496: even explicit --data cannot delete shared roots. Unknown directories stay too.
-    if (item.data || lstatSync(item.path).isDirectory()) return "directory kept; shared data is protected";
+    if (item.data || lstatSync(item.path).isDirectory())
+      return "directory kept; shared data is protected";
     unlinkSync(item.path);
     return null;
   } catch (err) {
@@ -167,26 +277,76 @@ function remove(item: LegacyItem, run: LegacyRun, platform: NodeJS.Platform, uid
   }
 }
 
-export async function cmdLegacy(args: ParsedArgs, ctx: Ctx, deps: LegacyDeps = {}): Promise<number> {
-  if (positionals(args).length > 0) throw new UsageError("legacy takes no positional argument; flags are --remove, --data, --yes, --json");
+export async function cmdLegacy(
+  args: ParsedArgs,
+  ctx: Ctx,
+  deps: LegacyDeps = {},
+): Promise<number> {
+  if (positionals(args).length > 0)
+    throw new UsageError(
+      "legacy takes no positional argument; flags are --remove, --data, --yes, --json",
+    );
   const wantRemove = flagBool(args, "remove");
   const withData = flagBool(args, "data");
-  if (withData && !wantRemove) throw new UsageError("--data belongs with --remove");
+  if (withData && !wantRemove)
+    throw new UsageError("--data belongs with --remove");
   const platform = deps.platform ?? process.platform;
-  const uid = deps.uid ?? (typeof process.getuid === "function" ? process.getuid() : 0);
+  const uid =
+    deps.uid ?? (typeof process.getuid === "function" ? process.getuid() : 0);
   const run = deps.run ?? defaultRun;
   const found = findLegacy(ctx.home, platform);
-  const emit = (body: Record<string, unknown>, lines: string[]) => { if (args.json) ctx.stdout(JSON.stringify(body)); else for (const l of lines) ctx.stdout(l); };
-  if (found.length === 0) {
-    emit({ sourceCommit: LEGACY_SOURCE_COMMIT, found: [], removed: [], remaining: [] }, ["no leftovers of the old local Catalyst runtime on this machine"]);
+  const legacy = found.filter((item) => !item.data);
+  const shared = found.filter((item) => item.data);
+  const emit = (body: Record<string, unknown>, lines: string[]) => {
+    if (args.json) ctx.stdout(JSON.stringify(body));
+    else for (const l of lines) ctx.stdout(l);
+  };
+  if (legacy.length === 0) {
+    emit(
+      {
+        sourceCommit: LEGACY_SOURCE_COMMIT,
+        found: [],
+        removed: [],
+        remaining: [],
+        kept: shared,
+      },
+      [
+        "no leftovers of the old local Catalyst runtime on this machine",
+        ...(shared.length
+          ? ["shared current Catalyst data folders are present and kept"]
+          : []),
+      ],
+    );
     return 0;
   }
   const listLines = [
-    `Leftovers of the old local Catalyst runtime on this machine (${found.length}):`,
-    ...found.map((f) => `  ${f.kind}: ${f.name}${f.kind === "job" ? ` — ${f.path}` : f.data ? " (kept: shared current state)" : ""}`),
+    `Leftovers of the old local Catalyst runtime on this machine (${legacy.length}):`,
+    ...legacy.map(
+      (f) => `  ${f.kind}: ${f.name}${f.kind === "job" ? ` — ${f.path}` : ""}`,
+    ),
+    ...(shared.length
+      ? [
+          "Shared current data folders (kept):",
+          ...shared.map(
+            (f) => `  ${f.kind}: ${f.name} (kept: shared current state)`,
+          ),
+        ]
+      : []),
   ];
   if (!wantRemove) {
-    emit({ sourceCommit: LEGACY_SOURCE_COMMIT, found, removed: [], remaining: found }, [...listLines, RECOMMEND, "Run: catalyst legacy --remove (all data folders are kept)"]);
+    emit(
+      {
+        sourceCommit: LEGACY_SOURCE_COMMIT,
+        found,
+        removed: [],
+        remaining: found,
+      },
+      [
+        ...listLines,
+        RECOMMEND,
+        "Run: catalyst legacy --remove (all data folders are kept)",
+      ],
+    );
     return 1;
   }
   // the one question, only on a terminal; --yes answers it without asking
@@ -194,15 +354,43 @@ export async function cmdLegacy(args: ParsedArgs, ctx: Ctx, deps: LegacyDeps = {
   if (!go) {
     const tty = (deps.isTty ?? stdinIsTty)();
     if (!tty) {
-      emit({ sourceCommit: LEGACY_SOURCE_COMMIT, found, removed: [], remaining: found, asked: false }, [...listLines, RECOMMEND, "nothing removed: no terminal to ask on; run catalyst legacy --remove --yes to remove these without a question (all data folders are kept)"]);
+      emit(
+        {
+          sourceCommit: LEGACY_SOURCE_COMMIT,
+          found,
+          removed: [],
+          remaining: found,
+          asked: false,
+        },
+        [
+          ...listLines,
+          RECOMMEND,
+          "nothing removed: no terminal to ask on; run catalyst legacy --remove --yes to remove these without a question (all data folders are kept)",
+        ],
+      );
       return 1;
     }
     for (const l of listLines) ctx.stdout(l);
     ctx.stdout(RECOMMEND);
-    const answer = (await (deps.prompt ?? ((q: string) => promptSecret(q)))(`Remove ${found.length} item${found.length === 1 ? "" : "s"}, keeping all data folders? [y/N] `)).trim().toLowerCase();
+    const answer = (
+      await (deps.prompt ?? ((q: string) => promptSecret(q)))(
+        `Remove ${legacy.length} item${legacy.length === 1 ? "" : "s"}, keeping all data folders? [y/N] `,
+      )
+    )
+      .trim()
+      .toLowerCase();
     go = answer === "y" || answer === "yes";
     if (!go) {
-      emit({ sourceCommit: LEGACY_SOURCE_COMMIT, found, removed: [], remaining: found, asked: true }, ["nothing removed; run catalyst legacy --remove again when ready"]);
+      emit(
+        {
+          sourceCommit: LEGACY_SOURCE_COMMIT,
+          found,
+          removed: [],
+          remaining: found,
+          asked: true,
+        },
+        ["nothing removed; run catalyst legacy --remove again when ready"],
+      );
       return 1;
     }
   }
@@ -211,15 +399,40 @@ export async function cmdLegacy(args: ParsedArgs, ctx: Ctx, deps: LegacyDeps = {
   const kept: LegacyItem[] = [];
   const lines: string[] = [];
   for (const item of found) {
-    if (item.data) { kept.push(item); lines.push(`kept: ${item.kind} ${item.name} (shared current state; always kept)`); continue; }
+    if (item.data) {
+      kept.push(item);
+      lines.push(
+        `kept: ${item.kind} ${item.name} (shared current state; always kept)`,
+      );
+      continue;
+    }
     const why = remove(item, run, platform, uid);
-    if (why === null) { removed.push(item); lines.push(`removed: ${item.kind} ${item.name}`); }
-    else { failed.push({ item, why }); lines.push(`still present: ${item.kind} ${item.name} (${why})`); }
+    if (why === null) {
+      removed.push(item);
+      lines.push(`removed: ${item.kind} ${item.name}`);
+    } else {
+      failed.push({ item, why });
+      lines.push(`still present: ${item.kind} ${item.name} (${why})`);
+    }
   }
   // re-check from the same list, so the report says what the machine holds now, not what was attempted
   const remaining = findLegacy(ctx.home, platform).filter((f) => !f.data);
   const keptNote = kept.length > 0 ? "; all shared data folders were kept" : "";
-  lines.push(remaining.length === 0 ? `re-checked: nothing of the old runtime remains${keptNote}` : `re-checked: ${remaining.length} item${remaining.length === 1 ? "" : "s"} of the old runtime remain${remaining.length === 1 ? "s" : ""}${keptNote}: ${remaining.map((r) => `${r.kind} ${r.name}`).join(", ")}`);
-  emit({ sourceCommit: LEGACY_SOURCE_COMMIT, found, removed, remaining: [...remaining, ...kept], kept, failed }, lines);
+  lines.push(
+    remaining.length === 0
+      ? `re-checked: nothing of the old runtime remains${keptNote}`
+      : `re-checked: ${remaining.length} item${remaining.length === 1 ? "" : "s"} of the old runtime remain${remaining.length === 1 ? "s" : ""}${keptNote}: ${remaining.map((r) => `${r.kind} ${r.name}`).join(", ")}`,
+  );
+  emit(
+    {
+      sourceCommit: LEGACY_SOURCE_COMMIT,
+      found,
+      removed,
+      remaining: [...remaining, ...kept],
+      kept,
+      failed,
+    },
+    lines,
+  );
   return remaining.length === 0 ? 0 : 1;
 }
