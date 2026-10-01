@@ -34,23 +34,39 @@ export interface CloudTailResult {
   event?: CachedEvent;
 }
 
-/** The same matching rules as the local tail, so a filter means one thing from either source. */
+// A lease causation names its ticket: `lease:<ticket>/<phase>#<nonce>` (event-index/fields.ts).
+const CAUSED_BY_LEASE = /^lease:([^/]+)\/[^#]+#/;
+
+/** The ticket an event is about, resolved the way the cloud's event index resolves it
+ *  (catalyst-cloud apps/mirror/src/event-index/fields.ts): the ticket entity first, then
+ *  `payload.ticket`, then the lease that caused it. A body-unavailable stub carries the index's own
+ *  `ticket`. Nothing else in the payload counts, so a filter means one thing from either source. */
+export function eventTicket(event: CachedEvent): string | null {
+  const e = event as CachedEvent & {
+    entity?: { type?: unknown; id?: unknown; identifier?: unknown };
+    causationId?: unknown;
+    ticket?: unknown;
+    bodyUnavailable?: unknown;
+  };
+  const named = (value: unknown) => (typeof value === "string" && value.length > 0 ? value : null);
+  if (e.bodyUnavailable === true && named(e.ticket)) return named(e.ticket);
+  if (e.entity && (e.entity.type === "ticket" || e.entity.type === "issue")) {
+    const fromEntity = named(e.entity.id) ?? named(e.entity.identifier);
+    if (fromEntity) return fromEntity;
+  }
+  const payload = e.payload && typeof e.payload === "object" ? (e.payload as Record<string, unknown>) : undefined;
+  const fromPayload = named(payload?.ticket);
+  if (fromPayload) return fromPayload;
+  const lease = typeof e.causationId === "string" ? CAUSED_BY_LEASE.exec(e.causationId) : null;
+  return named(lease?.[1]);
+}
+
+/** The type and ticket filter, the same on the cloud and the local cache paths. */
 export function eventMatches(filter: CloudEventFilter): (event: CachedEvent) => boolean {
   const ticket = filter.ticket?.toUpperCase();
   return (event) =>
     (!filter.type || event.type === filter.type) &&
-    (!ticket || payloadReferences(event.payload, ticket));
-}
-
-function payloadReferences(value: unknown, ticket: string): boolean {
-  if (typeof value === "string") return value.toUpperCase() === ticket;
-  if (Array.isArray(value)) return value.some((item) => payloadReferences(item, ticket));
-  if (!value || typeof value !== "object") return false;
-  return Object.entries(value).some(([key, item]) =>
-    ["ticket", "identifier", "workItemKey", "issueIdentifier"].includes(key) && typeof item === "string"
-      ? item.toUpperCase() === ticket
-      : payloadReferences(item, ticket),
-  );
+    (!ticket || eventTicket(event)?.toUpperCase() === ticket);
 }
 
 function pipeClosed(error: unknown): boolean {

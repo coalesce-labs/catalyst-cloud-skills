@@ -456,15 +456,25 @@ describe("each skill's scripts spawn the catalyst verbs it teaches", () => {
     expect(path).toContain(
       "optional first-event check in `references/local-sync.md`",
     );
+    // CTC-4554 — the cloud wait is the default first-ticket wait; the cache wait is the opt-in.
+    expect(localSync).toContain(
+      "catalyst events wait-for --ticket <ticket-identifier> --after <cursor-before-move> --timeout 300",
+    );
     expect(localSync).toContain(
       "catalyst events wait-for --from-cache --ticket <ticket-identifier> --after <cursor-before-move> --timeout 300",
     );
-    const cursorCapture = localSync.indexOf("record its `cursor`");
-    const cardMove = localSync.indexOf("Move the card");
-    const eventWait = localSync.indexOf("events wait-for --from-cache --ticket");
-    expect(cursorCapture).toBeGreaterThanOrEqual(0);
-    expect(cardMove).toBeGreaterThan(cursorCapture);
-    expect(eventWait).toBeGreaterThan(cardMove);
+    for (const [capture, wait] of [
+      ["record its `head`", "events wait-for --ticket"],
+      ["record its `cursor`", "events wait-for --from-cache --ticket"],
+    ]) {
+      const cursorCapture = localSync.indexOf(capture);
+      const cardMove = localSync.indexOf("Move the card", cursorCapture);
+      const eventWait = localSync.indexOf(wait, cardMove);
+      expect(cursorCapture).toBeGreaterThanOrEqual(0);
+      expect(cardMove).toBeGreaterThan(cursorCapture);
+      expect(eventWait).toBeGreaterThan(cardMove);
+    }
+    expect(localSync).toContain("Exit 4 means the cloud event service was unreachable");
     expect(localSync).toContain(
       "Exit 1 means no matching cached event arrived within five minutes",
     );

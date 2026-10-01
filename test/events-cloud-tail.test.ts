@@ -107,17 +107,20 @@ test("an explicit --after cursor is exclusive and is handed to the reader", asyn
 
 test("type and ticket filter on the client too, so an unfiltering server still prints only matches", async () => {
   const sink = new Sink();
-  const nested = { ...row(4), payload: { workItem: { identifier: "ctc-4511" } } };
+  const nested = { ...row(4), payload: {}, causationId: "lease:ctc-4511/plan#1" };
   const fake = source([row(1, "phase.started"), row(2, "phase.completed", "CTC-1"), row(3), nested], { finish: true });
   const result = await tailCloudEvents(context(), { filter: { type: "phase.completed", ticket: "ctc-4511" }, out: sink, signal: new AbortController().signal }, { events: fake.events });
   expect(sink.sequences()).toEqual([3, 4]);
   expect(result.cursor).toBe(4);
 });
 
-test("matching follows the local tail: whole identifiers anywhere in the payload, any case", () => {
+test("matching resolves the ticket as the cloud index does: entity, payload.ticket, lease; any case", () => {
   const ticket = eventMatches({ ticket: "CTC-9" });
-  expect(ticket({ ...row(1), payload: "ctc-9" })).toBe(true);
-  expect(ticket({ ...row(1), payload: [{ issueIdentifier: "CTC-9" }] })).toBe(true);
+  expect(ticket({ ...row(1), payload: {}, entity: { type: "ticket", id: "ctc-9" } })).toBe(true);
+  expect(ticket({ ...row(1), payload: { ticket: "ctc-9" } })).toBe(true);
+  expect(ticket({ ...row(1), payload: {}, causationId: "lease:CTC-9/plan#1" })).toBe(true);
+  expect(ticket({ ...row(1), payload: "ctc-9" })).toBe(false);
+  expect(ticket({ ...row(1), payload: [{ issueIdentifier: "CTC-9" }] })).toBe(false);
   expect(ticket({ ...row(1), payload: { ticket: "CTC-90" } })).toBe(false);
   expect(ticket({ ...row(1), payload: { title: "about CTC-9" } })).toBe(false);
   expect(ticket({ ...row(1), payload: null })).toBe(false);

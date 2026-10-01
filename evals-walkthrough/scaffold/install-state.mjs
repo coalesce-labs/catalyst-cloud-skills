@@ -77,7 +77,7 @@ function answers(s) {
   const base = {
     "ready --json": { ready: true, checks: [{ id: "config", ok: true, line: "config: connected" }] },
     "replica status --probe --json": { outcome: "absent" },
-    "events status --probe --json": { outcome: "absent" },
+    "events status --from-cache --probe --json": { outcome: "absent" },
     "environment read --json": { current: null },
     "contract --path readinessChecks --json": READINESS_CHECKS,
     "capabilities --json": CAPABILITIES,

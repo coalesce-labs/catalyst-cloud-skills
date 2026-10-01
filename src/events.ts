@@ -3,7 +3,7 @@ import { normalizeBaseUrl, requireConfig, type Ctx } from "./config.js";
 import { CliError, UsageError } from "./errors.js";
 import { authStrategyFor } from "./oauth.js";
 import { eventCacheStatus } from "./event-status.js";
-import { cloudEventHead, queryCloudEvents } from "./events-cloud.js";
+import { cloudEventHead, queryCloudEvents, unreachableError, unreachableKind } from "./events-cloud.js";
 import { eventMatches, tailCloudEvents, waitForCloudEvent, type CloudTailDeps, type NdjsonSink } from "./events-cloud-tail.js";
 
 export interface CachedEvent {
@@ -13,6 +13,10 @@ export interface CachedEvent {
   type: string;
   recordedAt: string;
   payload: unknown;
+  /** The domain entity the event is about; a ticket event names it here. */
+  entity?: { type: string; id: string };
+  /** The event or lease that caused it, e.g. `lease:CTC-42/implement#3`. */
+  causationId?: string;
 }
 
 export interface EventSyncHandle {
@@ -54,6 +58,22 @@ export interface EventDeps {
   out?: NdjsonSink;
   /** Test seam for the cloud reader. */
   cloud?: CloudTailDeps;
+  /** Registers an interrupt handler and returns its remover; defaults to SIGINT and SIGTERM. */
+  onInterrupt?: (handler: () => void) => () => void;
+}
+
+/** Consecutive failed attempts after which `wait-for` reports an outage rather than waiting on. */
+const OUTAGE_ATTEMPTS = 5;
+/** How long the cloud may be unreachable before `tail` says so on stderr. */
+const TAIL_WARN_AFTER_MS = 60_000;
+
+function processInterrupts(handler: () => void): () => void {
+  process.once("SIGINT", handler);
+  process.once("SIGTERM", handler);
+  return () => {
+    process.off("SIGINT", handler);
+    process.off("SIGTERM", handler);
+  };
 }
 
 export async function createEventSync(
@@ -216,12 +236,30 @@ async function cmdCloudEvents(
   requireConfig(ctx);
   const filter = eventFilter(args);
   if (sub === "status") {
-    const head = await cloudEventHead(ctx);
-    const status = { source: "cloud", head, behind: 0, note: LOCAL_SYNC_HINT };
+    let head: number;
+    try {
+      head = await cloudEventHead(ctx);
+    } catch (error) {
+      if (error instanceof CliError) throw error;
+      const failure = unreachableError(error);
+      if (args.json) ctx.stdout(JSON.stringify({ source: "cloud", reachable: false, error: unreachableKind(error) }));
+      else ctx.stderr(`catalyst: ${failure.message}`);
+      return failure.exitCode;
+    }
+    // A cloud stream has no local cursor to fall behind. Filtered reads come from the event index,
+    // which trails the head while it fills; that lag is measured, not assumed.
+    let indexedToSeq: number | null = null;
+    try {
+      indexedToSeq = (await queryCloudEvents(ctx, { limit: 1, order: "desc" })).coverage.indexedToSeq;
+    } catch {
+      indexedToSeq = null;
+    }
+    const indexLag = indexedToSeq === null ? null : Math.max(0, head - indexedToSeq);
+    const status = { source: "cloud", reachable: true, head, behind: null, indexedToSeq, indexLag, note: LOCAL_SYNC_HINT };
     ctx.stdout(
       args.json
         ? JSON.stringify(status)
-        : `events: cloud stream at head ${head}, 0 behind (every read goes to the cloud; ${LOCAL_SYNC_HINT})`,
+        : `events: cloud stream at head ${head}; ${indexLag === null ? "the filtered index could not be read" : `filtered reads (--ticket, --type) trail it by ${indexLag}`} (every read goes to the cloud; ${LOCAL_SYNC_HINT})`,
     );
     return 0;
   }
@@ -257,29 +295,53 @@ async function cmdCloudEvents(
   const abort = () => controller.abort(deps.signal?.reason);
   if (deps.signal?.aborted) abort();
   else deps.signal?.addEventListener("abort", abort, { once: true });
-  const stopOnSignal = () => controller.abort(new Error("interrupted"));
-  process.once("SIGINT", stopOnSignal);
-  process.once("SIGTERM", stopOnSignal);
+  let interrupted = false;
+  const removeInterrupt = (deps.onInterrupt ?? processInterrupts)(() => {
+    interrupted = true;
+    controller.abort(new Error("interrupted"));
+  });
+  let outage: { failures: number; sinceMs: number } | undefined;
+  let warned = false;
+  const seconds = (sinceMs: number) => Math.round((ctx.now().getTime() - sinceMs) / 1_000);
+  const cloud: CloudTailDeps = {
+    ...deps.cloud,
+    onTrouble: (state) => {
+      deps.cloud?.onTrouble?.(state);
+      if (sub === "wait-for" && state.failures >= OUTAGE_ATTEMPTS && !outage) {
+        outage = state;
+        controller.abort(new Error("cloud unreachable"));
+      }
+      if (sub === "tail" && !warned && ctx.now().getTime() - state.sinceMs > TAIL_WARN_AFTER_MS) {
+        warned = true;
+        ctx.stderr(`events: the cloud has been unreachable for ${seconds(state.sinceMs)} s (${state.failures} attempts); still retrying`);
+      }
+    },
+    onHealthy: () => {
+      deps.cloud?.onHealthy?.();
+      if (warned) ctx.stderr("events: the cloud is reachable again");
+      warned = false;
+    },
+  };
   try {
     const after = startingCursor(args);
     if (sub === "wait-for") {
-      const seconds = flagInt(args, "timeout", 300);
-      const result = await waitForCloudEvent(
-        ctx,
-        { after, filter, timeoutMs: seconds * 1_000, out, signal: controller.signal },
-        deps.cloud,
-      );
+      const timeout = flagInt(args, "timeout", 300);
+      const result = await waitForCloudEvent(ctx, { after, filter, timeoutMs: timeout * 1_000, out, signal: controller.signal }, cloud);
+      if (interrupted) return 130;
+      if (outage) {
+        ctx.stderr(`events: the cloud event service was unreachable for ${outage.failures} attempts over ${seconds(outage.sinceMs)} s; this is an outage, not a timeout`);
+        return 4;
+      }
       if (result.outcome === "matched" || result.outcome === "closed") return 0;
-      if (result.outcome === "timeout") ctx.stderr(`events: no matching event within ${seconds} s`);
+      if (result.outcome === "timeout") ctx.stderr(`events: no matching event within ${timeout} s`);
       return 1;
     }
-    const result = await tailCloudEvents(ctx, { after, filter, out, signal: controller.signal }, deps.cloud);
+    const result = await tailCloudEvents(ctx, { after, filter, out, signal: controller.signal }, cloud);
     if (result.outcome !== "closed" && result.cursor !== undefined)
       ctx.stderr(`events: stopped at sequence ${result.cursor}; resume with --after ${result.cursor}`);
-    return 0;
+    return interrupted ? 130 : 0;
   } finally {
-    process.off("SIGINT", stopOnSignal);
-    process.off("SIGTERM", stopOnSignal);
+    removeInterrupt();
     deps.signal?.removeEventListener("abort", abort);
   }
 }

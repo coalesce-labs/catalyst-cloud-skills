@@ -28,7 +28,8 @@ const rows: CachedEvent[] = [
     eventId: "evt-4",
     type: "phase.completed",
     recordedAt: "2026-09-16T20:00:00.000Z",
-    payload: { workItemKey: "CTC-1352" },
+    entity: { type: "ticket", id: "CTC-1352" },
+    payload: { phase: "plan" },
   },
   {
     tenantId: "account-1",
@@ -36,7 +37,8 @@ const rows: CachedEvent[] = [
     eventId: "evt-5",
     type: "pull_request.merged",
     recordedAt: "2026-09-16T20:01:00.000Z",
-    payload: { identifier: "CTC-999" },
+    entity: { type: "ticket", id: "CTC-999" },
+    payload: { phase: "implement" },
   },
 ];
 
@@ -209,7 +211,7 @@ describe("events", () => {
     expect(JSON.parse(ctx.out[0]!)).toEqual(rows[0]);
   });
 
-  test("tail honors an explicit cursor and nested ticket references", async () => {
+  test("tail honors an explicit cursor and a ticket named by the lease that caused the event", async () => {
     const fixture = sdk();
     fixture.tailCachedEvents = async function* ({ after, directory, signal }) {
       expect(after).toBe(4);
@@ -217,7 +219,9 @@ describe("events", () => {
       expect(signal.aborted).toBe(false);
       yield {
         ...rows[1]!,
-        payload: { related: [{ issueIdentifier: "ctc-1352" }] },
+        entity: undefined,
+        causationId: "lease:CTC-1352/plan#2",
+        payload: {},
       };
     };
     expect(
@@ -334,12 +338,14 @@ describe("events", () => {
     expect(ctx.out).toEqual([]);
   });
 
-  test("query ticket matching handles strings, nulls, and unrelated objects", async () => {
+  test("query ticket matching reads the entity, payload.ticket and the lease, as the cloud index does", async () => {
     const fixture = sdk();
     fixture.readCachedEvents = async () => [
-      { ...rows[0]!, payload: "ctc-1352" },
-      { ...rows[1]!, payload: null },
-      { ...rows[1]!, sequence: 6, payload: { ticket: "CTC-OTHER" } },
+      { ...rows[0]! },
+      { ...rows[1]!, entity: undefined, payload: "ctc-1352" },
+      { ...rows[1]!, entity: undefined, payload: null },
+      { ...rows[1]!, sequence: 6, entity: undefined, payload: { ticket: "CTC-OTHER" } },
+      { ...rows[1]!, sequence: 7, entity: undefined, payload: { related: [{ issueIdentifier: "CTC-1352" }] } },
     ];
     expect(
       await main(["events", "query", "--from-cache", "--ticket", "CTC-1352"], ctx, {

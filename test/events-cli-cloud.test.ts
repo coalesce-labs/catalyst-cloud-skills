@@ -169,11 +169,11 @@ test("status names the cloud stream as the source and how far behind it is", asy
       : undefined;
   const json = context(head);
   expect(await main(["events", "status", "--json"], json, { events: { loadSdk: noCache } })).toBe(0);
-  expect(JSON.parse(json.out.join("\n"))).toMatchObject({ source: "cloud", head: 42, behind: 0 });
+  expect(JSON.parse(json.out.join("\n"))).toMatchObject({ source: "cloud", reachable: true, head: 42, behind: null });
   const human = context(head);
   expect(await main(["events", "status"], human, { events: { loadSdk: noCache } })).toBe(0);
   const line = human.out.join("\n");
-  expect(line).toContain("events: cloud stream at head 42, 0 behind");
+  expect(line).toContain("events: cloud stream at head 42");
   expect(line).toContain("--from-cache");
 });
 

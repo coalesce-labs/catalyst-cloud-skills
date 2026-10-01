@@ -435,7 +435,7 @@ test("a refused filter is reported, not retried", async () => {
   const ctx = context();
   ctx.fetch = async (input) => route(input).probe ? response(9, [], 409) : Response.json({ error: "unknown_type" }, { status: 400 });
   const stream = cloudEvents(ctx, { after: 4, filter: { type: "phase.completed" }, signal: new AbortController().signal }, { socket: () => new Socket() });
-  await expect(stream.next()).rejects.toThrow("refused (HTTP 400)");
+  await expect(stream.next()).rejects.toThrow("refused (HTTP 400: unknown_type)");
 });
 
 // CTC-4562 — the events channel: the socket asks for pushed events, and once the cloud acknowledges

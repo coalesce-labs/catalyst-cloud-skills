@@ -16,9 +16,11 @@ Say `Local sync current` only when both writers have live heartbeats and each cu
 
 ## First ticket event
 
-Before the person moves a card, run `node scripts/local-sync.mjs --start` (after they opt in) and wait until it reports current. Then run `catalyst events status --from-cache --probe --json` and record its `cursor` as `<cursor-before-move>`. Move the card only after this baseline is captured. Then run `catalyst events wait-for --from-cache --ticket <ticket-identifier> --after <cursor-before-move> --timeout 300` with the identifier `explain` printed, and no guessed event type. The explicit cursor finds an event that reached the cache before the command began.
+The default wait reads the cloud and needs no local sync. Before the person moves a card, run `catalyst events status --json` and record its `head` as `<cursor-before-move>`. Move the card only after this baseline is captured. Then run `catalyst events wait-for --ticket <ticket-identifier> --after <cursor-before-move> --timeout 300` with the identifier `explain` printed, and no guessed event type. The explicit cursor finds an event that happened before the command began.
 
-Exit 0 prints a matching event after the baseline, proving it reached this machine's cache. Exit 1 means no matching cached event arrived within five minutes; recheck `node scripts/local-sync.mjs` and report stale or unknown evidence without inferring a cloud or webhook failure. Exit 3 means the event cache is absent; ask before starting it. Other errors are unknown. `explain` stays the API-backed answer to why a ticket can or cannot run.
+Exit 0 prints a matching event after the baseline. Exit 1 means no matching event arrived within five minutes; check `catalyst explain <ticket-identifier>` before inferring a cloud or webhook failure. Exit 4 means the cloud event service was unreachable: an outage, not a timeout. Other errors are unknown. `explain` stays the API-backed answer to why a ticket can or cannot run.
+
+On a machine that opted in to local sync, the same wait can also prove the event reached this machine's cache. Run `node scripts/local-sync.mjs --start` and wait until it reports current. Then run `catalyst events status --from-cache --probe --json` and record its `cursor` as `<cursor-before-move>`. Move the card only after this baseline is captured. Then run `catalyst events wait-for --from-cache --ticket <ticket-identifier> --after <cursor-before-move> --timeout 300`. Exit 1 means no matching cached event arrived within five minutes; recheck `node scripts/local-sync.mjs` and report stale or unknown evidence without inferring a cloud or webhook failure. Exit 3 means the event cache is absent; ask before starting it.
 
 ## The writer
 
