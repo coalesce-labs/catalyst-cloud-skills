@@ -129,7 +129,8 @@ function failure(value: Read, start = false): OnboardStepResult | null {
   if (value.status === 401 || value.status === 403)
     return { state: "refused", reason: "personal_consent_refused" };
   if (value.status === 503) return waiting("personal_status_unavailable");
-  if (value.status === 404) return waiting("cloud_capability_unavailable");
+  if ([404, 405].includes(value.status))
+    return waiting("cloud_capability_unavailable");
   return value.status === 200
     ? null
     : {
@@ -276,6 +277,8 @@ export function personalConsentAdapter(
           sleep: options.sleep,
           readStatus: async (pollSignal) => {
             latest = await inspect(ctx, journal, pollSignal);
+            if (latest.reason === "cloud_capability_unavailable")
+              return { outcome: "waiting", reason: latest.reason };
             if (latest.state === "done") return { outcome: "connected" };
             if (latest.state === "refused" || latest.state === "failed")
               return { outcome: latest.state, reason: latest.reason };

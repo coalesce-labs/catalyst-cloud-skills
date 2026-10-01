@@ -42,6 +42,32 @@ const me = {
   principal: "session" as const,
   user,
 };
+const supportedPersonalRoutes = [
+  "/api/v1/me",
+  "/api/v1/agent/contract",
+  "/api/v1/me/connections/linear/personal",
+  "/connect/linear/personal/start",
+  "/api/v1/me/connections/github/personal",
+  "/connect/github/personal/start",
+];
+function supportedContract(paths: readonly string[] = supportedPersonalRoutes) {
+  return {
+    account: { id: me.account },
+    contractVersion: "2.10.0",
+    onboarding: {
+      schema: 1,
+      routes: paths.map((path) => ({
+        method: "GET",
+        path,
+        personalBearer: true,
+      })),
+      web: {
+        connections: "/a/account/connections",
+        personalConnections: "/settings/connected-accounts",
+      },
+    },
+  };
+}
 function fixture() {
   const home = mkdtempSync(join(tmpdir(), "onboard-runtime-"));
   homes.push(home);
@@ -55,6 +81,8 @@ function fixture() {
     now: () => new Date("2026-09-30T14:00:00Z"),
     fetch: (async (input: Parameters<typeof fetch>[0]) => {
       const url = String(input instanceof Request ? input.url : input);
+      if (url === `${baseUrl}/api/v1/agent/contract`)
+        return Response.json(supportedContract());
       return url === `${baseUrl}/api/v1/me`
         ? Response.json(me)
         : Response.json({ error: "unexpected_route" }, { status: 404 });
@@ -74,7 +102,10 @@ function fixture() {
     runId: "runtime-fixture",
     installer: null,
     cli: "0.14.0",
-    tenant: null,
+    tenant: me.account,
+    account: me.account,
+    membershipId: user.id,
+    baseUrl,
     exit: null,
     steps: [],
     changes: [],
@@ -84,7 +115,21 @@ function fixture() {
     ready: async () => ({ state: "waiting" as const, reason: "not_ready" }),
     realHome: () => "/a/different/real/home",
   };
-  return { home, ctx, seed, journal, hooks, transcript };
+  // A supported-server fixture advertises exact routes separately from the
+  // endpoint response under test. This keeps route failures from accidentally
+  // becoming contract failures, and never enables workspace browser routes.
+  const supportedFetch = (
+    endpoint: typeof fetch,
+    paths: readonly string[] = supportedPersonalRoutes,
+  ) => {
+    ctx.fetch = (async (input, init) => {
+      const url = String(input instanceof Request ? input.url : input);
+      if (url === `${baseUrl}/api/v1/agent/contract`)
+        return Response.json(supportedContract(paths));
+      return endpoint(input, init);
+    }) as typeof fetch;
+  };
+  return { home, ctx, seed, journal, hooks, transcript, supportedFetch };
 }
 afterEach(() => {
   for (const home of homes.splice(0))
@@ -334,9 +379,10 @@ describe("onboarding production runtime", () => {
     expect(state).toBe("refused");
   });
 
-  test("a contract without exact workspace bearer routes cannot enable browser-session calls", async () => {
+  test("an old server without onboarding advertisement waits with a public fallback and never calls unsupported workspace routes", async () => {
     const f = fixture();
     f.seed({ user: { ...user, role: "owner" } });
+    // A stale disk contract and catchall 403 must not establish support.
     writeFileSync(
       contractPathFor(f.home),
       JSON.stringify({
@@ -344,52 +390,89 @@ describe("onboarding production runtime", () => {
         routes: ["/connect/linear", "/connect/github"],
       }),
     );
-    const forbidden = join(f.home, "workspace-session-called");
-    f.ctx.fetch = (async (
-      input: Parameters<typeof fetch>[0],
-      init?: RequestInit,
-    ) => {
+    const requests: string[] = [];
+    f.ctx.fetch = (async (input: Parameters<typeof fetch>[0]) => {
       const url = String(input instanceof Request ? input.url : input);
-      if (url === `${baseUrl}/api/v1/me`) return Response.json(me);
-      if (url === `${baseUrl}/api/v1/me/connections/linear/workspace`)
-        return Response.json({ error: "not_shipped" }, { status: 404 });
-      if (
-        url === `${baseUrl}/api/v1/agent/teams` &&
-        (!init?.method || init.method === "GET")
-      )
+      requests.push(url);
+      if (url === `${baseUrl}/api/v1/agent/contract`)
         return Response.json({
-          teams: [],
-          liveTeamRead: { attempted: false, error: null },
+          account: { id: me.account },
+          contractVersion: "2.10.0",
         });
-      writeFileSync(forbidden, url);
-      return Response.json({ connected: true });
+      // This models the deployed catchall that previously became false consent refusal.
+      return Response.json({ error: "forbidden" }, { status: 403 });
     }) as typeof fetch;
     const runtime = createOnboardRuntime(
-      parseArgs(["onboard"]),
+      parseArgs(["onboard", "--json"]),
       f.ctx,
       f.hooks,
     );
     for (const id of ["linear.workspace", "github.install"] as const) {
-      const adapter = runtime.adapters?.[id];
-      if (adapter) {
-        expect(await adapter.check(f.ctx, f.journal)).toMatchObject({
-          state: "waiting",
-        });
-        if (adapter.act)
-          expect(await adapter.act(f.ctx, f.journal)).toMatchObject({
-            state: "waiting",
-          });
-      }
+      const adapter = runtime.adapters![id]!;
+      const expected = {
+        state: "waiting",
+        reason: "cloud_capability_unavailable",
+        evidence: { path: `${baseUrl}/a/account/connections` },
+      };
+      expect(await adapter.check(f.ctx, f.journal)).toEqual(expected);
+      expect(await adapter.act!(f.ctx, f.journal)).toEqual(expected);
     }
-    expect(existsSync(forbidden)).toBe(false);
+    expect(requests).toEqual(Array(4).fill(`${baseUrl}/api/v1/agent/contract`));
+    expect(f.transcript.join("\n")).toContain(
+      "not available on this server yet",
+    );
+    expect(f.transcript.join("\n")).toContain(
+      `${baseUrl}/a/account/connections`,
+    );
+    expect(f.transcript.join("\n")).not.toContain("consent_refused");
+    expect(f.transcript.join("\n")).not.toContain("consent refused");
   });
+
+  test.each([
+    {
+      account: undefined,
+      tenant: null,
+      membershipId: undefined,
+      baseUrl: undefined,
+    },
+    { account: "foreign-account" },
+    { membershipId: "foreign-person" },
+    { baseUrl: "https://foreign.invalid" },
+  ])(
+    "an unbound or foreign remote-step receipt makes zero requests %#",
+    async (binding) => {
+      const f = fixture();
+      f.seed();
+      const requests: string[] = [];
+      f.ctx.fetch = (async (input) => {
+        requests.push(String(input));
+        return Response.json(supportedContract());
+      }) as typeof fetch;
+      const runtime = createOnboardRuntime(
+        parseArgs(["onboard"]),
+        f.ctx,
+        f.hooks,
+      );
+      expect(
+        await runtime.adapters!["linear.personal"]!.check(f.ctx, {
+          ...f.journal,
+          ...binding,
+        }),
+      ).toMatchObject({
+        state: "waiting",
+        reason: "onboarding_capability_identity_unverified",
+      });
+      expect(requests).toEqual([]);
+    },
+  );
+
   test("personal Linear consent opens the signed Catalyst handoff and polls usable status in JSON mode", async () => {
     const f = fixture();
     f.seed();
     const browser = join(f.home, "opened-url");
     const grant = join(f.home, "linear-granted");
     const url = `${baseUrl}/connect/linear/personal/start?handoff=signed-fixture`;
-    f.ctx.fetch = (async (
+    f.supportedFetch((async (
       input: Parameters<typeof fetch>[0],
       init?: RequestInit,
     ) => {
@@ -405,7 +488,7 @@ describe("onboarding production runtime", () => {
           expiresAt: f.ctx.now().getTime() + 60_000,
         });
       return Response.json({ error: "unexpected_route" }, { status: 404 });
-    }) as typeof fetch;
+    }) as typeof fetch);
     const runtime = createOnboardRuntime(
       parseArgs(["onboard", "--json"]),
       f.ctx,
@@ -436,12 +519,12 @@ describe("onboarding production runtime", () => {
     const f = fixture();
     f.seed();
     const unexpected = join(f.home, "unexpected-start-or-browser");
-    f.ctx.fetch = (async (input: Parameters<typeof fetch>[0]) => {
+    f.supportedFetch((async (input: Parameters<typeof fetch>[0]) => {
       if (String(input).endsWith("/api/v1/me/connections/linear/personal"))
         return Response.json({ connected: true });
       writeFileSync(unexpected, String(input));
       return Response.json({ error: "unexpected_route" }, { status: 404 });
-    }) as typeof fetch;
+    }) as typeof fetch);
     const runtime = createOnboardRuntime(parseArgs(["onboard"]), f.ctx, {
       ...f.hooks,
       openBrowser: (url) => writeFileSync(unexpected, url),
@@ -461,8 +544,8 @@ describe("onboarding production runtime", () => {
     async (status, body, state, reason) => {
       const f = fixture();
       f.seed();
-      f.ctx.fetch = (async () =>
-        Response.json(body, { status })) as typeof fetch;
+      f.supportedFetch((async () =>
+        Response.json(body, { status })) as typeof fetch);
       const runtime = createOnboardRuntime(
         parseArgs(["onboard"]),
         f.ctx,
@@ -478,13 +561,13 @@ describe("onboarding production runtime", () => {
     const f = fixture();
     f.seed();
     const opened = join(f.home, "unsafe-browser-opened");
-    f.ctx.fetch = (async (input) =>
+    f.supportedFetch((async (input) =>
       String(input).endsWith("/personal/start")
         ? Response.json({
             authorizationUrl: "https://unrelated.example/consent",
             expiresAt: f.ctx.now().getTime() + 60_000,
           })
-        : Response.json({ connected: false })) as typeof fetch;
+        : Response.json({ connected: false })) as typeof fetch);
     const runtime = createOnboardRuntime(parseArgs(["onboard"]), f.ctx, {
       ...f.hooks,
       openBrowser: (url) => writeFileSync(opened, url),
@@ -499,10 +582,10 @@ describe("onboarding production runtime", () => {
     const f = fixture();
     f.seed();
     const opened = join(f.home, "premature-browser-opened");
-    f.ctx.fetch = (async (input) =>
+    f.supportedFetch((async (input) =>
       String(input).endsWith("/personal/start")
         ? Response.json({ error: "linear_workspace_required" }, { status: 409 })
-        : Response.json({ connected: false })) as typeof fetch;
+        : Response.json({ connected: false })) as typeof fetch);
     const runtime = createOnboardRuntime(parseArgs(["onboard"]), f.ctx, {
       ...f.hooks,
       openBrowser: (url) => writeFileSync(opened, url),
@@ -599,10 +682,10 @@ describe("onboarding production runtime", () => {
       const f = fixture();
       f.seed();
       const opened = join(f.home, "unexpected-browser");
-      f.ctx.fetch = (async (input) =>
+      f.supportedFetch((async (input) =>
         String(input).endsWith("/personal/start")
           ? Response.json(body, { status })
-          : Response.json({ connected: false })) as typeof fetch;
+          : Response.json({ connected: false })) as typeof fetch);
       const runtime = createOnboardRuntime(parseArgs(["onboard"]), f.ctx, {
         ...f.hooks,
         openBrowser: (url) => writeFileSync(opened, url),
@@ -614,7 +697,7 @@ describe("onboarding production runtime", () => {
     },
   );
 
-  test("personal consent without login refuses both status and start", async () => {
+  test("personal consent without login waits for a personal sign-in before status or start", async () => {
     const f = fixture();
     const runtime = createOnboardRuntime(
       parseArgs(["onboard"]),
@@ -623,11 +706,11 @@ describe("onboarding production runtime", () => {
     );
     const adapter = runtime.adapters!["linear.personal"]!;
     expect(await adapter.check(f.ctx, f.journal)).toMatchObject({
-      state: "refused",
+      state: "waiting",
       reason: "personal_login_required",
     });
     expect(await adapter.act!(f.ctx, f.journal)).toMatchObject({
-      state: "refused",
+      state: "waiting",
       reason: "personal_login_required",
     });
   });
@@ -635,8 +718,8 @@ describe("onboarding production runtime", () => {
   test("a lapsed personal connection is not reported usable", async () => {
     const f = fixture();
     f.seed();
-    f.ctx.fetch = (async () =>
-      Response.json({ connected: false, reason: "lapsed" })) as typeof fetch;
+    f.supportedFetch((async () =>
+      Response.json({ connected: false, reason: "lapsed" })) as typeof fetch);
     const runtime = createOnboardRuntime(
       parseArgs(["onboard"]),
       f.ctx,
@@ -657,7 +740,7 @@ describe("onboarding production runtime", () => {
     async (body) => {
       const f = fixture();
       f.seed();
-      f.ctx.fetch = (async () => Response.json(body)) as typeof fetch;
+      f.supportedFetch((async () => Response.json(body)) as typeof fetch);
       const runtime = createOnboardRuntime(
         parseArgs(["onboard"]),
         f.ctx,
@@ -731,7 +814,7 @@ describe("onboarding production runtime", () => {
     const opened = join(f.home, "github-browser");
     const grant = join(f.home, "github-personal-granted");
     const handoff = `${baseUrl}/connect/github/personal/start?handoff=signed-github-fixture`;
-    f.ctx.fetch = (async (
+    f.supportedFetch((async (
       input: Parameters<typeof fetch>[0],
       init?: RequestInit,
     ) => {
@@ -751,7 +834,7 @@ describe("onboarding production runtime", () => {
           expiresAt: f.ctx.now().getTime() + 60000,
         });
       return Response.json({ error: "unexpected_route" }, { status: 404 });
-    }) as typeof fetch;
+    }) as typeof fetch);
     const args = parseArgs([
       "onboard",
       "--only",
@@ -791,8 +874,8 @@ describe("onboarding production runtime", () => {
     async (status, body, state) => {
       const f = fixture();
       f.seed();
-      f.ctx.fetch = (async () =>
-        Response.json(body, { status })) as typeof fetch;
+      f.supportedFetch((async () =>
+        Response.json(body, { status })) as typeof fetch);
       const runtime = createOnboardRuntime(
         parseArgs(["onboard"]),
         f.ctx,
@@ -811,13 +894,13 @@ describe("onboarding production runtime", () => {
     const f = fixture();
     f.seed();
     const opened = join(f.home, "unsafe-github-browser");
-    f.ctx.fetch = (async (input) =>
+    f.supportedFetch((async (input) =>
       String(input).endsWith("/personal/start")
         ? Response.json({
             authorizationUrl: "https://unrelated.example/consent",
             expiresAt: f.ctx.now().getTime() + 60000,
           })
-        : Response.json({ connected: false })) as typeof fetch;
+        : Response.json({ connected: false })) as typeof fetch);
     const runtime = createOnboardRuntime(parseArgs(["onboard"]), f.ctx, {
       ...f.hooks,
       openBrowser: (url) => writeFileSync(opened, url),
@@ -832,10 +915,10 @@ describe("onboarding production runtime", () => {
     const f = fixture();
     f.seed();
     const secret = "private-github-provider-error";
-    f.ctx.fetch = (async (input: Parameters<typeof fetch>[0]) =>
+    f.supportedFetch((async (input: Parameters<typeof fetch>[0]) =>
       String(input).endsWith("/api/v1/me")
         ? Response.json(me)
-        : Response.json({ error: secret }, { status: 500 })) as typeof fetch;
+        : Response.json({ error: secret }, { status: 500 })) as typeof fetch);
     const args = parseArgs([
       "onboard",
       "--only",
@@ -859,7 +942,8 @@ describe("onboarding production runtime", () => {
   test("nonboolean GitHub connected status is invalid evidence rather than consent completion", async () => {
     const f = fixture();
     f.seed();
-    f.ctx.fetch = (async () => Response.json({ connected: 1 })) as typeof fetch;
+    f.supportedFetch((async () =>
+      Response.json({ connected: 1 })) as typeof fetch);
     const runtime = createOnboardRuntime(
       parseArgs(["onboard"]),
       f.ctx,
@@ -880,10 +964,10 @@ describe("onboarding production runtime", () => {
       f.seed();
       const opened = join(f.home, "github-start-error-browser");
       const secret = "private-github-start-error";
-      f.ctx.fetch = (async (input) =>
+      f.supportedFetch((async (input) =>
         String(input).endsWith("/personal/start")
           ? Response.json({ error: secret }, { status })
-          : Response.json({ connected: false })) as typeof fetch;
+          : Response.json({ connected: false })) as typeof fetch);
       const runtime = createOnboardRuntime(
         parseArgs(["onboard", "--json"]),
         f.ctx,
@@ -903,7 +987,7 @@ describe("onboarding production runtime", () => {
     const recovered = join(f.home, "linear-status-recovered");
     const opened = join(f.home, "linear-recovery-browser");
     const handoff = `${baseUrl}/connect/linear/personal/start?handoff=recovery-fixture`;
-    f.ctx.fetch = (async (input: Parameters<typeof fetch>[0]) => {
+    f.supportedFetch((async (input: Parameters<typeof fetch>[0]) => {
       if (String(input).endsWith("/connect/linear/personal/start"))
         return Response.json({
           authorizationUrl: handoff,
@@ -916,7 +1000,7 @@ describe("onboarding production runtime", () => {
             { error: "linear_grant_check_unavailable" },
             { status: 503 },
           );
-    }) as typeof fetch;
+    }) as typeof fetch);
     const runtime = createOnboardRuntime(parseArgs(["onboard"]), f.ctx, {
       ...f.hooks,
       openBrowser: (url) => writeFileSync(opened, url),

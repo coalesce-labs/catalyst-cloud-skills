@@ -18,12 +18,17 @@ import { boundedOnboardSignin } from "./onboard-signin.js";
 import { existingLinearAdapters } from "./onboard-existing.js";
 import { linearWorkspaceAdapter } from "./onboard-workspace.js";
 import { existingRepositoryAdapter } from "./onboard-repositories.js";
+import { githubInstallationAdapter } from "./onboard-github.js";
+import {
+  guardOnboardCapabilities,
+  type OnboardCapabilityOptions,
+} from "./onboard-capabilities.js";
 import type {
-  OnboardAdapter,
   OnboardDeps,
   OnboardIdentity,
   OnboardJournal,
   OnboardStepResult,
+  OnboardStepId,
 } from "./onboard.js";
 import type { OnboardUi } from "./onboard-ui.js";
 import { fetchMe } from "./transport.js";
@@ -130,10 +135,6 @@ export function createOnboardRuntime(
       evidence: { found, remaining: found },
     };
   };
-  const unsupported: OnboardAdapter = {
-    check: async () => waiting("cloud_capability_unavailable"),
-    act: async () => waiting("cloud_capability_unavailable"),
-  };
   const personalAdapter = (provider: "linear" | "github") =>
     personalConsentAdapter({
       provider,
@@ -149,121 +150,195 @@ export function createOnboardRuntime(
       ? (teams) => hooks.ui!.chooseTeam!(teams.map((team) => ({ ...team })))
       : undefined,
   );
+  const adapters: NonNullable<OnboardDeps["adapters"]> = {
+    machine: {
+      check: async () =>
+        process.platform === "darwin" || process.platform === "linux"
+          ? { state: "done", evidence: { provider: process.platform } }
+          : waiting("machine_platform_unsupported"),
+    },
+    cli: {
+      check: async () => ({
+        state: "done",
+        evidence: { version: readManifest().version },
+      }),
+    },
+    skills: {
+      check: async (stepCtx) => {
+        const cfg = loadConfig(stepCtx.home);
+        const dir =
+          stepCtx.env.CATALYST_SKILLS_DIR ??
+          cfg?.skillsDir ??
+          defaultSkillsDirFor(stepCtx.home);
+        const names = hooks.skillNames ?? [];
+        const count = names.filter((name) =>
+          existsSync(join(dir, name, "SKILL.md")),
+        ).length;
+        return names.length > 0 && count === names.length
+          ? { state: "done", evidence: { count, path: dir } }
+          : waiting("skills_install_unverified");
+      },
+    },
+    legacy: {
+      check: legacyCheck,
+      act: async (stepCtx) => {
+        const before = await legacyCheck(stepCtx);
+        if (before.state !== "pending") return before;
+        // Provider/process output is not trusted to be secret-free; keep it out of the receipt/log.
+        const quiet = { ...stepCtx, stdout: () => {}, stderr: () => {} };
+        const code = await cmdLegacy(
+          {
+            ...args,
+            command: "legacy",
+            subcommand: null,
+            rest: [],
+            flags: { remove: true, yes: true },
+            json: false,
+          },
+          quiet,
+          hooks.legacy,
+        );
+        return code === 0
+          ? legacyCheck(stepCtx)
+          : { state: "failed", reason: "legacy_cleanup_failed" };
+      },
+    },
+    signin: {
+      check: async (stepCtx, journal) => {
+        const who = await identity(stepCtx, journal);
+        return who
+          ? {
+              state: "done",
+              evidence: {
+                account: who.account,
+                membershipId: who.membershipId,
+                role: who.role,
+              },
+            }
+          : { state: "pending" };
+      },
+      act: async (stepCtx, _journal, signal) => {
+        return boundedOnboardSignin(
+          { ...stepCtx, stdout: stepCtx.stderr },
+          hooks.login,
+          signal,
+          hooks.signinTimeoutMs,
+        );
+      },
+    },
+    ...linear,
+    "linear.workspace": linearWorkspaceAdapter({
+      fallback: linear["linear.workspace"],
+      openBrowser: hooks.openBrowser ?? openBrowser,
+      wait: hooks.ui
+        ? (message, work) => hooks.ui!.wait(message, work)
+        : undefined,
+      sleep: hooks.sleep,
+    }),
+    "github.install": githubInstallationAdapter({
+      openBrowser: hooks.openBrowser ?? openBrowser,
+      wait: hooks.ui
+        ? (message, work) => hooks.ui!.wait(message, work)
+        : undefined,
+      sleep: hooks.sleep,
+    }),
+    "github.repos": existingRepositoryAdapter(
+      args,
+      hooks.ui?.chooseRepositories
+        ? (repositories) =>
+            hooks.ui!.chooseRepositories!(
+              repositories.map((row) => ({ ...row })),
+            )
+        : undefined,
+    ),
+    "linear.personal": personalAdapter("linear"),
+    "github.personal": personalAdapter("github"),
+    daemon: {
+      check: async (_stepCtx, journal) =>
+        (journal.localSync ?? args.flags["local-sync"] === true)
+          ? waiting("local_sync_capability_unavailable")
+          : {
+              state: "skipped",
+              reason: "local_sync_not_selected",
+              evidence: { provider: "cloud" },
+            },
+    },
+    housekeeping: {
+      check: async () => waiting("housekeeping_service_unverified"),
+    },
+    ready: { check: hooks.ready },
+  };
+  const get = (path: string) => ({ method: "GET" as const, path });
+  const capabilities: Partial<Record<OnboardStepId, OnboardCapabilityOptions>> =
+    {
+      "linear.workspace": {
+        check: [get("/api/v1/me/connections/linear/workspace")],
+        act: [
+          get("/api/v1/me/connections/linear/workspace"),
+          get("/api/v1/me/connections/linear/workspace/start"),
+        ],
+        fallback: "connections",
+      },
+      "linear.personal": {
+        check: [get("/api/v1/me/connections/linear/personal")],
+        act: [
+          get("/api/v1/me/connections/linear/personal"),
+          get("/connect/linear/personal/start"),
+        ],
+        fallback: "personalConnections",
+      },
+      "github.install": {
+        check: [get("/api/v1/me/connections/github/workspace")],
+        act: [
+          get("/api/v1/me/connections/github/workspace"),
+          get("/api/v1/me/connections/github/workspace/start"),
+        ],
+        fallback: "connections",
+      },
+      "github.personal": {
+        check: [get("/api/v1/me/connections/github/personal")],
+        act: [
+          get("/api/v1/me/connections/github/personal"),
+          get("/connect/github/personal/start"),
+        ],
+        fallback: "personalConnections",
+      },
+      "linear.team": {
+        check: [
+          get("/api/v1/agent/teams"),
+          get("/api/v1/agent/tenant/readiness"),
+        ],
+        fallback: "connections",
+      },
+      "linear.automations": {
+        check: [get("/api/v1/agent/tenant/readiness")],
+        fallback: "connections",
+      },
+      "github.repos": {
+        check: [get("/api/v1/repos"), get("/api/v1/agent/contract")],
+        fallback: "connections",
+      },
+      ready: {
+        check: [get("/api/v1/agent/contract")],
+        fallback: "connections",
+      },
+    };
+  for (const [id, options] of Object.entries(capabilities)) {
+    const step = id as OnboardStepId;
+    const adapter = adapters[step];
+    if (adapter)
+      adapters[step] = guardOnboardCapabilities(adapter, {
+        ...options,
+        message: (text) =>
+          hooks.ui ? hooks.ui.message(text) : ctx.stderr(text),
+      });
+  }
+  // Public auth discovery and the existing /me sign-in bootstrap establish identity before the
+  // tenant-bound step guards can run. Unsupported/local-only steps make no endpoint requests.
   return {
     identity: (journal) => identity(ctx, journal),
     bindSignals: true,
     ui: hooks.ui,
-    adapters: {
-      machine: {
-        check: async () =>
-          process.platform === "darwin" || process.platform === "linux"
-            ? { state: "done", evidence: { provider: process.platform } }
-            : waiting("machine_platform_unsupported"),
-      },
-      cli: {
-        check: async () => ({
-          state: "done",
-          evidence: { version: readManifest().version },
-        }),
-      },
-      skills: {
-        check: async (stepCtx) => {
-          const cfg = loadConfig(stepCtx.home);
-          const dir =
-            stepCtx.env.CATALYST_SKILLS_DIR ??
-            cfg?.skillsDir ??
-            defaultSkillsDirFor(stepCtx.home);
-          const names = hooks.skillNames ?? [];
-          const count = names.filter((name) =>
-            existsSync(join(dir, name, "SKILL.md")),
-          ).length;
-          return names.length > 0 && count === names.length
-            ? { state: "done", evidence: { count, path: dir } }
-            : waiting("skills_install_unverified");
-        },
-      },
-      legacy: {
-        check: legacyCheck,
-        act: async (stepCtx) => {
-          const before = await legacyCheck(stepCtx);
-          if (before.state !== "pending") return before;
-          // Provider/process output is not trusted to be secret-free; keep it out of the receipt/log.
-          const quiet = { ...stepCtx, stdout: () => {}, stderr: () => {} };
-          const code = await cmdLegacy(
-            {
-              ...args,
-              command: "legacy",
-              subcommand: null,
-              rest: [],
-              flags: { remove: true, yes: true },
-              json: false,
-            },
-            quiet,
-            hooks.legacy,
-          );
-          return code === 0
-            ? legacyCheck(stepCtx)
-            : { state: "failed", reason: "legacy_cleanup_failed" };
-        },
-      },
-      signin: {
-        check: async (stepCtx, journal) => {
-          const who = await identity(stepCtx, journal);
-          return who
-            ? {
-                state: "done",
-                evidence: {
-                  account: who.account,
-                  membershipId: who.membershipId,
-                  role: who.role,
-                },
-              }
-            : { state: "pending" };
-        },
-        act: async (stepCtx, _journal, signal) => {
-          return boundedOnboardSignin(
-            { ...stepCtx, stdout: stepCtx.stderr },
-            hooks.login,
-            signal,
-            hooks.signinTimeoutMs,
-          );
-        },
-      },
-      ...linear,
-      "linear.workspace": linearWorkspaceAdapter({
-        fallback: linear["linear.workspace"],
-        openBrowser: hooks.openBrowser ?? openBrowser,
-        wait: hooks.ui
-          ? (message, work) => hooks.ui!.wait(message, work)
-          : undefined,
-        sleep: hooks.sleep,
-      }),
-      "github.install": unsupported,
-      "github.repos": existingRepositoryAdapter(
-        args,
-        hooks.ui?.chooseRepositories
-          ? (repositories) =>
-              hooks.ui!.chooseRepositories!(
-                repositories.map((row) => ({ ...row })),
-              )
-          : undefined,
-      ),
-      "linear.personal": personalAdapter("linear"),
-      "github.personal": personalAdapter("github"),
-      daemon: {
-        check: async (_stepCtx, journal) =>
-          (journal.localSync ?? args.flags["local-sync"] === true)
-            ? waiting("local_sync_capability_unavailable")
-            : {
-                state: "skipped",
-                reason: "local_sync_not_selected",
-                evidence: { provider: "cloud" },
-              },
-      },
-      housekeeping: {
-        check: async () => waiting("housekeeping_service_unverified"),
-      },
-      ready: { check: hooks.ready },
-    },
+    adapters,
   };
 }
