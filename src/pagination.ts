@@ -14,6 +14,8 @@ import type { ApiClient, GetOptions } from "./transport.js";
 
 export const NEXT_CURSOR_HEADER = "x-mirror-next-cursor";
 export const TOTAL_HEADER = "x-mirror-total";
+/** CTC-4556 — the `/issues` params that narrowed the page, comma-separated; absent on older mirrors. */
+export const SCOPE_HEADER = "x-mirror-scope";
 /** The server clamps every page to this regardless of the requested `limit` (MAX_VIEW_LIMIT). */
 export const SERVER_PAGE_CAP = 500;
 /** 100 pages × 500 rows = 50,000. Reaching it is a refusal, not an ending. */
@@ -23,6 +25,8 @@ export interface Page {
   rows: Record<string, unknown>[];
   nextCursor: string | null;
   total: number | null;
+  /** The params the cloud says narrowed this page, or null when it did not say. */
+  scope: string[] | null;
 }
 
 /** The API answers a list route with either a bare array or `{rows|items|issues|...: []}`. */
@@ -35,6 +39,12 @@ export function rowsOf(body: unknown): Record<string, unknown>[] {
     }
   }
   return [];
+}
+
+function readScope(headers: Headers): string[] | null {
+  const raw = headers.get(SCOPE_HEADER);
+  if (raw === null) return null;
+  return raw.split(",").map((p) => p.trim()).filter(Boolean);
 }
 
 function readTotal(headers: Headers): number | null {
@@ -51,6 +61,7 @@ export async function fetchPage(api: ApiClient, path: string, query: GetOptions[
     rows: rowsOf(res.body),
     nextCursor: next === null || next === "" ? null : next,
     total: readTotal(res.headers),
+    scope: readScope(res.headers),
   };
 }
 
@@ -58,16 +69,19 @@ export async function fetchAllPages(
   api: ApiClient,
   path: string,
   query: GetOptions["query"],
-): Promise<{ rows: Record<string, unknown>[]; total: number | null; pages: number }> {
+): Promise<{ rows: Record<string, unknown>[]; total: number | null; pages: number; scope: string[] | null }> {
   const rows: Record<string, unknown>[] = [];
   const seen = new Set<string>();
   let after: string | undefined;
   let total: number | null = null;
+  let scope: string[] | null = null;
   for (let pages = 1; pages <= MAX_PAGES; pages++) {
     const page = await fetchPage(api, path, { ...query, limit: SERVER_PAGE_CAP, after });
     rows.push(...page.rows);
     if (page.total !== null) total = page.total;
-    if (page.nextCursor === null) return { rows, total, pages };
+    // A param counts as applied only if every page says so.
+    scope = pages === 1 ? page.scope : scope && page.scope && scope.filter((p) => page.scope?.includes(p));
+    if (page.nextCursor === null) return { rows, total, pages, scope };
     // ⛔ A cursor that does not advance is an infinite loop, not a long read.
     if (seen.has(page.nextCursor)) {
       throw new CliError(

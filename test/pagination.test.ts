@@ -92,17 +92,17 @@ describe("fetchAllPages", () => {
 
 describe("truncationNotice", () => {
   test("is null when there is no next cursor", () => {
-    const page: Page = { rows: [{ id: 1 }], nextCursor: null, total: 1 };
+    const page: Page = { rows: [{ id: 1 }], nextCursor: null, total: 1, scope: null };
     expect(truncationNotice(page)).toBeNull();
   });
 
   test("reads `truncated at <rows on the page> of <x-mirror-total>`", () => {
-    const page: Page = { rows: new Array(50).fill({}), nextCursor: "c1", total: 120 };
+    const page: Page = { rows: new Array(50).fill({}), nextCursor: "c1", total: 120, scope: null };
     expect(truncationNotice(page)).toBe("truncated at 50 of 120 — re-run with --all to read the whole scope");
   });
 
   test("degrades to a named unknown total when x-mirror-total is missing", () => {
-    const page: Page = { rows: new Array(50).fill({}), nextCursor: "c1", total: null };
+    const page: Page = { rows: new Array(50).fill({}), nextCursor: "c1", total: null, scope: null };
     expect(truncationNotice(page)).toBe(
       "truncated at 50 of an unknown total (the cloud sent no x-mirror-total) — re-run with --all to read the whole scope",
     );
