@@ -2,7 +2,7 @@ import { afterEach, expect, test } from "vitest";
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { replicaDbPath } from "../src/config.js";
+import { replicaDbPath, replicaOptedIn } from "../src/config.js";
 
 const homes: string[] = [];
 afterEach(() => { for (const home of homes.splice(0)) rmSync(home, { recursive: true, force: true }); });
@@ -31,6 +31,43 @@ test("an optional replica omitted from the machine record reports not configured
   const { makeCtx } = await import("./helpers.js");
   const cfg = { baseUrl: "https://example.test", account: "test", slug: "test", name: "Test", permissions: null, principal: "service" as const, joinedAt: "2026-09-24", lastSkillBundleVersion: "1" };
   expect(replicaStatus(makeCtx(home), cfg)).toMatchObject({ verdict: "not-configured", dbPath: null });
+});
+
+test("only a declared replicaDb or CATALYST_REPLICA_DB opts this machine in to the replica (CTC-4508)", () => {
+  const home = setup();
+  expect(replicaOptedIn(home, {})).toBe(false);
+  expect(replicaOptedIn(home, { CATALYST_REPLICA_DB: `${home}/override.db` })).toBe(true);
+  manifest(home);
+  expect(replicaOptedIn(home, {})).toBe(false);
+  manifest(home, `${home}/state/replica/replica.db`);
+  expect(replicaOptedIn(home, {})).toBe(true);
+});
+
+test("replica status says whether this machine opted in, so never-opted-in reads apart from writer-down (CTC-4508)", async () => {
+  const { replicaStatus, statusLine } = await import("../src/replica.js");
+  const { makeCtx } = await import("./helpers.js");
+  const cfg = { baseUrl: "https://example.test", account: "test", slug: "test", name: "Test", permissions: null, principal: "service" as const, joinedAt: "2026-09-24", lastSkillBundleVersion: "1" };
+  const cloudOnly = "replica: not configured (cloud reads; local sync is opt-in)";
+
+  const legacy = setup();
+  const never = replicaStatus(makeCtx(legacy), cfg);
+  expect(never).toMatchObject({ configured: false, verdict: "absent", exitCode: 3 });
+  expect(statusLine(never)).toBe(cloudOnly);
+
+  const declined = setup();
+  manifest(declined);
+  const withoutRole = replicaStatus(makeCtx(declined), cfg);
+  expect(withoutRole).toMatchObject({ configured: false, verdict: "not-configured", exitCode: 2 });
+  expect(statusLine(withoutRole)).toBe(cloudOnly);
+
+  const optedIn = setup();
+  manifest(optedIn, `${optedIn}/state/replica/replica.db`);
+  const down = replicaStatus(makeCtx(optedIn), cfg);
+  expect(down).toMatchObject({ configured: true, verdict: "absent", exitCode: 3 });
+  expect(statusLine(down)).toContain("start it with: catalyst replica start --detach");
+
+  expect(replicaStatus(makeCtx(legacy), null)).toMatchObject({ configured: false, reasons: ["not connected"] });
+  expect(statusLine(replicaStatus(makeCtx(legacy), null))).toBe("replica: not configured (not connected)");
 });
 
 test("a broken machine manifest symlink cannot silently start a fresh legacy database", async () => {

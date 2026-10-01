@@ -1,6 +1,7 @@
-// sdk.ts — the ONE place the Catalyst Cloud SDK is imported. Every verb that needs the replica or the
-// live stream calls `loadSdk()`; nothing imports the SDK statically, so the verbs that only need HTTP
-// (me, contract, explain, write, ask, ...) run on any Node 22 even when the SDK cannot load.
+// sdk.ts — the ONE place the Catalyst Cloud SDK is imported. Every verb that needs the replica calls
+// `loadSdk()`; the live stream (`watch`) calls `loadLiveSdk()`, which never touches the replica-bearing
+// node entry. Nothing imports the SDK statically, so the verbs that only need HTTP (me, contract,
+// explain, write, ask, ...) run on any Node 22 even when the SDK cannot load.
 import type * as SdkNode from "@catalyst-cloud/sdk/node";
 import type * as SdkHttp from "@catalyst-cloud/sdk";
 import { CliError } from "./errors.js";
@@ -10,12 +11,18 @@ import { FIX_COMMAND, supportedRangeText } from "./runtime.js";
 
 export type Sdk = typeof SdkNode;
 export type HttpSdk = typeof SdkHttp;
+/** The live push client alone: a cloud stream with no replica behind it. */
+export type LiveSdk = Pick<HttpSdk, "LiveSyncClient">;
 
 let cached: Promise<Sdk> | null = null;
 let cachedHttp: Promise<HttpSdk> | null = null;
+let cachedLive: Promise<LiveSdk> | null = null;
 
 const realImport = (): Promise<Sdk> => import("@catalyst-cloud/sdk/node") as Promise<Sdk>;
 const realHttpImport = (): Promise<HttpSdk> => import("@catalyst-cloud/sdk") as Promise<HttpSdk>;
+// SDK 0.13 has no `./live` entry; its root entry carries LiveSyncClient and no replica code. Point
+// this at `@catalyst-cloud/sdk/live` once the pin reaches 0.14.
+const realLiveImport = (): Promise<LiveSdk> => import("@catalyst-cloud/sdk");
 
 /** The isomorphic typed HTTP client; keeps the SDK import in this module. */
 export function loadHttpSdk(importer: () => Promise<HttpSdk> = realHttpImport): Promise<HttpSdk> {
@@ -26,6 +33,17 @@ export function loadHttpSdk(importer: () => Promise<HttpSdk> = realHttpImport): 
     });
   }
   return cachedHttp;
+}
+
+/** The live push client for `watch`, loaded without the replica-bearing node entry (CTC-4508). */
+export function loadLiveSdk(importer: () => Promise<LiveSdk> = realLiveImport): Promise<LiveSdk> {
+  if (!cachedLive) {
+    cachedLive = importer().catch((err: unknown) => {
+      cachedLive = null;
+      throw new CliError(`the Catalyst Cloud SDK live client could not be loaded: ${err instanceof Error ? err.message : String(err)}`, "sdk-unavailable");
+    });
+  }
+  return cachedLive;
 }
 
 /** Import the SDK's node entry, installing the type-stripping loader first. Cached per process. */
@@ -54,6 +72,7 @@ export function loadSdk(importer: () => Promise<Sdk> = realImport): Promise<Sdk>
 export function resetSdkCache(): void {
   cached = null;
   cachedHttp = null;
+  cachedLive = null;
 }
 
 /** HTTP tenant methods live on the SDK's root entry, separate from replica/node exports. */

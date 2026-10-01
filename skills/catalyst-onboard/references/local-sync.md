@@ -6,6 +6,8 @@ The replica is an on-machine SQLite copy of the account for cheap repeated reads
 
 `catalyst replica status` needs no network. Exit 0 is fresh (a live writer, a heartbeat under 15 seconds, a cursor), and skills read the replica. Exit 1 is stale and 3 is absent; skills read the API, and `catalyst replica start --detach` restarts a stale one. Exit 2 is not connected (`references/connecting-this-machine.md`). `--probe` adds one network call comparing the local cursor with the cloud head. Every read verb names its source on standard error.
 
+Local sync is opt-in. `catalyst replica status --json` carries `configured`, which is true only when this machine opted in: `CATALYST_REPLICA_DB` is set, or the machine paths file declares `replicaDb`. A machine that never opted in prints `replica: not configured (cloud reads; local sync is opt-in)` and reads the cloud. A machine with `configured: true` and exit 1 or 3 opted in and its writer is down.
+
 ## Checking and starting both
 
 `node scripts/local-sync.mjs` shows the local state. Only after the person opts in, `--start` starts the replica and event cache writers and waits up to 90 seconds (`--wait <seconds>`, 0 to 300).

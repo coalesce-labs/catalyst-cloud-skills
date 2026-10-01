@@ -3,14 +3,14 @@
 // stream. Scope is filtered on the client from the frame's entity and row; a project scope resolves
 // an issue reference to its project through GET /api/v1/issues/:ref, cached in memory.
 import { spawn } from "node:child_process";
-import type { ChangeFrame, WebSocketFactory } from "@catalyst-cloud/sdk/node";
+import type { ChangeFrame, WebSocketFactory } from "@catalyst-cloud/sdk";
 import { flagList, flagString, type ParsedArgs } from "./args.js";
 import { apiBase, requireConfig, watchCursorPathFor, type Ctx, type CustomerConfig } from "./config.js";
 import { loadContract } from "./contract.js";
 import { CliError, UsageError } from "./errors.js";
 import { apiClient } from "./transport.js";
 import { authStrategyFor, bearerFor } from "./oauth.js";
-import { loadSdk, type Sdk } from "./sdk.js";
+import { loadLiveSdk, type LiveSdk } from "./sdk.js";
 import { createLiveEventsClient, type LiveEventsHandle } from "./watch/consumer.js";
 import { CursorFileError } from "./watch/cursor-file.js";
 
@@ -124,7 +124,7 @@ export interface WatchDeps {
   resolver?: IssueResolver;
   /** Resolve to stop the watch (tests); the default waits for SIGINT/SIGTERM. */
   waitForStop?: () => Promise<void>;
-  sdk?: Sdk;
+  sdk?: LiveSdk;
   /** Observe the handle once built (tests). */
   onHandle?: (handle: LiveEventsHandle) => void;
   backoffMs?: number;
@@ -139,7 +139,7 @@ export interface WatchOptions {
 }
 
 export async function runWatch(ctx: Ctx, cfg: CustomerConfig, opts: WatchOptions, deps: WatchDeps = {}): Promise<number> {
-  const sdk = deps.sdk ?? (await loadSdk());
+  const sdk = deps.sdk ?? (await loadLiveSdk());
   const resolve = deps.resolver ?? apiIssueResolver(cfg, ctx);
   const react = opts.exec ? execReaction(opts.exec, ctx.env) : undefined;
   let handle: LiveEventsHandle;
