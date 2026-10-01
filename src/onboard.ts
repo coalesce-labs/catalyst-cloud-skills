@@ -18,9 +18,16 @@ import {
 } from "../vendor/paths/index.js";
 import { machinePathsFile } from "../vendor/paths/node.js";
 import type { ParsedArgs } from "./args.js";
-import type { Ctx } from "./config.js";
+import { configPathFor, type Ctx } from "./config.js";
 import type { OnboardUi } from "./onboard-ui.js";
 import { CliError, UsageError } from "./errors.js";
+import { onboardFileSnapshot } from "./onboard-file-snapshot.js";
+import {
+  parseBootstrapPlan,
+  bootstrapPlanHash,
+  bootstrapPlanLines,
+  type OnboardBootstrapPreview,
+} from "./onboard-bootstrap.js";
 
 export const ONBOARD_STEPS = [
   "machine",
@@ -83,6 +90,37 @@ export interface OnboardIdentity {
   membershipId: string;
   baseUrl: string;
   role: "owner" | "admin" | "member";
+  /** Current /me display data is ephemeral and never supplies receipt authority. */
+  display?: {
+    personLabel: string;
+    email: string | null;
+    workspaceName: string;
+    workspaceSlug: string;
+  };
+}
+
+export function onboardIdentityLines(
+  identity: OnboardIdentity | null,
+): string[] {
+  if (!identity)
+    return [
+      "Use an existing Catalyst account or accept your invitation before approving sign-in.",
+    ];
+  const label = (text: string) =>
+    text
+      .replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]/g, " ")
+      .replace(/\s+/g, " ")
+      .trim()
+      .slice(0, 180);
+  const display = identity.display;
+  const person = label(display?.personLabel || identity.membershipId);
+  const email = display?.email ? label(display.email) : "";
+  const workspace = label(display?.workspaceName || identity.account);
+  const slug = display?.workspaceSlug ? label(display.workspaceSlug) : "";
+  return [
+    `Signed in as ${person}${email ? ` (${email})` : ""}`,
+    `Workspace: ${workspace}${slug ? ` (${slug})` : ""} · ${identity.role}`,
+  ];
 }
 
 export interface OnboardStepResult {
@@ -105,9 +143,14 @@ export interface OnboardAdapter {
 }
 
 export interface OnboardDeps {
+  /** Internal staged installer mode; absent for the normal installed CLI. */
+  bootstrap?: OnboardBootstrapPreview;
   ui?: OnboardUi;
   adapters?: Partial<Record<OnboardStepId, OnboardAdapter>>;
   identity?: (journal?: OnboardJournal) => Promise<OnboardIdentity | null>;
+  stageSignin?: (
+    signal?: AbortSignal,
+  ) => Promise<import("./onboard-login-candidate.js").OnboardLoginCandidate>;
   signal?: AbortSignal;
   bindSignals?: boolean;
   processId?: number;
@@ -722,13 +765,25 @@ function planJournal(journal: OnboardJournal): OnboardJournal {
   };
 }
 
-function printPlan(ctx: Ctx, journal: OnboardJournal): void {
+function printPlan(
+  ctx: Ctx,
+  journal: OnboardJournal,
+  identity?: OnboardIdentity | null,
+): void {
   const value = planJournal(journal);
   ctx.stdout("Catalyst setup plan");
+  if (identity !== undefined)
+    for (const line of onboardIdentityLines(identity)) ctx.stdout(line);
   for (const step of value.steps)
     ctx.stdout(
       `  ${step.state === "done" ? "✓" : "·"} ${ONBOARD_TITLES[step.id]}`,
     );
+  ctx.stdout(
+    "Use cloud reads by default. Local sync is optional for SQL or sustained local reads.",
+  );
+  ctx.stdout(
+    "Setup may check one stored Claude account using a one-token provider request. This may use Claude quota. It does not refresh Codex credentials.",
+  );
   ctx.stdout(
     `Next: ${value.steps.find((step) => step.state === "pending")?.id ?? "ready"}`,
   );
@@ -741,14 +796,17 @@ async function confirmContinue(
 ): Promise<boolean> {
   if (args.flags.yes === true) return true;
   if (
+    args.json ||
     !(
       deps.isTty ?? (() => Boolean(process.stdin.isTTY && process.stdout.isTTY))
     )()
   ) {
     ctx.stderr(
-      "No terminal is attached; using the default answer Yes. Pass --dry-run to inspect without changes.",
+      args.json
+        ? "JSON mode needs --yes to accept the displayed setup plan. Pass --dry-run to inspect it."
+        : "No terminal is attached. Pass --yes to accept the displayed setup plan, or --dry-run to inspect it.",
     );
-    return true;
+    return false;
   }
   if (deps.confirm) return deps.confirm("Continue? [Y/n] ");
   try {
@@ -793,7 +851,9 @@ function stepSatisfied(step: OnboardStep | undefined): boolean {
     (step?.state === "skipped" &&
       (step.id === "legacy" ||
         step.reason === "member_scope" ||
-        (step.id === "daemon" && step.reason === "local_sync_not_selected")))
+        (step.id === "daemon" && step.reason === "local_sync_not_selected") ||
+        (step.id === "linear.automations" &&
+          step.reason === "automation_management_unavailable")))
   );
 }
 
@@ -849,13 +909,93 @@ export async function cmdOnboard(
   for (const id of [only, resumeFrom])
     if (id && !(ONBOARD_STEPS as readonly string[]).includes(id))
       throw new UsageError(`unknown onboarding step: ${id}`);
+  const bootstrap = deps.bootstrap;
+  const bootstrapPlan = bootstrap
+    ? parseBootstrapPlan(bootstrap.plan)
+    : undefined;
+  const reviewedBootstrapHash = bootstrapPlan
+    ? bootstrapPlanHash(bootstrapPlan)
+    : undefined;
+  if (
+    bootstrapPlan &&
+    (only ||
+      resumeFrom ||
+      bootstrapPlan.home !== ctx.home ||
+      bootstrapPlan.statePath !== onboardStatePath(ctx.home, ctx.env))
+  )
+    throw new CliError(
+      "The staged installation belongs to another setup path. Run setup again.",
+      "onboard-bootstrap-binding",
+      EXIT_REFUSED,
+    );
+  const requireBootstrapIdentity = (identity: OnboardIdentity | null) => {
+    if (
+      bootstrapPlan &&
+      (!identity || identity.baseUrl !== bootstrapPlan.origin)
+    )
+      throw new CliError(
+        "The staged installation and verified person use different clouds. Run setup again.",
+        "onboard-bootstrap-binding",
+        EXIT_REFUSED,
+      );
+  };
+  const showBootstrap = () => {
+    if (!bootstrapPlan) return;
+    for (const line of bootstrapPlanLines(bootstrapPlan)) {
+      if (deps.ui) deps.ui.message(line);
+      else ctx.stderr(line);
+    }
+  };
+  const recheckBootstrap = async () => {
+    if (!bootstrap || !bootstrapPlan) return;
+    if (bootstrapPlanHash(bootstrap.plan) !== reviewedBootstrapHash)
+      throw new CliError(
+        "The installation plan changed during review. Run setup again.",
+        "onboard-bootstrap-changed",
+        EXIT_WAITING,
+      );
+    await bootstrap.recheck();
+    if (bootstrapPlanHash(bootstrap.plan) !== reviewedBootstrapHash)
+      throw new CliError(
+        "The installation plan changed during review. Run setup again.",
+        "onboard-bootstrap-changed",
+        EXIT_WAITING,
+      );
+  };
   const statePath = onboardStatePath(ctx.home, ctx.env);
+  const reviewedReceipt = deps.stageSignin
+    ? onboardFileSnapshot(statePath)
+    : undefined;
+  const scopeNeedsSignin = (id: OnboardStepId): boolean =>
+    id === "signin" || (ONBOARD_DEPENDENCIES[id] ?? []).some(scopeNeedsSignin);
+  const personalScope = !only || scopeNeedsSignin(only);
+  const plainSigninAllowed =
+    personalScope &&
+    (args.flags.yes === true ||
+      (!args.json &&
+        (
+          deps.isTty ??
+          (() => Boolean(process.stdin.isTTY && process.stdout.isTTY))
+        )()));
   let journal =
     readOnboardJournal(statePath, cliVersion, (deps.now ?? ctx.now)()) ??
     freshJournal(ctx, cliVersion, deps);
+  const originalBinding = {
+    account: journal.account,
+    tenant: journal.tenant,
+    membershipId: journal.membershipId,
+    baseUrl: journal.baseUrl,
+  };
+  const wasBound = Boolean(
+    journal.account ||
+    journal.tenant ||
+    journal.membershipId ||
+    journal.baseUrl,
+  );
   if (args.flags["dry-run"] === true) {
     if (args.json) ctx.stdout(JSON.stringify(planJournal(journal)));
     else printPlan(ctx, journal);
+    showBootstrap();
     return 0;
   }
   // Check tenant binding before even a local cleanup mutation. Never overwrite a mismatched receipt.
@@ -866,38 +1006,173 @@ export async function cmdOnboard(
       requireMatchingIdentity(journal, identity);
     }
   } catch (error) {
-    const code = error instanceof CliError ? error.exitCode : EXIT_FAILED;
+    const canRenew =
+      error instanceof CliError &&
+      error.code === "onboard-login-refresh-required" &&
+      deps.stageSignin &&
+      (deps.ui || plainSigninAllowed);
+    if (!canRenew) {
+      const code = error instanceof CliError ? error.exitCode : EXIT_FAILED;
+      ctx.stderr(
+        error instanceof CliError &&
+          error.code === "onboard-login-refresh-required"
+          ? "Renew your login with catalyst login, then run catalyst onboard. Setup was not changed."
+          : "Could not verify your Catalyst membership. Setup was not changed. Sign in with the original account to resume.",
+      );
+      if (args.json)
+        ctx.stdout(
+          JSON.stringify({
+            ...journal,
+            mode: "run",
+            exit: code,
+            complete: false,
+          }),
+        );
+      return code;
+    }
+    const renewalMessage =
+      "Your saved login needs renewal. Sign in before reviewing this plan.";
+    if (deps.ui) deps.ui.message(renewalMessage);
+    else ctx.stderr(renewalMessage);
+  }
+  const identityTuple = (value: OnboardIdentity | null) =>
+    value
+      ? Object.freeze({
+          account: value.account,
+          membershipId: value.membershipId,
+          baseUrl: value.baseUrl,
+          role: value.role,
+        })
+      : null;
+  let reviewedIdentity = identityTuple(identity);
+  if (identity) requireBootstrapIdentity(identity);
+  if (deps.ui) deps.ui.plan(journal, identity);
+  else if (!args.json) printPlan(ctx, journal, identity);
+  else printPlan({ ...ctx, stdout: ctx.stderr }, journal, identity);
+  showBootstrap();
+  let localSync =
+    args.flags["local-sync"] === true || journal.localSync === true;
+  let candidate:
+    import("./onboard-login-candidate.js").OnboardLoginCandidate | null = null;
+  // A fresh interactive sign-in needs browser approval, then one review of the verified
+  // person and workspace. Do not ask to approve a plan whose identity is still unknown.
+  if (
+    !identity &&
+    deps.stageSignin &&
+    !deps.ui &&
+    personalScope &&
+    !plainSigninAllowed
+  ) {
     ctx.stderr(
-      "Could not verify your Catalyst membership. Setup was not changed. Sign in with the original account to resume.",
+      "Sign in with catalyst login, then run catalyst onboard, or use --yes to allow browser sign-in before the displayed setup plan.",
     );
     if (args.json)
       ctx.stdout(
-        JSON.stringify({
-          ...journal,
-          mode: "run",
-          exit: code,
-          complete: false,
-        }),
+        JSON.stringify({ ...planJournal(journal), exit: EXIT_WAITING }),
       );
-    return code;
+    return EXIT_WAITING;
   }
-  if (deps.ui) deps.ui.plan(journal);
-  else if (!args.json) printPlan(ctx, journal);
-  const inheritedConsent =
-    resume === "install" && Boolean(ctx.env.CATALYST_INSTALL_LOCK_TOKEN);
-  let localSync =
-    args.flags["local-sync"] === true || journal.localSync === true;
-  const consent = inheritedConsent
-    ? true
-    : deps.ui
-      ? await deps.ui.confirmPlan(localSync)
-      : await confirmContinue(ctx, args, deps);
+  const stageFirst = Boolean(
+    deps.stageSignin && !identity && (deps.ui || plainSigninAllowed),
+  );
+  if (stageFirst) {
+    const message =
+      "Sign in in your browser first. Then review your person, workspace and setup plan. Your saved connection stays unchanged until you approve that plan.";
+    if (deps.ui) deps.ui.message(message);
+    else ctx.stderr(message);
+  }
+  let consent:
+    boolean | { proceed: boolean; localSync: boolean; signin?: boolean } =
+    stageFirst
+      ? { proceed: false, localSync, signin: true }
+      : deps.ui
+        ? await deps.ui.confirmPlan(
+            localSync,
+            deps.stageSignin
+              ? identity
+                ? "saved"
+                : "required"
+              : "unavailable",
+          )
+        : await confirmContinue(ctx, args, deps);
+  if (typeof consent !== "boolean" && consent.signin) {
+    if (!deps.stageSignin) throw new Error("onboard_signin_stage_unavailable");
+    try {
+      const stagingSignals = [
+        ...(deps.ui ? [deps.ui.signal] : []),
+        ...(deps.signal ? [deps.signal] : []),
+      ];
+      const stagingSignal =
+        stagingSignals.length > 1
+          ? AbortSignal.any(stagingSignals)
+          : stagingSignals[0];
+      if (stagingSignal?.aborted)
+        throw new CliError(
+          "Sign-in was cancelled. Your saved connection was not changed.",
+          "onboard-signin-cancelled",
+          EXIT_WAITING,
+        );
+      candidate = await deps.stageSignin(stagingSignal);
+      // A saved receipt may renew only its existing identity. A fresh preview can change it.
+      if (wasBound)
+        requireMatchingIdentity(
+          { ...journal, ...originalBinding },
+          candidate.identity,
+        );
+      else
+        Object.assign(journal, {
+          account: undefined,
+          tenant: null,
+          membershipId: undefined,
+          baseUrl: undefined,
+        });
+      identity = candidate.identity;
+      reviewedIdentity = identityTuple(identity);
+      requireMatchingIdentity(journal, identity);
+      requireBootstrapIdentity(identity);
+      if (deps.ui) deps.ui.plan(journal, identity);
+      else if (!args.json) printPlan(ctx, journal, identity);
+      else printPlan({ ...ctx, stdout: ctx.stderr }, journal, identity);
+      showBootstrap();
+      consent = deps.ui
+        ? await deps.ui.confirmPlan(localSync, "unavailable")
+        : await confirmContinue(ctx, args, deps);
+    } catch (error) {
+      const message =
+        error instanceof CliError
+          ? error.message
+          : "Sign-in could not be verified. Your saved connection was not changed.";
+      if (deps.ui) deps.ui.message(message);
+      else ctx.stderr(message);
+      deps.ui?.dispose();
+      const code = error instanceof CliError ? error.exitCode : EXIT_WAITING;
+      if (args.json)
+        ctx.stdout(JSON.stringify({ ...planJournal(journal), exit: code }));
+      return code;
+    }
+  }
   if (typeof consent !== "boolean") localSync = consent.localSync;
   if (!(typeof consent === "boolean" ? consent : consent.proceed)) {
-    ctx.stderr("Nothing was changed. Run the same command when ready.");
-    if (args.json) ctx.stdout(JSON.stringify({ ...journal, complete: false }));
-    return deps.ui?.signal.aborted ? EXIT_WAITING : 0;
+    const missingConsent =
+      !deps.ui &&
+      args.flags.yes !== true &&
+      (args.json ||
+        !(
+          deps.isTty ??
+          (() => Boolean(process.stdin.isTTY && process.stdout.isTTY))
+        )());
+    const code = deps.ui?.signal.aborted || missingConsent ? EXIT_WAITING : 0;
+    ctx.stderr(
+      missingConsent
+        ? "Setup is waiting for your approval. Run with --yes to accept the displayed plan."
+        : "Nothing was changed. Run the same command when ready.",
+    );
+    if (args.json)
+      ctx.stdout(JSON.stringify({ ...journal, exit: code, complete: false }));
+    return code;
   }
+  if (bootstrap) requireBootstrapIdentity(identity);
+  await recheckBootstrap();
   let lock: { path: string; owner: LockOwner };
   try {
     lock = acquireLock(ctx, deps);
@@ -931,8 +1206,10 @@ export async function cmdOnboard(
       })) as typeof fetch,
   };
   let current: OnboardStepId | null = null;
+  let mayRecordProgress = candidate === null;
   const interrupted = () => {
     stop.abort();
+    if (!mayRecordProgress) return;
     if (current)
       setStep(journal, {
         id: current,
@@ -967,11 +1244,62 @@ export async function cmdOnboard(
         ctx.stdout(
           `Setup still needs ${journal.steps.filter((step) => !stepSatisfied(step)).length} checks.`,
         );
-      ctx.stdout("resume: catalyst onboard");
+      ctx.stdout(
+        bootstrap && journalStep(journal, "machine")?.state !== "done"
+          ? "resume: run the original setup command"
+          : "resume: catalyst onboard",
+      );
     }
     return code;
   };
   try {
+    await recheckBootstrap();
+    if (candidate) {
+      // Re-read while holding the receipt lock before accepting the staged connection. Config
+      // and receipt publication are ordered, not a promised transaction against other writers.
+      if (onboardFileSnapshot(statePath) !== reviewedReceipt)
+        throw new CliError(
+          "Your setup record changed during review. Run catalyst onboard again.",
+          "onboard-receipt-changed",
+          EXIT_WAITING,
+        );
+      const currentReceipt = readOnboardJournal(
+        statePath,
+        cliVersion,
+        (deps.now ?? ctx.now)(),
+      );
+      if (currentReceipt)
+        requireMatchingIdentity(currentReceipt, candidate.identity);
+      try {
+        await candidate.accept(signal, () => {
+          if (onboardFileSnapshot(statePath) !== reviewedReceipt)
+            throw new CliError(
+              "Your setup record changed during sign-in. Run catalyst onboard again.",
+              "onboard-receipt-changed",
+              EXIT_WAITING,
+            );
+        });
+      } catch (error) {
+        ctx.stderr(
+          candidate.accepted
+            ? "Your connection was accepted, but setup could not be recorded. Run catalyst onboard to resume."
+            : error instanceof CliError
+              ? error.message
+              : "Sign-in was not accepted. Your saved connection was not changed.",
+        );
+        if (args.json)
+          ctx.stdout(
+            JSON.stringify({ ...planJournal(journal), exit: EXIT_WAITING }),
+          );
+        return EXIT_WAITING;
+      }
+    }
+    if (candidate && onboardFileSnapshot(statePath) !== reviewedReceipt)
+      throw new CliError(
+        "Your setup record changed during sign-in. Run catalyst onboard again.",
+        "onboard-receipt-changed",
+        EXIT_WAITING,
+      );
     journal =
       readOnboardJournal(statePath, cliVersion, (deps.now ?? ctx.now)()) ??
       journal;
@@ -986,6 +1314,98 @@ export async function cmdOnboard(
       (a, b) => ONBOARD_STEPS.indexOf(a.id) - ONBOARD_STEPS.indexOf(b.id),
     );
     journal.operations ??= {};
+    if (candidate) {
+      writeOnboardJournal(statePath, journal);
+      mayRecordProgress = true;
+    }
+    if (bootstrap && bootstrapPlan && reviewedBootstrapHash) {
+      if (!identity || identity.baseUrl !== bootstrapPlan.origin)
+        throw new CliError(
+          "The staged installation and verified person use different clouds. Run setup again.",
+          "onboard-bootstrap-binding",
+          EXIT_REFUSED,
+        );
+      if (signal.aborted) return finish(EXIT_WAITING);
+      await recheckBootstrap();
+      if (!deps.identity || !reviewedIdentity)
+        throw new CliError(
+          "The verified person could not be checked before installation. Run setup again.",
+          "onboard-bootstrap-identity",
+          EXIT_WAITING,
+        );
+      const beforeConfig = onboardFileSnapshot(configPathFor(ctx.home));
+      const freshIdentity = await deps.identity(journal);
+      if (
+        !freshIdentity ||
+        beforeConfig !== onboardFileSnapshot(configPathFor(ctx.home)) ||
+        freshIdentity.account !== reviewedIdentity.account ||
+        freshIdentity.membershipId !== reviewedIdentity.membershipId ||
+        freshIdentity.baseUrl !== reviewedIdentity.baseUrl ||
+        freshIdentity.role !== reviewedIdentity.role
+      )
+        throw new CliError(
+          "Your person or workspace changed during review. Run setup again.",
+          "onboard-bootstrap-identity",
+          EXIT_REFUSED,
+        );
+      requireMatchingIdentity(journal, freshIdentity);
+      identity = freshIdentity;
+      if (signal.aborted) return finish(EXIT_WAITING);
+      bootstrap.assertCurrent();
+      // The capability stays in native memory; the child protocol must transport it over a private FD.
+      // The continuation contract joins owned children before returning, so finally cannot release early.
+      current = "machine";
+      setStep(journal, {
+        id: "machine",
+        state: "running",
+        at: isoNow(ctx, deps),
+      });
+      writeOnboardJournal(statePath, journal);
+      try {
+        await bootstrap.continue(
+          Object.freeze({
+            plan: bootstrapPlan,
+            planHash: reviewedBootstrapHash,
+            account: identity.account,
+            person: identity.membershipId,
+            origin: identity.baseUrl,
+            role: identity.role,
+            localSync,
+            runId: journal.runId,
+            lockPath: lock.path,
+            ownerPid: lock.owner.pid,
+            ownerToken: lock.owner.token,
+          }),
+          signal,
+        );
+      } catch {
+        setStep(journal, {
+          id: "machine",
+          state: signal.aborted ? "waiting" : "failed",
+          reason: signal.aborted ? "interrupted" : "bootstrap_install_failed",
+          at: isoNow(ctx, deps),
+        });
+        ctx.stderr(
+          "Installation stopped. Completed files remain. Run the original setup command to resume.",
+        );
+        return finish(signal.aborted ? EXIT_WAITING : EXIT_FAILED);
+      }
+      current = null;
+      if (signal.aborted) {
+        setStep(journal, {
+          id: "machine",
+          state: "waiting",
+          reason: "interrupted",
+          at: isoNow(ctx, deps),
+        });
+        return finish(EXIT_WAITING);
+      }
+      if (deps.identity) {
+        const refreshed = await deps.identity(journal);
+        requireMatchingIdentity(journal, refreshed);
+        identity = refreshed;
+      }
+    }
     let refused = false;
     const needed = new Set<OnboardStepId>();
     const include = (id: OnboardStepId): void => {
@@ -1103,6 +1523,9 @@ export async function cmdOnboard(
           requireMatchingIdentity(journal, identity);
           if (!identity)
             result = { state: "failed", reason: "membership_not_verified" };
+          else
+            for (const line of onboardIdentityLines(identity))
+              stepCtx.stdout(line);
         }
         if (result.state === "refused") refused = true;
         if (result.state === "pending")
@@ -1121,14 +1544,19 @@ export async function cmdOnboard(
               /^[a-z][a-z0-9_-]{1,63}$/.test(error.code)
             ? error.code.replaceAll("-", "_")
             : "step_failed";
+        const renewLogin =
+          error instanceof CliError &&
+          error.code === "onboard-login-refresh-required";
         setStep(journal, {
           id,
-          state: "failed",
+          state: renewLogin ? "waiting" : "failed",
           reason,
           at: isoNow(ctx, deps),
         });
         stepCtx.stderr(
-          `✗ ${ONBOARD_TITLES[id]}: ${reason}. The safe reason is saved; run the same command to resume.`,
+          renewLogin
+            ? "Renew your login with catalyst login, then run catalyst onboard to resume."
+            : `✗ ${ONBOARD_TITLES[id]}: ${reason}. The safe reason is saved; run the same command to resume.`,
         );
       }
       if (signal.aborted) {
@@ -1155,9 +1583,23 @@ export async function cmdOnboard(
           : EXIT_WAITING;
     return finish(code);
   } catch (error) {
+    if (candidate?.accepted && !mayRecordProgress) {
+      ctx.stderr(
+        "Your connection was accepted, but setup could not be recorded. Run catalyst onboard to resume.",
+      );
+      if (args.json)
+        ctx.stdout(
+          JSON.stringify({ ...planJournal(journal), exit: EXIT_WAITING }),
+        );
+      return EXIT_WAITING;
+    }
     // Identity can change while the lock is held; stop before the next action.
     if (error instanceof CliError) {
       ctx.stderr(error.message);
+      if (args.json)
+        ctx.stdout(
+          JSON.stringify({ ...planJournal(journal), exit: error.exitCode }),
+        );
       return error.exitCode;
     }
     throw error;

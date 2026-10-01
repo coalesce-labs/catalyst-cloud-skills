@@ -4,13 +4,13 @@
 
 Every `query` verb, and therefore `node scripts/read-ticket.mjs` and `node scripts/search.mjs`, prints one stderr line before the answer:
 
-- `source: replica (cursor N)`: the local replica was fresh, so the answer is local and cheap.
-- `source: api (replica stale|absent|not configured)`: the answer came from the origin-fresh cloud API; a stale replica always falls back.
+- `source: replica (--source replica)`: the person explicitly selected the optional local replica.
+- `source: api (cloud reads by default)`: the answer came from the cloud API; no local replica is needed.
 - `source: api (<verb> is api-only)`: search, cycles, pull detail and change feeds never come from the replica.
 
 Quote the source when a fact's freshness matters ("as of the replica at cursor N", "from the API just now").
 
-`--source replica` or `--source api` forces one. Forcing the replica when it is absent or stale is refused.
+`--source replica` or `--source api` forces one. Forcing the replica when it is absent is refused. No offline-browsing promise is made.
 
 ## Then the row
 

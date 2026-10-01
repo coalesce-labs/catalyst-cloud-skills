@@ -70,13 +70,29 @@ export const FLAG_TABLES: Record<string, FlagTable> = {
   },
   install: {},
   onboard: {
-    team: { value: true, help: "explicitly select an existing Linear team by ID or unique key" },
-    repo: { value: true, repeat: true, help: "explicitly select an accessible repository as owner/name (repeatable)" },
-    "local-sync": { value: false, help: "include the optional local sync setup in this plan" },
-    "resume-from": { value: true, help: "resume at a verified onboarding step" },
+    team: {
+      value: true,
+      help: "explicitly select an existing Linear team by ID or unique key",
+    },
+    repo: {
+      value: true,
+      repeat: true,
+      help: "explicitly select an accessible repository as owner/name (repeatable)",
+    },
+    "local-sync": {
+      value: false,
+      help: "include the optional local sync setup in this plan",
+    },
+    "resume-from": {
+      value: true,
+      help: "resume at a verified onboarding step",
+    },
     only: { value: true, help: "run only the named onboarding step" },
     yes: { value: false, help: "accept the plan's default choices" },
-    "dry-run": { value: false, help: "print the plan without taking the lock or changing files" },
+    "dry-run": {
+      value: false,
+      help: "print the plan without taking the lock or changing files",
+    },
   },
   status: {},
   notice: {},
@@ -96,7 +112,7 @@ export const FLAG_TABLES: Record<string, FlagTable> = {
     since: { value: true, help: "changes: the cursor to read after" },
     source: {
       value: true,
-      help: "replica | api (default: replica when fresh, else api)",
+      help: "replica | api (default: api; replica is an explicit local opt-in)",
     },
     ticket: { value: true, help: "pulls: only PRs linked to this ticket" },
     all: {
@@ -264,8 +280,14 @@ export const FLAG_TABLES: Record<string, FlagTable> = {
     role: { value: true, help: "accept: the role recording the answer" },
   },
   ready: {
-    onboarding: { value: false, help: "check current onboarding evidence and observed project work" },
-    "local-sync": { value: false, help: "include the selected local sync mode" },
+    onboarding: {
+      value: false,
+      help: "check current onboarding evidence and observed project work",
+    },
+    "local-sync": {
+      value: false,
+      help: "include the selected local sync mode",
+    },
     offline: {
       value: false,
       help: "skip the published-release check (no network)",
@@ -273,13 +295,29 @@ export const FLAG_TABLES: Record<string, FlagTable> = {
   },
   accounts: {},
   env: {
-    root: { value: true, help: "draft: repository directory (default: current directory)" },
-    write: { value: false, help: "draft: write a new .catalyst/catalyst.toml; refuse to overwrite" },
-    diff: { value: false, help: "draft: show the generated TOML as an additions-only diff" },
+    root: {
+      value: true,
+      help: "draft: repository directory (default: current directory)",
+    },
+    write: {
+      value: false,
+      help: "draft: write a new .catalyst/catalyst.toml; refuse to overwrite",
+    },
+    diff: {
+      value: false,
+      help: "draft: show the generated TOML as an additions-only diff",
+    },
   },
   var: {
-    repo: { value: true, help: "repository scope (owner/name); omit for tenant scope" },
-    names: { value: true, repeat: true, help: "import: only send these names (repeatable or comma-separated)" },
+    repo: {
+      value: true,
+      help: "repository scope (owner/name); omit for tenant scope",
+    },
+    names: {
+      value: true,
+      repeat: true,
+      help: "import: only send these names (repeatable or comma-separated)",
+    },
   },
   team: {
     all: { value: false, help: "check every team, one request at a time" },
@@ -417,7 +455,8 @@ export const FLAG_TABLES: Record<string, FlagTable> = {
 export const VERB_USAGE: Record<string, string> = {
   login:
     "login [--base-url <url>] [--start-replica]   (keyless; or --key <personal-key> / CATALYST_CLOUD_TOKEN)",
-  onboard: "onboard [--team <ID|key>] [--repo <owner/name>]... [--resume-from <step>] [--only <step>] [--local-sync] [--yes] [--dry-run] [--json]",
+  onboard:
+    "onboard [--team <ID|key>] [--repo <owner/name>]... [--resume-from <step>] [--only <step>] [--local-sync] [--yes] [--dry-run] [--json]",
   install: "install [--skills-dir <dir>] [--force]",
   status: "status",
   notice: "notice",
@@ -443,8 +482,7 @@ export const VERB_USAGE: Record<string, string> = {
   accounts: "accounts [--json]",
   mcp: "mcp <add <name> --url URL <--auth none|--bearer SECRET_NAME|--header NAME=SECRET_NAME...>|list|remove <name>> [--json]",
   team: "team <list|check <KEY>|check --all|map <KEY> [--stage role=StateName]... [--yes --plan-hash H]|adopt <KEY> [--undo] [--yes --plan-hash H]|migrate <KEY> [--choice sourceId=destinationId]... [--retire] [--yes --plan-hash H]|checklist <KEY>> [--json]",
-  env:
-    "env <inventory [path] | check <file> | migrate [catalyst.env.json] | draft [--root DIR] [--diff] [--write]> [--json]   (THIS repository, offline — no login, no network)",
+  env: "env <inventory [path] | check <file> | migrate [catalyst.env.json] | draft [--root DIR] [--diff] [--write]> [--json]   (THIS repository, offline — no login, no network)",
   environment:
     "environment [read] [--json] | environment propose --file <path>|--stdin [--expect-revision N] [--approve] [--json] | environment approve [--revision N --hash H] [--json]   (your ACCOUNT's declaration; needs login)",
   secret:

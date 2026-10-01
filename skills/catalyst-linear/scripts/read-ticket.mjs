@@ -1,8 +1,15 @@
 #!/usr/bin/env node
 // read-ticket.mjs — one ticket with its comments, relations, labels, linked pull requests and agent
-// sessions inline, from the replica when it is fresh, else the origin-fresh API. The source line the
+// sessions inline, from the cloud API by default, or an explicitly chosen local replica. The source line the
 // CLI prints on stderr is the freshness verdict; it is always shown.
-import { parseFlags, parseJson, relayStderr, runCli, usage, wantsHelp } from "./lib/cli.mjs";
+import {
+  parseFlags,
+  parseJson,
+  relayStderr,
+  runCli,
+  usage,
+  wantsHelp,
+} from "./lib/cli.mjs";
 
 const HELP = `Usage: node scripts/read-ticket.mjs <ticket> [--comments] [--source replica|api] [--json]
 
@@ -10,11 +17,10 @@ Reads one ticket record. Wraps: catalyst query issue.
 
   <ticket>               the Linear identifier, e.g. KEY-123
   --comments             also print every comment (id, author, time, body)
-  --source replica|api   force one source; default is the replica when fresh, else the API
+  --source replica|api   choose one source; default is the cloud API
   --json                 print the full record as JSON
 
-The first stderr line names the source ("source: replica (cursor N)" or "source: api (replica
-stale|absent|not configured)"); quote it when the freshness of the answer matters.
+The first stderr line names the source ("source: api (cloud reads by default)" or "source: replica (--source replica)"); quote it when the freshness of the answer matters.
 
 Exit 0 found, 1 not found or a usage error, 2 when this machine is not connected to a tenant or the
 cloud refused the read (the line says which).`;
@@ -24,7 +30,10 @@ if (wantsHelp(argv)) {
   console.log(HELP);
   process.exit(0);
 }
-const { flags, positionals } = parseFlags(argv, { bool: ["comments", "json"], value: ["source"] });
+const { flags, positionals } = parseFlags(argv, {
+  bool: ["comments", "json"],
+  value: ["source"],
+});
 const ticket = positionals[0];
 if (!ticket) usage("read-ticket needs a ticket identifier (see --help)");
 
@@ -49,9 +58,16 @@ if (flags.json) {
 
 const line = (label, value) => {
   if (value === undefined || value === null || value === "") return;
-  console.log(`${label}: ${typeof value === "string" ? value : JSON.stringify(value)}`);
+  console.log(
+    `${label}: ${typeof value === "string" ? value : JSON.stringify(value)}`,
+  );
 };
-const names = (list, key) => (Array.isArray(list) ? list.map((x) => (x && typeof x === "object" ? (x[key] ?? JSON.stringify(x)) : String(x))) : []);
+const names = (list, key) =>
+  Array.isArray(list)
+    ? list.map((x) =>
+        x && typeof x === "object" ? (x[key] ?? JSON.stringify(x)) : String(x),
+      )
+    : [];
 
 line("ticket", row.identifier ?? row.id);
 line("title", row.title);
@@ -68,13 +84,20 @@ line("url", row.url);
 line("updated", row.updated_at);
 if (Array.isArray(row.relations) && row.relations.length) {
   console.log(`relations (${row.relations.length}):`);
-  for (const rel of row.relations) console.log(`  ${rel.type ?? "?"}: ${rel.issue_identifier ?? ""} -> ${rel.related_identifier ?? JSON.stringify(rel)}`);
+  for (const rel of row.relations)
+    console.log(
+      `  ${rel.type ?? "?"}: ${rel.issue_identifier ?? ""} -> ${rel.related_identifier ?? JSON.stringify(rel)}`,
+    );
 }
 if (Array.isArray(row.linked_pulls) && row.linked_pulls.length) {
   console.log(`linked pull requests (${row.linked_pulls.length}):`);
-  for (const pr of row.linked_pulls) console.log(`  #${pr.number ?? "?"} ${pr.repo_id ?? ""} [${pr.node_id ?? ""}]`);
+  for (const pr of row.linked_pulls)
+    console.log(
+      `  #${pr.number ?? "?"} ${pr.repo_id ?? ""} [${pr.node_id ?? ""}]`,
+    );
 }
-if (Array.isArray(row.agent_sessions)) line("agent sessions", row.agent_sessions.length);
+if (Array.isArray(row.agent_sessions))
+  line("agent sessions", row.agent_sessions.length);
 if (Array.isArray(row.activity)) line("activity entries", row.activity.length);
 if (Array.isArray(row.comments)) line("comments", row.comments.length);
 if (row.description) {
@@ -87,7 +110,9 @@ if (flags.comments && Array.isArray(row.comments)) {
     const who = c.author_name ?? c.author_id ?? "?";
     const bot = c.is_bot ? " [bot]" : "";
     const parent = c.parent_id ? ` reply-to ${c.parent_id}` : "";
-    console.log(`-- ${c.id} · ${who}${bot} · ${c.updated_at ?? c.created_at ?? ""}${parent}`);
+    console.log(
+      `-- ${c.id} · ${who}${bot} · ${c.updated_at ?? c.created_at ?? ""}${parent}`,
+    );
     console.log(String(c.body ?? "").trimEnd());
   }
 }

@@ -42,7 +42,7 @@ The mirrored PR detail carries checks, legacy commit statuses, review objects wi
 
 - checks: judged fully from the detail.
 - reviewer: reported as inconclusive unless the policy waives it. The script says whether the reviewer left review objects, but whether a clean-pass reaction followed, and whether those reviews stand at the current head or an earlier one, is not mirrored.
-- threads: read from the local replica's review-thread rows when the replica is fresh (resolved flag per thread); inconclusive otherwise, with the command that starts the replica. Thread ancestry against force-pushes is judged by the cloud, not here.
+- threads: inconclusive when cloud PR detail carries no thread count. The optional `--local-threads` reads local review-thread rows only after the replica proves it is caught up to a probed cloud head. Thread ancestry against force-pushes is judged by the cloud, not here.
 
 The exit code is 1 only for a proven-red leg or prerequisite. An inconclusive leg leaves exit 0 and a verdict that says "not proven mergeable from this read". The cloud's own evaluator, which holds the reaction and the ancestry, is the authority; a queue-ready label on the PR means it already said yes.
 

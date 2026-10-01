@@ -49,7 +49,10 @@ const waiting = (reason: string, path?: string): OnboardStepResult => ({
  * No cache, token refresh or local write may create a stale positive capability. */
 async function read(
   ctx: Ctx,
-  journal: OnboardJournal,
+  journal: Pick<
+    OnboardJournal,
+    "account" | "tenant" | "membershipId" | "baseUrl"
+  >,
   timeoutMs: number,
   external?: AbortSignal,
 ): Promise<CapabilityRead> {
@@ -169,8 +172,10 @@ async function read(
               !["GET", "POST"].includes(row.method as string) ||
               typeof row.path !== "string" ||
               row.path.length > 240 ||
-              !/^\/(?:api\/v1\/|connect\/|me\/)[A-Za-z0-9_/-]+$/.test(
-                row.path,
+              !(
+                /^\/(?:api\/v1\/|connect\/|me\/)[A-Za-z0-9_/-]+$/.test(
+                  row.path,
+                ) || row.path === "/api/v1/coding-accounts/:slot/validate"
               ) ||
               row.personalBearer !== true
             )
@@ -199,6 +204,30 @@ async function read(
   }
 }
 
+/** Read current route support for context checks and selected writes without refreshing a token. */
+export async function verifyOnboardRoutes(
+  ctx: Ctx,
+  binding: Pick<
+    OnboardJournal,
+    "account" | "tenant" | "membershipId" | "baseUrl"
+  >,
+  requirements: readonly OnboardRouteRequirement[],
+  signal?: AbortSignal,
+  timeoutMs = 30_000,
+): Promise<{ origin: string } | { reason: string; origin?: string }> {
+  if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 30_000)
+    throw new Error("onboarding_capability_timeout_invalid");
+  const result = await read(ctx, binding, timeoutMs, signal);
+  if ("reason" in result) return result;
+  if (
+    requirements.some(
+      (route) => !result.capabilities.routes.has(routeKey(route)),
+    )
+  )
+    return { reason: "cloud_capability_unavailable", origin: result.origin };
+  return { origin: result.origin };
+}
+
 /** Guard both the observation and action before their first endpoint request. A route's real
  * refusal is preserved only after the same-account cloud advertised personal bearer support. */
 export function guardOnboardCapabilities(
@@ -215,17 +244,15 @@ export function guardOnboardCapabilities(
     requirements: readonly OnboardRouteRequirement[],
     work: () => Promise<OnboardStepResult>,
   ) => {
-    const advertised = await read(ctx, journal, timeoutMs, signal);
-    if (
-      "reason" in advertised ||
-      requirements.some(
-        (route) => !advertised.capabilities.routes.has(routeKey(route)),
-      )
-    ) {
-      const reason =
-        "reason" in advertised
-          ? advertised.reason
-          : "cloud_capability_unavailable";
+    const advertised = await verifyOnboardRoutes(
+      ctx,
+      journal,
+      requirements,
+      signal,
+      timeoutMs,
+    );
+    if ("reason" in advertised) {
+      const reason = advertised.reason;
       const url = advertised.origin
         ? `${advertised.origin}${safePages[options.fallback]}`
         : undefined;
