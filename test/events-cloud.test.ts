@@ -166,7 +166,7 @@ test("abort after one buffered row prevents further output", async () => {
   expect((await stream.next()).done).toBe(true);
 });
 
-test.each([false, true])("routine 4401 expiry refreshes OAuth and resumes the same cursor, transient outage %s", async (outage) => {
+test.each(["none", "refresh", "discovery"])("routine 4401 expiry refreshes OAuth and resumes the same cursor, transient outage %s", async (outage) => {
   vi.useFakeTimers();
   vi.setSystemTime(new Date("2026-10-01T00:00:00Z"));
   resetDiscoveryCache();
@@ -179,11 +179,13 @@ test.each([false, true])("routine 4401 expiry refreshes OAuth and resumes the sa
   const sockets: Socket[] = [];
   const cursors: number[] = [];
   let refreshes = 0;
+  let discoveries = 0;
   ctx.fetch = async (input) => {
     const url = new URL(String(input));
+    if (url.pathname === "/api/v1/auth/cli" && outage === "discovery" && ++discoveries === 1) return Response.json({}, { status: 503 });
     if (url.pathname === "/api/v1/auth/cli") return Response.json({ clientId: "cli", issuer: "https://cloud.test", deviceAuthorizationUrl: "https://cloud.test/device", tokenUrl: "https://cloud.test/token", jwksUrl: "https://cloud.test/jwks" });
     if (url.pathname === "/token") {
-      if (outage && ++refreshes <= 4) return Response.json({ error: "temporarily_unavailable" }, { status: 429 });
+      if (outage === "refresh" && ++refreshes <= 4) return Response.json({ error: "temporarily_unavailable" }, { status: 429 });
       return Response.json({ access_token: "new-access", refresh_token: "new-refresh" });
     }
     const since = Number(url.searchParams.get("since"));
@@ -201,7 +203,7 @@ test.each([false, true])("routine 4401 expiry refreshes OAuth and resumes the sa
   vi.setSystemTime(new Date(Date.now() + 120_000));
   required(sockets[0]).disconnect(4401);
   const next = stream.next();
-  await vi.advanceTimersByTimeAsync(outage ? 10_000 : 1_000);
+  await vi.advanceTimersByTimeAsync(outage !== "none" ? 10_000 : 1_000);
   expect((await next).value?.sequence).toBe(6);
   expect(tokens).toEqual(["old-access", "new-access"]);
   expect(cursors).toEqual([4, 5]);
@@ -259,10 +261,10 @@ test("repeated replay failures retain exponential backoff and honor Retry-After"
 });
 
 
-test("invalid notification followed by close keeps its terminal protocol error", async () => {
+test("invalid notification followed by close refuses even already buffered rows", async () => {
   const ctx = context();
   let socket: Socket | undefined;
-  ctx.fetch = async (input) => Number(new URL(String(input)).searchParams.get("since")) === Number.MAX_SAFE_INTEGER ? response(5, [], 409) : response(5, [row(5)]);
+  ctx.fetch = async (input) => Number(new URL(String(input)).searchParams.get("since")) === Number.MAX_SAFE_INTEGER ? response(6, [], 409) : response(6, [row(5), row(6)]);
   const stream = cloudEvents(ctx, { after: 4, signal: new AbortController().signal }, { socket: () => socket = new Socket() });
   expect((await stream.next()).value?.sequence).toBe(5);
   required(socket).head(6, "another-tenant");

@@ -41,7 +41,8 @@ function eventBearer(ctx: Ctx, signal: AbortSignal): Promise<string> {
       // The shared helper has no typed retry status. Unknown shared failures may retry;
       // a refresh we own records its actual response, including terminal 4xx refusals.
       const transient = error instanceof CliError && (error.code === "network" ||
-        (error.code === "session-refresh-failed" && (authStatus === undefined || authStatus === 429 || authStatus >= 500)));
+        authStatus === 429 || (authStatus !== undefined && authStatus >= 500) ||
+        (error.code === "session-refresh-failed" && authStatus === undefined));
       reject(error instanceof CliError && !transient
         ? new CliError("cloud event authentication failed; run catalyst login", "events-auth")
         : new Error("cloud event authentication temporarily unavailable"));
@@ -228,9 +229,11 @@ export async function* cloudEvents(ctx: Ctx, options: { after?: number; signal: 
         let result = await page.next();
         try {
           while (!result.done) {
+            if (failure) throw failure;
             signal.throwIfAborted();
             cursor = result.value.sequence;
             yield result.value;
+            if (failure) throw failure;
             signal.throwIfAborted();
             result = await page.next();
           }
