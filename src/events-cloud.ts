@@ -31,8 +31,18 @@ function eventBearer(ctx: Ctx, signal: AbortSignal): Promise<string> {
   return new Promise((resolve, reject) => {
     const abort = () => reject(signal.reason);
     signal.addEventListener("abort", abort, { once: true });
-    bearerFor(ctx, requireConfig(ctx)).then(resolve, (error: unknown) => {
-      reject(error instanceof CliError && error.code !== "network"
+    let authStatus: number | undefined;
+    const authCtx: Ctx = { ...ctx, fetch: async (input, init) => {
+      const response = await ctx.fetch(input, init);
+      authStatus = response.status;
+      return response;
+    } };
+    bearerFor(authCtx, requireConfig(ctx)).then(resolve, (error: unknown) => {
+      // The shared helper has no typed retry status. Unknown shared failures may retry;
+      // a refresh we own records its actual response, including terminal 4xx refusals.
+      const transient = error instanceof CliError && (error.code === "network" ||
+        (error.code === "session-refresh-failed" && (authStatus === undefined || authStatus === 429 || authStatus >= 500)));
+      reject(error instanceof CliError && !transient
         ? new CliError("cloud event authentication failed; run catalyst login", "events-auth")
         : new Error("cloud event authentication temporarily unavailable"));
     }).finally(() => signal.removeEventListener("abort", abort));
@@ -167,7 +177,7 @@ export async function* cloudEvents(ctx: Ctx, options: { after?: number; signal: 
     const failed = () => { failure ??= new Error("cloud event connection interrupted"); wake(); };
     const closed = () => {
       // 4401 is routine authorization expiry. The next authenticated probe refreshes it.
-      failure = new Error("cloud event connection closed");
+      failure ??= new Error("cloud event connection closed");
       wake();
     };
     const message = (event: Event) => {
