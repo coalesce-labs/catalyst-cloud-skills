@@ -5,11 +5,18 @@ import { bearerFor } from "./oauth.js";
 import type { CachedEvent } from "./events.js";
 
 const headHeader = "x-catalyst-event-backbone-head-seq";
+// A server that filters says how far it looked, so an empty filtered page still moves the cursor.
+const scannedHeader = "x-catalyst-event-backbone-scanned-seq";
 const maxLine = 1_048_576;
 export interface EventSocket extends EventTarget {
   readyState: number;
   send(data: string): void;
   close(): void;
+}
+/** Narrows the replay on the server when it supports it; callers still filter what arrives. */
+export interface CloudEventFilter {
+  type?: string;
+  ticket?: string;
 }
 export interface CloudEventDeps {
   socket?: (url: string) => EventSocket;
@@ -56,10 +63,12 @@ function responseHead(response: Response): number {
   if (!sequence(head)) throw protocol("cloud event head could not be verified");
   return head;
 }
-async function request(ctx: Ctx, since: number, signal: AbortSignal): Promise<Response> {
+async function request(ctx: Ctx, since: number, signal: AbortSignal, filter: CloudEventFilter = {}): Promise<Response> {
   const cfg = requireConfig(ctx);
   const url = new URL(`${normalizeBaseUrl(cfg.baseUrl)}/api/v1/events/backbone`);
   url.searchParams.set("since", String(since));
+  if (filter.type) url.searchParams.set("type", filter.type);
+  if (filter.ticket) url.searchParams.set("ticket", filter.ticket);
   const bounded = AbortSignal.any([signal, AbortSignal.timeout(15_000)]);
   const token = await eventBearer(ctx, bounded);
   bounded.throwIfAborted();
@@ -97,14 +106,31 @@ export async function cloudEventHead(ctx: Ctx, signal: AbortSignal = AbortSignal
   } finally { await response.body?.cancel(); }
 }
 
-async function* replay(ctx: Ctx, after: number, signal: AbortSignal): AsyncGenerator<CachedEvent, number> {
-  const response = await request(ctx, after, signal);
+interface ReplayEnd {
+  /** The page's target: the reader asks again until its cursor reaches it. */
+  head: number;
+  /** The last sequence the server examined, when it filtered; absent means every row was sent. */
+  scanned?: number;
+}
+
+function responseScanned(response: Response, after: number, head: number): number | undefined {
+  const raw = response.headers.get(scannedHeader);
+  if (raw === null) return undefined;
+  const scanned = raw.trim() === "" ? NaN : Number(raw);
+  if (!sequence(scanned) || scanned < after || scanned > head)
+    throw protocol("cloud event scanned sequence is outside the replayed range");
+  return scanned;
+}
+
+async function* replay(ctx: Ctx, after: number, signal: AbortSignal, filter?: CloudEventFilter): AsyncGenerator<CachedEvent, ReplayEnd> {
+  const response = await request(ctx, after, signal, filter);
   let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
   try {
     const head = responseHead(response);
     if (response.status === 409)
       throw new CliError(`cloud refused event cursor ${after} (head ${head}); history may be missing or the cursor may be ahead. Inspect events status before choosing a new --after cursor`, "events-gap", 2, 409);
     if (head < after) throw protocol("cloud event head moved behind the requested cursor");
+    const scanned = responseScanned(response, after, head);
     if (!response.body) throw protocol("cloud event replay body is absent");
     reader = response.body.getReader();
     const decoder = new TextDecoder("utf-8", { fatal: true });
@@ -117,6 +143,8 @@ async function* replay(ctx: Ctx, after: number, signal: AbortSignal): AsyncGener
       const event = value as Partial<CachedEvent>;
       if (event.tenantId !== requireConfig(ctx).account || !sequence(event.sequence) || event.sequence <= cursor || typeof event.eventId !== "string" || typeof event.type !== "string" || typeof event.recordedAt !== "string" || !("payload" in event))
         throw protocol("cloud event replay contains an invalid tenant or event sequence");
+      if (scanned !== undefined && event.sequence > scanned)
+        throw protocol("cloud event scanned sequence is short of a delivered row");
       cursor = event.sequence;
       return event as CachedEvent;
     };
@@ -136,8 +164,8 @@ async function* replay(ctx: Ctx, after: number, signal: AbortSignal): AsyncGener
       if (done) break;
     }
     if (buffer.trim()) { signal.throwIfAborted(); yield parse(buffer.trim()); }
-    if (cursor === after && cursor < head) throw protocol("cloud event replay made no progress toward its head");
-    return Math.max(cursor, head);
+    if (Math.max(cursor, scanned ?? cursor) === after && after < head) throw protocol("cloud event replay made no progress toward its head");
+    return { head, scanned };
   } finally {
     if (reader) { await reader.cancel().catch(() => {}); reader.releaseLock(); }
     else await response.body?.cancel();
@@ -160,7 +188,7 @@ function pause(ms: number, signal: AbortSignal, wakes?: EventTarget): Promise<vo
 }
 
 /** Foreground push subscription with durable replay, reconnecting from the last yielded cursor. */
-export async function* cloudEvents(ctx: Ctx, options: { after?: number; signal: AbortSignal }, deps: CloudEventDeps = {}): AsyncGenerator<CachedEvent> {
+export async function* cloudEvents(ctx: Ctx, options: { after?: number; filter?: CloudEventFilter; signal: AbortSignal }, deps: CloudEventDeps = {}): AsyncGenerator<CachedEvent> {
   const { signal } = options;
   let cursor = options.after;
   let backoff = 1_000;
@@ -225,7 +253,7 @@ export async function* cloudEvents(ctx: Ctx, options: { after?: number; signal: 
       }, 10_000);
       while (!signal.aborted) {
         if (failure) throw failure;
-        const page = replay(ctx, cursor, signal);
+        const page = replay(ctx, cursor, signal, options.filter);
         let result = await page.next();
         try {
           while (!result.done) {
@@ -237,10 +265,12 @@ export async function* cloudEvents(ctx: Ctx, options: { after?: number; signal: 
             signal.throwIfAborted();
             result = await page.next();
           }
-        } finally { await page.return(cursor); }
+        } finally { await page.return({ head: cursor }); }
         backoff = 1_000;
         if (failure) throw failure;
-        if (cursor < result.value || cursor < notifiedHead) continue;
+        // Rows the server filtered out are behind its scanned sequence; never ask for them again.
+        cursor = Math.max(cursor, result.value.scanned ?? cursor);
+        if (cursor < result.value.head || cursor < notifiedHead) continue;
         // A bounded replay also catches a lost notification or a silent half-open socket.
         await pause(30_000, signal, wakes);
       }

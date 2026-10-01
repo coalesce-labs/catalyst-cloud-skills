@@ -271,3 +271,62 @@ test("invalid notification followed by close refuses even already buffered rows"
   required(socket).disconnect();
   await expect(stream.next()).rejects.toThrow("invalid tenant or head");
 });
+
+const scannedHeader = "x-catalyst-event-backbone-scanned-seq";
+function filtered(head: number, scanned: number, rows: unknown[] = []) {
+  const reply = response(head, rows);
+  reply.headers.set(scannedHeader, String(scanned));
+  return reply;
+}
+
+test("filters ride the replay request, never the head probe", async () => {
+  const ctx = context();
+  const urls: URL[] = [];
+  ctx.fetch = async (input) => {
+    const url = new URL(String(input));
+    urls.push(url);
+    return url.searchParams.get("since") === String(Number.MAX_SAFE_INTEGER) ? response(5, [], 409) : response(5, [row(5)]);
+  };
+  const stream = cloudEvents(ctx, { after: 4, filter: { type: "phase.completed", ticket: "CTC-4511" }, signal: new AbortController().signal }, { socket: () => new Socket() });
+  expect((await stream.next()).value?.sequence).toBe(5);
+  await stream.return(undefined);
+  expect([...required(urls[0]).searchParams.keys()]).toEqual(["since"]);
+  expect(required(urls[1]).searchParams.get("type")).toBe("phase.completed");
+  expect(required(urls[1]).searchParams.get("ticket")).toBe("CTC-4511");
+});
+
+test("a server-filtered page advances the cursor to its scanned sequence, even when empty", async () => {
+  const ctx = context();
+  let socket: Socket | undefined;
+  const requested: number[] = [];
+  ctx.fetch = async (input) => {
+    const since = Number(new URL(String(input)).searchParams.get("since"));
+    if (since === Number.MAX_SAFE_INTEGER) return response(9, [], 409);
+    requested.push(since);
+    if (since === 4) return filtered(9, 6, []);
+    if (since === 6) return filtered(9, 9, [row(8)]);
+    return filtered(12, 12, [row(12)]);
+  };
+  const stream = cloudEvents(ctx, { after: 4, filter: { type: "phase.completed" }, signal: new AbortController().signal }, { socket: () => socket = new Socket() });
+  expect((await stream.next()).value?.sequence).toBe(8);
+  const next = stream.next();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  // Scanned through the head: the reader waits for a push instead of asking again.
+  expect(requested).toEqual([4, 6]);
+  required(socket).head(12);
+  expect((await next).value?.sequence).toBe(12);
+  expect(requested).toEqual([4, 6, 9]);
+  await stream.return(undefined);
+});
+
+test.each([
+  ["behind the cursor", filtered(9, 3, [])],
+  ["beyond the head", filtered(9, 10, [])],
+  ["short of a delivered row", filtered(9, 6, [row(7)])],
+  ["not a sequence", filtered(9, Number.NaN, [])],
+])("a scanned sequence %s fails before output", async (_name, reply) => {
+  const ctx = context();
+  ctx.fetch = async (input) => Number(new URL(String(input)).searchParams.get("since")) === Number.MAX_SAFE_INTEGER ? response(9, [], 409) : reply;
+  const stream = cloudEvents(ctx, { after: 4, signal: new AbortController().signal }, { socket: () => new Socket() });
+  await expect(stream.next()).rejects.toThrow("scanned sequence");
+});
