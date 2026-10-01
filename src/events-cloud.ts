@@ -10,6 +10,9 @@ const maxLine = 1_048_576;
 const maxQueryBody = 16 * maxLine;
 const queryLimit = 200;
 const maxLagPoll = 8_000;
+// CTC-4562 — once the cloud pushes events, the replay is only a safety net for a silent socket.
+const pushedFallback = 600_000;
+const polledFallback = 30_000;
 export interface EventSocket extends EventTarget {
   readyState: number;
   send(data: string): void;
@@ -208,6 +211,38 @@ async function* queryPage(ctx: Ctx, after: number, filter: CloudEventFilter, sig
   return { through: Math.max(cursor, to), more: false };
 }
 
+/** A validated `events` frame (CTC-4562): every match in (after, through], or a range to catch up. */
+interface PushFrame {
+  after: number;
+  through: number;
+  /** True when the frame does not carry every match in its range. */
+  gap: boolean;
+  events: CachedEvent[];
+}
+
+function pushFrame(ctx: Ctx, raw: Record<string, unknown>): PushFrame {
+  const { after, through } = raw;
+  if (!sequence(after) || !sequence(through) || through < after || !Array.isArray(raw.events))
+    throw protocol("cloud events frame has invalid bounds");
+  let cursor = after;
+  let gap = raw.gap === true;
+  const events: CachedEvent[] = [];
+  for (const value of raw.events) {
+    // An event too large to push arrives as a summary; the catch-up read returns it whole.
+    if (value && typeof value === "object" && (value as { payloadOmitted?: unknown }).payloadOmitted === true) {
+      gap = true;
+      const seq = (value as { sequence?: unknown }).sequence;
+      if (sequence(seq) && seq > cursor) cursor = seq;
+      continue;
+    }
+    if (!validEvent(ctx, value, cursor) || value.sequence > through)
+      throw protocol("cloud events frame contains an invalid tenant or event sequence");
+    cursor = value.sequence;
+    events.push(value);
+  }
+  return { after, through, gap, events };
+}
+
 function pause(ms: number, signal: AbortSignal, wakes?: EventTarget): Promise<void> {
   if (signal.aborted) return Promise.resolve();
   return new Promise((resolve) => {
@@ -241,7 +276,11 @@ export async function* cloudEvents(ctx: Ctx, options: { after?: number; filter?:
     let retryDelay = 0;
     let opened = false;
     let notifiedHead = 0;
-    const wake = () => wakes.dispatchEvent(new Event("wake"));
+    // CTC-4562 — the cloud acknowledged the events channel, and the frames it has pushed since.
+    let pushing = false;
+    const pushed: PushFrame[] = [];
+    let woken = false;
+    const wake = () => { woken = true; wakes.dispatchEvent(new Event("wake")); };
     const stop = () => { socket?.close(); wake(); };
     const failed = () => { failure ??= new Error("cloud event connection interrupted"); wake(); };
     const closed = () => {
@@ -254,7 +293,18 @@ export async function* cloudEvents(ctx: Ctx, options: { after?: number; filter?:
       let frame: unknown;
       try { frame = JSON.parse(event.data); } catch { return; }
       if (!frame || typeof frame !== "object") return;
-      const head = frame as { type?: unknown; accountId?: unknown; seq?: unknown };
+      const head = frame as { type?: unknown; accountId?: unknown; seq?: unknown; channels?: unknown };
+      if (head.type === "channels") {
+        pushing = Array.isArray(head.channels) && head.channels.includes("events");
+        wake();
+        return;
+      }
+      if (head.type === "events") {
+        try { pushed.push(pushFrame(ctx, frame as Record<string, unknown>)); }
+        catch (error) { failure = error instanceof Error ? error : protocol("cloud events frame is invalid"); }
+        wake();
+        return;
+      }
       if (head.type !== "event-backbone-head") return;
       if (head.accountId !== requireConfig(ctx).account || !sequence(head.seq)) {
         failure = protocol("cloud event notification has an invalid tenant or head");
@@ -276,6 +326,12 @@ export async function* cloudEvents(ctx: Ctx, options: { after?: number; filter?:
       const url = new URL(`${normalizeBaseUrl(cfg.baseUrl)}/api/v1/connect`);
       url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
       url.searchParams.set("account", cfg.account);
+      // CTC-4562 — ask to be pushed the matching events, whole, instead of the change feed. A cloud
+      // without the channel ignores these and the reader keeps its nudge-and-replay loop.
+      url.searchParams.set("channels", "events");
+      if (filter.type) url.searchParams.set("type", filter.type);
+      if (filter.ticket) url.searchParams.set("ticket", filter.ticket);
+      url.searchParams.set("fields", "full");
       url.searchParams.set("token", await eventBearer(ctx, AbortSignal.any([signal, AbortSignal.timeout(15_000)])));
       signal.throwIfAborted();
       socket = (deps.socket ?? ((address) => new WebSocket(address)))(url.toString());
@@ -307,8 +363,35 @@ export async function* cloudEvents(ctx: Ctx, options: { after?: number; filter?:
         } finally { await page.return(undefined); }
         return result.value;
       };
+      let catchUp = true;
       while (!signal.aborted) {
         if (failure) throw failure;
+        if (!catchUp) {
+          // Caught up: apply pushed frames in order. One that starts past the cursor, or carries a
+          // gap, sends the reader back to the catch-up read; overlap with it is dropped by sequence.
+          while (pushed.length > 0 && !catchUp) {
+            const next = pushed.shift() as PushFrame;
+            knownHead = Math.max(knownHead, next.through);
+            if (next.through <= cursor) continue;
+            if (next.gap || next.after > cursor) { catchUp = true; break; }
+            for (const event of next.events) {
+              if (event.sequence <= cursor) continue;
+              if (failure) throw failure;
+              signal.throwIfAborted();
+              cursor = event.sequence;
+              yield event;
+            }
+            cursor = Math.max(cursor, next.through);
+          }
+          if (failure) throw failure;
+          if (catchUp || cursor < Math.max(knownHead, notifiedHead)) { catchUp = true; continue; }
+          woken = false;
+          await pause(pushing ? pushedFallback : polledFallback, signal, wakes);
+          // A wake with frames is applied without a read; a timeout, or a nudge with no push channel,
+          // replays (a bounded replay also catches a lost notification or a silent half-open socket).
+          if (!woken || !pushing) catchUp = true;
+          continue;
+        }
         const start: number = cursor;
         let end = indexed ? yield* follow(queryPage(ctx, start, filter, signal)) : yield* follow(replay(ctx, start, signal));
         const queried = indexed && end !== "absent" && end !== "uncovered";
@@ -328,8 +411,7 @@ export async function* cloudEvents(ctx: Ctx, options: { after?: number; filter?:
         }
         lagPoll = 1_000;
         if (cursor < knownHead) continue;
-        // A bounded replay also catches a lost notification or a silent half-open socket.
-        await pause(30_000, signal, wakes);
+        catchUp = false;
       }
     } catch (error) {
       if (signal.aborted) return;
