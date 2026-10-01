@@ -267,3 +267,44 @@ test("an interrupted tail exits 130", async () => {
   interrupt();
   expect(await code).toBe(130);
 });
+
+test("the cloud and cache paths print the same events for one ticket filter, following the index exactly", async () => {
+  const long = `CTC-${"9".repeat(70)}`;
+  const fixtures = [
+    relayCompleted,
+    phaseComplete,
+    dispatchFailed,
+    // The index reads only a `ticket` entity's id: an `issue` entity, or an identifier field, is not a ticket.
+    { ...relayCompleted, sequence: 20, eventId: "evt-20", entity: { type: "issue", id: "CTC-42" } },
+    { ...relayCompleted, sequence: 21, eventId: "evt-21", entity: { type: "ticket", identifier: "CTC-42" } },
+    // A ticket over the index's 64-byte bound is not indexed, so it never matches.
+    { ...relayCompleted, sequence: 22, eventId: "evt-22", entity: { type: "ticket", id: long } },
+  ] as unknown as CachedEvent[];
+  const expected = [7, 8, 10];
+
+  const cloudOut = new Sink();
+  const source: NonNullable<CloudTailDeps["events"]> = async function* () {
+    yield* fixtures;
+  };
+  expect(await main(["events", "tail", "--ticket", "CTC-42"], context(), { events: { loadSdk: noCache, out: cloudOut, cloud: { events: source } } })).toBe(0);
+  const fromCloud = cloudOut.chunks.map((chunk) => (JSON.parse(chunk) as CachedEvent).sequence);
+
+  const ctx = context();
+  const cache: EventsSdk = {
+    CatalystEventSync: class {
+      async start() {}
+      async stop() {}
+    },
+    defaultEventCacheDirectory: () => `${ctx.home}/events`,
+    readCachedEvents: async () => fixtures,
+    async *tailCachedEvents() {
+      yield* fixtures;
+    },
+  };
+  expect(await main(["events", "query", "--from-cache", "--ticket", "CTC-42", "--limit", "50"], ctx, { events: { loadSdk: async () => cache } })).toBe(0);
+  const fromCache = ctx.out.map((line) => (JSON.parse(line) as CachedEvent).sequence);
+
+  expect(fromCloud).toEqual(expected);
+  expect(fromCache).toEqual(expected);
+  expect(eventMatches({ ticket: long })(fixtures[5]!)).toBe(false);
+});

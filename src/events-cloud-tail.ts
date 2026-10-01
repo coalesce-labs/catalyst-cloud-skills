@@ -36,29 +36,26 @@ export interface CloudTailResult {
 
 // A lease causation names its ticket: `lease:<ticket>/<phase>#<nonce>` (event-index/fields.ts).
 const CAUSED_BY_LEASE = /^lease:([^/]+)\/[^#]+#/;
+// The index stores at most this many UTF-8 bytes of ticket; a longer value is not indexed.
+const MAX_INDEXED_TICKET_BYTES = 64;
 
-/** The ticket an event is about, resolved the way the cloud's event index resolves it
- *  (catalyst-cloud apps/mirror/src/event-index/fields.ts): the ticket entity first, then
- *  `payload.ticket`, then the lease that caused it. A body-unavailable stub carries the index's own
- *  `ticket`. Nothing else in the payload counts, so a filter means one thing from either source. */
+function boundedTicket(value: unknown): string | null {
+  if (typeof value !== "string" || value.length === 0) return null;
+  return new TextEncoder().encode(value).length > MAX_INDEXED_TICKET_BYTES ? null : value;
+}
+
+/** The ticket an event is about, resolved exactly as the cloud's event index resolves it
+ *  (catalyst-cloud apps/mirror/src/event-index/fields.ts): a `ticket` entity's id, then
+ *  `payload.ticket`, then the lease that caused it, each at most 64 bytes. A body-unavailable stub
+ *  carries the index's own `ticket`. Nothing else counts, so `--from-cache` matches exactly what the
+ *  cloud path returns. */
 export function eventTicket(event: CachedEvent): string | null {
-  const e = event as CachedEvent & {
-    entity?: { type?: unknown; id?: unknown; identifier?: unknown };
-    causationId?: unknown;
-    ticket?: unknown;
-    bodyUnavailable?: unknown;
-  };
-  const named = (value: unknown) => (typeof value === "string" && value.length > 0 ? value : null);
-  if (e.bodyUnavailable === true && named(e.ticket)) return named(e.ticket);
-  if (e.entity && (e.entity.type === "ticket" || e.entity.type === "issue")) {
-    const fromEntity = named(e.entity.id) ?? named(e.entity.identifier);
-    if (fromEntity) return fromEntity;
-  }
+  const e = event as CachedEvent & { ticket?: unknown; bodyUnavailable?: unknown };
+  if (e.bodyUnavailable === true) return boundedTicket(e.ticket);
+  const fromEntity = e.entity?.type === "ticket" ? boundedTicket(e.entity.id) : null;
   const payload = e.payload && typeof e.payload === "object" ? (e.payload as Record<string, unknown>) : undefined;
-  const fromPayload = named(payload?.ticket);
-  if (fromPayload) return fromPayload;
   const lease = typeof e.causationId === "string" ? CAUSED_BY_LEASE.exec(e.causationId) : null;
-  return named(lease?.[1]);
+  return fromEntity ?? boundedTicket(payload?.ticket) ?? boundedTicket(lease?.[1]);
 }
 
 /** The type and ticket filter, the same on the cloud and the local cache paths. */
