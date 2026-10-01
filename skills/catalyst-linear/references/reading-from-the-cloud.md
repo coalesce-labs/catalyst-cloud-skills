@@ -12,6 +12,8 @@ Cloud reads are the default on every machine. They need no local writer and no l
 | What is the PR's state, checks and reviews? | `catalyst query pulls --ticket <KEY-123>`, then `catalyst query pull <node-id>` |
 | What changed across the account since a point? | `catalyst query changes --since head`, then the cursor it prints |
 | Find a ticket by words | `node scripts/search.mjs <terms>` |
+| What happened to it, event by event? | `catalyst events query --ticket <KEY-123>` |
+| Wait until its phase finishes | `catalyst events wait-for --ticket <KEY-123> --type relay.phase.completed --after <head> --timeout 300` |
 
 ## Reading the answer
 
@@ -23,7 +25,13 @@ A smaller read is coming: the cloud will answer a ticket or its execution histor
 
 ## Events
 
-In this release, `catalyst events tail`, `wait-for` and `query` read only the local event cache, which exists only on a machine that opted in to local sync. On any other machine, answer "did this ticket move" from `catalyst history <KEY-123>` and the ticket's `updated_at`. `catalyst query changes` reads the cloud's change feed, which keeps only recent changes.
+`catalyst events` reads the cloud by default and needs no local file.
+
+- `catalyst events query --ticket <KEY-123>` prints the ticket's events, newest first. Add `--type`, `--limit` (up to 200), `--order asc` and `--before` or `--after` to page. An empty page says which sequences the cloud has indexed, so "no match" is not "never happened".
+- To wait for something to happen, first run `catalyst events status --json` and keep its `head`. Then run `catalyst events wait-for --ticket <KEY-123> --type relay.phase.completed --after <head> --timeout 300`. Exit 0 prints the event, exit 1 is a timeout, and exit 4 means the cloud was unreachable.
+- `catalyst events tail --ticket <KEY-123>` stays in the foreground and prints one JSON line per new event.
+
+The ticket filter reads the event's ticket entity, `payload.ticket`, and the lease that caused it. `--from-cache` reads this machine's local event cache instead. It exists only where local sync is on, and it pays off when several agents on one machine share it.
 
 ## The local replica
 

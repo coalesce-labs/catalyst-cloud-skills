@@ -11,9 +11,11 @@ Cloud reads are the default everywhere and need no local writer or database. Eac
 | queue order | `catalyst queue` |
 | PR state and checks | `catalyst query pulls --ticket KEY-123`, then `catalyst query pull <node-id>` |
 | what changed since a point | `catalyst query changes --since head` |
+| a ticket's events, newest first | `catalyst events query --ticket KEY-123` |
+| wait for a phase to finish | `catalyst events wait-for --ticket KEY-123 --type relay.phase.completed --after <head> --timeout 300` |
 
 A status-only read of a ticket and of its execution history is coming. No CLI flag selects it yet; read the full record.
 
-Events: `catalyst events tail`, `wait-for` and `query` read only the local event cache in this release. On a machine without local sync, answer movement from `catalyst history` and `updated_at`.
+Events: `catalyst events` reads the cloud by default. `events status --json` gives the `head` to wait after. Exit 4 from `wait-for` is an outage, not a timeout. `--from-cache` reads the local event cache, which exists only where local sync is on.
 
 Local SQL: `references/local-replica.md`, only when `configured: true`.
