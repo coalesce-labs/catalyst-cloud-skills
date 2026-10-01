@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.14.7
+
+- Setup uses cloud reads by default and offers local sync as an option. Onboarding preserves verified account and repository choices when it resumes.
+- Settings drafts stay private for review; keeping a draft does not approve it or import values.
+
 ## 0.14.6
 
 - A current Catalyst data folder no longer triggers a legacy-runtime cleanup warning. Legacy checks and removal keep current shared data and report it separately.
