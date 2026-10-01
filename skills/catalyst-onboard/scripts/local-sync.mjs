@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 import { cliTarget } from "./lib/cli.mjs";
 
 const STATUS_COMMAND = ["replica", "status", "--probe", "--json"];
-const EVENTS_COMMAND = ["events", "status", "--probe", "--json"];
+const EVENTS_COMMAND = ["events", "status", "--from-cache", "--probe", "--json"];
 const START_COMMAND = ["replica", "start", "--detach"];
 const RECOVERY_COMMAND = "catalyst replica start --detach";
 
@@ -120,7 +120,7 @@ function readStatus(run) {
         current: false,
         reason: `event freshness is unknown: ${eventsResult.error || eventsResult.stderr.trim() || "invalid JSON"}`,
       },
-      recovery: "catalyst events status --probe --json",
+      recovery: "catalyst events status --from-cache --probe --json",
     };
   }
   return { status, events, assessment: assessLocalSync(status, events) };

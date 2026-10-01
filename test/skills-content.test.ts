@@ -382,7 +382,7 @@ describe("each skill's scripts spawn the catalyst verbs it teaches", () => {
       /"status"/,
       /"ready",\s*"--json"/,
       /"replica",\s*"status",\s*"--probe",\s*"--json"/,
-      /"events",\s*"status",\s*"--probe",\s*"--json"/,
+      /"events",\s*"status",\s*"--from-cache",\s*"--probe",\s*"--json"/,
       /"replica",\s*"start",\s*"--detach"/,
       /"me",\s*"--json"/,
       /"connections",\s*"personal"/,
@@ -457,11 +457,11 @@ describe("each skill's scripts spawn the catalyst verbs it teaches", () => {
       "optional first-event check in `references/local-sync.md`",
     );
     expect(localSync).toContain(
-      "catalyst events wait-for --ticket <ticket-identifier> --after <cursor-before-move> --timeout 300",
+      "catalyst events wait-for --from-cache --ticket <ticket-identifier> --after <cursor-before-move> --timeout 300",
     );
     const cursorCapture = localSync.indexOf("record its `cursor`");
     const cardMove = localSync.indexOf("Move the card");
-    const eventWait = localSync.indexOf("events wait-for --ticket");
+    const eventWait = localSync.indexOf("events wait-for --from-cache --ticket");
     expect(cursorCapture).toBeGreaterThanOrEqual(0);
     expect(cardMove).toBeGreaterThan(cursorCapture);
     expect(eventWait).toBeGreaterThan(cardMove);
@@ -470,7 +470,7 @@ describe("each skill's scripts spawn the catalyst verbs it teaches", () => {
     );
     expect(localSync).toContain("without inferring a cloud or webhook failure");
     expect(localSync).toContain("replica status --probe --json");
-    expect(localSync).toContain("events status --probe --json");
+    expect(localSync).toContain("events status --from-cache --probe --json");
     expect(localSync).toContain(
       "replica freshness alone does not prove event freshness",
     );
@@ -661,7 +661,8 @@ describe("the install page (README) states what a customer needs, in the order t
     expect(readme).toContain("catalyst replica start");
     expect(readme).toContain("--detach");
     expect(readme).toContain("catalyst replica status");
-    expect(readme).toContain("catalyst events status --probe");
+    expect(readme).toContain("catalyst events status --from-cache --probe");
+    expect(readme).toContain("read from the cloud by default, with no local file");
     expect(readme).toContain("A fresh replica does not prove event freshness");
     expect(readme).toMatch(
       /`0` for fresh, `1` for present but stale, `2` for not connected, `3` for absent/,

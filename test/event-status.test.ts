@@ -25,7 +25,7 @@ const sdk = (): EventsSdk => ({
   readCachedEvents: async () => [],
   async *tailCachedEvents() { /* not called by status */ },
 });
-const command = () => main(["events", "status", "--probe", "--json"], ctx, { events: { loadSdk: async () => sdk() } });
+const command = () => main(["events", "status", "--from-cache", "--probe", "--json"], ctx, { events: { loadSdk: async () => sdk() } });
 
 test("event status requires the cloud head and a live cache lock", async () => {
   ctx.fetch = async () => new Response("", { status: 200, headers: { "x-catalyst-event-backbone-head-seq": "14" } });
