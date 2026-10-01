@@ -567,3 +567,106 @@ function fixtureIssuesWithAssignee(): Record<string, unknown>[] {
   (rows[0] as Record<string, unknown>).assignee_name = "Ana";
   return rows;
 }
+
+// CTC-4556 — `--team CTC --state Implement --limit 5` printed nothing over "truncated at 5 of 8541":
+// the CLI sent `team` and `state`, which the mirror does not narrow by, then filtered a page of the
+// newest rows. Filters now ride as `team_key` and `state_name`, and a page the cloud did not narrow
+// is refused rather than printed.
+describe("issue filters narrow on the server", () => {
+  afterAll(() => {
+    server.pageCap = undefined;
+    server.legacyIssueScope = undefined;
+    server.issues = fixtureIssues();
+  });
+
+  test("--team and --state reach the server as team_key and state_name, and the page is that scope", async () => {
+    await seedJoined(home, server);
+    server.pageCap = 5;
+    // 120 newer Todo rows first: a page of the newest rows holds no In Progress issue.
+    server.issues = [...manyIssues(120), ...fixtureIssues()];
+    expect(
+      await main(
+        [
+          "query",
+          "issues",
+          "--team",
+          "ENG",
+          "--state",
+          "in progress",
+          "--limit",
+          "5",
+          "--source",
+          "api",
+          "--json",
+        ],
+        ctx,
+      ),
+    ).toBe(0);
+    const rows = JSON.parse(ctx.out.join("\n")) as { identifier: string }[];
+    expect(rows.map((r) => r.identifier)).toEqual(["ENG-2"]);
+    const sent = server.requests.find((r) =>
+      r.path.startsWith("/api/v1/issues?"),
+    );
+    const params = new URL(`http://x${sent?.path}`).searchParams;
+    expect(params.get("team_key")).toBe("ENG");
+    expect(params.get("state_name")).toBe("in progress");
+    expect(params.has("team")).toBe(false);
+    expect(params.has("state")).toBe(false);
+  });
+
+  test.each([
+    [["--state", "Todo"], "--state"],
+    [["--team", "ENG"], "--team"],
+    [["--all", "--state", "Todo"], "--state"],
+  ])(
+    "a cloud that does not report narrowing %j is refused, not printed",
+    async (flags, named) => {
+      await seedJoined(home, server);
+      server.legacyIssueScope = true;
+      expect(
+        await main(
+          ["query", "issues", ...flags, "--source", "api", "--json"],
+          ctx,
+        ),
+      ).toBe(1);
+      expect(ctx.out).toEqual([]);
+      expect(ctx.err.join("\n")).toContain(`the cloud did not apply ${named}`);
+    },
+  );
+
+  test("padded --team and --state are trimmed before they are sent, and match without regard to case", async () => {
+    await seedJoined(home, server);
+    server.legacyIssueScope = undefined;
+    expect(
+      await main(
+        ["query", "issues", "--team", "  eng ", "--state", "  IN PROGRESS ", "--source", "api", "--json"],
+        ctx,
+      ),
+    ).toBe(0);
+    expect((JSON.parse(ctx.out.join("\n")) as { identifier: string }[]).map((r) => r.identifier)).toEqual([
+      "ENG-2",
+    ]);
+    const sent = server.requests.filter((r) => r.path.startsWith("/api/v1/issues?")).at(-1);
+    const params = new URL(`http://x${sent?.path}`).searchParams;
+    expect(params.get("team_key")).toBe("eng");
+    expect(params.get("state_name")).toBe("IN PROGRESS");
+  });
+
+  test("In_Progress is a different state name from In Progress", async () => {
+    await seedJoined(home, server);
+    server.legacyIssueScope = undefined;
+    expect(
+      await main(["query", "issues", "--state", "In_Progress", "--source", "api", "--json"], ctx),
+    ).toBe(0);
+    expect(JSON.parse(ctx.out.join("\n"))).toEqual([]);
+  });
+
+  test("with no filter, a cloud without the scope header is still read", async () => {
+    await seedJoined(home, server);
+    server.legacyIssueScope = true;
+    expect(
+      await main(["query", "issues", "--source", "api", "--json"], ctx),
+    ).toBe(0);
+    expect(JSON.parse(ctx.out.join("\n"))).not.toHaveLength(0);
+  });
+});
