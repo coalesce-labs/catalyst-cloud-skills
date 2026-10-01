@@ -1,7 +1,13 @@
 import { afterEach, expect, test, vi } from "vitest";
 import { cloudEventHead, cloudEvents, type EventSocket } from "../src/events-cloud";
 import { makeCtx, tempHome } from "./helpers";
-import { saveConfig } from "../src/config";
+import { bearerFor, resetDiscoveryCache } from "../src/oauth";
+import { requireConfig, saveConfig } from "../src/config";
+
+function required<T>(value: T | undefined): T {
+  if (value === undefined) throw new Error("fixture was not initialized");
+  return value;
+}
 
 class Socket extends EventTarget implements EventSocket {
   readyState = 0;
@@ -66,10 +72,10 @@ test("future-only start replays the handshake race, then follows pushed heads", 
   expect((await events.next()).value).toEqual(row(5));
   const next = events.next();
   // A notification during the ongoing replay is retained, not lost by the wait.
-  socket!.head(6);
+  required(socket).head(6);
   expect((await next).value).toEqual(row(6));
   await events.return(undefined);
-  expect(socket!.closed).toBe(true);
+  expect(required(socket).closed).toBe(true);
   expect(requested).toEqual([Number.MAX_SAFE_INTEGER, 4, 5]);
 });
 
@@ -109,7 +115,7 @@ test("reconnect resumes the last delivered event and never repeats it", async ()
   const first = stream.next();
   await vi.advanceTimersByTimeAsync(0);
   expect((await first).value?.sequence).toBe(8);
-  sockets[0]!.disconnect();
+  required(sockets[0]).disconnect();
   const next = stream.next();
   await vi.advanceTimersByTimeAsync(1_000);
   expect((await next).value?.sequence).toBe(9);
@@ -148,4 +154,102 @@ test("early completion cancels an unfinished response body", async () => {
   expect((await stream.next()).value?.sequence).toBe(5);
   await stream.return(undefined);
   expect(cancelled).toBe(true);
+});
+
+test("abort after one buffered row prevents further output", async () => {
+  const ctx = context();
+  const abort = new AbortController();
+  ctx.fetch = async (input) => Number(new URL(String(input)).searchParams.get("since")) === Number.MAX_SAFE_INTEGER ? response(6, [], 409) : response(6, [row(5), row(6)]);
+  const stream = cloudEvents(ctx, { after: 4, signal: abort.signal }, { socket: () => new Socket() });
+  expect((await stream.next()).value?.sequence).toBe(5);
+  abort.abort();
+  expect((await stream.next()).done).toBe(true);
+});
+
+test("routine 4401 expiry refreshes OAuth and resumes the same cursor", async () => {
+  vi.useFakeTimers();
+  vi.setSystemTime(new Date("2026-10-01T00:00:00Z"));
+  resetDiscoveryCache();
+  const ctx = context();
+  const cfg = requireConfig(ctx);
+  delete cfg.key;
+  cfg.auth = { kind: "oauth", accessToken: "old-access", refreshToken: "refresh", expiresAt: new Date(Date.now() + 120_000).toISOString(), sessionId: "session-1" };
+  saveConfig(ctx.home, cfg);
+  const tokens: string[] = [];
+  const sockets: Socket[] = [];
+  const cursors: number[] = [];
+  ctx.fetch = async (input) => {
+    const url = new URL(String(input));
+    if (url.pathname === "/api/v1/auth/cli") return Response.json({ clientId: "cli", issuer: "https://cloud.test", deviceAuthorizationUrl: "https://cloud.test/device", tokenUrl: "https://cloud.test/token", jwksUrl: "https://cloud.test/jwks" });
+    if (url.pathname === "/token") return Response.json({ access_token: "new-access", refresh_token: "new-refresh" });
+    const since = Number(url.searchParams.get("since"));
+    if (since === Number.MAX_SAFE_INTEGER) return response(20, [], 409);
+    cursors.push(since);
+    return response(since + 1, [row(since + 1)]);
+  };
+  const stream = cloudEvents(ctx, { after: 4, signal: new AbortController().signal }, { socket: (url) => {
+    tokens.push(new URL(url).searchParams.get("token") ?? "");
+    const socket = new Socket(); sockets.push(socket); return socket;
+  } });
+  const first = stream.next();
+  await vi.advanceTimersByTimeAsync(0);
+  expect((await first).value?.sequence).toBe(5);
+  vi.setSystemTime(new Date(Date.now() + 120_000));
+  required(sockets[0]).disconnect(4401);
+  const next = stream.next();
+  await vi.advanceTimersByTimeAsync(1_000);
+  expect((await next).value?.sequence).toBe(6);
+  expect(tokens).toEqual(["old-access", "new-access"]);
+  expect(cursors).toEqual([4, 5]);
+  await stream.return(undefined);
+});
+
+test("cancelled credential waiter leaves an existing shared refresh owned by its caller", async () => {
+  resetDiscoveryCache();
+  const ctx = context();
+  const cfg = requireConfig(ctx);
+  delete cfg.key;
+  cfg.auth = { kind: "oauth", accessToken: "expired", refreshToken: "refresh", expiresAt: "2000-01-01T00:00:00Z", sessionId: "session-1" };
+  saveConfig(ctx.home, cfg);
+  let release: (() => void) | undefined;
+  const discovery = new Promise<void>((resolve) => { release = resolve; });
+  const paths: string[] = [];
+  ctx.fetch = async (input) => {
+    const path = new URL(String(input)).pathname;
+    paths.push(path);
+    if (path === "/api/v1/auth/cli") {
+      await discovery;
+      return Response.json({ clientId: "cli", issuer: "https://cloud.test", deviceAuthorizationUrl: "https://cloud.test/device", tokenUrl: "https://cloud.test/token", jwksUrl: "https://cloud.test/jwks" });
+    }
+    return Response.json({ access_token: "new-access", refresh_token: "new-refresh" });
+  };
+  const shared = bearerFor(ctx, cfg);
+  const abort = new AbortController();
+  const probe = cloudEventHead(ctx, abort.signal);
+  abort.abort(new Error("reader stopped"));
+  await expect(probe).rejects.toThrow("reader stopped");
+  expect(paths).toEqual(["/api/v1/auth/cli"]);
+  required(release)();
+  expect(await shared).toBe("new-access");
+  expect(paths).toEqual(["/api/v1/auth/cli", "/token"]);
+});
+
+test("repeated replay failures retain exponential backoff and honor Retry-After", async () => {
+  vi.useFakeTimers();
+  const ctx = context();
+  const abort = new AbortController();
+  const replayTimes: number[] = [];
+  const start = Date.now();
+  ctx.fetch = async (input) => {
+    const since = Number(new URL(String(input)).searchParams.get("since"));
+    if (since === Number.MAX_SAFE_INTEGER) return response(20, [], 409);
+    replayTimes.push(Date.now() - start);
+    return new Response("", { status: 429, headers: replayTimes.length === 3 ? { "retry-after": "5" } : {} });
+  };
+  const stream = cloudEvents(ctx, { after: 4, signal: abort.signal }, { socket: () => new Socket() });
+  const next = stream.next();
+  await vi.advanceTimersByTimeAsync(8_000);
+  abort.abort();
+  expect((await next).done).toBe(true);
+  expect(replayTimes).toEqual([0, 1_000, 3_000, 8_000]);
 });

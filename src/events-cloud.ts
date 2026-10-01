@@ -21,6 +21,24 @@ function sequence(value: unknown): value is number {
 function protocol(message: string): CliError {
   return new CliError(message, "events-protocol");
 }
+class RetryRequest extends Error {
+  constructor(readonly delayMs: number) { super("cloud event service unavailable"); }
+}
+
+// Cancel this reader's wait without cancelling a refresh shared with another command.
+function eventBearer(ctx: Ctx, signal: AbortSignal): Promise<string> {
+  signal.throwIfAborted();
+  return new Promise((resolve, reject) => {
+    const abort = () => reject(signal.reason);
+    signal.addEventListener("abort", abort, { once: true });
+    bearerFor(ctx, requireConfig(ctx)).then(resolve, (error: unknown) => {
+      reject(error instanceof CliError && error.code !== "network"
+        ? new CliError("cloud event authentication failed; run catalyst login", "events-auth")
+        : new Error("cloud event authentication temporarily unavailable"));
+    }).finally(() => signal.removeEventListener("abort", abort));
+  });
+}
+
 function responseHead(response: Response): number {
   const raw = response.headers.get(headHeader);
   const head = raw === null || raw.trim() === "" ? NaN : Number(raw);
@@ -31,9 +49,12 @@ async function request(ctx: Ctx, since: number, signal: AbortSignal): Promise<Re
   const cfg = requireConfig(ctx);
   const url = new URL(`${normalizeBaseUrl(cfg.baseUrl)}/api/v1/events/backbone`);
   url.searchParams.set("since", String(since));
+  const bounded = AbortSignal.any([signal, AbortSignal.timeout(15_000)]);
+  const token = await eventBearer(ctx, bounded);
+  bounded.throwIfAborted();
   const response = await ctx.fetch(url, {
-    headers: { authorization: `Bearer ${await bearerFor(ctx, cfg)}`, accept: "application/x-ndjson" },
-    signal: AbortSignal.any([signal, AbortSignal.timeout(15_000)]),
+    headers: { authorization: `Bearer ${token}`, accept: "application/x-ndjson" },
+    signal: bounded,
     redirect: "error",
   });
   if (response.status === 401 || response.status === 403) {
@@ -42,7 +63,12 @@ async function request(ctx: Ctx, since: number, signal: AbortSignal): Promise<Re
   }
   if (response.status !== 200 && response.status !== 409) {
     await response.body?.cancel();
-    if (response.status >= 500 || response.status === 429) throw new Error("cloud event service unavailable");
+    if (response.status >= 500 || response.status === 429) {
+      const raw = response.headers.get("retry-after");
+      const seconds = raw === null ? NaN : Number(raw);
+      const delay = Number.isFinite(seconds) ? seconds * 1_000 : raw ? Date.parse(raw) - ctx.now().getTime() : 0;
+      throw new RetryRequest(Number.isFinite(delay) ? Math.min(300_000, Math.max(0, delay)) : 0);
+    }
     throw new CliError(`cloud event request refused (HTTP ${response.status})`, "events-http", 2, response.status);
   }
   return response;
@@ -93,12 +119,12 @@ async function* replay(ctx: Ctx, after: number, signal: AbortSignal): AsyncGener
         if (newline > maxLine) throw protocol("cloud event exceeds the replay line limit");
         const line = buffer.slice(0, newline).trim();
         buffer = buffer.slice(newline + 1);
-        if (line) yield parse(line);
+        if (line) { signal.throwIfAborted(); yield parse(line); }
       }
       if (buffer.length > maxLine) throw protocol("cloud event exceeds the replay line limit");
       if (done) break;
     }
-    if (buffer.trim()) yield parse(buffer.trim());
+    if (buffer.trim()) { signal.throwIfAborted(); yield parse(buffer.trim()); }
     if (cursor === after && cursor < head) throw protocol("cloud event replay made no progress toward its head");
     return Math.max(cursor, head);
   } finally {
@@ -133,15 +159,15 @@ export async function* cloudEvents(ctx: Ctx, options: { after?: number; signal: 
     let openTimer: ReturnType<typeof setTimeout> | undefined;
     const wakes = new EventTarget();
     let failure: Error | undefined;
+    let retryDelay = 0;
     let opened = false;
     let notifiedHead = 0;
     const wake = () => wakes.dispatchEvent(new Event("wake"));
     const stop = () => { socket?.close(); wake(); };
     const failed = () => { failure ??= new Error("cloud event connection interrupted"); wake(); };
-    const closed = (event: Event) => {
-      failure = "code" in event && event.code === 4401
-        ? new CliError("cloud event session expired; sign in again", "events-auth")
-        : new Error("cloud event connection closed");
+    const closed = () => {
+      // 4401 is routine authorization expiry. The next authenticated probe refreshes it.
+      failure = new Error("cloud event connection closed");
       wake();
     };
     const message = (event: Event) => {
@@ -170,7 +196,8 @@ export async function* cloudEvents(ctx: Ctx, options: { after?: number; signal: 
       const url = new URL(`${normalizeBaseUrl(cfg.baseUrl)}/api/v1/connect`);
       url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
       url.searchParams.set("account", cfg.account);
-      url.searchParams.set("token", await bearerFor(ctx, cfg));
+      url.searchParams.set("token", await eventBearer(ctx, AbortSignal.any([signal, AbortSignal.timeout(15_000)])));
+      signal.throwIfAborted();
       socket = (deps.socket ?? ((address) => new WebSocket(address)))(url.toString());
       socket.addEventListener("open", open);
       socket.addEventListener("message", message);
@@ -182,7 +209,6 @@ export async function* cloudEvents(ctx: Ctx, options: { after?: number; signal: 
       clearTimeout(openTimer);
       if (failure) throw failure;
       if (signal.aborted) break;
-      backoff = 1_000;
       heartbeat = setInterval(() => {
         try { socket?.send(JSON.stringify({ type: "ping" })); } catch { failed(); }
       }, 10_000);
@@ -192,11 +218,14 @@ export async function* cloudEvents(ctx: Ctx, options: { after?: number; signal: 
         let result = await page.next();
         try {
           while (!result.done) {
+            signal.throwIfAborted();
             cursor = result.value.sequence;
             yield result.value;
+            signal.throwIfAborted();
             result = await page.next();
           }
         } finally { await page.return(cursor); }
+        backoff = 1_000;
         if (failure) throw failure;
         if (cursor < result.value || cursor < notifiedHead) continue;
         // A bounded replay also catches a lost notification or a silent half-open socket.
@@ -205,6 +234,7 @@ export async function* cloudEvents(ctx: Ctx, options: { after?: number; signal: 
     } catch (error) {
       if (signal.aborted) return;
       if (error instanceof CliError) throw error;
+      if (error instanceof RetryRequest) retryDelay = error.delayMs;
       // Never propagate socket URLs or transport exceptions: they can contain bearer credentials.
     } finally {
       clearInterval(heartbeat);
@@ -216,7 +246,7 @@ export async function* cloudEvents(ctx: Ctx, options: { after?: number; signal: 
       socket?.removeEventListener("error", failed);
       socket?.close();
     }
-    await pause(backoff, signal);
+    await pause(Math.max(backoff, retryDelay), signal);
     backoff = Math.min(backoff * 2, 30_000);
   }
 }
