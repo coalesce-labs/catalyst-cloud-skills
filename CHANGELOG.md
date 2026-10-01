@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.14.5
+
+- Onboarding checks the server's advertised support before provider and repository setup. An unavailable route waits with a public web link instead of reporting declined consent.
+- GitHub App installation can open a verified browser handoff and checks every installation with fresh live probes. It remains separate from your personal GitHub connection and repository selection.
+- A route removed during browser approval stops with a waiting result. Signed provider approval links remain out of logs and receipts.
+
 ## 0.14.4
 
 - Personal Linear and GitHub approval links stay out of logs and receipts. Setup validates the signed browser destination and its expiry before opening it.

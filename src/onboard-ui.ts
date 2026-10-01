@@ -233,7 +233,31 @@ export function createClackOnboardUi(
         personal_browser_unavailable:
           "The browser could not open. Run catalyst onboard to try again.",
         cloud_capability_unavailable:
-          "Your cloud does not support this setup step yet.",
+          "This setup step is not available on this server yet. Use the web app link shown above, then resume after the server update.",
+        onboarding_capability_unavailable:
+          "The server's setup capabilities could not be checked. Run catalyst onboard to try again.",
+        onboarding_capability_identity_unverified:
+          "The server's setup capabilities belong to another login or workspace. Sign in to the original workspace to resume.",
+        onboarding_capability_login_refresh_required:
+          "Your login needs a refresh before setup capabilities can be checked. Run catalyst login, then catalyst onboard.",
+        workspace_consent_refused:
+          "The server did not accept this login for Linear workspace setup. Sign in again or ask your workspace administrator.",
+        github_installation_status_unavailable:
+          "Your GitHub App installation could not be checked. Run catalyst onboard to try again.",
+        github_installation_status_shape:
+          "The server returned a GitHub installation result that could not be verified.",
+        github_installation_consent_handoff:
+          "The GitHub installation approval link could not be verified. Run catalyst onboard to try again.",
+        github_installation_consent_refused:
+          "The server did not accept this login for GitHub App setup. Sign in again or ask your workspace administrator.",
+        github_installation_identity_refused:
+          "GitHub setup belongs to another login or workspace. Sign in to the original workspace to resume.",
+        github_installation_admin_required:
+          "A workspace owner or administrator approves the GitHub App installation.",
+        github_installation_login_refresh_required:
+          "Your login needs a refresh. Run catalyst onboard to resume.",
+        github_installation_browser_unavailable:
+          "The GitHub App approval page could not be opened. Use your workspace's Connections page, then resume.",
         step_not_available_in_this_release:
           "This setup step is not available yet.",
         prerequisite_not_ready: "Waiting for an earlier setup step.",
