@@ -217,11 +217,24 @@ function machineFilePresent(file: string): boolean {
   }
 }
 
+/** The machine paths record, or null on a machine that has not run paths setup. */
+function declaredMachinePaths(home: string, env: NodeJS.ProcessEnv): ReturnType<typeof parseMachinePaths> | null {
+  const file = machinePathsFile({ env: { ...env, HOME: home } });
+  if (!file || (env.CATALYST_PATHS_FILE === undefined && !machineFilePresent(file))) return null;
+  return parseMachinePaths(JSON.parse(readFileSync(file, "utf8")));
+}
+
+/** True only when this machine opted in to the local replica: CATALYST_REPLICA_DB is set, or the
+ *  machine paths file declares replicaDb. Every other machine reads the cloud (CTC-4508). */
+export function replicaOptedIn(home: string, env: NodeJS.ProcessEnv = {}): boolean {
+  if (env.CATALYST_REPLICA_DB !== undefined) return true;
+  return declaredMachinePaths(home, env)?.paths.replicaDb !== undefined;
+}
+
 export function replicaDbPath(cfg: Pick<CustomerConfig, "replicaDb">, home: string, env: NodeJS.ProcessEnv = {}): string {
   if (env.CATALYST_REPLICA_DB !== undefined) return resolveCatalystPath("replicaDb", { env });
-  const file = machinePathsFile({ env: { ...env, HOME: home } });
-  if (file && (env.CATALYST_PATHS_FILE !== undefined || machineFilePresent(file))) {
-    const machine = parseMachinePaths(JSON.parse(readFileSync(file, "utf8")));
+  const machine = declaredMachinePaths(home, env);
+  if (machine) {
     if (machine.paths.replicaDb === undefined) throw new CliError("optional replica is not configured; set CATALYST_REPLICA_DB or declare replicaDb in the machine paths file", "replica-not-configured");
     return resolveCatalystPath("replicaDb", { env, machine });
   }
