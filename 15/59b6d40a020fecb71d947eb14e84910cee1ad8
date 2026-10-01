@@ -1,0 +1,1 @@
+Remediate queue-only Node 26 contract fetch failures in an identical candidate tree: close all HTTP fixture connections while leaving production transport unchanged. Actual Node26.10.0 full original85coverage green twice including final formatted fixture, types/build/static and real package/Git rails green; retain first formatter failure and explicit socket-expiry inference.
