@@ -29,5 +29,7 @@ Comments/relations: catalyst-linear. PRs: catalyst-github. Readiness: catalyst-o
 | columns or slots? | references/stages-and-mapping.md |
 | accounts, windows, quarantine or provider? | references/coding-accounts.md |
 | setting, screen, route or role? | references/settings-and-where-they-live.md |
+| which command answers it from the cloud? | references/reading-from-the-cloud.md |
+| local SQL? only if `catalyst replica status --json` says `configured: true` | references/local-replica.md |
 
 Read-only: give ids, source, release and actor. Route releases to `unstick`, decisions to what-needs-me before defaults, ownership to run-this-project. Subscribe, never poll. Report each system cause once.
