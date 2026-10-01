@@ -326,6 +326,26 @@ test("a filtered reader follows next pages, then moves to the indexed sequence a
   await stream.return(undefined);
 });
 
+test("an empty filtered page still moves the cursor to the indexed sequence", async () => {
+  const ctx = context();
+  let socket: Socket | undefined;
+  const requested: string[] = [];
+  ctx.fetch = async (input) => {
+    const { name, cursor, probe } = route(input);
+    if (probe) return response(9, [], 409);
+    requested.push(`${name}:${cursor}`);
+    return cursor === 4 ? page([], null, { indexedFromSeq: 1, indexedToSeq: 9 }) : page([row(12)], null, { indexedFromSeq: 1, indexedToSeq: 12 });
+  };
+  const stream = cloudEvents(ctx, { after: 4, filter, signal: new AbortController().signal }, { socket: () => socket = new Socket() });
+  const next = stream.next();
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  expect(requested).toEqual(["query:4"]);
+  required(socket).head(12);
+  expect((await next).value?.sequence).toBe(12);
+  expect(requested).toEqual(["query:4", "query:9"]);
+  await stream.return(undefined);
+});
+
 test("while the index trails the head, the reader polls with a capped backoff and prints once it is indexed", async () => {
   vi.useFakeTimers();
   const ctx = context();
