@@ -7,6 +7,8 @@ import {
   test,
 } from "vitest";
 import { main } from "../src/cli";
+import { CatalystEventSync } from "@catalyst-cloud/sdk/events";
+import { join } from "node:path";
 import {
   createEventSync,
   type CachedEvent,
@@ -66,6 +68,60 @@ beforeEach(async () => {
 });
 
 describe("events", () => {
+  test("the real SDK requests one backbone prefix from createEventSync's origin", async () => {
+    const urls: URL[] = [];
+    const captured: { client?: CatalystEventSync } = {};
+    const directory = join(home, "owned-sdk-backbone");
+    const fetchImpl: typeof fetch = async (input) => {
+      const url = new URL(input instanceof Request ? input.url : String(input));
+      urls.push(url);
+      if (url.searchParams.get("since") === String(Number.MAX_SAFE_INTEGER)) {
+        return Response.json(
+          { error: "cursor_ahead_of_head", resumeFrom: 10 },
+          {
+            status: 409,
+            headers: { "x-catalyst-event-backbone-head-seq": "10" },
+          },
+        );
+      }
+      return new Response("", {
+        headers: {
+          "content-type": "application/x-ndjson",
+          "x-catalyst-event-backbone-head-seq": "10",
+        },
+      });
+    };
+    class OwnedEventSync extends CatalystEventSync {
+      constructor(
+        options: ConstructorParameters<EventsSdk["CatalystEventSync"]>[0],
+      ) {
+        super({ ...options, directory });
+        captured.client = this;
+      }
+    }
+    const fixture = sdk();
+    fixture.CatalystEventSync = OwnedEventSync;
+    const handle = await createEventSync(makeCtx(home, { fetch: fetchImpl }), {
+      loadSdk: async () => fixture,
+    });
+    const client = captured.client;
+    if (!client) throw new Error("real event client was not constructed");
+    try {
+      expect(await client.syncOnce()).toEqual({
+        appended: 0,
+        cursor: 10,
+        head: 10,
+      });
+      expect(urls).toHaveLength(2);
+      for (const url of urls) {
+        expect(url.origin).toBe(server.url);
+        expect(url.pathname).toBe("/api/v1/events/backbone");
+      }
+    } finally {
+      await handle.stop();
+    }
+  });
+
   test("query reads the cache and filters by exact type and ticket", async () => {
     expect(
       await main(
@@ -301,10 +357,13 @@ describe("events", () => {
   });
 
   test("event sync uses the joined tenant, API, token, and injected fetch", async () => {
-    let options: ConstructorParameters<EventsSdk["CatalystEventSync"]>[0] | undefined;
+    let options:
+      ConstructorParameters<EventsSdk["CatalystEventSync"]>[0] | undefined;
     const fixture = sdk();
     fixture.CatalystEventSync = class {
-      constructor(received: ConstructorParameters<EventsSdk["CatalystEventSync"]>[0]) {
+      constructor(
+        received: ConstructorParameters<EventsSdk["CatalystEventSync"]>[0],
+      ) {
         options = received;
       }
       async start() {}
@@ -313,7 +372,7 @@ describe("events", () => {
     const handle = await createEventSync(ctx, { loadSdk: async () => fixture });
     expect(handle).toBeInstanceOf(fixture.CatalystEventSync);
     expect(options).toMatchObject({
-      baseUrl: `${server.url}/api/v1`,
+      baseUrl: server.url,
       tenantId: "tenant-3",
       auth: { kind: "token", token: "fixture-key" },
       fetch: ctx.fetch,

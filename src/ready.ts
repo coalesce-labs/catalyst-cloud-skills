@@ -1,21 +1,55 @@
 // ready.ts — `ready`: the machine checks plus the tenant's own readiness vector from the contract,
 // one verdict, and per failure the fix and who can apply it. The replica is optional, so its absence
-// is a note, never a failure; the SDK loading IS a check, because the replica and watch need it.
-import { accessSync, constants, existsSync, readFileSync, realpathSync, statSync } from "node:fs";
+// is a note, never a failure; the HTTP SDK loading is a check for cloud reads.
+import {
+  accessSync,
+  constants,
+  existsSync,
+  readFileSync,
+  realpathSync,
+  statSync,
+} from "node:fs";
 import { basename, delimiter, dirname, join } from "node:path";
 import type { ParsedArgs } from "./args.js";
-import { LEGACY_PACKAGE_NAME, PACKAGE_NAME, defaultSkillsDirFor, loadConfig, normalizeBaseUrl, readManifest, upgradeCommand, type Ctx, type CustomerConfig } from "./config.js";
+import {
+  LEGACY_PACKAGE_NAME,
+  PACKAGE_NAME,
+  defaultSkillsDirFor,
+  loadConfig,
+  normalizeBaseUrl,
+  readManifest,
+  upgradeCommand,
+  type Ctx,
+  type CustomerConfig,
+} from "./config.js";
 import { contractVersionInRange, readContractCache } from "./contract.js";
-import type { ContractReadinessCheck, TenantContract } from "./contract-types.js";
+import type {
+  ContractReadinessCheck,
+  TenantContract,
+} from "./contract-types.js";
 import { CliError } from "./errors.js";
 import { latestPublishedVersion, type PublishedLookup } from "./published.js";
-import { replicaStatus, writerIsRunning, type ReplicaStatus } from "./replica.js";
-import { loadSdk } from "./sdk.js";
-import { FIX_COMMAND, detectRuntime, runtimeVerdict, supportedRangeText, type RuntimeFacts } from "./runtime.js";
+import {
+  replicaStatus,
+  writerIsRunning,
+  type ReplicaStatus,
+} from "./replica.js";
+import { loadHttpSdk } from "./sdk.js";
+import {
+  FIX_COMMAND,
+  detectRuntime,
+  runtimeVerdict,
+  supportedRangeText,
+  type RuntimeFacts,
+} from "./runtime.js";
 import { semverOlder } from "./semver.js";
 import { FIRST_STAMPED_VERSION } from "./skill-shape.js";
 import { installedBundleVersion } from "./skills.js";
-import { onboardingReadyReport, observeCloudOnboarding, type OnboardingReadyDeps } from "./onboard-ready.js";
+import {
+  onboardingReadyReport,
+  observeCloudOnboarding,
+  type OnboardingReadyDeps,
+} from "./onboard-ready.js";
 import { selectedOnboardTeam } from "./onboard-existing.js";
 import { onboardStatePath, readOnboardJournal } from "./onboard.js";
 
@@ -73,7 +107,10 @@ function readyReplicaLine(s: ReplicaStatus): string {
 }
 
 /** The first executable file called `name` on `env.PATH`, or null. */
-export function firstOnPath(name: string, env: NodeJS.ProcessEnv): string | null {
+export function firstOnPath(
+  name: string,
+  env: NodeJS.ProcessEnv,
+): string | null {
   for (const dir of (env.PATH ?? "").split(delimiter)) {
     if (dir === "") continue;
     const candidate = join(dir, name);
@@ -95,9 +132,12 @@ export function isThisCliLauncher(path: string): boolean {
   } catch {
     return false;
   }
-  if (basename(real) !== "catalyst.js" || basename(dirname(real)) !== "bin") return false;
+  if (basename(real) !== "catalyst.js" || basename(dirname(real)) !== "bin")
+    return false;
   try {
-    const raw = JSON.parse(readFileSync(join(dirname(dirname(real)), "package.json"), "utf8")) as { name?: unknown };
+    const raw = JSON.parse(
+      readFileSync(join(dirname(dirname(real)), "package.json"), "utf8"),
+    ) as { name?: unknown };
     return raw.name === PACKAGE_NAME || raw.name === LEGACY_PACKAGE_NAME;
   } catch {
     return false;
@@ -112,11 +152,19 @@ export function isThisCliLauncher(path: string): boolean {
  * on PATH is normal while the old name is still the one installed, so that emits nothing. POSIX
  * only: on Windows npm installs `.cmd` shims, and PATHEXT lookup is not worth guessing at here.
  */
-export function catalystCommandCheck(env: NodeJS.ProcessEnv, platform: NodeJS.Platform = process.platform): ReadyCheck | null {
+export function catalystCommandCheck(
+  env: NodeJS.ProcessEnv,
+  platform: NodeJS.Platform = process.platform,
+): ReadyCheck | null {
   if (platform === "win32") return null;
   const found = firstOnPath("catalyst", env);
   if (found === null) return null;
-  if (isThisCliLauncher(found)) return { id: "command", ok: true, line: `command: catalyst on PATH is this CLI (${found})` };
+  if (isThisCliLauncher(found))
+    return {
+      id: "command",
+      ok: true,
+      line: `command: catalyst on PATH is this CLI (${found})`,
+    };
   return {
     id: "command",
     ok: false,
@@ -143,7 +191,9 @@ export interface ReadyDeps {
 }
 
 function nameList(v: unknown): string[] {
-  return Array.isArray(v) ? v.filter((n): n is string => typeof n === "string" && n.length > 0) : [];
+  return Array.isArray(v)
+    ? v.filter((n): n is string => typeof n === "string" && n.length > 0)
+    : [];
 }
 
 /** Entries whose name and references are both present; anything malformed is dropped, not guessed. */
@@ -153,7 +203,9 @@ function unresolvedList(v: unknown): { name: string; references: string[] }[] {
     if (typeof u !== "object" || u === null) return [];
     const { name, references } = u as { name?: unknown; references?: unknown };
     const refs = nameList(references);
-    return typeof name === "string" && name.length > 0 && refs.length > 0 ? [{ name, references: refs }] : [];
+    return typeof name === "string" && name.length > 0 && refs.length > 0
+      ? [{ name, references: refs }]
+      : [];
   });
 }
 
@@ -192,23 +244,37 @@ function teamCheckFix(label: string, c: ContractReadinessCheck): string {
   }
   for (const u of unresolved) parts.push(unresolvedLine(u));
   for (const note of Array.isArray(c.repos) ? c.repos : []) {
-    if (typeof note !== "object" || note === null || typeof note.repo !== "string" || note.repo.length === 0) continue;
+    if (
+      typeof note !== "object" ||
+      note === null ||
+      typeof note.repo !== "string" ||
+      note.repo.length === 0
+    )
+      continue;
     const repoUnresolved = unresolvedList(note.unresolved);
     const skip = new Set(repoUnresolved.map((u) => u.name));
     const missing = nameList(note.names).filter((n) => !skip.has(n));
-    if (missing.length > 0) parts.push(`${note.repo} is missing ${missing.join(", ")}`);
-    for (const u of repoUnresolved) parts.push(`in ${note.repo}, ${unresolvedLine(u)}`);
+    if (missing.length > 0)
+      parts.push(`${note.repo} is missing ${missing.join(", ")}`);
+    for (const u of repoUnresolved)
+      parts.push(`in ${note.repo}, ${unresolvedLine(u)}`);
   }
-  if (parts.length === 0) return `open settings for team ${label} and resolve ${c.id}`;
+  if (parts.length === 0)
+    return `open settings for team ${label} and resolve ${c.id}`;
   return parts.join(". ");
 }
 
 function whoCanAnswer(doc: TenantContract): string {
   const roles = doc.humans.map((h) => `${h.role} ${h.linearUserId}`);
-  return roles.length ? roles.join(", ") : "a tenant owner or admin (none resolved on the contract)";
+  return roles.length
+    ? roles.join(", ")
+    : "a tenant owner or admin (none resolved on the contract)";
 }
 
-export async function readyReport(ctx: Ctx, deps: ReadyDeps): Promise<ReadyReport> {
+export async function readyReport(
+  ctx: Ctx,
+  deps: ReadyDeps,
+): Promise<ReadyReport> {
   const checks: ReadyCheck[] = [];
   const facts = deps.runtime ?? detectRuntime();
   const verdict = runtimeVerdict(facts, readManifest().enginesNode);
@@ -234,20 +300,48 @@ export async function readyReport(ctx: Ctx, deps: ReadyDeps): Promise<ReadyRepor
               ? `config: joined ${cfg.name} as ${cfg.user.label} (${cfg.user.role})`
               : `config: joined ${cfg.name} (${cfg.slug}) as ${cfg.principal}`,
           }
-        : { id: "config", ok: false, line: "config: not connected", fix: "npx -p @catalyst-cloud/cli catalyst login (keyless; or pass --key / set CATALYST_CLOUD_TOKEN)", who: "you (approve the login in your browser)" },
+        : {
+            id: "config",
+            ok: false,
+            line: "config: not connected",
+            fix: "npx -p @catalyst-cloud/cli catalyst login (keyless; or pass --key / set CATALYST_CLOUD_TOKEN)",
+            who: "you (approve the login in your browser)",
+          },
     );
   } catch (err) {
-    checks.push({ id: "config", ok: false, line: `config: ${err instanceof CliError ? err.message : String(err)}`, fix: "re-run login to rewrite it", who: "you" });
+    checks.push({
+      id: "config",
+      ok: false,
+      line: `config: ${err instanceof CliError ? err.message : String(err)}`,
+      fix: "re-run login to rewrite it",
+      who: "you",
+    });
   }
 
   const cache = readContractCache(ctx.home);
   const range = readManifest().tenantContractRange;
   if (!cache) {
-    checks.push({ id: "contract", ok: false, line: "contract: not cached", fix: "catalyst contract --refresh", who: "you" });
+    checks.push({
+      id: "contract",
+      ok: false,
+      line: "contract: not cached",
+      fix: "catalyst contract --refresh",
+      who: "you",
+    });
   } else if (contractVersionInRange(cache.contractVersion, range) !== true) {
-    checks.push({ id: "contract", ok: false, line: `contract: version ${cache.contractVersion} is outside this bundle's range ${range}`, fix: upgradeCommand(), who: "you" });
+    checks.push({
+      id: "contract",
+      ok: false,
+      line: `contract: version ${cache.contractVersion} is outside this bundle's range ${range}`,
+      fix: upgradeCommand(),
+      who: "you",
+    });
   } else {
-    checks.push({ id: "contract", ok: true, line: `contract: ${cache.contractVersion} cached ${cache.fetchedAt} (range ${range})` });
+    checks.push({
+      id: "contract",
+      ok: true,
+      line: `contract: ${cache.contractVersion} cached ${cache.fetchedAt} (range ${range})`,
+    });
   }
 
   // The cloud MAY publish the bundle it expects (catalyst-cloud#3746). Read it defensively: warn (never
@@ -272,9 +366,12 @@ export async function readyReport(ctx: Ctx, deps: ReadyDeps): Promise<ReadyRepor
   // still works, so `ready` stays READY. This is the one place `ready` touches the network, and it is
   // capped, cached and skippable — see src/published.ts.
   const skillsDir = cfg?.skillsDir ?? defaultSkillsDirFor(ctx.home);
-  const offline = deps.offline === true || ctx.env.CATALYST_SKILLS_OFFLINE === "1";
+  const offline =
+    deps.offline === true || ctx.env.CATALYST_SKILLS_OFFLINE === "1";
   if (!offline) {
-    const pub = await (deps.fetchLatestRelease ?? (() => latestPublishedVersion(ctx)))();
+    const pub = await (
+      deps.fetchLatestRelease ?? (() => latestPublishedVersion(ctx))
+    )();
     if (pub.latest === null) {
       checks.push({
         id: "cliRelease",
@@ -301,11 +398,17 @@ export async function readyReport(ctx: Ctx, deps: ReadyDeps): Promise<ReadyRepor
       // older than any stamp, which is why the stamped half says "oldest STAMPED" and the unstamped
       // names are always printed rather than hidden behind whichever branch happened to win.
       const found = installedBundleVersion(skillsDir, deps.skillNames);
-      const stampBehind = found.version !== null && semverOlder(found.version, pub.latest);
-      const unstampedBehind = found.unstamped.length > 0 && !semverOlder(pub.latest, FIRST_STAMPED_VERSION);
+      const stampBehind =
+        found.version !== null && semverOlder(found.version, pub.latest);
+      const unstampedBehind =
+        found.unstamped.length > 0 &&
+        !semverOlder(pub.latest, FIRST_STAMPED_VERSION);
       if (stampBehind || unstampedBehind) {
         const facts: string[] = [];
-        if (stampBehind) facts.push(`the oldest stamped skill is ${found.version} (${found.skill})`);
+        if (stampBehind)
+          facts.push(
+            `the oldest stamped skill is ${found.version} (${found.skill})`,
+          );
         if (unstampedBehind) {
           const one = found.unstamped.length === 1;
           facts.push(
@@ -326,7 +429,13 @@ export async function readyReport(ctx: Ctx, deps: ReadyDeps): Promise<ReadyRepor
     checks.push(
       cfg.cliPath && existsSync(cfg.cliPath)
         ? { id: "cliPath", ok: true, line: `cliPath: ${cfg.cliPath}` }
-        : { id: "cliPath", ok: false, line: `cliPath: ${cfg.cliPath ? `${cfg.cliPath} does not exist` : "not recorded"}`, fix: "re-run login so the skill scripts can find this CLI", who: "you" },
+        : {
+            id: "cliPath",
+            ok: false,
+            line: `cliPath: ${cfg.cliPath ? `${cfg.cliPath} does not exist` : "not recorded"}`,
+            fix: "re-run login so the skill scripts can find this CLI",
+            who: "you",
+          },
     );
   }
 
@@ -336,19 +445,40 @@ export async function readyReport(ctx: Ctx, deps: ReadyDeps): Promise<ReadyRepor
   // The skills are installed by the customer's own agent (a plugin, or `npx skills add`), so an
   // empty copy directory is the normal case and must not read as NOT READY. A PARTIAL copy is the
   // one broken state this check can see: half a set this package put there and never finished.
-  const present = deps.skillNames.filter((n) => existsSync(join(skillsDir, n, "SKILL.md")));
+  const present = deps.skillNames.filter((n) =>
+    existsSync(join(skillsDir, n, "SKILL.md")),
+  );
   const missing = deps.skillNames.filter((n) => !present.includes(n));
   if (present.length === 0) {
-    checks.push({ id: "skills", ok: true, note: true, line: `skills: none copied to ${skillsDir} — you are reading one, so your agent installed them its own way` });
+    checks.push({
+      id: "skills",
+      ok: true,
+      note: true,
+      line: `skills: none copied to ${skillsDir} — you are reading one, so your agent installed them its own way`,
+    });
   } else if (missing.length === 0) {
-    checks.push({ id: "skills", ok: true, line: `skills: all ${deps.skillNames.length} present in ${skillsDir}` });
+    checks.push({
+      id: "skills",
+      ok: true,
+      line: `skills: all ${deps.skillNames.length} present in ${skillsDir}`,
+    });
   } else {
-    checks.push({ id: "skills", ok: false, line: `skills: ${present.length} of ${deps.skillNames.length} in ${skillsDir}, missing ${missing.join(", ")}`, fix: "catalyst install", who: "you" });
+    checks.push({
+      id: "skills",
+      ok: false,
+      line: `skills: ${present.length} of ${deps.skillNames.length} in ${skillsDir}, missing ${missing.join(", ")}`,
+      fix: "catalyst install",
+      who: "you",
+    });
   }
 
   try {
-    await (deps.loadSdk ?? loadSdk)();
-    checks.push({ id: "sdk", ok: true, line: "sdk: loads (replica and watch are available)" });
+    await (deps.loadSdk ?? loadHttpSdk)();
+    checks.push({
+      id: "sdk",
+      ok: true,
+      line: "sdk: loads (cloud HTTP reads are available)",
+    });
   } catch (err) {
     checks.push({
       id: "sdk",
@@ -360,7 +490,12 @@ export async function readyReport(ctx: Ctx, deps: ReadyDeps): Promise<ReadyRepor
   }
 
   const replica = replicaStatus(ctx, cfg);
-  checks.push({ id: "replica", ok: replica.verdict === "fresh", note: true, line: readyReplicaLine(replica) });
+  checks.push({
+    id: "replica",
+    ok: replica.verdict === "fresh",
+    note: true,
+    line: readyReplicaLine(replica),
+  });
 
   if (cache) {
     const doc = cache.doc;
@@ -377,23 +512,38 @@ export async function readyReport(ctx: Ctx, deps: ReadyDeps): Promise<ReadyRepor
         const slots = (dg.missingSlots ?? []).join(", ");
         checks.push(
           dg.status === "open"
-            ? { id: `team:${label}:dispatchGate`, ok: true, line: `team ${label}: dispatch gate open` }
+            ? {
+                id: `team:${label}:dispatchGate`,
+                ok: true,
+                line: `team ${label}: dispatch gate open`,
+              }
             : {
                 id: `team:${label}:dispatchGate`,
                 ok: false,
                 line: `team ${label}: dispatch gate ${dg.status}${slots ? ` (${slots})` : ""}, blocking`,
-                fix: dg.remedy ?? `open settings for team ${label} and map its stages`,
+                fix:
+                  dg.remedy ??
+                  `open settings for team ${label} and map its stages`,
                 who,
               },
         );
       }
       if (team.readiness.status === "unchecked") {
-        checks.push({ id: `team:${label}`, ok: true, note: true, line: `team ${label}: readiness not checked yet` });
+        checks.push({
+          id: `team:${label}`,
+          ok: true,
+          note: true,
+          line: `team ${label}: readiness not checked yet`,
+        });
         continue;
       }
       const bad = team.readiness.checks.filter((c) => c.state !== "pass");
       if (bad.length === 0 && team.readiness.status === "ready") {
-        checks.push({ id: `team:${label}`, ok: true, line: `team ${label}: ready` });
+        checks.push({
+          id: `team:${label}`,
+          ok: true,
+          line: `team ${label}: ready`,
+        });
         continue;
       }
       for (const c of bad) {
@@ -409,7 +559,14 @@ export async function readyReport(ctx: Ctx, deps: ReadyDeps): Promise<ReadyRepor
         });
       }
       if (bad.length === 0 && team.readiness.status !== "ready") {
-        checks.push({ id: `team:${label}`, ok: team.readiness.status !== "blocked", note: team.readiness.status === "degraded", line: `team ${label}: ${team.readiness.status}`, fix: `open settings for team ${label}`, who });
+        checks.push({
+          id: `team:${label}`,
+          ok: team.readiness.status !== "blocked",
+          note: team.readiness.status === "degraded",
+          line: `team ${label}: ${team.readiness.status}`,
+          fix: `open settings for team ${label}`,
+          who,
+        });
       }
     }
   }
@@ -418,26 +575,60 @@ export async function readyReport(ctx: Ctx, deps: ReadyDeps): Promise<ReadyRepor
   return { ready, checks, replica };
 }
 
-export async function cmdReady(args: ParsedArgs, ctx: Ctx, deps: ReadyDeps): Promise<number> {
+export async function cmdReady(
+  args: ParsedArgs,
+  ctx: Ctx,
+  deps: ReadyDeps,
+): Promise<number> {
   if (args.flags.onboarding === true) {
     let onboarding = deps.onboarding;
     if (!onboarding) {
       const cfg = loadConfig(ctx.home);
-      const journal = readOnboardJournal(onboardStatePath(ctx.home, ctx.env), readManifest().version, ctx.now());
-      const bound = cfg?.user && journal && (journal.account ?? journal.tenant) === cfg.account &&
-        journal.membershipId === cfg.user.id && typeof journal.baseUrl === "string" && normalizeBaseUrl(journal.baseUrl) === normalizeBaseUrl(cfg.baseUrl);
+      const journal = readOnboardJournal(
+        onboardStatePath(ctx.home, ctx.env),
+        readManifest().version,
+        ctx.now(),
+      );
+      const bound =
+        cfg?.user &&
+        journal &&
+        (journal.account ?? journal.tenant) === cfg.account &&
+        journal.membershipId === cfg.user.id &&
+        typeof journal.baseUrl === "string" &&
+        normalizeBaseUrl(journal.baseUrl) === normalizeBaseUrl(cfg.baseUrl);
       const team = bound ? selectedOnboardTeam(journal) : undefined;
-      onboarding = { teamIds: team ? [team] : undefined, localSync: args.flags["local-sync"] === true || Boolean(bound && journal.localSync), observe: observeCloudOnboarding };
+      onboarding = {
+        teamIds: team ? [team] : undefined,
+        localSync:
+          args.flags["local-sync"] === true ||
+          Boolean(bound && journal.localSync),
+        observe: observeCloudOnboarding,
+      };
     }
     const report = await onboardingReadyReport(ctx, onboarding);
     if (args.json) ctx.stdout(JSON.stringify(report));
     else {
-      for (const check of report.checks) ctx.stdout(`${check.state === "pass" ? "ok" : check.state === "fail" ? "needs attention" : "waiting for evidence"}  ${check.id}${check.reason ? `: ${check.reason}` : ""}`);
-      if (report.work.state === "observed") ctx.stdout(`Work observed${report.work.ticket ? ` on ${report.work.ticket}` : ""}.`);
-      else ctx.stdout("Fresh project work has not been verified by this check.");
-      ctx.stdout(report.state === "complete" ? "Onboarding complete." : "Setup still needs checks. Resume: catalyst onboard");
+      for (const check of report.checks)
+        ctx.stdout(
+          `${check.state === "pass" ? "ok" : check.state === "fail" ? "needs attention" : "waiting for evidence"}  ${check.id}${check.reason ? `: ${check.reason}` : ""}`,
+        );
+      if (report.work.state === "observed")
+        ctx.stdout(
+          `Work observed${report.work.ticket ? ` on ${report.work.ticket}` : ""}.`,
+        );
+      else
+        ctx.stdout("Fresh project work has not been verified by this check.");
+      ctx.stdout(
+        report.state === "complete"
+          ? "Onboarding complete."
+          : "Setup still needs checks. Resume: catalyst onboard",
+      );
     }
-    return report.state === "complete" ? 0 : report.checks.some(check => check.required && check.state === "fail") ? 10 : 11;
+    return report.state === "complete"
+      ? 0
+      : report.checks.some((check) => check.required && check.state === "fail")
+        ? 10
+        : 11;
   }
   const report = await readyReport(ctx, deps);
   if (args.json) {

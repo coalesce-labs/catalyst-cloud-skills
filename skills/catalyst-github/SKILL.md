@@ -15,7 +15,7 @@ You answer for the pull requests Catalyst opens and moves. The person asking wan
 - `node scripts/read-pr.mjs --help`: a ticket's PR (or a PR by node id): state, branch, head, linked ticket, GitHub's mergeable state, every check, status and review. `--all` lists every PR for a ticket.
 - `node scripts/is-it-mergeable.mjs --help`: the three legs (checks, reviewer signal, unresolved threads) judged under the repository's policy, plus the prerequisites; exit 1 when a leg is red.
 
-Both read through `catalyst query`, `contract` and, when fresh, `replica`; the first stderr line names the source, and your answer repeats it.
+Both read through `catalyst query` and `contract` from the cloud by default; the first stderr line names the source, and your answer repeats it.
 
 ## Load on demand
 
