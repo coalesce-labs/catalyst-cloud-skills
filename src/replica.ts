@@ -6,7 +6,7 @@
 import { existsSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { flagBool, flagInt, flagString, positionals, type ParsedArgs } from "./args.js";
-import { apiBase, loadConfig, replicaDbPath, type Ctx, type CustomerConfig } from "./config.js";
+import { apiBase, loadConfig, replicaDbPath, replicaOptedIn, type Ctx, type CustomerConfig } from "./config.js";
 import { detachSelf } from "./detach.js";
 import { CliError, UsageError } from "./errors.js";
 import { apiClient } from "./transport.js";
@@ -76,6 +76,9 @@ export interface ReplicaWriterState {
 export interface ReplicaStatus {
   verdict: ReplicaVerdict;
   exitCode: 0 | 1 | 2 | 3;
+  /** This machine opted in to local sync (CATALYST_REPLICA_DB, or replicaDb in the machine paths
+   *  file). False reads apart from a writer that is down: the machine reads the cloud (CTC-4508). */
+  configured: boolean;
   dbPath: string | null;
   cursor: number | null;
   heartbeatAgeMs: number | null;
@@ -185,6 +188,9 @@ export function readCursor(dbPath: string): number | null {
   }
 }
 
+const NOT_CONNECTED = "not connected";
+const CLOUD_READS_LINE = "replica: not configured (cloud reads; local sync is opt-in)";
+
 export interface StatusOptions {
   staleMs?: number;
   nowMs?: number;
@@ -196,6 +202,7 @@ export function replicaStatus(ctx: Ctx, cfg: CustomerConfig | null, opts: Status
   const base: ReplicaStatus = {
     verdict: "not-configured",
     exitCode: 2,
+    configured: false,
     dbPath: null,
     cursor: null,
     heartbeatAgeMs: null,
@@ -205,7 +212,7 @@ export function replicaStatus(ctx: Ctx, cfg: CustomerConfig | null, opts: Status
     reasons: [],
     writer: null,
   };
-  if (!cfg) return { ...base, reasons: ["not connected"] };
+  if (!cfg) return { ...base, reasons: [NOT_CONNECTED] };
   let dbPath: string;
   try {
     dbPath = opts.dbPath ?? replicaDbPath(cfg, ctx.home, ctx.env);
@@ -213,8 +220,9 @@ export function replicaStatus(ctx: Ctx, cfg: CustomerConfig | null, opts: Status
     if (error instanceof CliError && error.code === "replica-not-configured") return { ...base, reasons: [error.message] };
     throw error;
   }
+  const configured = replicaOptedIn(ctx.home, ctx.env);
   const writer = readWriterState(dbPath);
-  if (!existsSync(dbPath)) return { ...base, verdict: "absent", exitCode: 3, dbPath, reasons: ["no replica file"], writer };
+  if (!existsSync(dbPath)) return { ...base, verdict: "absent", exitCode: 3, configured, dbPath, reasons: ["no replica file"], writer };
   const staleMs = opts.staleMs ?? DEFAULT_STALE_MS;
   const nowMs = opts.nowMs ?? ctx.now().getTime();
   const lock = readLock(dbPath);
@@ -231,6 +239,7 @@ export function replicaStatus(ctx: Ctx, cfg: CustomerConfig | null, opts: Status
   return {
     verdict: fresh ? "fresh" : "stale",
     exitCode: fresh ? 0 : 1,
+    configured,
     dbPath,
     cursor,
     heartbeatAgeMs,
@@ -245,8 +254,9 @@ export function replicaStatus(ctx: Ctx, cfg: CustomerConfig | null, opts: Status
 function baseStatusLine(s: ReplicaStatus): string {
   switch (s.verdict) {
     case "not-configured":
-      return `replica: not configured (${s.reasons.join("; ")})`;
+      return s.reasons[0] === NOT_CONNECTED ? `replica: not configured (${s.reasons.join("; ")})` : CLOUD_READS_LINE;
     case "absent":
+      if (!s.configured) return CLOUD_READS_LINE;
       return `replica: absent at ${s.dbPath} — start it with: catalyst replica start --detach`;
     case "fresh":
       return `replica: fresh at ${s.dbPath} (cursor ${s.cursor}, heartbeat ${s.heartbeatAgeMs}ms ago${s.lag !== undefined ? `, ${s.lag} behind head ${s.head}` : ""})`;

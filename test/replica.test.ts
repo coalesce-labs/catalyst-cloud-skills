@@ -44,11 +44,21 @@ describe("replica status", () => {
     expect(await main(["replica", "status"], ctx)).toBe(2);
     expect(ctx.out.join("\n")).toMatch(/not configured/);
   });
-  test("exit 3 with no db file", async () => {
+  test("exit 3 with no db file on a machine that opted in, which --json marks configured", async () => {
+    await seedJoined(home, server);
+    const optedIn = makeCtx(home, { env: { ...ctx.env, CATALYST_REPLICA_DB: defaultReplicaDbFor(home) } });
+    expect(await main(["replica", "status"], optedIn)).toBe(3);
+    expect(optedIn.out.join("\n")).toMatch(/absent/);
+    expect(optedIn.out.join("\n")).toContain("replica start --detach");
+    expect(await main(["replica", "status", "--json"], optedIn)).toBe(3);
+    expect(JSON.parse(optedIn.out.at(-1)!)).toMatchObject({ verdict: "absent", configured: true });
+  });
+  test("exit 3 with no db file on a machine that never opted in says cloud reads, and --json marks it unconfigured (CTC-4508)", async () => {
     await seedJoined(home, server);
     expect(await main(["replica", "status"], ctx)).toBe(3);
-    expect(ctx.out.join("\n")).toMatch(/absent/);
-    expect(ctx.out.join("\n")).toContain("replica start --detach");
+    expect(ctx.out.join("\n")).toBe("replica: not configured (cloud reads; local sync is opt-in)");
+    expect(await main(["replica", "status", "--json"], ctx)).toBe(3);
+    expect(JSON.parse(ctx.out.at(-1)!)).toMatchObject({ verdict: "absent", configured: false });
   });
   test("exit 1 with a lock heartbeat older than staleMs", async () => {
     await seedJoined(home, server);

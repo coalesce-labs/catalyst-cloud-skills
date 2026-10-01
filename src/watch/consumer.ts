@@ -9,8 +9,8 @@
 //
 // Everything else (the socket, the replay in seq order, the watchdog, gap detection, the resync frame)
 // is the SDK's LiveSyncClient. This module is deliberately thin.
-import type { AuthStrategy, ChangeFrame, LiveSyncClient, LiveSyncStatus, WebSocketFactory, WebSocketLike } from "@catalyst-cloud/sdk/node";
-import type { Sdk } from "../sdk.js";
+import type { AuthStrategy, ChangeFrame, LiveSyncClient, LiveSyncStatus, WebSocketFactory, WebSocketLike } from "@catalyst-cloud/sdk";
+import type { LiveSdk } from "../sdk.js";
 import { readCursorFile, writeCursorFile, type CursorFileState } from "./cursor-file.js";
 
 export const LOG_PREFIX = "[live-events]";
@@ -80,7 +80,7 @@ async function fetchHeadCursor(opts: LiveEventsOptions, signal?: AbortSignal): P
  * persists and later frames queue behind it in seq order; a failed reaction halts the stream and
  * closes the socket so the SDK's reconnect replays from the last good cursor.
  */
-export function createLiveEventsClient(sdk: Sdk, opts: LiveEventsOptions): LiveEventsHandle {
+export function createLiveEventsClient(sdk: LiveSdk, opts: LiveEventsOptions): LiveEventsHandle {
   let state: CursorFileState | null = opts.fromHead ? null : readCursorFile(opts.cursorFile, opts.accountId);
   const log =
     opts.log ??
