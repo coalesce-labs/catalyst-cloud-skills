@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.14.6
+
+- A current Catalyst data folder no longer triggers a legacy-runtime cleanup warning. Legacy checks and removal keep current shared data and report it separately.
+
 ## 0.14.5
 
 - Onboarding checks the server's advertised support before provider and repository setup. An unavailable route waits with a public web link instead of reporting declined consent.
