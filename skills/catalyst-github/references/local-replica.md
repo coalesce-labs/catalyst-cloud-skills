@@ -12,9 +12,9 @@ Quote the cursor with any local answer, for example "from the local replica at c
 
 ## Threads: the one leg only the replica adds
 
-`node scripts/is-it-mergeable.mjs <ticket> --local-threads` reads the thread leg from the replica. It does so only after a probe proves the replica is caught up with the cloud head. Without the flag, the thread leg is inconclusive and the cloud's evaluator decides.
+**Zero thread rows does not mean zero open threads.** The thread table is filled only by resolve and unresolve events, and nothing seeds it from GitHub. A thread opened and never touched leaves no row. So zero rows can mean every thread is still open. A local "all resolved" answers only "of the threads seen resolving, which are resolved now". It never replaces the cloud's merge evaluator, which also judges a resolution against force-pushes.
 
-Read a pass on this leg narrowly. The thread table is filled only by resolve and unresolve events, and nothing seeds it from GitHub. A thread opened and never touched leaves no row. So zero rows can mean every thread is still open. A local "all resolved" answers only "of the threads seen resolving, which are resolved now". It never replaces the cloud's merge evaluator, which also judges a resolution against force-pushes.
+`node scripts/is-it-mergeable.mjs <ticket> --local-threads` reads the thread leg from the replica. It does so only after a probe proves the replica is caught up with the cloud head. Without the flag, the thread leg is inconclusive and the cloud's evaluator decides.
 
 The query the script runs, for one pull request:
 
