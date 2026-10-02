@@ -2,7 +2,7 @@ import { existsSync, realpathSync } from "node:fs";
 import { userInfo } from "node:os";
 import { join } from "node:path";
 import type { ParsedArgs } from "./args.js";
-import { openBrowser } from "./browser.js";
+import { openConsentBrowser } from "./consent-browser.js";
 import {
   defaultSkillsDirFor,
   loadConfig,
@@ -50,7 +50,7 @@ export interface OnboardRuntimeHooks {
   signinTimeoutMs?: number;
   ready: (ctx: Ctx, journal?: OnboardJournal) => Promise<OnboardStepResult>;
   legacy?: LegacyDeps;
-  openBrowser?: (url: string) => void;
+  openBrowser?: (url: string, signal?: AbortSignal) => void | Promise<void>;
   sleep?: (ms: number) => Promise<void>;
   realHome?: () => string;
   skillNames?: readonly string[];
@@ -225,7 +225,7 @@ export function createOnboardRuntime(
   const personalAdapter = (provider: "linear" | "github") =>
     personalConsentAdapter({
       provider,
-      openBrowser: hooks.openBrowser ?? openBrowser,
+      openBrowser: hooks.openBrowser ?? openConsentBrowser,
       sleep: hooks.sleep,
       wait: hooks.ui
         ? (message, run) => hooks.ui!.wait(message, run)
@@ -316,14 +316,14 @@ export function createOnboardRuntime(
     ...linear,
     "linear.workspace": linearWorkspaceAdapter({
       fallback: linear["linear.workspace"],
-      openBrowser: hooks.openBrowser ?? openBrowser,
+      openBrowser: hooks.openBrowser ?? openConsentBrowser,
       wait: hooks.ui
         ? (message, work) => hooks.ui!.wait(message, work)
         : undefined,
       sleep: hooks.sleep,
     }),
     "github.install": githubInstallationAdapter({
-      openBrowser: hooks.openBrowser ?? openBrowser,
+      openBrowser: hooks.openBrowser ?? openConsentBrowser,
       wait: hooks.ui
         ? (message, work) => hooks.ui!.wait(message, work)
         : undefined,

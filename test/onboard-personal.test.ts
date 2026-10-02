@@ -326,4 +326,35 @@ describe("owned personal consent", () => {
     ).toMatchObject({ state: "waiting", reason: "interrupted" });
     expect(f.opened).toEqual([]);
   });
+  it("without a browser it names the Connected accounts page and keeps waiting, never printing the signed link", async () => {
+    const f = fixture();
+    const adapter = personalConsentAdapter({
+      ...f.options,
+      openBrowser: async () => {
+        await Promise.resolve();
+        f.opened.push("approved elsewhere");
+        throw new Error("https://example.test/?handoff=private-opener-value");
+      },
+    });
+    expect(await adapter.act!(f.ctx, f.journal)).toMatchObject({
+      state: "done",
+    });
+    const printed = f.logs.join("\n");
+    expect(printed).toContain(`${origin}/settings/connected-accounts`);
+    expect(printed).not.toContain("private-opener-value");
+    expect(printed).not.toContain("opaque-fixture");
+  });
+  it("without a browser the deadline asks the person to finish on the web and resume", async () => {
+    const f = fixture();
+    const adapter = personalConsentAdapter({
+      ...f.options,
+      openBrowser: async () => {
+        throw new Error("no opener");
+      },
+    });
+    expect(await adapter.act!(f.ctx, f.journal)).toMatchObject({
+      state: "waiting",
+      reason: "personal_browser_unavailable",
+    });
+  });
 });
