@@ -5,6 +5,15 @@ import {
   type OnboardProgress,
 } from "./onboard-progress.js";
 import type { ExistingOnboardTeam } from "./onboard-existing.js";
+import {
+  CREATE_TEAM_CHOICE,
+  suggestTeamKey,
+  teamKeyProblem,
+  teamNameProblem,
+  type NewTeamAnswer,
+  type NewTeamQuestion,
+  type TeamCreateOffer,
+} from "./onboard-team-create.js";
 import type { ExistingOnboardRepository } from "./onboard-repositories.js";
 import type { OnboardSettingsSummary } from "./onboard-settings.js";
 import {
@@ -29,7 +38,13 @@ export interface OnboardUi {
     localSync: boolean,
     signin?: "saved" | "required" | "unavailable",
   ): Promise<{ proceed: boolean; localSync: boolean; signin?: boolean }>;
-  chooseTeam?(teams: ExistingOnboardTeam[]): Promise<string | null>;
+  /** A team ID, or `CREATE_TEAM_CHOICE` when `create` was offered and chosen. */
+  chooseTeam?(
+    teams: ExistingOnboardTeam[],
+    create?: TeamCreateOffer,
+  ): Promise<string | null>;
+  /** The new team's name and key, confirmed; null to go back to the picker (or when cancelled). */
+  nameNewTeam?(question: NewTeamQuestion): Promise<NewTeamAnswer | null>;
   confirmWorkflowAdoption?(
     team: string,
     lines: readonly string[],
@@ -82,8 +97,21 @@ export interface ClackOnboardPort {
   select(
     options: PromptOptions & {
       message: string;
-      options: Array<{ value: string; label: string; hint?: string }>;
+      options: Array<{
+        value: string;
+        label: string;
+        hint?: string;
+        disabled?: boolean;
+      }>;
       initialValue: string;
+    },
+  ): Promise<string | symbol>;
+  text?(
+    options: PromptOptions & {
+      message: string;
+      initialValue?: string;
+      placeholder?: string;
+      validate?: (value: string | undefined) => string | undefined;
     },
   ): Promise<string | symbol>;
   multiselect?(
@@ -209,17 +237,33 @@ export function createClackOnboardUi(
         ...(answer === "signin" ? { signin: true } : {}),
       };
     },
-    async chooseTeam(teams) {
+    async chooseTeam(teams, create) {
       stop();
-      if (!teams.length || abort.signal.aborted) return null;
+      // Creating needs a name prompt; a port without one offers only the existing teams.
+      const offer = prompts.text ? create : undefined;
+      if ((!teams.length && !offer?.available) || abort.signal.aborted)
+        return null;
       const answer = await prompts.select({
         ...options,
         message: "Which Linear team should this project use?",
-        initialValue: teams[0]!.id,
-        options: teams.map((team) => ({
-          value: team.id,
-          label: `${team.name || team.key || team.id}${team.key && team.name ? ` (${team.key})` : ""}`,
-        })),
+        initialValue: teams[0]?.id ?? CREATE_TEAM_CHOICE,
+        options: [
+          ...teams.map((team) => ({
+            value: team.id,
+            label: `${team.name || team.key || team.id}${team.key && team.name ? ` (${team.key})` : ""}`,
+          })),
+          ...(offer
+            ? [
+                {
+                  value: CREATE_TEAM_CHOICE,
+                  label: "Create a new Linear team…",
+                  ...(offer.available
+                    ? {}
+                    : { hint: offer.reason, disabled: true }),
+                },
+              ]
+            : []),
+        ],
       });
       if (prompts.isCancel(answer)) {
         abort.abort();
@@ -246,6 +290,59 @@ export function createClackOnboardUi(
       }
       return answer === "apply";
     },
+    ...(prompts.text
+      ? {
+          async nameNewTeam(question: NewTeamQuestion) {
+            stop();
+            if (abort.signal.aborted) return null;
+            const name = await prompts.text!({
+              ...options,
+              message: question.problem
+                ? `${question.problem}\nName for the new Linear team`
+                : "Name for the new Linear team",
+              ...(question.name ? { initialValue: question.name } : {}),
+              placeholder: "Mobile app",
+              validate: teamNameProblem,
+            });
+            if (prompts.isCancel(name) || typeof name !== "string") {
+              abort.abort();
+              return null;
+            }
+            const key = await prompts.text!({
+              ...options,
+              message: "Team key (the prefix on its tickets, like MOB-12)",
+              initialValue:
+                question.key &&
+                (!question.name || question.name === name.trim())
+                  ? question.key
+                  : suggestTeamKey(name),
+              validate: teamKeyProblem,
+            });
+            if (prompts.isCancel(key) || typeof key !== "string") {
+              abort.abort();
+              return null;
+            }
+            const answer = {
+              name: name.trim(),
+              key: key.trim().toUpperCase(),
+            };
+            const confirm = await prompts.select({
+              ...options,
+              message: `Create the Linear team ${answer.name} (${answer.key}) and set up Catalyst's workflow on it?`,
+              initialValue: "create",
+              options: [
+                { value: "create", label: "Create the team" },
+                { value: "back", label: "Go back to the team list" },
+              ],
+            });
+            if (prompts.isCancel(confirm)) {
+              abort.abort();
+              return null;
+            }
+            return confirm === "create" ? answer : null;
+          },
+        }
+      : {}),
     ...(prompts.multiselect
       ? {
           async chooseRepositories(repositories: ExistingOnboardRepository[]) {

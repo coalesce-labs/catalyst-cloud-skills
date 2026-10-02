@@ -1,11 +1,20 @@
 import type { ParsedArgs } from "./args.js";
 import { loadConfig, normalizeBaseUrl, type Ctx } from "./config.js";
 import { CliError } from "./errors.js";
+import { onboardReasonText } from "./onboard-next.js";
 import type {
   OnboardAdapter,
   OnboardJournal,
   OnboardStepResult,
 } from "./onboard.js";
+import {
+  CREATE_TEAM_CHOICE,
+  postNewTeam,
+  teamCreateOffer,
+  type NewTeamAnswer,
+  type NewTeamQuestion,
+  type TeamCreateOffer,
+} from "./onboard-team-create.js";
 
 export interface ExistingOnboardTeam {
   id: string;
@@ -14,7 +23,11 @@ export interface ExistingOnboardTeam {
 }
 export type ChooseExistingTeam = (
   teams: readonly ExistingOnboardTeam[],
+  create?: TeamCreateOffer,
 ) => Promise<string | null>;
+export type NameNewOnboardTeam = (
+  question: NewTeamQuestion,
+) => Promise<NewTeamAnswer | null>;
 const idPattern = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/;
 const waiting = (reason: string): OnboardStepResult => ({
   state: "waiting",
@@ -26,6 +39,29 @@ const object = (value: unknown): Record<string, unknown> | null =>
     : null;
 const label = (value: string) =>
   value.replace(/[\u0000-\u001f\u007f-\u009f]/g, "").slice(0, 120);
+
+/** A team this setup created whose workflow adoption has not been seen yet: kept so a resume can
+ * select it once it is adopted, and so its retry command stays on screen until then. */
+export function createdOnboardTeam(
+  journal?: OnboardJournal,
+): { id: string; key: string } | undefined {
+  const step = journal?.steps.find((row) => row.id === "linear.team");
+  if (step?.state !== "waiting" || step.reason !== "team_created_not_adopted")
+    return undefined;
+  const id = step.evidence?.team,
+    key = step.evidence?.teamKey;
+  return typeof id === "string" &&
+    idPattern.test(id) &&
+    typeof key === "string" &&
+    idPattern.test(key)
+    ? { id, key }
+    : undefined;
+}
+const notAdopted = (team: { id: string; key: string }): OnboardStepResult => ({
+  state: "waiting",
+  reason: "team_created_not_adopted",
+  evidence: { team: team.id, teamKey: team.key },
+});
 
 /** A receipt keeps an explicit selection, never the team used to inspect the tenant grant. */
 export function selectedOnboardTeam(
@@ -213,8 +249,23 @@ async function observe(
 export function existingLinearAdapters(
   args: ParsedArgs,
   choose?: ChooseExistingTeam,
+  nameNewTeam?: NameNewOnboardTeam,
+  message: (text: string) => void = () => {},
 ): Record<"linear.workspace" | "linear.team", OnboardAdapter> {
   let chosen: string | undefined;
+  let uncertain: NewTeamQuestion | undefined;
+  const uncertainResult = (
+    state: "pending" | "waiting" = "waiting",
+  ): OnboardStepResult | undefined =>
+    uncertain?.key
+      ? {
+          state,
+          reason: "team_create_unverified",
+          evidence: { teamKey: uncertain.key },
+        }
+      : undefined;
+  const stopTeam = (reason: string): OnboardStepResult =>
+    uncertainResult() ?? waiting(reason);
   const requested = (teams: ExistingOnboardTeam[], journal: OnboardJournal) => {
     const explicit = args.flags.team;
     if (typeof explicit === "string") {
@@ -223,22 +274,40 @@ export function existingLinearAdapters(
       const keys = teams.filter((team) => team.key === explicit);
       return keys.length === 1 ? keys[0] : undefined;
     }
-    const saved = chosen ?? selectedOnboardTeam(journal);
+    const saved =
+      chosen ?? selectedOnboardTeam(journal) ?? createdOnboardTeam(journal)?.id;
     return saved ? teams.find((team) => team.id === saved) : undefined;
   };
   const teamCheck: OnboardAdapter["check"] = async (ctx, journal, signal) => {
+    const prior = journal.steps.find((step) => step.id === "linear.team");
+    const key = prior?.evidence?.teamKey;
+    if (
+      prior?.reason === "team_create_unverified" &&
+      typeof key === "string" &&
+      /^[A-Z][A-Z0-9]{0,6}$/.test(key)
+    )
+      uncertain = { key, problem: onboardReasonText(prior) };
+    const pending = createdOnboardTeam(journal);
     const list = await readOnboardTeamInventory(ctx, signal);
-    if ("reason" in list) return waiting(list.reason);
-    if (!list.teams.length) return waiting("team_inventory_empty");
+    if ("reason" in list)
+      return pending ? notAdopted(pending) : stopTeam(list.reason);
+    if (!list.teams.length)
+      return pending ? notAdopted(pending) : stopTeam("team_inventory_empty");
     const team = requested(list.teams, journal);
     if (!team) {
+      // The census lists a created team once its workflow is adopted (`catalyst team adopt`).
+      if (pending) return notAdopted(pending);
       if (typeof args.flags.team === "string")
-        return waiting("team_selection_unverified");
-      return choose ? { state: "pending" } : waiting("team_choice_required");
+        return stopTeam("team_selection_unverified");
+      return choose
+        ? (uncertainResult("pending") ?? { state: "pending" })
+        : stopTeam("team_choice_required");
     }
     const result = await observe(ctx, team.id, signal);
     if (!result || result.checks.get("team_visible") !== "pass")
-      return waiting("team_selection_unverified");
+      return pending
+        ? notAdopted(pending)
+        : stopTeam("team_selection_unverified");
     return {
       state: "done",
       evidence: {
@@ -274,31 +343,102 @@ export function existingLinearAdapters(
       check: teamCheck,
       act: async (ctx, journal, signal) => {
         const list = await readOnboardTeamInventory(ctx, signal);
-        if ("reason" in list) return waiting(list.reason);
-        if (!list.teams.length) return waiting("team_inventory_empty");
-        if (!choose) return waiting("team_choice_required");
-        let remove = () => {};
-        const answer = await new Promise<string | null>((resolve, reject) => {
-          const stopped = () => resolve(null);
-          if (signal?.aborted) {
-            stopped();
-            return;
+        if ("reason" in list) return stopTeam(list.reason);
+        if (!choose)
+          return stopTeam(
+            list.teams.length ? "team_choice_required" : "team_inventory_empty",
+          );
+        let offer =
+          nameNewTeam && typeof args.flags.team !== "string"
+            ? await teamCreateOffer(ctx, journal, signal)
+            : undefined;
+        if (signal?.aborted) return stopTeam("interrupted");
+        if (!list.teams.length && !offer?.available)
+          return stopTeam("team_inventory_empty");
+        const ask = <T>(question: () => Promise<T | null>) => {
+          let remove = () => {};
+          return new Promise<T | null>((resolve, reject) => {
+            const stopped = () => resolve(null);
+            if (signal?.aborted) {
+              stopped();
+              return;
+            }
+            signal?.addEventListener("abort", stopped, { once: true });
+            remove = () => signal?.removeEventListener("abort", stopped);
+            Promise.resolve()
+              .then(() => (signal?.aborted ? null : question()))
+              .then(resolve, reject);
+          }).finally(() => remove());
+        };
+        if (uncertain?.problem) message(uncertain.problem);
+        // Going back from naming, or Linear refusing the person, returns here; each pass asks again.
+        for (;;) {
+          const answer = await ask(() =>
+            choose(
+              list.teams.map((team) => ({ ...team })),
+              offer ? { ...offer } : undefined,
+            ),
+          );
+          if (!answer || signal?.aborted) return stopTeam("interrupted");
+          if (answer !== CREATE_TEAM_CHOICE) {
+            if (!list.teams.some((team) => team.id === answer))
+              return stopTeam("team_selection_unverified");
+            chosen = answer;
+            return teamCheck(ctx, journal, signal);
           }
-          signal?.addEventListener("abort", stopped, { once: true });
-          remove = () => signal?.removeEventListener("abort", stopped);
-          Promise.resolve()
-            .then(() =>
-              signal?.aborted
-                ? null
-                : choose(list.teams.map((team) => ({ ...team }))),
-            )
-            .then(resolve, reject);
-        }).finally(() => remove());
-        if (!answer || signal?.aborted) return waiting("interrupted");
-        if (!list.teams.some((team) => team.id === answer))
-          return waiting("team_selection_unverified");
-        chosen = answer;
-        return teamCheck(ctx, journal, signal);
+          if (!offer?.available || !nameNewTeam)
+            return stopTeam("team_selection_unverified");
+          let question: NewTeamQuestion = uncertain ? { ...uncertain } : {};
+          for (;;) {
+            const named = await ask(() => nameNewTeam({ ...question }));
+            if (signal?.aborted) return stopTeam("interrupted");
+            if (!named) break;
+            const reply = await postNewTeam(
+              ctx,
+              journal,
+              named,
+              signal,
+              uncertain?.key,
+            );
+            if (reply.kind === "reask") {
+              question = { ...named, problem: reply.message };
+              continue;
+            }
+            if (reply.kind === "refused") {
+              message(
+                reply.linearMessage
+                  ? `${reply.message}\nLinear said: ${reply.linearMessage}`
+                  : reply.message,
+              );
+              offer = { available: false, reason: reply.message };
+              if (!list.teams.length) return stopTeam("team_inventory_empty");
+              break;
+            }
+            if (reply.kind === "failed") {
+              if (reply.message) message(reply.message);
+              // The key rides along when the team may exist, so the next action can name it.
+              return reply.key
+                ? {
+                    state: "waiting",
+                    reason: reply.reason,
+                    evidence: { teamKey: reply.key },
+                  }
+                : stopTeam(reply.reason);
+            }
+            const team = reply.team;
+            if (!reply.adoption.adopted) {
+              message(
+                `Created Linear team ${team.name} (${team.key}), but Catalyst's workflow is not set up on it yet: ${reply.adoption.reason}`,
+              );
+              return notAdopted(team);
+            }
+            message(
+              `Created Linear team ${team.name} (${team.key}) and set up Catalyst's workflow on it.`,
+            );
+            chosen = team.id;
+            return teamCheck(ctx, journal, signal);
+          }
+        }
       },
     },
   };
