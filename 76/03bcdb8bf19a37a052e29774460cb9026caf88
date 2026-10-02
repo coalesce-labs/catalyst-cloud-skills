@@ -1,1 +1,6 @@
-No-browser path now names the web page and keeps polling instead of stopping, so a Docker run needs no resume per consent
+Revision history for #215:
+
+rev 2 (content) 2026-10-02 02:35 UTC — No-browser path now names the web page and keeps polling instead of stopping, so a Docker run needs no resume per consent
+rev 1 (initial) 2026-10-02 02:35 UTC
+
+<!-- mergify-revision-data: {"schema_version":1,"pull_number":215,"entries":[{"number":1,"change_type":"initial","old_sha":null,"new_sha":"41a582198b1143fab350569dc09d86a29e161a35","timestamp_iso":"2026-10-02T02:35:45Z","reason":"","replay_sha":null,"compare_url":null},{"number":2,"change_type":"content","old_sha":"41a582198b1143fab350569dc09d86a29e161a35","new_sha":"7603bcdb8bf19a37a052e29774460cb9026caf88","timestamp_iso":"2026-10-02T02:35:45Z","reason":"No-browser path now names the web page and keeps polling instead of stopping, so a Docker run needs no resume per consent","replay_sha":null,"compare_url":"https://github.com/coalesce-labs/catalyst-cloud-skills/compare/41a582198b1143fab350569dc09d86a29e161a35...7603bcdb8bf19a37a052e29774460cb9026caf88"}]} -->
