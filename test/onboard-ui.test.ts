@@ -755,3 +755,37 @@ test("a finish with the work prerequisites done says a first ticket can start no
   );
   expect(text).not.toMatch(/onboarding complete/i);
 });
+
+test("exit 0 with deferred steps waiting renders ready for work and the optional next steps", () => {
+  const value = journal({
+    exit: 0,
+    complete: false,
+    steps: [
+      {
+        id: "linear.team",
+        state: "done",
+        evidence: { team: "team-1", teamKey: "ENG" },
+      },
+      ...(["linear.adopt", "projects", "accounts", "capacity"] as const).map(
+        (id) => ({ id, state: "done" as const }),
+      ),
+      {
+        id: "settings",
+        state: "waiting",
+        reason: "settings_checkout_unverified",
+      },
+      {
+        id: "housekeeping",
+        state: "waiting",
+        reason: "housekeeping_service_unverified",
+      },
+      { id: "first-ticket", state: "done" },
+    ],
+  });
+  const text = outro(value);
+  expect(text).toMatch(/^Ready for work\.\nNext, when you want:\n/);
+  expect(text).toContain("Review repository settings: ");
+  expect(text).toContain("Schedule the daily update: ");
+  expect(text).toContain("Move a ticket in ENG to Todo;");
+  expect(text).not.toMatch(/onboarding complete|still needs|resume:/i);
+});
