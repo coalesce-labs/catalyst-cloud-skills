@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.14.10
+
+- `catalyst onboard` refreshes its sign-in when it starts and between steps. A run started a while after signing in no longer asks for the browser sign-in again, and a long run of approvals no longer stops with "Renew your login".
+
 ## 0.14.9
 
 - Onboarding's workflow step passes on Linear teams that have the built-in Duplicate state. Before, it waited even after the team was adopted.
