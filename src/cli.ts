@@ -404,7 +404,7 @@ export async function main(
               ui = createClackOnboardUi(
                 await import("@clack/prompts"),
                 { input, output: process.stdout },
-                { baseUrl: () => savedOnboardBaseUrl(ctx.home) },
+                { baseUrl: () => savedOnboardBaseUrl(ctx.home), verbose: args.flags.verbose === true },
               );
             } catch (error) {
               terminal?.destroy();

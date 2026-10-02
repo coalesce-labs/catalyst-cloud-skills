@@ -19,6 +19,7 @@ import {
   type OnboardStep,
   type OnboardStepId,
 } from "./onboard.js";
+import { onboardStepDetail } from "./onboard-next.js";
 
 /** Rendering cannot approve a step: the receipt engine owns execution and evidence. */
 export interface OnboardUi {
@@ -105,6 +106,7 @@ export function createClackOnboardUi(
   prompts: ClackOnboardPort,
   streams: Streams,
   deps: {
+    verbose?: boolean;
     signals?: OnboardSignalSource;
     progress?: OnboardProgress;
     /** Read when a line needs it: the saved login can change during setup. */
@@ -352,7 +354,10 @@ export function createClackOnboardUi(
     },
     stepEnd(step, journal) {
       stop();
-      const text = `${ONBOARD_TITLES[step.id]}${step.reason ? `: ${onboardStepAction(journal, step, deps.baseUrl?.())}` : ""}`;
+      const detail = step.reason
+        ? onboardStepAction(journal, step, deps.baseUrl?.())
+        : undefined;
+      const text = `${ONBOARD_TITLES[step.id]}${detail ? `: ${detail}` : ""}`;
       const kind =
         step.state === "done"
           ? "info"
@@ -364,6 +369,8 @@ export function createClackOnboardUi(
       prompts.log[kind](`${step.state === "done" ? "✓ " : ""}${text}`, {
         output: streams.output,
       });
+      const granted = deps.verbose ? onboardStepDetail(step) : undefined;
+      if (granted) prompts.log.message(granted, { output: streams.output });
     },
     message,
     finish(journal, only) {

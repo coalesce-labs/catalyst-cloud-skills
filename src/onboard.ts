@@ -439,6 +439,13 @@ function normalizeStep(value: unknown, fallbackAt: string): OnboardStep | null {
     "image",
     "automations",
     "workspaceSlug",
+    // CTC-4629: an outdated connection's grant, scopes, action URL and who takes it.
+    "grant",
+    "granted",
+    "missing",
+    "org",
+    "url",
+    "actor",
   ] as const) {
     const item = evidence?.[key];
     if (
