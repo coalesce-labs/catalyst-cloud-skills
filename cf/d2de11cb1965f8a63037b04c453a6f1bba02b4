@@ -1,0 +1,1 @@
+Address uncertain-create review: unnamed responses retain key, persist before send, preserve SIGINT recovery, and retain key when resuming naming
