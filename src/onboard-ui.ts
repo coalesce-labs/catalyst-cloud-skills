@@ -38,6 +38,8 @@ export interface OnboardUi {
   chooseFirstRepository?(
     repositories: Array<{ owner: string; name: string }>,
   ): Promise<string | null>;
+  /** "Run Catalyst's work on this machine?", default no. Null when cancelled. */
+  chooseRunner?(): Promise<boolean | null>;
   stepStart(id: OnboardStepId): void;
   stepEnd(step: OnboardStep, journal?: OnboardJournal): void;
   message(text: string): void;
@@ -282,6 +284,31 @@ export function createClackOnboardUi(
       }
       return typeof answer === "string" ? answer : null;
     },
+    async chooseRunner() {
+      stop();
+      if (abort.signal.aborted) return null;
+      const answer = await prompts.select({
+        ...options,
+        message: "Run Catalyst's work on this machine?",
+        initialValue: "no",
+        options: [
+          {
+            value: "no",
+            label: "No",
+            hint: "default; work runs on the workspace's runner hosts",
+          },
+          {
+            value: "yes",
+            label: "Yes, start a Catalyst runner here with Docker",
+          },
+        ],
+      });
+      if (prompts.isCancel(answer)) {
+        abort.abort();
+        return null;
+      }
+      return answer === "yes";
+    },
     stepStart(id) {
       const next = ["machine", "cli", "skills", "legacy"].includes(id)
         ? "This computer"
@@ -291,7 +318,7 @@ export function createClackOnboardUi(
             ? "Connections"
             : ["projects", "accounts", "settings", "values"].includes(id)
               ? "Project setup"
-              : ["capacity", "daemon", "housekeeping"].includes(id)
+              : ["capacity", "runner", "daemon", "housekeeping"].includes(id)
                 ? "Runner and services"
                 : "Work and readiness";
       if (next !== group) {

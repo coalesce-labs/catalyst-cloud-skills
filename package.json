@@ -47,7 +47,8 @@
     "evals": "node scripts/run-evals.mjs",
     "paths:check": "node scripts/vendor-paths.mjs --check",
     "prose:check": "node scripts/check-public-prose.mjs",
-    "settings:check": "node scripts/vendor-settings.mjs --check"
+    "settings:check": "node scripts/vendor-settings.mjs --check",
+    "self-host:check": "node scripts/vendor-self-host.mjs --check"
   },
   "dependencies": {
     "@catalyst-cloud/sdk": "^0.13.1",

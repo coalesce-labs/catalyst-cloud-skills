@@ -151,6 +151,50 @@ const REASONS: Record<string, string> = {
     "Every runner slot for this repository is in use. Run catalyst onboard again after current work finishes.",
   capacity_unavailable:
     "Setup could not read runner capacity. Run catalyst onboard again to retry.",
+  runner_not_selected:
+    "This setup does not start a runner on this machine. To start one, run catalyst onboard --runner.",
+  runner_docker_missing:
+    "A runner needs Docker with Compose (Docker Desktop, OrbStack or Docker Engine), and setup could not reach it. Start Docker, or install it, then run catalyst onboard --runner.",
+  runner_identity_unverified:
+    "A workspace owner or administrator enrolls a runner. Sign in as one with catalyst login, then run catalyst onboard --runner.",
+  runner_context_unverified:
+    "Setup could not confirm the selected Linear team. Run catalyst onboard again.",
+  runner_directory_unavailable:
+    "Setup could not prepare the runner folder in Catalyst's state directory. Check its permissions, then run catalyst onboard again.",
+  runner_image_unpinned:
+    "Each runner image must be pinned as name@sha256:<digest>, and Catalyst's runner image is not public yet. Ask Catalyst support to load it here and set CATALYST_RUNNER_IMAGE to the reference they give you. A CATALYST_SUPERVISOR_IMAGE or CATALYST_WATCHDOG_IMAGE override takes the same form. Then run catalyst onboard --runner.",
+  runner_image_emulated:
+    "A runner image here is built for another processor, and Catalyst does not run work under emulation. Ask Catalyst support for the image built for this processor, then run catalyst onboard again.",
+  runner_session_network_misshaped:
+    "A Docker network named catalyst-session-v1 exists with the wrong settings. Remove it with docker network rm catalyst-session-v1 when nothing uses it, then run catalyst onboard again.",
+  runner_session_network_failed:
+    "Docker could not create the catalyst-session-v1 network. Check that Docker is running, then run catalyst onboard again.",
+  runner_docker_socket_unreadable:
+    "Setup could not read the group of the Docker socket at /var/run/docker.sock. Check that Docker is running, then run catalyst onboard again.",
+  runner_enrollment_unavailable:
+    "Setup could not read this workspace's runner hosts. Run catalyst onboard again to retry.",
+  runner_enrollment_stale:
+    "This machine still holds the credential of a runner enrollment that was revoked. Stop the runner with docker compose -p catalyst-host down, remove the credential with docker volume rm catalyst-host_host-credential (this also removes the organization key), then run catalyst onboard --runner.",
+  runner_login_refresh_required:
+    "Renew your login with catalyst login, then run catalyst onboard.",
+  runner_join_token_unavailable:
+    "Catalyst did not issue a join token for this machine. Run catalyst onboard again to retry.",
+  runner_org_key_file_invalid:
+    "CATALYST_RUNNER_ORG_KEY_FILE must name a regular file that holds one organization key. Fix the file, then run catalyst onboard again.",
+  runner_org_key_write_failed:
+    "Setup could not place the organization key on the runner. Check that Docker is running, then run catalyst onboard again.",
+  runner_compose_failed:
+    "Docker Compose could not start the runner. Run docker compose -p catalyst-host logs to see why, then run catalyst onboard again.",
+  runner_compose_not_running:
+    "The runner's supervisor is not running. Run docker compose -p catalyst-host logs supervisor to see why, then run catalyst onboard again.",
+  runner_enrollment_unverified:
+    "The runner started but has not enrolled yet. Run docker compose -p catalyst-host logs supervisor to see why, or run catalyst onboard again in a minute.",
+  runner_needs_runner_flag:
+    "This machine was set up to run Catalyst's work, but its runner is not running or not enrolled. To bring it up, run catalyst onboard --runner.",
+  runner_capability_pending:
+    "The runner enrolled but has not reported its capacity yet. Run catalyst onboard again in a minute.",
+  runner_admission_unverified:
+    "Setup could not read whether the team's pool admits runner hosts. Run catalyst onboard again to retry.",
   housekeeping_service_unverified:
     "The daily update needs a user service manager, launchd on macOS or systemd --user on Linux. Setup cannot schedule it on this computer. It is optional, and work does not depend on it.",
 };
@@ -214,6 +258,30 @@ export function onboardReasonText(
       ? `This setup step is not available on this server yet. Continue in the web app at ${page}, then run catalyst onboard.`
       : "This setup step is not available on this server yet. Run catalyst onboard after the server update.";
   }
+  if (reason === "runner_images_unavailable") {
+    const image = step.evidence?.image;
+    const named =
+      typeof image === "string" && /^[a-z0-9][a-z0-9._:/-]{0,255}@sha256:[0-9a-f]{64}$/.test(image)
+        ? ` ${image}`
+        : "";
+    return `This machine does not have the Catalyst image${named}, and setup never signs in to a registry to pull it. Ask Catalyst support to load it here, then run catalyst onboard again.`;
+  }
+  if (reason === "runner_org_key_missing") {
+    const where = context.baseUrl
+      ? `at ${normalizeBaseUrl(context.baseUrl)}/settings/account-keys`
+      : "on the web app's Account API keys page";
+    return `The runner is enrolled, but it takes no work without an organization key. A workspace owner or administrator creates one with the mirror:read, mirror:write and mirror:feed scopes ${where} and saves it in a file only they can read. Then run catalyst onboard --runner with CATALYST_RUNNER_ORG_KEY_FILE set to that file.`;
+  }
+  if (reason === "runner_host_not_ready") {
+    const failing = step.evidence?.failing;
+    const checks =
+      typeof failing === "string" && /^[a-z0-9.,_-]{1,500}$/.test(failing)
+        ? `: ${failing.split(",").join(", ")}`
+        : "";
+    return `The runner is enrolled but its readiness checks fail${checks}. Run docker compose -p catalyst-host logs supervisor for the remedy, then run catalyst onboard again.`;
+  }
+  if (reason === "runner_admission_operator")
+    return `This machine is enrolled and ready, but team ${onboardTeamKey(context.journal) ?? "<TEAM KEY>"} does not admit runner hosts yet, and only a Catalyst operator can turn that on today. Ask Catalyst support to enable host admission for the team with Cloudflare placement set to never. Then run catalyst onboard.`;
   if (reason === "prerequisite_not_ready" && context.waitsFor)
     return `Runs after "${context.waitsFor}".`;
   return REASONS[reason] ?? reason.replaceAll("_", " ");

@@ -174,7 +174,7 @@ export function usageText(): string {
     "  catalyst login --key <personal-key> [--base-url <url>]   (or CATALYST_CLOUD_TOKEN, for a key)",
     "  catalyst join ...   (deprecated alias of login; removed in the next minor version)",
     "  catalyst install [--skills-dir <dir>] [--force]   (repair path; your agent's own command installs the skills)",
-    "  catalyst onboard [--resume-from <step>] [--only <step>] [--yes] [--dry-run] [--json]",
+    "  catalyst onboard [--resume-from <step>] [--only <step>] [--runner|--no-runner] [--yes] [--dry-run] [--json]",
     "  catalyst status | notice | me | ready | accounts",
     "  catalyst mcp add|list|remove (vault references only)",
     "  catalyst contract [--refresh] [--path <a.b.c>]",

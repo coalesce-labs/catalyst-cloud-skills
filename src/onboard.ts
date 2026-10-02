@@ -53,6 +53,7 @@ export const ONBOARD_STEPS = [
   "settings",
   "values",
   "capacity",
+  "runner",
   "daemon",
   "housekeeping",
   "first-ticket",
@@ -254,6 +255,8 @@ export const ONBOARD_DEPENDENCIES: Partial<
   settings: ["projects"],
   values: ["settings"],
   capacity: ["projects"],
+  // The join token names the selected team's pool.
+  runner: ["linear.team"],
   daemon: ["signin"],
   // What dispatch needs. Environment approval gates only implement and pr, and the first phase
   // needs no imported values, so repository settings and local sync do not hold a first ticket.
@@ -276,6 +279,7 @@ const ADMIN_STEPS = new Set<OnboardStepId>([
   "settings",
   "values",
   "capacity",
+  "runner",
   "first-ticket",
 ]);
 
@@ -298,6 +302,7 @@ export const ONBOARD_TITLES: Record<OnboardStepId, string> = {
   settings: "Review repository settings",
   values: "Import selected local values",
   capacity: "Check runner capacity",
+  runner: "Run Catalyst's work on this machine",
   daemon: "Check optional local sync",
   housekeeping: "Schedule the daily update",
   "first-ticket": "Start a first ticket",
@@ -426,6 +431,12 @@ function normalizeStep(value: unknown, fallbackAt: string): OnboardStep | null {
     "passed",
     "team",
     "teamKey",
+    "selected",
+    "hostName",
+    "hostId",
+    "capacity",
+    "failing",
+    "image",
   ] as const) {
     const item = evidence?.[key];
     if (
@@ -859,6 +870,7 @@ function stepSatisfied(step: OnboardStep | undefined): boolean {
       (step.id === "legacy" ||
         step.reason === "member_scope" ||
         (step.id === "daemon" && step.reason === "local_sync_not_selected") ||
+        (step.id === "runner" && step.reason === "runner_not_selected") ||
         (step.id === "linear.automations" &&
           step.reason === "automation_management_unavailable")))
   );
@@ -869,6 +881,8 @@ function stepSatisfied(step: OnboardStep | undefined): boolean {
 export const ONBOARD_DEFERRED_STEPS: ReadonlySet<OnboardStepId> = new Set([
   "settings",
   "values",
+  // Optional: work also runs on the workspace's other runner hosts.
+  "runner",
   "housekeeping",
   "first-ticket",
 ]);

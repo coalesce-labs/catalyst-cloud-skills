@@ -83,6 +83,14 @@ export const FLAG_TABLES: Record<string, FlagTable> = {
       value: false,
       help: "include the optional local sync setup in this plan",
     },
+    runner: {
+      value: false,
+      help: "run Catalyst's work on this machine: start a runner with Docker and enroll it",
+    },
+    "no-runner": {
+      value: false,
+      help: "do not run Catalyst's work on this machine, and do not ask",
+    },
     "resume-from": {
       value: true,
       help: "resume at a verified onboarding step",
@@ -468,7 +476,7 @@ export const VERB_USAGE: Record<string, string> = {
   login:
     "login [--base-url <url>] [--start-replica]   (keyless; or --key <personal-key> / CATALYST_CLOUD_TOKEN)",
   onboard:
-    "onboard [--team <ID|key>] [--repo <owner/name>]... [--resume-from <step>] [--only <step>] [--local-sync] [--yes] [--dry-run] [--json]",
+    "onboard [--team <ID|key>] [--repo <owner/name>]... [--resume-from <step>] [--only <step>] [--local-sync] [--runner|--no-runner] [--yes] [--dry-run] [--json]",
   install: "install [--skills-dir <dir>] [--force]",
   status: "status",
   notice: "notice",

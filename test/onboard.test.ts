@@ -27,6 +27,7 @@ import { main } from "../src/cli.js";
 import {
   cmdOnboard,
   ONBOARD_STEPS,
+  onboardNextActions,
   onboardLockPath,
   onboardStatePath,
   readOnboardJournal,
@@ -631,6 +632,35 @@ describe("plain finish names what is left (CTC-4477)", () => {
       expect(text).not.toContain("Ready for work.");
     },
   );
+
+  test("a runner on this machine that waits on Catalyst still leaves the workspace ready for work", async () => {
+    const { code, text, receipt } = await run({
+      runner: "runner_admission_operator",
+    });
+    expect(code).toBe(0);
+    expect(receipt.complete).toBe(false);
+    expect(text).toContain("Ready for work.");
+    expect(text).toContain(
+      "Run Catalyst's work on this machine: This machine is enrolled and ready, but team ENG does not admit runner hosts yet",
+    );
+  });
+
+  test("a runner that was not chosen is not an unfinished step", () => {
+    const journal = {
+      schema: 1 as const,
+      runId: "r",
+      installer: null,
+      cli: "0.14.0",
+      tenant: null,
+      exit: 0,
+      steps: [
+        { id: "runner" as const, state: "skipped" as const, reason: "runner_not_selected" },
+      ],
+      changes: [],
+    };
+    const lines = onboardNextActions(journal);
+    expect(lines.some((line) => line.startsWith("Run Catalyst's work"))).toBe(false);
+  });
 
   test("every step done exits 0 and says onboarding is complete", async () => {
     const { code, text, receipt } = await run({});
