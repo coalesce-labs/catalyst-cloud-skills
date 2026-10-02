@@ -341,6 +341,8 @@ export function createClackOnboardUi(
           "The server's setup capabilities belong to another login or workspace. Sign in to the original workspace to resume.",
         onboarding_capability_login_refresh_required:
           "Your login needs a refresh before setup capabilities can be checked. Run catalyst login, then catalyst onboard.",
+        workspace_login_refresh_required:
+          "Renew your login with catalyst login, then run catalyst onboard to resume.",
         workspace_consent_refused:
           "The server did not accept this login for Linear workspace setup. Sign in again or ask your workspace administrator.",
         github_installation_status_unavailable:
@@ -356,7 +358,7 @@ export function createClackOnboardUi(
         github_installation_admin_required:
           "A workspace owner or administrator approves the GitHub App installation.",
         github_installation_login_refresh_required:
-          "Your login needs a refresh. Run catalyst onboard to resume.",
+          "Renew your login with catalyst login, then run catalyst onboard to resume.",
         github_installation_browser_unavailable:
           "This computer could not open a browser. Install the GitHub App from this workspace’s Integrations page in your browser, then run catalyst onboard to resume.",
         step_not_available_in_this_release:
@@ -396,7 +398,7 @@ export function createClackOnboardUi(
         project_create_unverified:
           "Project creation could not be confirmed. Run catalyst onboard to check for the project before trying again.",
         team_read_login_refresh_required:
-          "Your login needs a refresh. Run catalyst onboard to resume.",
+          "Renew your login with catalyst login, then run catalyst onboard to resume.",
         team_choice_required:
           "Choose an existing team with catalyst onboard --team <team ID or key>.",
         team_selection_unverified:
