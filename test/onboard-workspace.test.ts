@@ -560,4 +560,38 @@ describe("bounded personal-bearer Linear workspace consent", () => {
     });
     expect(f.opened).toHaveLength(1);
   });
+  test("without a browser it names the Connections page and keeps waiting, never printing the signed link", async () => {
+    const f = fixture();
+    f.status(absent());
+    const adapter = linearWorkspaceAdapter({
+      ...f.options,
+      openBrowser: async () => {
+        await Promise.resolve();
+        f.status(done());
+        throw new Error("https://example.test/?handoff=private-opener-value");
+      },
+    });
+    expect(await adapter.act!(f.ctx, f.journal)).toMatchObject({
+      state: "done",
+    });
+    const printed = f.logs.join("\n");
+    expect(printed).toContain(`${origin}/settings/connections`);
+    expect(printed).not.toContain("private-opener-value");
+    expect(printed).not.toContain("opaque-secret-fixture");
+  });
+  test("without a browser the deadline asks the person to finish on the web and resume", async () => {
+    const f = fixture();
+    f.status(absent());
+    const adapter = linearWorkspaceAdapter({
+      ...f.options,
+      openBrowser: async () => {
+        throw new Error("no opener");
+      },
+    });
+    expect(await adapter.act!(f.ctx, f.journal)).toMatchObject({
+      state: "waiting",
+      reason: "workspace_browser_unavailable",
+    });
+    expect(f.statusReads()).toBeGreaterThan(1);
+  });
 });
