@@ -1,3 +1,4 @@
+import { isRepositoryId } from "../repository-id.js";
 import { createHash } from "node:crypto";
 import { constants } from "node:fs";
 import { lstat, open, realpath } from "node:fs/promises";
@@ -55,7 +56,8 @@ function snapshotContext(
 ): SettingsAuthorityContext | null {
   if (
     !raw ||
-    ![raw.accountId, raw.personId, raw.teamId, raw.repoId].every(
+    !isRepositoryId(raw.repoId) ||
+    ![raw.accountId, raw.personId, raw.teamId].every(
       (id) => typeof id === "string" && opaque.test(id),
     )
   )
