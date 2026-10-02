@@ -19,7 +19,7 @@ const homes: string[] = [];
 const origin = "https://project-fixture.invalid";
 const teamId = "team-engineering";
 const selected = { owner: "example", name: "app", teamId };
-const registered = { ...selected, repoId: "project-app" };
+const registered = { ...selected, repoId: "account-a:example__app" };
 const route = (method: "GET" | "POST", path: string) => ({
   method,
   path,

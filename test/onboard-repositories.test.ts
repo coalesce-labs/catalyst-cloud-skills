@@ -163,4 +163,23 @@ describe("explicit repository selection", () => {
     expect(journal.complete).toBe(false);
     expect(journal.scope).toBe("step");
   });
+  test.each([
+    "account-a:example__service",
+    "account-a:example__service.api",
+    "account-a:" + "a".repeat(39) + "__" + "b".repeat(100),
+  ])("a real minted cloud ID survives live selection and journal resume: %s", async repoId => {
+    const f = fixture(["--repo", "example/service"]);
+    f.setContract({ contractVersion: "1.24.0", account: { id: "account-a" }, merge: { repositories: [{ ...repository, repoId }] } });
+    const result = await f.adapter.check(f.ctx, f.journal);
+    expect(result.state).toBe("done");
+    f.journal.steps.push({ id: "github.repos", state: "done", evidence: result.evidence });
+    expect(selectedOnboardRepositories(f.journal)).toEqual([{ ...repository, repoId, teamId: "team-a" }]);
+    const resumed = existingRepositoryAdapter(parseArgs(["onboard", "--yes"]));
+    expect((await resumed.check(f.ctx, f.journal)).state).toBe("done");
+  });
+  test.each(["x".repeat(257), "account-a:repo/escape", "account-a:repo\\escape", "repo\nsecret", "repo%2fescape"])("unsafe cloud ID remains unverified: %s", async repoId => {
+    const f = fixture(["--repo", "example/service"]);
+    f.setContract({ contractVersion: "1.24.0", account: { id: "account-a" }, merge: { repositories: [{ ...repository, repoId }] } });
+    expect(await f.adapter.check(f.ctx, f.journal)).toEqual({ state: "waiting", reason: "repository_contract_unverified" });
+  });
 });

@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+import { isRepositoryId } from "../repository-id.js";
 import { constants, type Stats } from "node:fs";
 import { lstat, mkdir, open, unlink } from "node:fs/promises";
 import { isAbsolute, join, parse, resolve, sep } from "node:path";
@@ -49,8 +51,7 @@ export async function storeOnboardDraft(
   if (
     typeof runId !== "string" ||
     !OPAQUE_ID_RE.test(runId) ||
-    typeof repoId !== "string" ||
-    !OPAQUE_ID_RE.test(repoId) ||
+    !isRepositoryId(repoId) ||
     typeof home !== "string" ||
     !isAbsolute(home) ||
     typeof toml !== "string" ||
@@ -69,7 +70,13 @@ export async function storeOnboardDraft(
     if (stateRoot === parse(stateRoot).root || stateRoot === resolve(home))
       return { state: "rejected" };
     runDir = join(stateRoot, "install", "drafts", runId);
-    destination = join(runDir, `${repoId}.toml`);
+    // Keep earlier slug filenames resumable. New cloud IDs use a portable bounded filename;
+    // punctuation normalization would collide and raw IDs can exceed NAME_MAX.
+    // The @ namespace cannot collide with any earlier slug filename.
+    const filename = OPAQUE_ID_RE.test(repoId)
+      ? `${repoId}.toml`
+      : `repo@${createHash("sha256").update(repoId, "utf8").digest("hex")}.toml`;
+    destination = join(runDir, filename);
   } catch {
     return { state: "rejected" };
   }
