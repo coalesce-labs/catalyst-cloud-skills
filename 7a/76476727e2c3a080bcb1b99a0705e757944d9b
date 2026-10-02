@@ -1,0 +1,1 @@
+address code review: key login no longer replaces another person's saved login; dry run saves nothing; key-file path never printed; owner check; FIFO/non-regular is exit 11; steps run without the key in env; pre-step stops are named; --help/global-flag refusals stay one document
