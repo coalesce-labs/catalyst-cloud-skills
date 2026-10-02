@@ -84,6 +84,63 @@ describe("catalyst onboard", () => {
     expect(existsSync(onboardLockPath(path))).toBe(false);
   });
 
+  test("the session refresh hook runs before each step, never inside one", async () => {
+    const path = home();
+    const order: string[] = [];
+    const step = (id: string) => ({ check: async () => { order.push(`run:${id}`); return { state: "done" as const }; } });
+    await cmdOnboard(parseArgs(["onboard", "--yes"]), context(path), {
+      bindSignals: false,
+      beforeStep: async (id) => { order.push(`refresh:${id}`); },
+      adapters: { machine: step("machine"), cli: step("cli"), skills: step("skills"), legacy: step("legacy"), signin: step("signin") },
+    }, "0.14.9");
+    expect(order.slice(0, 4)).toEqual(["refresh:machine", "run:machine", "refresh:cli", "run:cli"]);
+    expect(order.filter((x) => x.startsWith("refresh:")).length).toBeGreaterThan(5);
+  });
+
+  const nearExpiry = (baseUrl: string): CustomerConfig =>
+    ({
+      baseUrl, account: "account-a", slug: "fixture", name: "Fixture", principal: "session", permissions: null,
+      user: { id: "person-a", role: "owner", label: "Fixture", email: null, linearUserId: null },
+      auth: { kind: "oauth", accessToken: "at-near", refreshToken: "rt-near", sessionId: "s1",
+        expiresAt: new Date(Date.parse("2026-09-30T14:00:00.000Z") + 60_000).toISOString() },
+      joinedAt: "2026-09-30T13:00:00.000Z", lastSkillBundleVersion: "0.14.9",
+    }) as CustomerConfig;
+  const recordingFetch = (seen: string[]) =>
+    (async (input: Parameters<typeof fetch>[0]) => {
+      seen.push(String(input instanceof Request ? input.url : input));
+      return new Response("", { status: 503 });
+    }) as typeof fetch;
+
+  test("a dry run never refreshes the saved session", async () => {
+    const path = home();
+    writeConfig(path, nearExpiry("https://refresh-dry.invalid"));
+    const seen: string[] = [];
+    await main(["onboard", "--dry-run", "--json"], { ...context(path), fetch: recordingFetch(seen) });
+    expect(seen.filter((url) => url.endsWith("/api/v1/auth/cli"))).toEqual([]);
+    expect(loadConfig(path)?.auth?.refreshToken).toBe("rt-near");
+  });
+
+  test("a real run refreshes a short saved session before it starts", async () => {
+    const path = home();
+    writeConfig(path, nearExpiry("https://refresh-run.invalid"));
+    const seen: string[] = [];
+    await main(["onboard", "--only", "machine", "--yes"], { ...context(path), fetch: recordingFetch(seen) });
+    expect(seen.some((url) => url === "https://refresh-run.invalid/api/v1/auth/cli")).toBe(true);
+  });
+
+  test("an interrupt during the between-step refresh never marks the finished step as interrupted", async () => {
+    const path = home();
+    const done = { check: async () => ({ state: "done" as const }) };
+    await cmdOnboard(parseArgs(["onboard", "--yes"]), context(path), {
+      // A real Ctrl-C reaches the engine as a process signal while the refresh is awaited.
+      beforeStep: async (id) => { if (id === "cli") process.emit("SIGHUP", "SIGHUP"); },
+      adapters: { machine: done, cli: done, skills: done, legacy: done, signin: done },
+    }, "0.14.9");
+    const journal = readOnboardJournal(onboardStatePath(path), "0.14.9");
+    expect(journal?.steps.find((step) => step.id === "machine")).toMatchObject({ state: "done" });
+    expect(journal?.steps.find((step) => step.id === "cli")?.state).not.toBe("done");
+  });
+
   test("JSON dry run prints one plan object and creates no state or lock", async () => {
     const path = home();
     const output: string[] = [];
