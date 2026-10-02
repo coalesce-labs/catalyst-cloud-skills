@@ -920,11 +920,11 @@ describe("CTC-2158: CI derives its Node matrix and exercises bun in both directi
     expect(md).toContain("--all");
   });
 
-  test("the version matches the CHANGELOG's top entry, which is 0.14.8", () => {
+  test("the version matches the CHANGELOG's top entry, which is 0.14.9", () => {
     const changelog = readFileSync(join(pkgRoot, "CHANGELOG.md"), "utf8");
     expect(changelog).toContain(`## ${manifest.version}\n`);
-    expect(changelog.indexOf("## 0.14.8")).toBe(changelog.indexOf("## "));
-    expect(manifest.version).toBe("0.14.8");
+    expect(changelog.indexOf("## 0.14.9")).toBe(changelog.indexOf("## "));
+    expect(manifest.version).toBe("0.14.9");
   });
 
   test("every shipped skill stamps the package version on its provenance line", () => {
