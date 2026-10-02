@@ -1,0 +1,6 @@
+Revision history for #238:
+
+rev 2 (content) 2026-10-02 16:03 UTC — Converge urgent workflow copy on UX spec and preserve Linear workspace slug for exact automations link
+rev 1 (initial) 2026-10-02 16:03 UTC
+
+<!-- mergify-revision-data: {"schema_version":1,"pull_number":238,"entries":[{"number":1,"change_type":"initial","old_sha":null,"new_sha":"0751c27177a2e4163145fe05d7b1fde938bce68e","timestamp_iso":"2026-10-02T16:03:13Z","reason":"","replay_sha":null,"compare_url":null},{"number":2,"change_type":"content","old_sha":"0751c27177a2e4163145fe05d7b1fde938bce68e","new_sha":"600a99de9f698e152b47ee4c2b4b6c114011bf17","timestamp_iso":"2026-10-02T16:03:13Z","reason":"Converge urgent workflow copy on UX spec and preserve Linear workspace slug for exact automations link","replay_sha":null,"compare_url":"https://github.com/coalesce-labs/catalyst-cloud-skills/compare/0751c27177a2e4163145fe05d7b1fde938bce68e...600a99de9f698e152b47ee4c2b4b6c114011bf17"}]} -->
