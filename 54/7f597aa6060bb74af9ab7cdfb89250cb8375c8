@@ -1,0 +1,1 @@
+Correct the stale symlink-owner-loss test exposed by full Node CI: require exit12, unchanged journal receipt, and preserved foreign lock. Exact archive v4 passes 24 recovery tests plus typecheck/build under official Node24/Bun1.3.14.
