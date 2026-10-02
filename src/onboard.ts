@@ -1312,16 +1312,33 @@ export async function cmdOnboard(
   };
   let current: OnboardStepId | null = null;
   let mayRecordProgress = candidate === null;
+  const recordStep = (next: OnboardStep) => {
+    const prior = journalStep(journal, next.id);
+    // Once a create was sent, generic capability, identity, scope and interruption results
+    // cannot erase the recovery key. Only a verified selection or explicit team evidence can
+    // replace it. This also retains a confirmed team's ID while adoption remains unfinished.
+    if (
+      next.id === "linear.team" &&
+      next.state !== "done" &&
+      !next.evidence?.teamKey &&
+      (prior?.reason === "team_create_unverified" ||
+        prior?.reason === "team_created_not_adopted") &&
+      prior.evidence?.teamKey
+    )
+      setStep(journal, { ...prior, state: "waiting", at: next.at });
+    else setStep(journal, next);
+  };
+  const interruptStep = (id: OnboardStepId) =>
+    recordStep({
+      id,
+      state: "failed",
+      reason: "interrupted",
+      at: isoNow(ctx, deps),
+    });
   const interrupted = () => {
     stop.abort();
     if (!mayRecordProgress) return;
-    if (current)
-      setStep(journal, {
-        id: current,
-        state: "failed",
-        reason: "interrupted",
-        at: isoNow(ctx, deps),
-      });
+    if (current) interruptStep(current);
     journal.exit = EXIT_WAITING;
     journal.complete = false;
     try {
@@ -1549,7 +1566,7 @@ export async function cmdOnboard(
       deps.ui?.stepStart(id);
       // Member onboarding keeps administration outside its scope, with an explicit recorded reason.
       if (identity?.role === "member" && memberScopeSkips(id)) {
-        setStep(journal, {
+        recordStep({
           id,
           state: "skipped",
           reason: "member_scope",
@@ -1562,7 +1579,7 @@ export async function cmdOnboard(
         (parent) => !stepSatisfied(journalStep(journal, parent)),
       );
       if (missing) {
-        setStep(journal, {
+        recordStep({
           id,
           state: "waiting",
           reason: "prerequisite_not_ready",
@@ -1586,7 +1603,7 @@ export async function cmdOnboard(
         };
       }
       if (!adapter) {
-        setStep(journal, {
+        recordStep({
           id,
           state: "waiting",
           reason: "step_not_available_in_this_release",
@@ -1608,7 +1625,7 @@ export async function cmdOnboard(
             identity = await deps.identity(journal);
             requireMatchingIdentity(journal, identity);
             if (identity?.role === "member" && memberScopeSkips(id)) {
-              setStep(journal, {
+              recordStep({
                 id,
                 state: "skipped",
                 reason: "member_scope",
@@ -1620,7 +1637,17 @@ export async function cmdOnboard(
             }
           }
           journal.operations[id] ??= `${journal.runId}:${id}`;
-          setStep(journal, { id, state: "running", at: isoNow(ctx, deps) });
+          const prior = journalStep(journal, id);
+          const recoveringTeam =
+            id === "linear.team" &&
+            (prior?.reason === "team_create_unverified" ||
+              prior?.reason === "team_created_not_adopted");
+          recordStep({
+            ...(recoveringTeam ? prior : {}),
+            id,
+            state: "running",
+            at: isoNow(ctx, deps),
+          });
           journal.exit = null;
           writeOnboardJournal(statePath, journal);
           const action = await adapter.act(stepCtx, journal, signal);
@@ -1633,7 +1660,7 @@ export async function cmdOnboard(
             identity = await deps.identity(journal);
             requireMatchingIdentity(journal, identity);
             if (identity?.role === "member" && memberScopeSkips(id)) {
-              setStep(journal, {
+              recordStep({
                 id,
                 state: "skipped",
                 reason: "member_scope",
@@ -1661,7 +1688,7 @@ export async function cmdOnboard(
             state: "waiting",
             reason: result.reason ?? "action_required",
           };
-        setStep(journal, sanitizedResult(id, result, isoNow(ctx, deps)));
+        recordStep(sanitizedResult(id, result, isoNow(ctx, deps)));
       } catch (error) {
         if (error instanceof CliError && error.exitCode === EXIT_REFUSED)
           refused = true;
@@ -1674,7 +1701,7 @@ export async function cmdOnboard(
         const renewLogin =
           error instanceof CliError &&
           error.code === "onboard-login-refresh-required";
-        setStep(journal, {
+        recordStep({
           id,
           state: renewLogin ? "waiting" : "failed",
           reason,
@@ -1687,12 +1714,7 @@ export async function cmdOnboard(
         );
       }
       if (signal.aborted) {
-        setStep(journal, {
-          id,
-          state: "failed",
-          reason: "interrupted",
-          at: isoNow(ctx, deps),
-        });
+        interruptStep(id);
         return finish(EXIT_WAITING);
       }
       deps.ui?.stepEnd(journalStep(journal, id)!, journal);

@@ -238,8 +238,16 @@ export function createOnboardRuntime(
   const linear = existingLinearAdapters(
     args,
     hooks.ui?.chooseTeam
-      ? (teams) => hooks.ui!.chooseTeam!(teams.map((team) => ({ ...team })))
+      ? (teams, create) =>
+          hooks.ui!.chooseTeam!(
+            teams.map((team) => ({ ...team })),
+            create,
+          )
       : undefined,
+    hooks.ui?.nameNewTeam
+      ? (question) => hooks.ui!.nameNewTeam!(question)
+      : undefined,
+    (text) => (hooks.ui ? hooks.ui.message(text) : ctx.stderr(text)),
   );
   const adapters: NonNullable<OnboardDeps["adapters"]> = {
     machine: {

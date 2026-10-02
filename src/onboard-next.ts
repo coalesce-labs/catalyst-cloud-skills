@@ -102,6 +102,14 @@ const REASONS: Record<string, string> = {
     "Project creation could not be confirmed. Run catalyst onboard to check for the project before trying again.",
   team_read_login_refresh_required:
     "Renew your login with catalyst login, then run catalyst onboard to resume.",
+  team_create_unavailable:
+    "The Linear team could not be created, and nothing was created. Run catalyst onboard to try again, or create the team in Linear and pick it.",
+  team_create_unverified:
+    "Setup could not confirm whether the Linear team was created. Check Linear for it before creating it again.",
+  team_create_grant_required:
+    "Your own Linear connection is missing or has lapsed. Reconnect it in Settings → Connected accounts, then run catalyst onboard. Nothing was created.",
+  team_create_identity_unverified:
+    "Your login changed while setup was creating a team. Resume with the original workspace and person.",
   team_choice_required:
     "Choose an existing team with catalyst onboard --team <team ID or key>.",
   team_selection_unverified:
@@ -380,6 +388,22 @@ export function onboardReasonText(
   const reason = step.reason ?? "";
   if (reason === "workflow_mapping_unverified")
     return `This team's workflow mapping is not verified yet. Run catalyst team adopt ${onboardTeamKey(context.journal) ?? "<TEAM KEY>"} to preview the adoption plan. Run it again with the --yes --plan-hash value it prints. Then run catalyst onboard.`;
+  if (
+    reason === "team_created_not_adopted" ||
+    reason === "team_create_unverified"
+  ) {
+    const key = step.evidence?.teamKey;
+    const team =
+      typeof key === "string" && /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/.test(key)
+        ? key
+        : undefined;
+    const adopt = (key: string) =>
+      `Run catalyst team adopt ${key} to preview the adoption plan. Run it again with the --yes --plan-hash value it prints. Then run catalyst onboard.`;
+    if (reason === "team_created_not_adopted")
+      return `Linear team ${team ?? "<TEAM KEY>"} was created, but Catalyst's workflow is not set up on it yet. ${adopt(team ?? "<TEAM KEY>")}`;
+    if (team)
+      return `Setup could not confirm whether Linear created the team ${team}. Check Linear for it. If it is there: ${adopt(team)} If it is not, run catalyst onboard to create it again.`;
+  }
   if (reason === "account_enrollment_required") {
     const where = context.baseUrl
       ? `at ${normalizeBaseUrl(context.baseUrl)}/settings/coding-accounts, the Settings → AI accounts page`
