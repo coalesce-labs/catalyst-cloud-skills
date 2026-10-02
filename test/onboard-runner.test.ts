@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import {
   existsSync,
   mkdtempSync,
+  mkdirSync,
   readFileSync,
   realpathSync,
   rmSync,
@@ -31,6 +32,9 @@ const WATCHDOG = `ghcr.io/coalesce-labs/catalyst-deadline-watchdog@sha256:${"b".
 const RUNNER = `registry.cloudflare.com/acct/catalyst-runner@sha256:${"c".repeat(64)}`;
 const JOIN_TOKEN = "cjt_fixture_join_secret";
 const ORG_KEY = "ctc_org_fixture_secret";
+const optionalRunnerRows=[
+ ["GET","runner-admission"],["PUT","runner-admission"],["POST","runner-keys"],["GET","runner-keys/:requestId"],["DELETE","runner-keys/:requestId"]
+].map(([method,path])=>({method,path:"/api/v1/agent/"+path,personalBearer:true,takesWriteBudgetUnit:false,idempotencyKeyField:method==="POST"?"requestId":null}));
 const homes: string[] = [];
 afterEach(() => {
   for (const home of homes.splice(0))
@@ -78,6 +82,7 @@ function fakeEngine(
       return true;
     },
     socketGid: async () => 991,
+    nativeEgressStatus: async()=>true,
     claimDirs: async (dir, paths) => {
       engine.calls.push(`claimDirs ${paths.length}`);
       return true;
@@ -137,6 +142,7 @@ function fixture(
     choose?: () => Promise<boolean | null>;
     env?: NodeJS.ProcessEnv;
     hostRoutes?: boolean;
+    runnerCloud?: boolean;
   } = {},
 ) {
   const home = mkdtempSync(join(realpathSync(tmpdir()), "onboard-runner-"));
@@ -206,6 +212,8 @@ function fixture(
     // A host enrolls as soon as its supervisor starts with a minted token.
     enrollOnUp: true as boolean,
     minimumEnrollmentMint: 1,
+    admissionWrites: [] as unknown[],
+    keyMints: [] as unknown[],
     capability: {
       placeableCapacity: 2,
       runtimeLive: true,
@@ -230,6 +238,7 @@ function fixture(
       return Response.json({
         contractVersion: "2.3.0",
         account: { id: "account-a" },
+        ...(options.runnerCloud ? {runnerOnboarding:{schema:1,routes:optionalRunnerRows}} : {}),
         onboarding: {
           schema: 1,
           routes,
@@ -239,6 +248,15 @@ function fixture(
           },
         },
       });
+    if(options.runnerCloud && url.pathname === "/api/v1/agent/runner-admission") {
+      expect(url.searchParams.get("team")).toBe("team-a");
+      if(method==="PUT"){const body=JSON.parse(String(init?.body));state.admissionWrites.push(body);state.admission=true;}
+      return Response.json({account:"account-a",team:"team-a",admissionEnabled:state.admission,revision:1,changed:method==="PUT"});
+    }
+    if(options.runnerCloud && url.pathname === "/api/v1/agent/runner-keys") {
+      const body=JSON.parse(String(init?.body));state.keyMints.push(body);
+      return Response.json({account:"account-a",requestId:body.requestId,status:"issued",key:{value:ORG_KEY,permissions:["mirror:read","mirror:write","mirror:feed"]}}, {status:201});
+    }
     if (url.pathname === "/api/v1/me")
       return Response.json({
         account: config.account,
@@ -496,10 +514,78 @@ describe("prerequisites", () => {
       expect(ref).toMatch(/^ghcr\.io\/coalesce-labs\/[a-z-]+@sha256:[0-9a-f]{64}$/);
   });
 
-  test("without a runner image pin it waits and names the variable", async () => {
-    const f = fixture({ selected: true, env: {} });
-    expect((await run(f)).reason).toBe("runner_image_unpinned");
+  const PUBLIC_RUNNER = "ghcr.io/coalesce-labs/catalyst-runner@sha256:50eeb256b4693fc42c81458bdfc887137a0df757260601f2a869738578d00782";
+  function defaultFixture() {
+    const engine = fakeEngine();
+    engine.images.set(RUNNER_HOST_IMAGES.supervisor, "arm64");
+    engine.images.set(RUNNER_HOST_IMAGES.watchdog, "arm64");
+    engine.images.set(PUBLIC_RUNNER, "arm64");
+    const f = fixture({ selected: true, engine, env: {}, runnerCloud: true });
+    return f;
+  }
+
+  test("fresh opt-in uses the approved public native runner digest", async () => {
+    const f = defaultFixture();
+    expect((await run(f)).state).toBe("done");
+    expect(readFileSync(join(f.dir, ".env"), "utf8")).toContain(`CATALYST_RUNNER_IMAGE=${PUBLIC_RUNNER}\n`);
+    expect(f.engine.calls).toContain(`imageArch ${PUBLIC_RUNNER}`);
+    expect(f.state.mints).toHaveLength(1);
+  });
+
+  test("a saved pinned runner overrides the public default", async () => {
+    const f = defaultFixture();
+    mkdirSync(f.dir, { recursive: true, mode: 0o700 });
+    writeFileSync(join(f.dir, ".env"), `CATALYST_RUNNER_IMAGE=${RUNNER}\n`, { mode: 0o600 });
+    expect((await run(f)).state).toBe("done");
+    expect(f.engine.calls).toContain(`imageArch ${RUNNER}`);
+    expect(f.engine.calls).not.toContain(`imageArch ${PUBLIC_RUNNER}`);
+  });
+
+  test("an explicit pinned runner overrides a saved runner", async () => {
+    const f = defaultFixture();
+    mkdirSync(f.dir, { recursive: true, mode: 0o700 });
+    writeFileSync(join(f.dir, ".env"), `CATALYST_RUNNER_IMAGE=${RUNNER}\n`, { mode: 0o600 });
+    f.ctx.env.CATALYST_RUNNER_IMAGE = PUBLIC_RUNNER;
+    expect((await run(f)).state).toBe("done");
+    expect(f.engine.calls).toContain(`imageArch ${PUBLIC_RUNNER}`);
+    expect(f.engine.calls).not.toContain(`imageArch ${RUNNER}`);
+    expect(readFileSync(join(f.dir, ".env"), "utf8")).toContain(`CATALYST_RUNNER_IMAGE=${PUBLIC_RUNNER}\n`);
+  });
+
+  test.each(["", "ghcr.io/coalesce-labs/catalyst-runner:latest", "not an image"])(
+    "explicit invalid runner %j refuses without falling back", async (value) => {
+      const f = defaultFixture();
+      f.ctx.env.CATALYST_RUNNER_IMAGE = value;
+      expect((await run(f)).reason).toBe("runner_image_unpinned");
+      expect(f.state.mints).toEqual([]);
+      expect(f.state.keyMints).toEqual([]);
+      expect(f.engine.calls).toEqual(["info"]);
+      expect(existsSync(f.dir)).toBe(false);
+    },
+  );
+
+  test.each(["", "ghcr.io/coalesce-labs/catalyst-runner:latest", "not-an-image"])(
+    "saved invalid runner %j refuses without falling back", async (value) => {
+      const f = defaultFixture();
+      mkdirSync(f.dir, { recursive: true, mode: 0o700 });
+      const saved = `CATALYST_RUNNER_IMAGE=${value}\n`;
+      writeFileSync(join(f.dir, ".env"), saved, { mode: 0o600 });
+      expect((await run(f)).reason).toBe("runner_image_unpinned");
+      expect(f.state.mints).toEqual([]);
+      expect(f.state.keyMints).toEqual([]);
+      expect(f.engine.calls).toEqual(["info"]);
+      expect(readFileSync(join(f.dir, ".env"), "utf8")).toBe(saved);
+    },
+  );
+
+  test("the public default still refuses an image of a different native architecture", async () => {
+    const f = defaultFixture();
+    f.engine.images.set(PUBLIC_RUNNER, "amd64");
+    expect((await run(f)).reason).toBe("runner_image_emulated");
     expect(f.state.mints).toEqual([]);
+    expect(f.state.keyMints).toEqual([]);
+    expect(f.state.admissionWrites).toEqual([]);
+    expect(f.engine.calls).not.toContain("composeUp");
   });
 
   test("an image reference that is not digest-pinned is refused", async () => {
@@ -669,6 +755,14 @@ describe("bringing the host up", () => {
     expect(await run(f)).toMatchObject({ state: "done", evidence: { hostId: spent ? "host-2" : "host-1" } });
     expect(f.state.mints).toHaveLength(spent ? 2 : 1);
     expect(f.engine.files.get("CATALYST_ORG_KEY_FILE")).toBe(ORG_KEY);
+  });
+
+  test("fresh Linux waits for separately authorized genuine producer before writes",async()=>{
+    const f=fixture({selected:true,engine:fakeEngine({arch:"amd64",vm:false})});
+    f.engine.nativeEgressStatus=async()=>false;
+    for(const ref of [SUPERVISOR,WATCHDOG,RUNNER])f.engine.images.set(ref,"amd64");
+    expect(await run(f)).toMatchObject({state:"waiting",reason:"runner_native_egress_setup_required"});
+    expect(f.state.mints).toEqual([]);expect(f.engine.calls).not.toContain("composeUp");expect(existsSync(f.dir)).toBe(false);
   });
 
   test("a native Linux engine gets its socket group and directories handed to the runner uid", async () => {
@@ -987,6 +1081,24 @@ describe("the Docker engine", () => {
     expect(await missing.info()).toBeNull();
   });
 
+  test.each([
+    [1,"","Error response from daemon: network catalyst-session-v1 not found","missing"],
+    [1,"[]","Error response from daemon: network catalyst-session-v1 not found","missing"],
+    [0,"[]","Error response from daemon: network catalyst-session-v1 not found","unavailable"],
+    [1,"","permission denied","unavailable"],
+    [1,"[]","Cannot connect to Docker daemon","unavailable"],
+    [1,"","Error response from daemon: network some-other-name not found","unavailable"],
+    [1,"{}","Error response from daemon: network catalyst-session-v1 not found","unavailable"],
+    [1,"","transport timeout for catalyst-session-v1","unavailable"],
+    [1,"","permission denied: network catalyst-session-v1 not found","unavailable"],
+    [0,"[]","","misshaped"],
+    [0,"{bad","","misshaped"],
+  ])("network inspect code=%s stdout=%s stderr=%s is %s",async(code,stdout,stderr,expected)=>{
+    const calls:string[][]=[];
+    const engine=dockerRunnerEngine({env:{},exec:async(args)=>{calls.push(args);return{code:code as number,stdout:stdout as string,stderr:stderr as string};}});
+    expect(await engine.network("catalyst-session-v1")).toBe(expected);expect(calls).toEqual([["network","inspect","catalyst-session-v1"]]);
+  });
+
   test("the session network is created with the isolated shape the supervisor checks", async () => {
     const r = recordingExec();
     const engine = dockerRunnerEngine({ exec: r.exec, env: {} });
@@ -1028,7 +1140,7 @@ describe("the Docker engine", () => {
     expect(await at(shape("true", "catalyst-sess0", "v1"))).toBe("misshaped");
     expect(await at(shape("false", "docker0", "v1"))).toBe("misshaped");
     expect(await at(shape("false", "catalyst-sess0", undefined))).toBe("misshaped");
-    expect(await at("", 1)).toBe("missing");
+    expect(await at("", 1)).toBe("unavailable");
   });
 
   test("host image pulls use an empty disposable config and preserve the engine endpoint", async () => {
@@ -1133,4 +1245,32 @@ describe("runner account key enrollment policy", () => {
       expect(f.output.join("")).toBe("different");
     } finally { await f.close(); }
   });
+});
+
+
+describe("approved cloud runner integration",()=>{
+ function cloudFixture(selected=true){
+  const f=fixture({selected,runnerCloud:true,engine:fakeEngine({arch:"arm64",vm:true}),env:{CATALYST_SUPERVISOR_IMAGE:SUPERVISOR,CATALYST_WATCHDOG_IMAGE:WATCHDOG,CATALYST_RUNNER_IMAGE:RUNNER}});
+  for(const ref of [SUPERVISOR,WATCHDOG,RUNNER]) f.engine.images.set(ref,"arm64");
+  f.state.admission=false;
+  return f;
+ }
+ test("explicit selection uses native pinned image, scoped key and selected team admission",async()=>{
+  const f=cloudFixture();expect(await run(f)).toMatchObject({state:"done",evidence:{capacity:2,hostId:"host-1"}});
+  expect(f.state.admissionWrites).toEqual([{admissionEnabled:true}]);expect(f.state.keyMints).toHaveLength(1);
+  expect(f.engine.files.get("CATALYST_ORG_KEY_FILE")).toBe(ORG_KEY);
+  expect(readFileSync(join(f.dir,".env"),"utf8")).toContain("CATALYST_RUNNER_IMAGE="+RUNNER);
+  expect(f.output.join("\n")+JSON.stringify(f.journal)).not.toMatch(/ctcpull_|ctc_org_fixture/);
+ });
+ test("default no cannot discover, mint, enroll or admit",async()=>{
+  const f=cloudFixture(false);expect(await run(f)).toMatchObject({state:"skipped"});
+  expect(f.requests).toEqual([]);expect(f.state.keyMints).toEqual([]);expect(f.state.admissionWrites).toEqual([]);
+ });
+ test("saved yes checks cannot provision or change admission",async()=>{
+  const f=cloudFixture();expect((await run(f)).state).toBe("done");
+  f.state.admission=false;const writes=f.state.admissionWrites.length;
+  f.journal.steps.push({id:"runner",state:"done",evidence:{selected:true}});
+  const adapter=onboardRunnerAdapter({engine:f.engine,sleep:async()=>{},waitMs:20,pollMs:10});
+  expect((await adapter.check(f.ctx,f.journal)).state).toBe("waiting");expect(f.state.admissionWrites).toHaveLength(writes);
+ });
 });
