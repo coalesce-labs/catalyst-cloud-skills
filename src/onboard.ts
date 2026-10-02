@@ -1570,6 +1570,9 @@ export async function cmdOnboard(
       }
       deps.ui?.stepEnd(journalStep(journal, id)!);
       writeOnboardJournal(statePath, journal);
+      // Later steps share the same login; preserve the actionable cause instead of cascading failures.
+      if (journalStep(journal, id)?.reason?.endsWith("_login_refresh_required"))
+        return finish(EXIT_WAITING);
       if (refused) break;
     }
     current = null;

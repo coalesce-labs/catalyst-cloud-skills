@@ -594,4 +594,24 @@ describe("bounded personal-bearer Linear workspace consent", () => {
     });
     expect(f.statusReads()).toBeGreaterThan(1);
   });
+  test("login expiry during browser approval stops with its actual cause", async () => {
+    const f = fixture();
+    f.status(absent());
+    const adapter = linearWorkspaceAdapter({
+      ...f.options,
+      openBrowser: () => {
+        const config = loadConfig(f.home)!;
+        writeConfig(f.home, { ...config, key: undefined, auth: {
+          kind: "oauth", accessToken: "expired-token-sentinel", refreshToken: "unused-refresh-sentinel",
+          expiresAt: new Date(now - 1).toISOString(), sessionId: "original-session",
+        } });
+      },
+      sleep: async () => { throw new Error("refresh-required status must not poll again"); },
+    });
+    expect(await adapter.act!(f.ctx, f.journal)).toMatchObject({
+      state: "waiting", reason: "workspace_login_refresh_required",
+    });
+    expect(f.reads).toHaveLength(2);
+    expect(f.logs.join("\n")).not.toMatch(/expired-token-sentinel|unused-refresh-sentinel/);
+  });
 });
