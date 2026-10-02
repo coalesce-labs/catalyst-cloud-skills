@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import {
   lstatSync,
   chmodSync,
@@ -10,7 +11,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import * as fsPromises from "node:fs/promises";
 import { afterEach, describe, expect, it } from "vitest";
 import {
@@ -194,7 +195,7 @@ describe("storeOnboardDraft", () => {
     ["empty run id", "", "repo"],
     ["path traversal run id", "../outside", "repo"],
     ["separator repo id", "run", "../outside"],
-    ["oversized repo id", "run", `r${"a".repeat(128)}`],
+    ["oversized repo id", "run", `r${"a".repeat(256)}`],
   ])("rejects %s before creating state", async (_case, runId, repoId) => {
     const f = fixture();
     await expect(
@@ -490,5 +491,46 @@ describe("storeOnboardDraft", () => {
       }),
     ).resolves.toEqual({ state: "rejected" });
     expect(() => lstatSync(f.stateRoot)).toThrow();
+  });
+  it.each(["tenant-9:catalyst-e2e__sample-service", "tenant-9:owner__service.api", "a".repeat(256)])("stores and resumes a cloud repository ID with a portable filename: %s", async repoId => {
+    const f = fixture();
+    const input = { home: f.home, env: f.env, runId: "run", repoId, toml: "[project]\n" };
+    const result = await storeOnboardDraft(input);
+    expect(result.state).toBe("stored");
+    if (result.state !== "stored") throw new Error("expected stored draft");
+    expect(basename(result.path)).toMatch(/^[A-Za-z0-9_@-]+\.toml$/);
+    expect(Buffer.byteLength(basename(result.path))).toBeLessThan(255);
+    expect(lstatSync(result.path).mode & 0o777).toBe(0o600);
+    expect(readFileSync(result.path, "utf8")).toBe(input.toml);
+    expect(await storeOnboardDraft(input)).toEqual(result);
+    expect(await storeOnboardDraft({ ...input, toml: "different\n" })).toEqual({ state: "rejected" });
+  });
+  it("distinct cloud IDs cannot collide after filename normalization", async () => {
+    const f = fixture();
+    const common = { home: f.home, env: f.env, runId: "run", toml: "[project]\n" };
+    const a = await storeOnboardDraft({ ...common, repoId: "tenant-9:owner__service.api" });
+    const b = await storeOnboardDraft({ ...common, repoId: "tenant-9:owner__service_api" });
+    expect(a.state).toBe("stored");
+    expect(b.state).toBe("stored");
+    if (a.state === "stored" && b.state === "stored") expect(a.path).not.toBe(b.path);
+  });
+  it.each([
+    ["run:foreign", "repo"], ["run", "a".repeat(257)], ["run", "tenant-9:../escape"],
+    ["run", "tenant-9:repo\\escape"], ["run", "tenant-9:repo\nsecret"],
+  ])("rejects unsafe run or repository IDs before storage", async (runId, repoId) => {
+    const f = fixture();
+    expect(await storeOnboardDraft({ home: f.home, env: f.env, runId, repoId, toml: "[project]\n" })).toEqual({ state: "rejected" });
+    expect(() => lstatSync(f.stateRoot)).toThrow();
+  });
+  it("hashed filenames cannot collide with a legacy slug-shaped repository ID", async () => {
+    const f = fixture();
+    const cloudId = "tenant-9:owner__repo";
+    const legacyId = "repo-" + createHash("sha256").update(cloudId).digest("hex");
+    const common = { home: f.home, env: f.env, runId: "run", toml: "[project]\n" };
+    const legacy = await storeOnboardDraft({ ...common, repoId: legacyId });
+    const cloud = await storeOnboardDraft({ ...common, repoId: cloudId });
+    expect(legacy.state).toBe("stored");
+    expect(cloud.state).toBe("stored");
+    if (legacy.state === "stored" && cloud.state === "stored") expect(cloud.path).not.toBe(legacy.path);
   });
 });
