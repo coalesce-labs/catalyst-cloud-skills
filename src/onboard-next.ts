@@ -1,5 +1,6 @@
 import { loadConfig, normalizeBaseUrl } from "./config.js";
 import type { OnboardJournal, OnboardStep } from "./onboard.js";
+import { githubInstallationPage } from "./onboard-permissions.js";
 
 /** What a person reads for a step that is not done. Each line ends in an action they can take. */
 const REASONS: Record<string, string> = {
@@ -65,11 +66,9 @@ const REASONS: Record<string, string> = {
     "Renew your login with catalyst login, then run catalyst onboard to resume.",
   github_installation_browser_unavailable:
     "This computer could not open a browser. Install the GitHub App from this workspace’s Integrations page in your browser, then run catalyst onboard to resume.",
-  step_not_available_in_this_release:
-    "This setup step is not available yet.",
+  step_not_available_in_this_release: "This setup step is not available yet.",
   prerequisite_not_ready: "Waiting for an earlier setup step.",
-  local_sync_not_selected:
-    "Using cloud reads. Local sync was not selected.",
+  local_sync_not_selected: "Using cloud reads. Local sync was not selected.",
   local_sync_capability_unavailable:
     "Local sync was selected but could not be verified.",
   member_scope: "Your workspace administrator handles this step.",
@@ -212,6 +211,24 @@ const REASONS: Record<string, string> = {
     "The runner enrolled but has not reported its capacity yet. Run catalyst onboard again in a minute.",
   runner_admission_unverified:
     "Setup could not read whether the team's pool admits runner hosts. Run catalyst onboard again to retry.",
+  github_app_permissions_outdated:
+    "GitHub App needs updated permissions. An organization owner on GitHub accepts the pending request on the App's installation page, then run catalyst onboard.",
+  github_app_repository_missing:
+    "The GitHub App installation cannot reach a repository a project registers. An organization owner on GitHub adds it under the installation's Repository access, then run catalyst onboard.",
+  github_app_repository_not_installed:
+    "No GitHub App installation can reach a repository a project registers. A workspace owner or administrator installs the GitHub App on its owner: run catalyst onboard.",
+  github_app_permissions_unverified:
+    "The GitHub App installation works, but its granted permissions could not be checked. Run catalyst onboard to try again.",
+  github_app_repository_access_unverified:
+    "Whether the GitHub App reaches every registered repository could not be checked. Run catalyst onboard to try again.",
+  linear_workspace_scope_outdated:
+    "The workspace's Linear connection (the Catalyst app) is missing scopes this version needs. A workspace owner or administrator re-authorizes it from the workspace's Integrations page, then run catalyst onboard.",
+  linear_workspace_permissions_unverified:
+    "The workspace's Linear connection works, but its granted scopes could not be checked. Run catalyst onboard to try again.",
+  linear_personal_scope_outdated:
+    "Your personal Linear connection is missing scopes this version needs. Re-authorize it from Connected accounts, then run catalyst onboard.",
+  personal_permissions_unverified:
+    "Your personal connection's granted scopes could not be checked. Run catalyst onboard to try again.",
   housekeeping_service_unverified:
     "The daily update needs a user service manager, launchd on macOS or systemd --user on Linux. Setup cannot schedule it on this computer. It is optional, and work does not depend on it.",
 };
@@ -248,6 +265,107 @@ export function onboardTeamKey(journal?: OnboardJournal): string | undefined {
   return typeof key === "string" && /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/.test(key)
     ? key
     : undefined;
+}
+
+/** Receipt evidence printed inside a sentence: names, scopes and permission labels only. */
+function evidenceText(value: unknown): string | undefined {
+  return typeof value === "string" &&
+    /^[A-Za-z0-9 ._:;/(),-]{1,2000}$/.test(value)
+    ? value
+    : undefined;
+}
+
+const LINEAR_START: Record<string, string> = {
+  linear_workspace_scope_outdated: "/settings/connections",
+  linear_personal_scope_outdated: "/connect/linear/personal/start",
+};
+
+/** A receipt URL, printed only when it is the page this reason's action lives on: the exact
+ * installation's page on github.com, or this cloud's own OAuth start for the grant in question. */
+function actionUrl(step: OnboardStep, baseUrl?: string): string | undefined {
+  const href = webUrl(step.evidence?.url);
+  if (!href) return undefined;
+  const url = new URL(href);
+  if (
+    url.protocol !== "https:" ||
+    url.hash ||
+    (url.search &&
+      !(
+        step.reason === "linear_workspace_scope_outdated" &&
+        url.pathname === "/settings/connections" &&
+        url.search === "?reauthorize=linear"
+      ))
+  )
+    return undefined;
+  const evidence = step.evidence ?? {};
+  if (
+    step.reason === "github_app_permissions_outdated" ||
+    step.reason === "github_app_repository_missing"
+  )
+    return githubInstallationPage(
+      url,
+      typeof evidence.installation === "string" ? evidence.installation : "",
+      typeof evidence.org === "string" ? evidence.org : null,
+      step.reason === "github_app_permissions_outdated",
+    )
+      ? href
+      : undefined;
+  const base = baseUrl ? webUrl(baseUrl) : undefined;
+  return base &&
+    new URL(base).origin === url.origin &&
+    url.pathname === LINEAR_START[step.reason ?? ""] &&
+    (step.reason !== "linear_workspace_scope_outdated" ||
+      url.search === "?reauthorize=linear")
+    ? href
+    : undefined;
+}
+
+/** CTC-4629: the outdated-connection lines, built from the evidence the adapters recorded. */
+function permissionText(
+  step: OnboardStep,
+  baseUrl?: string,
+): string | undefined {
+  const evidence = step.evidence ?? {};
+  const url = actionUrl(step, baseUrl);
+  const missing = evidenceText(evidence.missing);
+  const org = evidenceText(evidence.org);
+  const repository = evidenceText(evidence.repository);
+  const github =
+    evidence.actor === "github-account-owner"
+      ? `The owner of the ${org ?? "installing"} GitHub account`
+      : "An organization owner on GitHub";
+  switch (step.reason) {
+    case "github_app_permissions_outdated":
+      if (!url) return undefined;
+      return `GitHub App needs updated permissions${org ? ` on ${org}` : ""}${missing ? `: ${missing}` : ""}. ${github} reviews and accepts the request at ${url}, then run catalyst onboard.`;
+    case "github_app_repository_missing":
+      if (!url || !repository) return undefined;
+      return `The GitHub App installation${org ? ` on ${org}` : ""} cannot reach ${repository}, which a project registers. ${github} adds it under Repository access at ${url}, then run catalyst onboard.`;
+    case "github_app_repository_not_installed":
+      if (!repository) return undefined;
+      return `No GitHub App installation can reach ${repository}, which a project registers. A workspace owner or administrator installs the GitHub App on ${org ?? repository.split("/")[0]}: run catalyst onboard.`;
+    case "linear_workspace_scope_outdated":
+      if (!url) return undefined;
+      return `The workspace's Linear connection (the Catalyst app) is missing scopes this version needs${missing ? `: ${missing}` : ""}. A workspace owner or administrator re-authorizes it at ${url}, then run catalyst onboard.`;
+    case "linear_personal_scope_outdated":
+      if (!url) return undefined;
+      return `Your personal Linear connection is missing scopes this version needs${missing ? `: ${missing}` : ""}. Re-authorize it at ${url}, then run catalyst onboard.`;
+  }
+  return undefined;
+}
+
+/** A done step's detail line: what a connection was granted, when the check recorded it. */
+export function onboardStepDetail(step: OnboardStep): string | undefined {
+  const value = step.state === "done" ? step.evidence?.granted : undefined;
+  const granted =
+    typeof value === "string" &&
+    value.length <= 512_000 &&
+    /^[A-Za-z0-9 ._:;/(),-]+$/.test(value)
+      ? value.length <= 2_000
+        ? value
+        : `${value.slice(0, 1_950)} (more permissions in the setup record)`
+      : undefined;
+  return granted ? `granted ${granted}` : undefined;
 }
 
 /** One step's next action. `waitsFor` names the unfinished step a prerequisite wait is blocked on. */
@@ -300,7 +418,8 @@ export function onboardReasonText(
   if (reason === "runner_images_unavailable") {
     const image = step.evidence?.image;
     const named =
-      typeof image === "string" && /^[a-z0-9][a-z0-9._:/-]{0,255}@sha256:[0-9a-f]{64}$/.test(image)
+      typeof image === "string" &&
+      /^[a-z0-9][a-z0-9._:/-]{0,255}@sha256:[0-9a-f]{64}$/.test(image)
         ? ` ${image}`
         : "";
     return `This machine does not have the Catalyst image${named}, and setup never signs in to a registry to pull it. Ask Catalyst support to load it here, then run catalyst onboard again.`;
@@ -323,5 +442,7 @@ export function onboardReasonText(
     return `This machine is enrolled and ready, but team ${onboardTeamKey(context.journal) ?? "<TEAM KEY>"} does not admit runner hosts yet, and only a Catalyst operator can turn that on today. Ask Catalyst support to enable host admission for the team with Cloudflare placement set to never. Then run catalyst onboard.`;
   if (reason === "prerequisite_not_ready" && context.waitsFor)
     return `Runs after "${context.waitsFor}".`;
+  const permission = permissionText(step, context.baseUrl);
+  if (permission) return permission;
   return REASONS[reason] ?? reason.replaceAll("_", " ");
 }

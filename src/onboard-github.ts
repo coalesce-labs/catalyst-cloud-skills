@@ -6,6 +6,12 @@ import type {
   OnboardStepResult,
 } from "./onboard.js";
 import { pollConsent, type ConsentStatus } from "./onboard-consent.js";
+import {
+  GITHUB_PERMISSION,
+  githubInstallationPage,
+  parsePermissions,
+  type PermissionsVerdict,
+} from "./onboard-permissions.js";
 
 const STATUS = "/api/v1/me/connections/github/workspace";
 const HANDOFF = "/connect/github/workspace/handoff";
@@ -26,6 +32,16 @@ const waiting = (reason: string): OnboardStepResult => ({
   reason,
 });
 const nullableText = (v: unknown) => v === null || typeof v === "string";
+const orgPattern = /^[A-Za-z0-9][A-Za-z0-9-]{0,127}$/;
+const repositoryPattern = /^[A-Za-z0-9][A-Za-z0-9-]{0,38}\/[A-Za-z0-9._-]{1,100}$/;
+const coverageUnknown = new Set([
+  "registry-unavailable",
+  "over-bound",
+  "not-run",
+  "installation-unverified",
+  "unreachable",
+  "listing-truncated",
+]);
 
 type Read = { status: number; body?: unknown } | { reason: string };
 interface WorkspaceObservation {
@@ -155,6 +171,9 @@ function observation(body: unknown, now: number): OnboardStepResult {
   )
     return waiting("github_installation_status_shape");
   const ids: string[] = [];
+  const granted: string[] = [];
+  let outdated: OnboardStepResult | undefined;
+  let permissionsUnverified = false;
   let unknown = false;
   let allConnected = row.installations.length > 0;
   let checkedAt = now + 30_000;
@@ -168,7 +187,7 @@ function observation(body: unknown, now: number): OnboardStepResult {
       ids.includes(item.installationId) ||
       !nullableText(item.githubOrg) ||
       (typeof item.githubOrg === "string" &&
-        !/^[A-Za-z0-9][A-Za-z0-9-]{0,127}$/.test(item.githubOrg)) ||
+        !orgPattern.test(item.githubOrg)) ||
       !verification
     )
       return waiting("github_installation_status_shape");
@@ -200,13 +219,36 @@ function observation(body: unknown, now: number): OnboardStepResult {
           (name) =>
             typeof name === "string" &&
             (/^[A-Za-z0-9_-]{1,128}$/.test(name) ||
-              /^[A-Za-z0-9_-]{1,80} \((?:read|write|admin)\)$/.test(name)),
+              GITHUB_PERMISSION.test(name)),
         ))
     )
       return waiting("github_installation_status_shape");
     checkedAt = Math.min(checkedAt, verification.checkedAt);
     if (verification.state === "unreachable") unknown = true;
     if (verification.state !== "connected") allConnected = false;
+    // CTC-4629: the typed verdict must agree with the verification it was derived from.
+    const org = typeof item.githubOrg === "string" ? item.githubOrg : null;
+    const permissions = parsePermissions(item.permissions, {
+      grant: "github-installation",
+      action: "review-permissions",
+      label: GITHUB_PERMISSION,
+      actorFor: (url) =>
+        githubInstallationPage(url, item.installationId as string, org, true)
+          ?.actor ?? null,
+    });
+    if (
+      permissions === null ||
+      (permissions?.state === "current" &&
+        verification.state !== "connected") ||
+      (permissions?.state === "outdated" &&
+        verification.state !== "missing-scope")
+    )
+      return waiting("github_installation_status_shape");
+    if (permissions?.state === "current")
+      granted.push(`${org ?? item.installationId}: ${permissions.granted.join(", ")}`);
+    if (permissions?.state === "unknown") permissionsUnverified = true;
+    if (permissions?.state === "outdated" && !outdated)
+      outdated = permissionsOutdated(item.installationId as string, org, permissions);
   }
   for (const value of row.pending) {
     const pending = object(value);
@@ -214,7 +256,7 @@ function observation(body: unknown, now: number): OnboardStepResult {
       !pending ||
       !nullableText(pending.githubOrg) ||
       (typeof pending.githubOrg === "string" &&
-        !/^[A-Za-z0-9][A-Za-z0-9-]{0,127}$/.test(pending.githubOrg)) ||
+        !orgPattern.test(pending.githubOrg)) ||
       typeof pending.requestedAt !== "number" ||
       !Number.isFinite(pending.requestedAt) ||
       pending.requestedAt < 0
@@ -223,16 +265,153 @@ function observation(body: unknown, now: number): OnboardStepResult {
   }
   if (row.connected !== allConnected)
     return waiting("github_installation_status_shape");
+  const coverage = repositoryCoverage(row.repositories, ids);
+  if (coverage === null) return waiting("github_installation_status_shape");
   if (unknown) return waiting("github_installation_status_unavailable");
+  if (outdated) return outdated;
   if (!allConnected) return { state: "pending" };
+  if (permissionsUnverified) return waiting("github_app_permissions_unverified");
+  if (coverage) return coverage;
   return {
     state: "done",
     evidence: {
       provider: "github",
       installation: JSON.stringify(ids),
       checkedAt,
+      ...(granted.length ? { granted: granted.join("; ") } : {}),
     },
   };
+}
+
+/** A wait whose fix is a page on github.com: polling longer cannot finish it. */
+const githubSideAction = (result: OnboardStepResult) =>
+  result.state === "waiting" &&
+  (result.reason === "github_app_permissions_outdated" ||
+    result.reason === "github_app_repository_missing" ||
+    result.reason === "github_app_permissions_unverified" ||
+    result.reason === "github_app_repository_access_unverified");
+
+/** A pending permission request is the org's to accept on GitHub, never a new installation. */
+function permissionsOutdated(
+  installation: string,
+  org: string | null,
+  permissions: Extract<PermissionsVerdict, { state: "outdated" }>,
+): OnboardStepResult {
+  const login = githubInstallationPage(new URL(permissions.url), installation, org, true)?.login;
+  const name = org ?? login;
+  return {
+    state: "waiting",
+    reason: "github_app_permissions_outdated",
+    evidence: {
+      provider: "github",
+      grant: "github-installation",
+      installation,
+      ...(name ? { org: name } : {}),
+      granted: permissions.granted.join(", "),
+      missing: permissions.missing.join(", "),
+      url: permissions.url,
+      actor: permissions.actor,
+    },
+  };
+}
+
+/** CTC-4629: whether the installations reach every repository the account's projects register.
+ * `undefined` when covered or when an older cloud sent no verdict; `null` for a malformed one. */
+function repositoryCoverage(
+  value: unknown,
+  installations: readonly string[],
+): OnboardStepResult | null | undefined {
+  if (value === undefined) return undefined;
+  const row = object(value);
+  if (!row) return null;
+  if (row.state === "unknown")
+    return typeof row.reason === "string" && coverageUnknown.has(row.reason)
+      ? waiting("github_app_repository_access_unverified")
+      : null;
+  const names = (list: unknown): list is string[] =>
+    Array.isArray(list) &&
+    list.length <= 50 &&
+    list.every((name) => typeof name === "string" && repositoryPattern.test(name));
+  if (!names(row.checked)) return null;
+  const checked = row.checked;
+  if (row.state === "covered")
+    return row.missing === undefined && row.unchecked === undefined ? undefined : null;
+  if (
+    row.state !== "missing" ||
+    !Array.isArray(row.missing) ||
+    row.missing.length < 1 ||
+    row.missing.length > 50 ||
+    !Array.isArray(row.unchecked) ||
+    row.unchecked.length > 50 ||
+    !row.unchecked.every((value) => {
+      const item = object(value);
+      return (
+        !!item &&
+        names([item.repository]) &&
+        !checked.includes(item.repository as string) &&
+        typeof item.reason === "string" &&
+        coverageUnknown.has(item.reason)
+      );
+    })
+  )
+    return null;
+  const results: OnboardStepResult[] = [];
+  for (const value of row.missing) {
+    const item = object(value);
+    if (
+      !item ||
+      typeof item.repository !== "string" ||
+      !repositoryPattern.test(item.repository) ||
+      !checked.includes(item.repository) ||
+      !nullableText(item.githubOrg) ||
+      (typeof item.githubOrg === "string" && !orgPattern.test(item.githubOrg))
+    )
+      return null;
+    const org = item.githubOrg as string | null;
+    if (item.installationId === null) {
+      if (item.settingsUrl !== null || item.actor !== null) return null;
+      results.push({
+        state: "pending",
+        reason: "github_app_repository_not_installed",
+        evidence: {
+          provider: "github",
+          repository: item.repository,
+          ...(org ? { org } : {}),
+        },
+      });
+      continue;
+    }
+    if (
+      typeof item.installationId !== "string" ||
+      !installations.includes(item.installationId) ||
+      typeof item.settingsUrl !== "string" ||
+      item.settingsUrl.length > 2048
+    )
+      return null;
+    let url: URL;
+    try {
+      url = new URL(item.settingsUrl);
+    } catch {
+      return null;
+    }
+    const page = githubInstallationPage(url, item.installationId, org, false);
+    if (!page || url.protocol !== "https:" || url.username || url.password || url.search || url.hash || page.actor !== item.actor) return null;
+    results.push({
+      state: "waiting",
+      reason: "github_app_repository_missing",
+      evidence: {
+        provider: "github",
+        installation: item.installationId,
+        ...(org ? { org } : {}),
+        repository: item.repository,
+        url: url.toString(),
+        actor: page.actor,
+      },
+    });
+  }
+  // A repository an existing installation lacks is fixed on GitHub; one with no installation at all
+  // is this step's own install action, which runs only once nothing else waits.
+  return results.find((result) => result.state === "waiting") ?? results[0];
 }
 
 function safeHandoff(body: unknown, ctx: Ctx): string | null {
@@ -387,7 +566,10 @@ export function githubInstallationAdapter(
                 outcome: "waiting",
                 reason: "cloud_capability_unavailable",
               };
-            if (latest.reason === "github_installation_login_refresh_required")
+            if (
+              latest.reason === "github_installation_login_refresh_required" ||
+              githubSideAction(latest)
+            )
               return { outcome: "waiting", reason: latest.reason };
             if (latest.state === "done") return { outcome: "connected" };
             if (latest.state === "refused" || latest.state === "failed")
@@ -400,7 +582,8 @@ export function githubInstallationAdapter(
       const result = options.wait
         ? await options.wait("Waiting for GitHub App approval", run)
         : await run();
-      if (result.state === "done") return latest;
+      // An installation that now exists but still needs a GitHub-side change keeps its action URL.
+      if (result.state === "done" || githubSideAction(latest)) return latest;
       return browserUnavailable && result.reason === "consent_timeout"
         ? waiting("github_installation_browser_unavailable")
         : result;

@@ -377,3 +377,118 @@ describe("owned personal consent", () => {
     expect(f.logs.join("\n")).not.toMatch(/expired-token-sentinel|unused-refresh-sentinel/);
   });
 });
+
+describe("CTC-4629: a personal Linear grant whose scopes are out of date", () => {
+  const reauthorize = `${origin}/connect/linear/personal/start`;
+  const connected = (permissions: unknown) => ({
+    connected: true,
+    linearUserId: "lin-1",
+    grantedScope: "read",
+    updatedAt: now - 1000,
+    expiresAt: now + 3_600_000,
+    permissions,
+  });
+  const outdated = {
+    state: "outdated",
+    grant: "linear-personal",
+    granted: ["read"],
+    missing: ["write"],
+    action: { kind: "reauthorize", url: reauthorize, actor: "member" },
+  };
+
+  it("waits naming the grant, the missing scope and the person's re-authorize URL, and opens nothing", async () => {
+    const f = fixture("linear");
+    f.status(connected(outdated));
+    const expected = {
+      state: "waiting",
+      reason: "linear_personal_scope_outdated",
+      evidence: {
+        provider: "linear",
+        grant: "linear-personal",
+        granted: "read",
+        missing: "write",
+        url: reauthorize,
+        actor: "member",
+      },
+    };
+    expect(await f.adapter().check(f.ctx, f.journal)).toEqual(expected);
+    expect(await f.adapter().act!(f.ctx, f.journal)).toEqual(expected);
+    expect(f.opened).toEqual([]);
+    expect(f.reads.every((row) => row.path === f.statusPath)).toBe(true);
+  });
+
+  it("a current grant is done with its granted scopes", async () => {
+    const f = fixture("linear");
+    f.status(connected({ state: "current", grant: "linear-personal", granted: ["read", "write"] }));
+    expect(await f.adapter().check(f.ctx, f.journal)).toEqual({
+      state: "done",
+      evidence: { provider: "linear", checkedAt: now, granted: "read, write" },
+    });
+  });
+
+  it("a verdict it cannot verify is never done", async () => {
+    const f = fixture("linear");
+    f.status(
+      connected({
+        ...outdated,
+        action: { ...outdated.action, url: "https://elsewhere.invalid/connect/linear/personal/start" },
+      }),
+    );
+    expect(await f.adapter().check(f.ctx, f.journal)).toEqual({
+      state: "failed",
+      reason: "personal_status_shape",
+    });
+    f.status(connected({ state: "unknown", grant: "linear-personal", reason: "not-run" }));
+    expect(await f.adapter().check(f.ctx, f.journal)).toEqual({
+      state: "waiting",
+      reason: "personal_permissions_unverified",
+    });
+  });
+
+  it("an older cloud without the verdict stays done as before", async () => {
+    const f = fixture("linear");
+    f.status({ connected: true });
+    expect((await f.adapter().check(f.ctx, f.journal)).state).toBe("done");
+  });
+});
+
+it("CTC-4629 review: a fresh personal consent that is still short of scopes stops polling and keeps its URL", async () => {
+  const f = fixture("linear");
+  const reauthorize = `${origin}/connect/linear/personal/start`;
+  const outdated = {
+    connected: true,
+    permissions: {
+      state: "outdated",
+      grant: "linear-personal",
+      granted: ["read"],
+      missing: ["write"],
+      action: { kind: "reauthorize", url: reauthorize, actor: "member" },
+    },
+  };
+  let reads = 0;
+  const fetch = f.ctx.fetch;
+  f.ctx.fetch = (async (input, init) => {
+    if (new URL(String(input)).pathname === f.statusPath && reads++ > 0)
+      return Response.json(outdated);
+    return fetch(input, init);
+  }) as typeof globalThis.fetch;
+  const adapter = personalConsentAdapter({
+    ...f.options,
+    sleep: async () => {
+      throw new Error("an outdated grant must not keep polling");
+    },
+  });
+  expect(await adapter.act!(f.ctx, f.journal)).toMatchObject({
+    state: "waiting",
+    reason: "linear_personal_scope_outdated",
+    evidence: { url: reauthorize, missing: "write" },
+  });
+});
+
+
+it("a personal approval with unreadable permissions reports the check failure immediately", async () => {
+ const f = fixture("linear"); let reads = 0; const fetch = f.ctx.fetch;
+ f.ctx.fetch = (async (input, init) => new URL(String(input)).pathname === f.statusPath && reads++ > 0 ? Response.json({ connected: true, permissions: { state: "unknown", grant: "linear-personal", reason: "grant-unreadable" } }) : fetch(input, init)) as typeof globalThis.fetch;
+ const adapter = personalConsentAdapter({ ...f.options, sleep: async () => { throw new Error("permission failure must not poll"); } });
+ expect(await adapter.act!(f.ctx, f.journal)).toEqual({ state: "waiting", reason: "personal_permissions_unverified" });
+});
