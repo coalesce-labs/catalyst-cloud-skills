@@ -422,15 +422,19 @@ describe("onboarding lock ownership recovery", () => {
     mkdirSync(target);
     writeFileSync(join(target, "sentinel"), "keep");
     const lock = onboardLockPath(f.home);
+    let originalReceipt: string | undefined;
     expect(
       await cmdOnboard(scopedArgs(), f.ctx, {
         runStep: async () => {
+          originalReceipt = readFileSync(onboardStatePath(f.home), "utf8");
           rmSync(lock, { recursive: true });
           symlinkSync(target, lock);
           return { state: "done" };
         },
       }),
-    ).toBe(0);
+    ).toBe(12);
+    expect(originalReceipt).toBeDefined();
+    expect(readFileSync(onboardStatePath(f.home), "utf8")).toBe(originalReceipt);
     expect(lstatSync(lock).isSymbolicLink()).toBe(true);
     expect(readFileSync(join(target, "sentinel"), "utf8")).toBe("keep");
   });

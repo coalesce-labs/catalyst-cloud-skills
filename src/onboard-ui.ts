@@ -1,5 +1,6 @@
 import type { Readable, Writable } from "node:stream";
 import type { ParsedArgs } from "./args.js";
+import { firstTicketIntent, type FirstTicketIntent } from "./onboard-first-ticket.js";
 import {
   createOnboardProgress,
   type OnboardProgress,
@@ -35,6 +36,7 @@ export interface OnboardUi {
   chooseFirstRepository?(
     repositories: Array<{ owner: string; name: string }>,
   ): Promise<string | null>;
+  approveFirstTicket?(intent: Readonly<FirstTicketIntent>, signal: AbortSignal): Promise<boolean>;
   stepStart(id: OnboardStepId): void;
   stepEnd(step: OnboardStep): void;
   message(text: string): void;
@@ -274,6 +276,31 @@ export function createClackOnboardUi(
       }
       return typeof answer === "string" ? answer : null;
     },
+    async approveFirstTicket(intent, parent) {
+      stop();
+      const canonical = firstTicketIntent({ account: intent.account, person: intent.person, origin: intent.origin,
+        teamId: intent.teamId, teamKey: intent.teamKey, repoId: intent.repoId, repoName: intent.repoName,
+        dispatchStateId: intent.dispatchStateId, starter: intent.starter }, intent.operationKey);
+      if (!canonical || Object.keys(intent).length !== Object.keys(canonical).length ||
+          canonical.hash !== intent.hash || canonical.schema !== intent.schema || canonical.phase !== intent.phase ||
+          canonical.title !== intent.title || canonical.description !== intent.description ||
+          parent.aborted || abort.signal.aborted) return false;
+      const signal = AbortSignal.any([abort.signal, parent]);
+      message(`First ticket for ${canonical.teamKey} in ${canonical.repoName}`);
+      message(canonical.title);
+      message(canonical.description);
+      const answer = await prompts.select({
+        ...options, signal,
+        message: "Start this proposed ticket?",
+        initialValue: "later",
+        options: [
+          { value: "start", label: "Create the ticket and request intake" },
+          { value: "later", label: "Keep setup and start work later", hint: "default" },
+        ],
+      });
+      if (prompts.isCancel(answer)) { abort.abort(); return false; }
+      return !signal.aborted && answer === "start";
+    },
     stepStart(id) {
       const next = ["machine", "cli", "skills", "legacy"].includes(id)
         ? "This computer"
@@ -365,6 +392,15 @@ export function createClackOnboardUi(
         local_sync_capability_unavailable:
           "Local sync was selected but could not be verified.",
         member_scope: "Your workspace administrator handles this step.",
+        first_ticket_not_selected: "Setup kept. Start a ticket when you are ready.",
+        first_ticket_context_unverified: "The selected team and registered repository could not be verified.",
+        first_ticket_login_refresh_required: "Renew your login with catalyst login, then resume setup.",
+        first_ticket_readiness_unverified: "Team readiness, its default repository or runner capacity could not be verified.",
+        first_ticket_readiness_changed: "The team's setup changed. Resume to check it again before starting work.",
+        first_ticket_saved_intent_changed: "The saved ticket belongs to an earlier selection. Resume with its original team and repository.",
+        first_ticket_receipt_unavailable: "The saved first-ticket receipt could not be read. Setup did not request another ticket.",
+        first_ticket_launch_unconfirmed: "The ticket has not been confirmed started. Check its activity, then resume setup.",
+        first_ticket_unavailable: "The first-ticket result could not be verified. Resume to check the saved ticket.",
         onboarding_checks_pending: "Some required checks are still unverified.",
         interrupted: "Setup paused. Run the same command to resume.",
         signin_timeout: "Sign-in timed out. Run catalyst onboard to try again.",

@@ -18,6 +18,8 @@ import { existingLinearAdapters } from "./onboard-existing.js";
 import { linearWorkspaceAdapter } from "./onboard-workspace.js";
 import { firstProjectAdapters } from "./onboard-projects.js";
 import { onboardCapacityAdapter } from "./onboard-capacity.js";
+import { onboardFirstTicketAdapter } from "./onboard-first-ticket-http.js";
+import type { FirstTicketIntent } from "./onboard-first-ticket.js";
 import { onboardAutomationManagementAdapter } from "./onboard-automation-management.js";
 import { onboardWorkflowVerificationAdapter } from "./onboard-workflow.js";
 import { onboardAccountsAdapter } from "./onboard-accounts.js";
@@ -42,6 +44,7 @@ import { fetchMe } from "./transport.js";
 
 export interface OnboardRuntimeHooks {
   settings?: OnboardSettingsHooks;
+  approveFirstTicket?: (intent: Readonly<FirstTicketIntent>, signal: AbortSignal) => Promise<boolean>;
   ui?: OnboardUi;
   login: (ctx: Ctx, signal?: AbortSignal) => Promise<number>;
   stageSignin?: (
@@ -359,6 +362,12 @@ export function createOnboardRuntime(
       message: (text) => (hooks.ui ? hooks.ui.message(text) : ctx.stderr(text)),
     }),
     "linear.automations": onboardAutomationManagementAdapter({
+      message: (text) => (hooks.ui ? hooks.ui.message(text) : ctx.stderr(text)),
+    }),
+    "first-ticket": onboardFirstTicketAdapter({
+      approve: hooks.ui?.approveFirstTicket
+        ? (intent, signal) => hooks.ui!.approveFirstTicket!(intent, signal)
+        : hooks.approveFirstTicket,
       message: (text) => (hooks.ui ? hooks.ui.message(text) : ctx.stderr(text)),
     }),
     "linear.personal": personalAdapter("linear"),
