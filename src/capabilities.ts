@@ -15,6 +15,8 @@ export type CapabilityRole = "member" | "admin";
 export interface Capability {
   /** Explicit support for the bootstrap's state and lock transfer contract. */
   bootstrapHandoff?: boolean;
+  /** CTC-4625: the install engine's event protocol `setup` speaks; install.sh checks it before use. */
+  engineProtocol?: number;
   /** The verb as typed after `catalyst`. */
   verb: string;
   /** One line a guide can say to the person. */
@@ -32,6 +34,7 @@ const agent = (method: "GET" | "POST", name: string) => ({ method, path: `/api/v
  *  the person, the workspace, the project, the repository, then work. A new verb is a new row here
  *  in the same change, or `catalyst capabilities` lies to every guide that reads it. */
 export const CAPABILITIES: readonly Capability[] = [
+  { verb: "setup", does: "show install.sh's plan, progress and sign-in in this terminal, and ask its questions", needs: "member", routes: [], since: "0.15.0", engineProtocol: 1 },
   { verb: "onboard", does: "run and resume Catalyst setup with a saved step record", needs: "member", routes: [], since: "0.14.0", bootstrapHandoff: true },
   { verb: "status", does: "say whether this machine is connected, as whom, and to which cloud", needs: "member", routes: [], since: "0.1.0" },
   { verb: "me", does: "read the person's seat, role and Linear identity", needs: "member", routes: [], since: "0.1.0" },

@@ -38,6 +38,21 @@ export interface DeviceFlowDeps {
   openBrowser?: (url: string) => void | Promise<void>;
   /** Injected so tests never wait on the wall clock. */
   sleep?: (ms: number) => Promise<void>;
+  /** CTC-4625: shows each code in place of the plain lines below (`catalyst setup` draws its own
+   *  sign-in step). Called the moment a code arrives, before the browser is tried (which can take
+   *  seconds) and before the wait starts. */
+  present?: (code: DeviceCodePresentation) => void;
+  /** With `present`: whether the browser opened at the code's page, once that is known. */
+  presentBrowser?: (opened: boolean) => void;
+}
+
+export interface DeviceCodePresentation {
+  readonly verificationUri: string;
+  readonly userCode: string;
+  /** The link that fills the code in, when the server sent one. */
+  readonly completeUri?: string;
+  readonly round: number;
+  readonly rounds: number;
 }
 
 export interface RefreshDeps {
@@ -228,33 +243,51 @@ export async function deviceFlowLogin(
     cancelled();
     const auth = await deviceAuthorize(ctx, discovery);
     cancelled();
-    if (round > 1)
-      ctx.stdout(
-        `That code expired. Here is a new one (${round} of ${MAX_DEVICE_CODES}):`,
-      );
-    ctx.stdout("");
-    ctx.stdout(`To connect this machine, visit:  ${auth.verification_uri}`);
-    ctx.stdout(`and enter the code:              ${auth.user_code}`);
-    if (auth.verification_uri_complete)
-      ctx.stdout(
-        `Or open this link, which fills the code in: ${auth.verification_uri_complete}`,
-      );
-    if (round === 1 ? (deps.isTty ?? (() => false))() : browserOpened) {
-      try {
-        if (!deps.openBrowser) throw new Error("browser-unavailable");
-        await deps.openBrowser(
-          auth.verification_uri_complete ?? auth.verification_uri,
-        );
-        browserOpened = true;
-        ctx.stdout(
-          "Opened your browser to that page — approve there, or use the code above.",
-        );
-      } catch {
-        // a browser that will not open is not a failure; the code and URL still work
-        ctx.stdout("Open the link above in a browser.");
+    const opensBrowser =
+      round === 1 ? (deps.isTty ?? (() => false))() : browserOpened;
+    if (deps.present) {
+      deps.present({
+        verificationUri: auth.verification_uri,
+        userCode: auth.user_code,
+        ...(auth.verification_uri_complete
+          ? { completeUri: auth.verification_uri_complete }
+          : {}),
+        round,
+        rounds: MAX_DEVICE_CODES,
+      });
+      if (opensBrowser) {
+        browserOpened = await tryOpenBrowser(deps, auth);
+        deps.presentBrowser?.(browserOpened);
       }
+    } else {
+      if (round > 1)
+        ctx.stdout(
+          `That code expired. Here is a new one (${round} of ${MAX_DEVICE_CODES}):`,
+        );
+      ctx.stdout("");
+      ctx.stdout(`To connect this machine, visit:  ${auth.verification_uri}`);
+      ctx.stdout(`and enter the code:              ${auth.user_code}`);
+      if (auth.verification_uri_complete)
+        ctx.stdout(
+          `Or open this link, which fills the code in: ${auth.verification_uri_complete}`,
+        );
+      if (opensBrowser) {
+        try {
+          if (!deps.openBrowser) throw new Error("browser-unavailable");
+          await deps.openBrowser(
+            auth.verification_uri_complete ?? auth.verification_uri,
+          );
+          browserOpened = true;
+          ctx.stdout(
+            "Opened your browser to that page — approve there, or use the code above.",
+          );
+        } catch {
+          // a browser that will not open is not a failure; the code and URL still work
+          ctx.stdout("Open the link above in a browser.");
+        }
+      }
+      ctx.stdout("Waiting for you to approve… (Ctrl-C to cancel)");
     }
-    ctx.stdout("Waiting for you to approve… (Ctrl-C to cancel)");
     const poll = () =>
       pollDeviceCode(ctx, discovery, auth, deps.sleep, deps.signal);
     const tokens = deps.waitForApproval
@@ -270,6 +303,20 @@ export async function deviceFlowLogin(
     `The sign-in code expired ${MAX_DEVICE_CODES} times. Run the same command again when you are ready to approve.`,
     "login-expired",
   );
+}
+
+/** Opens the browser at the code's page; false when it would not open (never a failure). */
+async function tryOpenBrowser(
+  deps: DeviceFlowDeps,
+  auth: DeviceAuthorization,
+): Promise<boolean> {
+  try {
+    if (!deps.openBrowser) throw new Error("browser-unavailable");
+    await deps.openBrowser(auth.verification_uri_complete ?? auth.verification_uri);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /**

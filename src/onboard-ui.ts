@@ -1,4 +1,20 @@
 import type { Readable, Writable } from "node:stream";
+import {
+  COMPUTER_CHECKS,
+  standalonePlan,
+  standalonePlanNotes,
+  pendingContinuation,
+} from "./onboard-standalone-copy.js";
+import type { SetupRenderer } from "./setup-render.js";
+import { trackedPrompt } from "./setup-prompt-frame.js";
+import { createOnboardInterrupts } from "./onboard-interrupts.js";
+import {
+  setupStepView,
+  CONNECTION_REPAIR_REASONS,
+  setupFinalScreen,
+  setupBrowserInstruction,
+  SETUP_NUMBERS,
+} from "./setup-onboard-copy.js";
 import type { ParsedArgs } from "./args.js";
 import {
   createOnboardProgress,
@@ -19,6 +35,7 @@ import type { OnboardSettingsSummary } from "./onboard-settings.js";
 import {
   ONBOARD_STEPS,
   ONBOARD_TITLES,
+  stepSatisfied,
   onboardIdentityLines,
   onboardNextActions,
   onboardReadyForWork,
@@ -28,12 +45,24 @@ import {
   type OnboardStep,
   type OnboardStepId,
 } from "./onboard.js";
-import { onboardStepDetail } from "./onboard-next.js";
+import { onboardStepDetail, onboardReasonText } from "./onboard-next.js";
 
 /** Rendering cannot approve a step: the receipt engine owns execution and evidence. */
 export interface OnboardUi {
   readonly signal: AbortSignal;
-  plan(journal: OnboardJournal, identity?: OnboardIdentity | null): void;
+  readonly interactive?: boolean;
+  /** True only when this UI installs and disposes its own process signal controller. */
+  readonly handlesSignals?: boolean;
+  readonly stepSignal?: AbortSignal;
+  plan(
+    journal: OnboardJournal,
+    identity?: OnboardIdentity | null,
+    options?: {
+      localSync: boolean;
+      scope: readonly OnboardStepId[];
+      runner?: boolean;
+    },
+  ): void;
   confirmPlan(
     localSync: boolean,
     signin?: "saved" | "required" | "unavailable",
@@ -60,9 +89,15 @@ export interface OnboardUi {
   ): Promise<string | null>;
   /** "Run Catalyst's work on this machine?", default no. Null when cancelled. */
   chooseRunner?(): Promise<boolean | null>;
+  /** Close a sign-in preview without recording an executed engine step. */
+  stagedSigninEnd?(
+    state: "done" | "waiting" | "failed",
+    cause?: string,
+  ): boolean;
   stepStart(id: OnboardStepId): void;
   stepEnd(step: OnboardStep, journal?: OnboardJournal): void;
   message(text: string): void;
+  checkAgain?(journal: OnboardJournal): Promise<boolean>;
   finish(journal: OnboardJournal, only?: OnboardStepId): void;
   wait<T>(message: string, run: () => Promise<T>): Promise<T>;
   dispose(): void;
@@ -130,15 +165,42 @@ export interface OnboardSignalSource {
   off(event: Interrupt, listener: () => void): unknown;
 }
 
+export const STEP_NUMBERS: Partial<Record<OnboardStepId, number>> = {
+  signin: 4,
+  housekeeping: 5,
+  "linear.workspace": 6,
+  "linear.personal": 7,
+  "linear.team": 8,
+  "linear.adopt": 9,
+  "linear.automations": 10,
+  "github.install": 11,
+  "github.personal": 12,
+  "github.repos": 13,
+  projects: 13,
+  accounts: 14,
+  capacity: 15,
+  runner: 15,
+  settings: 16,
+  values: 16,
+  "first-ticket": 17,
+};
+
 export function createClackOnboardUi(
   prompts: ClackOnboardPort,
   streams: Streams,
   deps: {
     verbose?: boolean;
+    renderer?: SetupRenderer;
+    disposeRenderer?: boolean;
+    introduced?: boolean;
+    consentGiven?: boolean;
+    interactive?: boolean;
+    signinTimeoutMs?: number;
     signals?: OnboardSignalSource;
     progress?: OnboardProgress;
     /** Read when a line needs it: the saved login can change during setup. */
     baseUrl?: () => string | undefined;
+    logPath?: () => string | undefined;
   } = {},
 ): OnboardUi {
   const abort = new AbortController();
@@ -148,39 +210,250 @@ export function createClackOnboardUi(
     deps.progress ??
     createOnboardProgress(streams.output, abort.signal, () => abort.abort());
   const signals = deps.signals ?? process;
-  const interrupt = () => abort.abort();
+  const interrupts = createOnboardInterrupts(abort);
+  const handlers = {
+    SIGINT: () => interrupts.interrupt("SIGINT"),
+    SIGTERM: () => interrupts.interrupt("SIGTERM"),
+    SIGHUP: () => interrupts.interrupt("SIGHUP"),
+  };
   for (const event of ["SIGINT", "SIGTERM", "SIGHUP"] as const)
-    signals.on(event, interrupt);
+    signals.on(event, handlers[event]);
   let active = false;
-  let introduced = false;
+  let introduced = deps.introduced === true;
+  let currentStep: OnboardStepId | undefined;
+  const renderer = deps.renderer;
+  const interactive = deps.interactive !== false;
   let group: string | undefined;
+  let browserOpened = true;
+  let questionOpen = false;
+  let signinShown = false;
+  let stagedSigninApproved = false;
+  let signinStarted = 0;
+  const machineChecks = new Map<OnboardStepId, OnboardStep>();
+  let machineScope: readonly OnboardStepId[] = COMPUTER_CHECKS;
+  let machineBlocked = false;
+  const standaloneComputer = (id: OnboardStepId | undefined) =>
+    !!renderer &&
+    !deps.consentGiven &&
+    !!id &&
+    COMPUTER_CHECKS.some((check) => check === id);
+  const hidden = (id: OnboardStepId | undefined) =>
+    (!!renderer && id === "ready") ||
+    (!!renderer &&
+      !!id &&
+      ((id === "signin" && stagedSigninApproved) ||
+        (deps.consentGiven === true &&
+          [
+            "machine",
+            "cli",
+            "skills",
+            "legacy",
+            "signin",
+            "daemon",
+            "housekeeping",
+            "ready",
+          ].includes(id))) &&
+      !(id === "signin" && signinShown));
+  const title = (id: OnboardStepId) =>
+    setupStepView({ id, state: "running" }).title;
   const stop = () => {
     if (active) {
-      spin.stop();
+      if (renderer) renderer.suspendLive();
+      else spin.stop();
       active = false;
     }
   };
   const message = (text: string) => {
+    if (
+      renderer &&
+      (currentStep === "signin" || currentStep === undefined) &&
+      !signinShown &&
+      /(?:visit:\s*https?:|enter.*(?:code|[A-Z0-9]{4}-[A-Z0-9]{4})|https?:\/\/.*device)/i.test(
+        text,
+      )
+    ) {
+      const reveal = currentStep === undefined || hidden(currentStep);
+      if (currentStep === undefined) {
+        currentStep = "signin";
+        signinStarted = Date.now();
+        interrupts.begin("signin");
+      }
+      signinShown = true;
+      if (reveal) {
+        group = "This computer";
+        renderer.heading(group);
+        renderer.begin(4, title("signin"), "signing in…");
+        active = true;
+      }
+    }
+    if (hidden(currentStep)) return;
+    if (
+      renderer &&
+      currentStep === "linear.adopt" &&
+      text.endsWith("already has every state and label")
+    )
+      return;
+    if (renderer) {
+      if (
+        currentStep &&
+        setupBrowserInstruction(currentStep, deps.baseUrl?.())
+      ) {
+        if (/no browser opened|could not open a browser/i.test(text))
+          browserOpened = false;
+        return;
+      }
+      if (currentStep === "capacity") return;
+      renderer.detail(text);
+      return;
+    }
     stop();
     prompts.log.message(text, { output: streams.output });
   };
   const start = (text: string) => {
     stop();
     if (!abort.signal.aborted) {
-      spin.start(text);
+      if (hidden(currentStep)) return;
+      if (renderer && currentStep)
+        renderer.begin(
+          SETUP_NUMBERS[currentStep] ?? 0,
+          title(currentStep),
+          text === ONBOARD_TITLES[currentStep] ? "checking…" : text,
+        );
+      else if (renderer) renderer.line(text);
+      else spin.start(text);
       active = true;
     }
   };
-  return {
+  const question = () => {
+    if (renderer && currentStep && !questionOpen) {
+      stop();
+      renderer.begin(
+        SETUP_NUMBERS[currentStep] ?? 0,
+        title(currentStep),
+        "",
+        "ask",
+      );
+      active = true;
+      questionOpen = true;
+    }
+  };
+  const select = async (
+    opts: Parameters<ClackOnboardPort["select"]>[0],
+    ownFrame = false,
+  ) => {
+    if (!renderer) return prompts.select(opts);
+    const detached = ownFrame || !currentStep;
+    if (detached) {
+      stop();
+      renderer.begin(0, "Your choice", "", "ask");
+      active = true;
+    } else question();
+    const result = await trackedPrompt(streams.output, (output) =>
+      prompts.select({ ...opts, output }),
+    );
+    renderer.promptRows(result.rows);
+    questionOpen = false;
+    if (detached) stop();
+    return result.answer;
+  };
+  const text = async (
+    opts: Parameters<NonNullable<ClackOnboardPort["text"]>>[0],
+  ) => {
+    if (!prompts.text) return null;
+    if (!renderer) return prompts.text(opts);
+    question();
+    const result = await trackedPrompt(streams.output, (output) =>
+      prompts.text!({ ...opts, output }),
+    );
+    renderer.promptRows(result.rows);
+    questionOpen = false;
+    return result.answer;
+  };
+  const multiselect = async (
+    opts: Parameters<NonNullable<ClackOnboardPort["multiselect"]>>[0],
+  ) => {
+    if (!prompts.multiselect) return null;
+    if (!renderer) return prompts.multiselect(opts);
+    question();
+    const result = await trackedPrompt(streams.output, (output) =>
+      prompts.multiselect!({ ...opts, output }),
+    );
+    renderer.promptRows(result.rows);
+    questionOpen = false;
+    return result.answer;
+  };
+  let summaryShown = false;
+  const summary = (journal: OnboardJournal) => {
+    const screen = setupFinalScreen(
+      journal,
+      deps.baseUrl?.(),
+      abort.signal.aborted,
+    );
+    if (!renderer) return screen;
+    renderer.suspendLive();
+    active = false;
+    renderer.heading(screen.heading);
+    if (screen.paused) renderer.line("Your progress is saved.");
+    if (screen.readinessCause) renderer.line(screen.readinessCause);
+    if (screen.actions.length) {
+      renderer.line(
+        `${screen.actions.length} ${screen.actions.length === 1 ? "thing needs" : "things need"} you:`,
+      );
+      screen.actions.forEach((action, i) =>
+        renderer.line(`${i + 1}. ${action.text}`),
+      );
+      if (screen.more) renderer.line(`and ${screen.more} more after these`);
+      const continuation = pendingContinuation(journal);
+      if (continuation) renderer.line(continuation);
+    } else if (screen.heading === "Setup complete")
+      renderer.line("Catalyst is ready to work on your team's tickets.");
+    if (deps.logPath?.()) renderer.line(`Full log: ${deps.logPath()}`);
+    return screen;
+  };
+  const ui: OnboardUi = {
     signal: abort.signal,
-    plan(journal, identity) {
+    get stepSignal() {
+      return interrupts.signal;
+    },
+    interactive,
+    handlesSignals: true,
+    plan(journal, identity, planOptions) {
+      if (deps.consentGiven) return;
+      machineScope = (planOptions?.scope ?? ONBOARD_STEPS).filter((id) =>
+        COMPUTER_CHECKS.some((check) => check === id),
+      );
+      machineChecks.clear();
+      machineBlocked = false;
       stop();
       if (!introduced) {
-        prompts.intro("Catalyst setup", { output: streams.output });
+        if (renderer) renderer.intro("Catalyst setup");
+        else prompts.intro("Catalyst setup", { output: streams.output });
         introduced = true;
       }
       if (identity !== undefined)
         for (const line of onboardIdentityLines(identity)) message(line);
+      if (renderer) {
+        renderer.heading("The plan");
+        let planGroup: string | undefined;
+        for (const row of standalonePlan(
+          journal,
+          planOptions?.scope,
+          planOptions?.runner,
+        )) {
+          if (row.group !== planGroup) {
+            renderer.blank();
+            renderer.line(renderer.bold(row.group));
+            planGroup = row.group;
+          }
+          renderer.plan(row.number, row.title, row.detail);
+        }
+        renderer.line(
+          standalonePlanNotes(
+            planOptions?.localSync ?? journal.localSync === true,
+          ),
+        );
+        return;
+      }
       const steps = new Map(journal.steps.map((step) => [step.id, step]));
       message(
         ONBOARD_STEPS.map(
@@ -196,10 +469,12 @@ export function createClackOnboardUi(
       );
     },
     async confirmPlan(localSync, signin = "unavailable") {
+      if (deps.consentGiven || !interactive)
+        return { proceed: true, localSync };
       stop();
-      const answer = await prompts.select({
+      const answer = await select({
         ...options,
-        message: "Continue with this plan?",
+        message: "Continue setup?",
         initialValue:
           signin === "required" ? "signin" : localSync ? "local" : "cloud",
         options: [
@@ -208,7 +483,7 @@ export function createClackOnboardUi(
             : [
                 {
                   value: "cloud",
-                  label: "Continue using cloud reads",
+                  label: "Yes, continue",
                   hint: "default",
                 },
                 { value: "local", label: "Continue and set up local sync" },
@@ -243,9 +518,11 @@ export function createClackOnboardUi(
       const offer = prompts.text ? create : undefined;
       if ((!teams.length && !offer?.available) || abort.signal.aborted)
         return null;
-      const answer = await prompts.select({
+      const answer = await select({
         ...options,
-        message: "Which Linear team should this project use?",
+        message: renderer
+          ? "Which Linear team should Catalyst work in?"
+          : "Which Linear team should this project use?",
         initialValue: teams[0]?.id ?? CREATE_TEAM_CHOICE,
         options: [
           ...teams.map((team) => ({
@@ -274,10 +551,13 @@ export function createClackOnboardUi(
     async confirmWorkflowAdoption(team, lines) {
       stop();
       if (abort.signal.aborted) return false;
+      if (renderer) question();
       message([`Catalyst workflow plan for ${team}:`, ...lines].join("\n"));
-      const answer = await prompts.select({
+      const answer = await select({
         ...options,
-        message: `Apply this to ${team}?`,
+        message: renderer
+          ? `Apply these changes to ${team}?`
+          : `Apply this to ${team}?`,
         initialValue: "apply",
         options: [
           { value: "apply", label: "Yes, apply it" },
@@ -295,7 +575,7 @@ export function createClackOnboardUi(
           async nameNewTeam(question: NewTeamQuestion) {
             stop();
             if (abort.signal.aborted) return null;
-            const name = await prompts.text!({
+            const name = await text({
               ...options,
               message: question.problem
                 ? `${question.problem}\nName for the new Linear team`
@@ -308,7 +588,7 @@ export function createClackOnboardUi(
               abort.abort();
               return null;
             }
-            const key = await prompts.text!({
+            const key = await text({
               ...options,
               message: "Team key (the prefix on its tickets, like MOB-12)",
               initialValue:
@@ -326,7 +606,7 @@ export function createClackOnboardUi(
               name: name.trim(),
               key: key.trim().toUpperCase(),
             };
-            const confirm = await prompts.select({
+            const confirm = await select({
               ...options,
               message: `Create the Linear team ${answer.name} (${answer.key}) and set up Catalyst's workflow on it?`,
               initialValue: "create",
@@ -348,7 +628,7 @@ export function createClackOnboardUi(
           async chooseRepositories(repositories: ExistingOnboardRepository[]) {
             stop();
             if (!repositories.length || abort.signal.aborted) return null;
-            const answer = await prompts.multiselect!({
+            const answer = await multiselect({
               ...options,
               message: "Which repositories should use this Linear team?",
               required: true,
@@ -368,7 +648,7 @@ export function createClackOnboardUi(
     async reviewSettings(summaries) {
       stop();
       if (!summaries.length || abort.signal.aborted) return "cancel";
-      const answer = await prompts.select({
+      const answer = await select({
         ...options,
         message:
           "Review settings for all selected repositories. Keep private copies of new drafts for review?",
@@ -391,7 +671,7 @@ export function createClackOnboardUi(
     async chooseFirstRepository(repositories) {
       stop();
       if (!repositories.length || abort.signal.aborted) return null;
-      const answer = await prompts.select({
+      const answer = await select({
         ...options,
         message: "Which repository should start this project?",
         initialValue: `${repositories[0]!.owner}/${repositories[0]!.name}`,
@@ -409,7 +689,7 @@ export function createClackOnboardUi(
     async chooseRunner() {
       stop();
       if (abort.signal.aborted) return null;
-      const answer = await prompts.select({
+      const answer = await select({
         ...options,
         message: "Run Catalyst's work on this machine?",
         initialValue: "no",
@@ -431,7 +711,74 @@ export function createClackOnboardUi(
       }
       return answer === "yes";
     },
+    stagedSigninEnd(state, cause) {
+      if (!renderer) return false;
+      if (state === "done") stagedSigninApproved = true;
+      if (currentStep === "signin" && signinShown)
+        renderer.step(
+          state === "done" ? "done" : state === "failed" ? "fail" : "act",
+          4,
+          title("signin"),
+          state === "done"
+            ? "approved"
+            : state === "failed"
+              ? "could not verify this account"
+              : "not finished",
+        );
+      else renderer.suspendLive();
+      active = false;
+      currentStep = undefined;
+      signinShown = false;
+      if (state !== "done") {
+        if (cause)
+          renderer.line(cause.charAt(0).toUpperCase() + cause.slice(1));
+        renderer.heading(
+          abort.signal.aborted ? "Setup paused" : "Setup is not ready yet",
+        );
+        if (!cause?.includes("Your saved connection was not changed."))
+          renderer.line("Your saved connection was not changed.");
+        renderer.outro("Next: run catalyst onboard to sign in again.");
+      }
+      return true;
+    },
     stepStart(id) {
+      interrupts.begin(id);
+      browserOpened = true;
+      questionOpen = false;
+      currentStep = id;
+      if (id === "signin") {
+        signinShown = false;
+        signinStarted = Date.now();
+      }
+      if (renderer) {
+        if (standaloneComputer(id)) {
+          if (!machineScope.length) return;
+          if (machineChecks.size === 0 && !machineBlocked) {
+            renderer.heading("This computer");
+            group = "This computer";
+            renderer.begin(1, "This computer", "checking…");
+            active = true;
+          }
+          return;
+        }
+        if (hidden(id)) return;
+        if (id === "projects" || id === "values") return;
+        const next =
+          !deps.consentGiven &&
+          ["signin", "daemon", "housekeeping", "ready"].includes(id)
+            ? "This computer"
+            : id.startsWith("linear.")
+              ? "Linear"
+              : id.startsWith("github.")
+                ? "GitHub"
+                : "Work";
+        if (next !== group) {
+          renderer.heading(next);
+          group = next;
+        }
+        start(ONBOARD_TITLES[id]);
+        return;
+      }
       const next = ["machine", "cli", "skills", "legacy"].includes(id)
         ? "This computer"
         : id === "signin"
@@ -450,6 +797,73 @@ export function createClackOnboardUi(
       start(ONBOARD_TITLES[id]);
     },
     stepEnd(step, journal) {
+      if (renderer) {
+        if (standaloneComputer(step.id)) {
+          machineChecks.set(step.id, step);
+          if (step.state === "failed" || step.state === "waiting") {
+            stop();
+            machineBlocked = true;
+            const view = setupStepView(step, journal);
+            renderer.step(view.mark, view.number, view.title, view.outcome);
+            renderer.detail(
+              deps.logPath?.()
+                ? "Check the full log for the cause, then try this step again."
+                : "Finish the action below, then check again.",
+            );
+            active = false;
+          } else if (
+            !machineBlocked &&
+            machineScope.length > 0 &&
+            machineScope.every((id) => stepSatisfied(machineChecks.get(id)))
+          ) {
+            renderer.step(
+              "done",
+              1,
+              "This computer",
+              machineScope.length === COMPUTER_CHECKS.length
+                ? machineChecks.get("legacy")?.state === "done"
+                  ? "the command and skills are ready; no earlier install remains, data folders kept"
+                  : "the command and skills are ready"
+                : "the selected checks passed",
+            );
+            active = false;
+          }
+          return;
+        }
+        if (step.id === "ready" || (hidden(step.id) && step.state !== "failed"))
+          return;
+        if (
+          (step.id === "github.repos" || step.id === "settings") &&
+          step.state === "done"
+        )
+          return;
+        if (
+          (step.id === "projects" || step.id === "values") &&
+          journal?.steps.find(
+            (s) =>
+              s.id === (step.id === "projects" ? "github.repos" : "settings"),
+          )?.state !== "done"
+        )
+          return;
+        const view = setupStepView(step, journal);
+        if (hidden(step.id)) {
+          renderer.heading("This computer");
+          group = "This computer";
+        }
+        renderer.step(view.mark, view.number, view.title, view.outcome);
+        const granted = deps.verbose ? onboardStepDetail(step) : undefined;
+        if (granted) renderer.detail(granted);
+        if (deps.verbose && CONNECTION_REPAIR_REASONS.has(step.reason ?? ""))
+          renderer.detail(onboardReasonText(step, { baseUrl: deps.baseUrl?.(), journal }));
+        if (view.mark === "fail")
+          renderer.detail(
+            deps.logPath?.()
+              ? "Check the full log for the cause, then try this step again."
+              : "Finish the action below, then check again.",
+          );
+        active = false;
+        return;
+      }
       stop();
       const detail = step.reason
         ? onboardStepAction(journal, step, deps.baseUrl?.())
@@ -470,7 +884,81 @@ export function createClackOnboardUi(
       if (granted) prompts.log.message(granted, { output: streams.output });
     },
     message,
+    async checkAgain(journal) {
+      if (
+        !renderer ||
+        !interactive ||
+        abort.signal.aborted ||
+        !setupFinalScreen(journal, deps.baseUrl?.()).actions.length
+      )
+        return false;
+      active = false;
+      summary(journal);
+      summaryShown = true;
+      const answer = await select(
+        {
+          ...options,
+          message: "Done with these?",
+          initialValue: "again",
+          options: [
+            { value: "again", label: "Check again now" },
+            { value: "stop", label: "Stop here" },
+          ],
+        },
+        true,
+      );
+      if (prompts.isCancel(answer)) {
+        abort.abort();
+        return false;
+      }
+      if (answer !== "again") return false;
+      summaryShown = false;
+      machineScope = COMPUTER_CHECKS.filter(
+        (id) => !stepSatisfied(journal.steps.find((step) => step.id === id)),
+      );
+      machineChecks.clear();
+      machineBlocked = false;
+      group = undefined;
+      renderer.heading("Checking again");
+      return true;
+    },
     finish(journal, only) {
+      if (renderer && only) {
+        stop();
+        renderer.heading(
+          abort.signal.aborted
+            ? "Setup paused"
+            : journal.exit === 0
+              ? "Step complete"
+              : "Step needs you",
+        );
+        if (journal.exit === 0)
+          renderer.line(
+            `${ONBOARD_TITLES[only]} finished. Onboarding still has other steps.`,
+          );
+        else
+          for (const action of onboardNextActions(
+            journal,
+            deps.baseUrl?.(),
+            only,
+          ))
+            renderer.line(action);
+        renderer.outro("Next: run catalyst onboard");
+        return;
+      }
+      if (renderer) {
+        active = false;
+        const screen = summaryShown
+          ? setupFinalScreen(journal, deps.baseUrl?.(), abort.signal.aborted)
+          : summary(journal);
+        if (summaryShown && screen.paused) {
+          renderer.heading(screen.heading);
+          renderer.line("Your progress is saved.");
+        }
+        summaryShown = false;
+        renderer.outro(screen.next);
+        return;
+      }
       stop();
       let text = [
         "Setup still needs these steps:",
@@ -493,11 +981,103 @@ export function createClackOnboardUi(
       prompts.outro(text, { output: streams.output });
     },
     async wait(text, run) {
-      start(text);
+      const browser =
+        currentStep &&
+        renderer &&
+        setupBrowserInstruction(
+          currentStep,
+          deps.baseUrl?.(),
+          currentStep !== "accounts" && browserOpened,
+        );
+      const signinWait = Boolean(
+        renderer && currentStep === "signin" && signinShown,
+      );
+      const seconds = signinWait
+        ? Math.ceil((deps.signinTimeoutMs ?? 600000) / 1000)
+        : 600;
+      const started = signinWait ? signinStarted : Date.now();
+      const status = () => {
+        const remaining = Math.max(
+          0,
+          seconds - Math.floor((Date.now() - started) / 1000),
+        );
+        return `waiting for you · ${Math.floor(remaining / 60)}:${String(remaining % 60).padStart(2, "0")} left`;
+      };
+      if (renderer && browser && currentStep) {
+        stop();
+        renderer.begin(
+          SETUP_NUMBERS[currentStep] ?? 0,
+          title(currentStep),
+          renderer.traits.unicode
+            ? status()
+            : "waiting for you, up to 10 minutes",
+        );
+        if (browser.preparation) renderer.detail(browser.preparation);
+        renderer.action(browser.instruction);
+        if (browser.url) renderer.detail(renderer.link(browser.url));
+        renderer.detail(
+          renderer.dim(
+            interactive ? "Ctrl-C skips this step." : "Ctrl-C stops setup.",
+          ),
+        );
+        active = true;
+      } else if (renderer && signinWait) {
+        if (renderer.traits.unicode) {
+          renderer.update(status());
+          renderer.detail("Ctrl-C stops setup.");
+        } else {
+          const minutes = Math.max(
+            0,
+            Math.ceil((started + seconds * 1000 - Date.now()) / 60000),
+          );
+          renderer.detail(
+            `waiting for you${minutes ? `, up to ${minutes} minute${minutes === 1 ? "" : "s"}` : ""}. Ctrl-C stops setup.`,
+          );
+        }
+      } else start(text);
+      const timer =
+        renderer && (browser || signinWait)
+          ? renderer.traits.unicode
+            ? setInterval(() => renderer.update(status()), 1000)
+            : setInterval(() => {
+                const minutes = Math.max(
+                  0,
+                  Math.ceil((seconds * 1000 - (Date.now() - started)) / 60000),
+                );
+                if (minutes > 0)
+                  renderer.detail(
+                    `Still waiting, ${minutes} minute${minutes === 1 ? "" : "s"} left.`,
+                  );
+              }, 60000)
+          : undefined;
+      timer?.unref();
+      interrupts.waiting(interactive);
       try {
         return await run();
       } finally {
-        stop();
+        if (timer) clearInterval(timer);
+        interrupts.waiting(false);
+        if (
+          renderer &&
+          browser &&
+          interrupts.signal.aborted &&
+          !abort.signal.aborted
+        ) {
+          renderer.replaceLastDetail(
+            renderer.dim("Press Ctrl-C again to stop setup."),
+          );
+          await new Promise<void>((resolve) => {
+            const done = () => {
+              clearTimeout(timeout);
+              abort.signal.removeEventListener("abort", done);
+              resolve();
+            };
+            const timeout = setTimeout(done, 2000);
+            abort.signal.addEventListener("abort", done, { once: true });
+            if (abort.signal.aborted) done();
+          });
+        }
+        if (!renderer) stop();
       }
     },
     dispose() {
@@ -507,11 +1087,22 @@ export function createClackOnboardUi(
         abort.abort();
         try {
           spin.dispose();
+          if (deps.disposeRenderer) renderer?.dispose();
         } finally {
           for (const event of ["SIGINT", "SIGTERM", "SIGHUP"] as const)
-            signals.off(event, interrupt);
+            signals.off(event, handlers[event]);
         }
       }
     },
   };
+  if (!interactive) {
+    delete ui.chooseTeam;
+    delete ui.nameNewTeam;
+    delete ui.chooseRepositories;
+    delete ui.chooseFirstRepository;
+    delete ui.reviewSettings;
+    delete ui.chooseRunner;
+    delete ui.confirmWorkflowAdoption;
+  }
+  return ui;
 }

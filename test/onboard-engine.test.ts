@@ -1,3 +1,4 @@
+import { expectJsonJournalMatches } from "./json-journal.js";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -51,7 +52,7 @@ describe("onboarding engine contracts", () => {
     expect(saved.exit).toBe(11);
     expect(saved.steps.map((step: { id: string }) => step.id)).toEqual(expect.arrayContaining([...ONBOARD_STEPS]));
     expect(saved.steps.find((step: { id: string }) => step.id === "signin").state).not.toBe("skipped");
-    expect(JSON.parse(f.output[0]!)).toEqual(saved);
+    expectJsonJournalMatches(JSON.parse(f.output[0]!),saved,"not-ready");
   });
 
   test("explicit legacy scope can succeed while the full run remains incomplete", async () => {

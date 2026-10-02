@@ -1,3 +1,4 @@
+import { expectJsonJournalMatches } from "./json-journal.js";
 import {
   existsSync,
   mkdirSync,
@@ -66,21 +67,47 @@ describe("catalyst onboard", () => {
     const path = home();
     let laterChecks = 0;
     const done = { check: async () => ({ state: "done" as const }) };
-    const code = await cmdOnboard(parseArgs(["onboard", "--yes"]), context(path), {
-      bindSignals: false,
-      adapters: {
-        machine: done, cli: done, skills: done, legacy: done, signin: done,
-        "linear.workspace": { check: async () => ({ state: "waiting", reason: "workspace_login_refresh_required" }) },
-        // GitHub install depends only on sign-in, so base code would enter it
-        // even after the Linear workspace step asks for a refreshed login.
-        "github.install": { check: async () => { laterChecks++; return { state: "pending" }; } },
+    const code = await cmdOnboard(
+      parseArgs(["onboard", "--yes"]),
+      context(path),
+      {
+        bindSignals: false,
+        adapters: {
+          machine: done,
+          cli: done,
+          skills: done,
+          legacy: done,
+          signin: done,
+          "linear.workspace": {
+            check: async () => ({
+              state: "waiting",
+              reason: "workspace_login_refresh_required",
+            }),
+          },
+          // GitHub install depends only on sign-in, so base code would enter it
+          // even after the Linear workspace step asks for a refreshed login.
+          "github.install": {
+            check: async () => {
+              laterChecks++;
+              return { state: "pending" };
+            },
+          },
+        },
       },
-    }, "0.14.7");
+      "0.14.7",
+    );
     expect(code).toBe(11);
     expect(laterChecks).toBe(0);
     const journal = readOnboardJournal(onboardStatePath(path), "0.14.7");
-    expect(journal?.steps.find(step => step.id === "linear.workspace")).toMatchObject({ state: "waiting", reason: "workspace_login_refresh_required" });
-    expect(journal?.steps.find(step => step.id === "github.install")).toMatchObject({ id: "github.install", state: "pending" });
+    expect(
+      journal?.steps.find((step) => step.id === "linear.workspace"),
+    ).toMatchObject({
+      state: "waiting",
+      reason: "workspace_login_refresh_required",
+    });
+    expect(
+      journal?.steps.find((step) => step.id === "github.install"),
+    ).toMatchObject({ id: "github.install", state: "pending" });
     expect(journal?.complete).toBe(false);
     expect(existsSync(onboardLockPath(path))).toBe(false);
   });
@@ -88,23 +115,67 @@ describe("catalyst onboard", () => {
   test("the session refresh hook runs before each step, never inside one", async () => {
     const path = home();
     const order: string[] = [];
-    const step = (id: string) => ({ check: async () => { order.push(`run:${id}`); return { state: "done" as const }; } });
-    await cmdOnboard(parseArgs(["onboard", "--yes"]), context(path), {
-      bindSignals: false,
-      beforeStep: async (id) => { order.push(`refresh:${id}`); },
-      adapters: { machine: step("machine"), cli: step("cli"), skills: step("skills"), legacy: step("legacy"), signin: step("signin") },
-    }, "0.14.9");
-    expect(order.slice(0, 4)).toEqual(["refresh:machine", "run:machine", "refresh:cli", "run:cli"]);
-    expect(order.filter((x) => x.startsWith("refresh:")).length).toBeGreaterThan(5);
+    const step = (id: string) => ({
+      check: async () => {
+        order.push(`run:${id}`);
+        return { state: "done" as const };
+      },
+    });
+    await cmdOnboard(
+      parseArgs(["onboard", "--yes"]),
+      context(path),
+      {
+        bindSignals: false,
+        beforeStep: async (id) => {
+          order.push(`refresh:${id}`);
+        },
+        adapters: {
+          machine: step("machine"),
+          cli: step("cli"),
+          skills: step("skills"),
+          legacy: step("legacy"),
+          signin: step("signin"),
+        },
+      },
+      "0.14.9",
+    );
+    expect(order.slice(0, 4)).toEqual([
+      "refresh:machine",
+      "run:machine",
+      "refresh:cli",
+      "run:cli",
+    ]);
+    expect(
+      order.filter((x) => x.startsWith("refresh:")).length,
+    ).toBeGreaterThan(5);
   });
 
   const nearExpiry = (baseUrl: string): CustomerConfig =>
     ({
-      baseUrl, account: "account-a", slug: "fixture", name: "Fixture", principal: "session", permissions: null,
-      user: { id: "person-a", role: "owner", label: "Fixture", email: null, linearUserId: null },
-      auth: { kind: "oauth", accessToken: "at-near", refreshToken: "rt-near", sessionId: "s1",
-        expiresAt: new Date(Date.parse("2026-09-30T14:00:00.000Z") + 60_000).toISOString() },
-      joinedAt: "2026-09-30T13:00:00.000Z", lastSkillBundleVersion: "0.14.9",
+      baseUrl,
+      account: "account-a",
+      slug: "fixture",
+      name: "Fixture",
+      principal: "session",
+      permissions: null,
+      user: {
+        id: "person-a",
+        role: "owner",
+        label: "Fixture",
+        email: null,
+        linearUserId: null,
+      },
+      auth: {
+        kind: "oauth",
+        accessToken: "at-near",
+        refreshToken: "rt-near",
+        sessionId: "s1",
+        expiresAt: new Date(
+          Date.parse("2026-09-30T14:00:00.000Z") + 60_000,
+        ).toISOString(),
+      },
+      joinedAt: "2026-09-30T13:00:00.000Z",
+      lastSkillBundleVersion: "0.14.9",
     }) as CustomerConfig;
   const recordingFetch = (seen: string[]) =>
     (async (input: Parameters<typeof fetch>[0]) => {
@@ -116,7 +187,10 @@ describe("catalyst onboard", () => {
     const path = home();
     writeConfig(path, nearExpiry("https://refresh-dry.invalid"));
     const seen: string[] = [];
-    await main(["onboard", "--dry-run", "--json"], { ...context(path), fetch: recordingFetch(seen) });
+    await main(["onboard", "--dry-run", "--json"], {
+      ...context(path),
+      fetch: recordingFetch(seen),
+    });
     expect(seen.filter((url) => url.endsWith("/api/v1/auth/cli"))).toEqual([]);
     expect(loadConfig(path)?.auth?.refreshToken).toBe("rt-near");
   });
@@ -125,21 +199,43 @@ describe("catalyst onboard", () => {
     const path = home();
     writeConfig(path, nearExpiry("https://refresh-run.invalid"));
     const seen: string[] = [];
-    await main(["onboard", "--only", "machine", "--yes"], { ...context(path), fetch: recordingFetch(seen) });
-    expect(seen.some((url) => url === "https://refresh-run.invalid/api/v1/auth/cli")).toBe(true);
+    await main(["onboard", "--only", "machine", "--yes"], {
+      ...context(path),
+      fetch: recordingFetch(seen),
+    });
+    expect(
+      seen.some((url) => url === "https://refresh-run.invalid/api/v1/auth/cli"),
+    ).toBe(true);
   });
 
   test("an interrupt during the between-step refresh never marks the finished step as interrupted", async () => {
     const path = home();
     const done = { check: async () => ({ state: "done" as const }) };
-    await cmdOnboard(parseArgs(["onboard", "--yes"]), context(path), {
-      // A real Ctrl-C reaches the engine as a process signal while the refresh is awaited.
-      beforeStep: async (id) => { if (id === "cli") process.emit("SIGHUP", "SIGHUP"); },
-      adapters: { machine: done, cli: done, skills: done, legacy: done, signin: done },
-    }, "0.14.9");
+    await cmdOnboard(
+      parseArgs(["onboard", "--yes"]),
+      context(path),
+      {
+        // A real Ctrl-C reaches the engine as a process signal while the refresh is awaited.
+        beforeStep: async (id) => {
+          if (id === "cli") process.emit("SIGHUP", "SIGHUP");
+        },
+        adapters: {
+          machine: done,
+          cli: done,
+          skills: done,
+          legacy: done,
+          signin: done,
+        },
+      },
+      "0.14.9",
+    );
     const journal = readOnboardJournal(onboardStatePath(path), "0.14.9");
-    expect(journal?.steps.find((step) => step.id === "machine")).toMatchObject({ state: "done" });
-    expect(journal?.steps.find((step) => step.id === "cli")?.state).not.toBe("done");
+    expect(journal?.steps.find((step) => step.id === "machine")).toMatchObject({
+      state: "done",
+    });
+    expect(journal?.steps.find((step) => step.id === "cli")?.state).not.toBe(
+      "done",
+    );
   });
 
   test("JSON dry run prints one plan object and creates no state or lock", async () => {
@@ -295,7 +391,7 @@ describe("catalyst onboard", () => {
     expect(() => readFileSync(join(lock, "owner.json"))).toThrow();
   });
 
-  test("JSON execution prints the exact receipt written to last-run.json", async () => {
+  test("JSON execution preserves every journal field and adds final facts", async () => {
     const path = home();
     mkdirSync(join(path, ".catalyst"));
     writeFileSync(join(path, ".catalyst", "sentinel"), "kept data");
@@ -307,8 +403,10 @@ describe("catalyst onboard", () => {
     );
     expect(code).toBe(0);
     expect(output).toHaveLength(1);
-    expect(JSON.parse(output[0]!)).toEqual(
+    expectJsonJournalMatches(
+      JSON.parse(output[0]!),
       JSON.parse(readFileSync(onboardStatePath(path), "utf8")),
+      "ready",
     );
     expect(JSON.parse(output[0]!).steps).toContainEqual(
       expect.objectContaining({
@@ -539,13 +637,13 @@ describe("plain finish names what is left (CTC-4477)", () => {
             failures.includes(id)
               ? { state: "failed" as const, reason: "step_failed" }
               : id === "linear.team"
-              ? {
-                  state: "done" as const,
-                  evidence: { team: "team-1", teamKey: "ENG" },
-                }
-              : waits[id]
-                ? { state: "waiting" as const, reason: waits[id] }
-                : { state: "done" as const },
+                ? {
+                    state: "done" as const,
+                    evidence: { team: "team-1", teamKey: "ENG" },
+                  }
+                : waits[id]
+                  ? { state: "waiting" as const, reason: waits[id] }
+                  : { state: "done" as const },
         },
       ]),
     );
@@ -575,7 +673,9 @@ describe("plain finish names what is left (CTC-4477)", () => {
     );
     expect(text).toContain("Check runner capacity: No runner is allowed");
     expect(text).toContain("Schedule the daily update: ");
-    expect(text).toContain('Start a first ticket: Runs after "Check coding accounts".');
+    expect(text).toContain(
+      'Start a first ticket: Runs after "Check coding accounts".',
+    );
     expect(text).not.toContain("Onboarding complete");
     expect(text).not.toContain("Move a ticket");
     expect(text).toContain("resume: catalyst onboard");
@@ -654,12 +754,18 @@ describe("plain finish names what is left (CTC-4477)", () => {
       tenant: null,
       exit: 0,
       steps: [
-        { id: "runner" as const, state: "skipped" as const, reason: "runner_not_selected" },
+        {
+          id: "runner" as const,
+          state: "skipped" as const,
+          reason: "runner_not_selected",
+        },
       ],
       changes: [],
     };
     const lines = onboardNextActions(journal);
-    expect(lines.some((line) => line.startsWith("Run Catalyst's work"))).toBe(false);
+    expect(lines.some((line) => line.startsWith("Run Catalyst's work"))).toBe(
+      false,
+    );
   });
 
   test("every step done exits 0 and says onboarding is complete", async () => {
@@ -1253,4 +1359,138 @@ describe("Q1 staged identity publication", () => {
     expect(f.counts().actions).toBe(0);
     expect(f.errors.join("\n")).toContain("setup record changed");
   });
+});
+
+test("setup checks only unfinished steps again inside its original lock", async () => {
+  const path = home();
+  const seen: string[] = [];
+  let round = 0;
+  let questions = 0;
+  const ui: OnboardUi = {
+    signal: new AbortController().signal,
+    plan() {},
+    confirmPlan: async () => ({ proceed: true, localSync: false }),
+    stepStart() {},
+    stepEnd() {},
+    message() {},
+    finish() {},
+    wait: async (_m, run) => run(),
+    dispose() {},
+    checkAgain: async () => {
+      questions++;
+      expect(existsSync(onboardLockPath(path))).toBe(true);
+      round++;
+      return true;
+    },
+  };
+  const adapters = Object.fromEntries(
+    ONBOARD_STEPS.map((id) => [
+      id,
+      {
+        check: async () => {
+          seen.push(`${round}:${id}`);
+          return id === "github.install" && round === 0
+            ? {
+                state: "waiting" as const,
+                reason: "github_installation_browser_unavailable",
+              }
+            : { state: "done" as const };
+        },
+      },
+    ]),
+  );
+  const code = await cmdOnboard(parseArgs(["onboard"]), context(path), {
+    bindSignals: false,
+    ui,
+    adapters,
+  });
+  expect(code).toBe(0);
+  expect(questions).toBe(1);
+  expect(seen.filter((s) => s.startsWith("1:"))).toEqual([
+    "1:github.install",
+    "1:github.repos",
+    "1:projects",
+    "1:capacity",
+    "1:settings",
+    "1:values",
+    "1:first-ticket",
+    "1:ready",
+  ]);
+  expect(existsSync(onboardLockPath(path))).toBe(false);
+});
+
+test("plain standalone --yes keeps the shared frame without approving extra questions", async () => {
+  const path = home();
+  const output: string[] = [];
+  const errors: string[] = [];
+  const code = await main(
+    ["onboard", "--only", "legacy", "--yes"],
+    context(path, output, errors),
+    { isTty: () => false },
+  );
+  expect(code).toBe(0);
+  expect(output.join("\n")).toContain("The plan");
+  expect(output.join("\n")).toContain("Step complete");
+  expect(output.join("\n")).not.toContain("Ready for work");
+  expect(output.join("\n")).not.toContain("\x1b");
+});
+
+test("plain standalone without --yes retains the explicit plan refusal", async () => {
+  const path = home();
+  const output: string[] = [];
+  const errors: string[] = [];
+  const code = await main(
+    ["onboard", "--only", "legacy"],
+    context(path, output, errors),
+    { isTty: () => false },
+  );
+  expect(code).toBe(11);
+  expect(errors.join("\n")).toContain("Pass --yes");
+  expect(output.join("\n")).toContain("The plan");
+  expect(readOnboardJournal(onboardStatePath(path))).toBeNull();
+});
+
+test("a scoped dry-run shows the same numbered human plan without writes or raw engine guidance", async () => {
+  const path = home();
+  const output: string[] = [];
+  expect(
+    await cmdOnboard(
+      parseArgs(["onboard", "--only", "machine", "--dry-run"]),
+      context(path, output),
+      {},
+      "0.15.0",
+    ),
+  ).toBe(0);
+  const text = output.join("\n");
+  expect(text).toContain("1 Check this computer");
+  expect(text).not.toContain("Start a first ticket");
+  expect(text).not.toContain("quota");
+  expect(text).not.toContain("Next: machine");
+  expect(text).not.toContain("✓");
+  expect(existsSync(onboardStatePath(path))).toBe(false);
+});
+
+test("a runner-selected dry-run discloses Docker before consent without starting it", async () => {
+  const path = home();
+  const output: string[] = [];
+  expect(
+    await cmdOnboard(
+      parseArgs([
+        "onboard",
+        "--only",
+        "runner",
+        "--runner",
+        "--yes",
+        "--dry-run",
+      ]),
+      context(path, output),
+      {},
+      "0.15.0",
+    ),
+  ).toBe(0);
+  expect(output.join("\n")).toContain(
+    "start a Catalyst runner here with Docker",
+  );
+  expect(output.join("\n")).not.toContain("check which runners can take work");
+  expect(existsSync(onboardStatePath(path))).toBe(false);
 });

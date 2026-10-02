@@ -125,6 +125,7 @@ function fixture(role: "owner" | "member" = "owner") {
       opened.push(url);
     },
     sleep: async () => {},
+    wait: async <T>(_message: string, run: () => Promise<T>) => run(),
     requestTimeoutMs: 30,
     consentTimeoutMs: 50,
   };
@@ -838,4 +839,17 @@ test("a workspace approval with unreadable permissions reports the check failure
     state: "waiting",
     reason: "linear_workspace_permissions_unverified",
   });
+});
+
+test("without an interactive wait seam, missing approval returns immediately without opening a browser", async () => {
+  const f = fixture();
+  f.status(absent());
+  const adapter = linearWorkspaceAdapter({ ...f.options, wait: undefined });
+  const result = await adapter.act!(f.ctx, f.journal);
+  expect(result).toMatchObject({
+    state: "waiting",
+    reason: "workspace_approval_required",
+  });
+  expect(f.opened).toEqual([]);
+  expect(f.reads).toHaveLength(1);
 });

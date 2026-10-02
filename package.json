@@ -53,6 +53,8 @@
   "dependencies": {
     "@catalyst-cloud/sdk": "^0.13.1",
     "@clack/prompts": "1.8.1",
+    "fast-string-width": "3.0.2",
+    "fast-wrap-ansi": "0.2.2",
     "smol-toml": "^1.7.1",
     "yaml": "^2.9.0"
   },

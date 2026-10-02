@@ -1,3 +1,4 @@
+import { expectJsonJournalMatches } from "./json-journal.js";
 import {
   existsSync,
   mkdirSync,
@@ -141,7 +142,7 @@ describe("onboarding main compatibility boundaries", () => {
     ).toBe(11);
     expect(confirmations).toBe(0);
     expect(f.output).toHaveLength(1);
-    expect(JSON.parse(f.output[0]!)).toEqual(saved);
+    expectJsonJournalMatches(JSON.parse(f.output[0]!),saved,"not-ready");
     expect(readFileSync(path, "utf8")).toBe(bytes);
     expect(existsSync(onboardLockPath(f.home))).toBe(false);
   });

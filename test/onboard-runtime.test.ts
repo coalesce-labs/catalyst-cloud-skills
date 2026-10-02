@@ -141,6 +141,21 @@ afterEach(() => {
     rmSync(home, { recursive: true, force: true });
 });
 
+function consentUi(): OnboardUi {
+  return {
+    signal: new AbortController().signal,
+    interactive: true,
+    message() {},
+    stepStart() {},
+    stepEnd() {},
+    finish() {},
+    dispose() {},
+    plan() {},
+    confirmPlan: async () => ({ proceed: true, localSync: false }),
+    wait: async (_text, run) => run(),
+  };
+}
+
 describe("onboarding production runtime", () => {
   test("fake HOME reports a legacy service and never stops or removes it", async () => {
     const f = fixture();
@@ -471,7 +486,7 @@ describe("onboarding production runtime", () => {
     },
   );
 
-  test("personal Linear consent opens the signed Catalyst handoff and polls usable status in JSON mode", async () => {
+  test("personal Linear consent opens the signed Catalyst handoff and polls usable status with an interactive UI", async () => {
     const f = fixture();
     f.seed();
     const browser = join(f.home, "opened-url");
@@ -494,18 +509,15 @@ describe("onboarding production runtime", () => {
         });
       return Response.json({ error: "unexpected_route" }, { status: 404 });
     }) as typeof fetch);
-    const runtime = createOnboardRuntime(
-      parseArgs(["onboard", "--json"]),
-      f.ctx,
-      {
-        ...f.hooks,
-        openBrowser: (opened) => {
-          writeFileSync(browser, opened);
-          writeFileSync(grant, "connected");
-        },
-        sleep: async () => {},
+    const runtime = createOnboardRuntime(parseArgs(["onboard"]), f.ctx, {
+      ...f.hooks,
+      ui: consentUi(),
+      openBrowser: (opened) => {
+        writeFileSync(browser, opened);
+        writeFileSync(grant, "connected");
       },
-    );
+      sleep: async () => {},
+    });
     const adapter = runtime.adapters!["linear.personal"]!;
     expect(await adapter.check(f.ctx, f.journal)).toMatchObject({
       state: "pending",
@@ -532,6 +544,7 @@ describe("onboarding production runtime", () => {
     }) as typeof fetch);
     const runtime = createOnboardRuntime(parseArgs(["onboard"]), f.ctx, {
       ...f.hooks,
+      ui: consentUi(),
       openBrowser: (url) => writeFileSync(unexpected, url),
     });
     expect(
@@ -575,6 +588,7 @@ describe("onboarding production runtime", () => {
         : Response.json({ connected: false })) as typeof fetch);
     const runtime = createOnboardRuntime(parseArgs(["onboard"]), f.ctx, {
       ...f.hooks,
+      ui: consentUi(),
       openBrowser: (url) => writeFileSync(opened, url),
     });
     expect(
@@ -593,6 +607,7 @@ describe("onboarding production runtime", () => {
         : Response.json({ connected: false })) as typeof fetch);
     const runtime = createOnboardRuntime(parseArgs(["onboard"]), f.ctx, {
       ...f.hooks,
+      ui: consentUi(),
       openBrowser: (url) => writeFileSync(opened, url),
     });
     expect(
@@ -693,6 +708,7 @@ describe("onboarding production runtime", () => {
           : Response.json({ connected: false })) as typeof fetch);
       const runtime = createOnboardRuntime(parseArgs(["onboard"]), f.ctx, {
         ...f.hooks,
+        ui: consentUi(),
         openBrowser: (url) => writeFileSync(opened, url),
       });
       expect(
@@ -840,15 +856,10 @@ describe("onboarding production runtime", () => {
         });
       return Response.json({ error: "unexpected_route" }, { status: 404 });
     }) as typeof fetch);
-    const args = parseArgs([
-      "onboard",
-      "--only",
-      "github.personal",
-      "--yes",
-      "--json",
-    ]);
+    const args = parseArgs(["onboard", "--only", "github.personal"]);
     const runtime = createOnboardRuntime(args, f.ctx, {
       ...f.hooks,
+      ui: consentUi(),
       openBrowser: (url) => {
         writeFileSync(opened, url);
         writeFileSync(grant, "connected");
@@ -908,6 +919,7 @@ describe("onboarding production runtime", () => {
         : Response.json({ connected: false })) as typeof fetch);
     const runtime = createOnboardRuntime(parseArgs(["onboard"]), f.ctx, {
       ...f.hooks,
+      ui: consentUi(),
       openBrowser: (url) => writeFileSync(opened, url),
     });
     expect(
@@ -973,11 +985,11 @@ describe("onboarding production runtime", () => {
         String(input).endsWith("/personal/start")
           ? Response.json({ error: secret }, { status })
           : Response.json({ connected: false })) as typeof fetch);
-      const runtime = createOnboardRuntime(
-        parseArgs(["onboard", "--json"]),
-        f.ctx,
-        { ...f.hooks, openBrowser: (url) => writeFileSync(opened, url) },
-      );
+      const runtime = createOnboardRuntime(parseArgs(["onboard"]), f.ctx, {
+        ...f.hooks,
+        ui: consentUi(),
+        openBrowser: (url) => writeFileSync(opened, url),
+      });
       expect(
         await runtime.adapters!["github.personal"]!.act!(f.ctx, f.journal),
       ).toMatchObject({ state, reason });
@@ -1008,6 +1020,7 @@ describe("onboarding production runtime", () => {
     }) as typeof fetch);
     const runtime = createOnboardRuntime(parseArgs(["onboard"]), f.ctx, {
       ...f.hooks,
+      ui: consentUi(),
       openBrowser: (url) => writeFileSync(opened, url),
       sleep: async () => {
         writeFileSync(recovered, "usable");
@@ -1493,7 +1506,12 @@ describe("Q1 live identity preview", () => {
     ).toBe(0);
     expect(out).toHaveLength(1);
     const receiptText = readFileSync(onboardStatePath(f.home), "utf8");
-    expect(JSON.parse(out[0]!)).toEqual(JSON.parse(receiptText));
+    const parsed = JSON.parse(out[0]!);
+    const { verdict, actions, next, ...raw } = parsed;
+    expect(raw).toEqual(JSON.parse(receiptText));
+    expect(verdict).toBe("ready");
+    expect(actions).toEqual([]);
+    expect(next).toBe("catalyst onboard");
     expect(err.join("\n")).toContain(
       `Signed in as ${user.label} (${user.email})`,
     );
@@ -1519,9 +1537,18 @@ describe("Q1 live identity preview", () => {
     ).toBe(0);
     expect(login).not.toHaveBeenCalled();
     expect(out).toHaveLength(1);
-    expect(JSON.parse(out[0]!)).toEqual(
+    const {
+      verdict: recheckVerdict,
+      actions: recheckActions,
+      next: recheckNext,
+      ...recheckRaw
+    } = JSON.parse(out[0]!);
+    expect(recheckRaw).toEqual(
       JSON.parse(readFileSync(onboardStatePath(f.home), "utf8")),
     );
+    expect(recheckVerdict).toBe("ready");
+    expect(recheckActions).toEqual([]);
+    expect(recheckNext).toBe("catalyst onboard");
     expect(err.filter((line) => line.startsWith("Signed in as "))).toHaveLength(
       2,
     );
@@ -1560,4 +1587,75 @@ describe("inline workflow adoption wiring", () => {
     const runtime = createOnboardRuntime(parseArgs([...argv]), c, { ...hooks, ui });
     expect(typeof runtime.adapters?.["linear.adopt"]?.act === "function").toBe(expected);
   });
+});
+test.each([{ flags: [] }, { flags: ["--json"] }, { flags: ["--yes"] }])(
+  "approval without an interactive UI %j returns immediately",
+  async ({ flags }) => {
+    const f = fixture();
+    f.seed();
+    const reads: string[] = [];
+    const opened: string[] = [];
+    f.supportedFetch((async (input) => {
+      reads.push(String(input));
+      return Response.json({ connected: false });
+    }) as typeof fetch);
+    const runtime = createOnboardRuntime(
+      parseArgs(["onboard", ...flags]),
+      f.ctx,
+      {
+        ...f.hooks,
+        openBrowser: (url) => {
+          opened.push(url);
+        },
+      },
+    );
+    const result = await runtime.adapters!["linear.personal"]!.act!(
+      f.ctx,
+      f.journal,
+    );
+    expect(result).toMatchObject({
+      state: "waiting",
+      reason: "personal_approval_required",
+    });
+    expect(opened).toEqual([]);
+    expect(reads.some((r) => r.endsWith("/personal/start"))).toBe(false);
+  },
+);
+test("JSON mode ignores an available interactive UI approval seam", async () => {
+  const f = fixture();
+  f.seed();
+  f.supportedFetch((async () =>
+    Response.json({ connected: false })) as typeof fetch);
+  const ui = consentUi();
+  ui.wait = async () => {
+    throw new Error("wait must not start");
+  };
+  const runtime = createOnboardRuntime(
+    parseArgs(["onboard", "--json"]),
+    f.ctx,
+    {
+      ...f.hooks,
+      ui,
+      openBrowser: () => {
+        throw new Error("must not open");
+      },
+    },
+  );
+  expect(
+    await runtime.adapters!["github.personal"]!.act!(f.ctx, f.journal),
+  ).toMatchObject({ state: "waiting", reason: "personal_approval_required" });
+});
+test("unexpected onboarding JSON failure still has one error journal", async () => {
+  const f = fixture();
+  const deps = { setupUi: consentUi() };
+  deps.setupUi.dispose = () => {
+    throw new Error("private-implementation-detail");
+  };
+  expect(await main(["onboard", "--json"], f.ctx, deps)).toBe(10);
+  const docs = f.transcript.filter((t) => t.startsWith("{"));
+  expect(docs).toHaveLength(1);
+  expect(JSON.parse(docs[0]!)).toMatchObject({ exit: 10, complete: false });
+  expect(f.transcript.join("\n")).not.toContain(
+    "private-implementation-detail",
+  );
 });
