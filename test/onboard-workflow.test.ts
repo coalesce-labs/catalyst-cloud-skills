@@ -320,6 +320,24 @@ describe("existing workflow wire truth", () => {
     if (kind === "no-stages") value.stageSource = "none";
     expect(observeOnboardWorkflow(value, team, Date.now())).toBeNull();
   });
+  test("Linear's built-in Duplicate state and other unmapped stage types do not block observation", () => {
+    const now = Date.now(),
+      value = wire(now);
+    value.stages.push(
+      { id: "stage-duplicate", name: "Duplicate", type: "duplicate", position: 5 },
+      { id: "stage-future", name: "Future", type: "some-new-linear-type", position: 6 },
+    );
+    expect(observeOnboardWorkflow(value, team, now)).toMatchObject({ mappedSlots: 5 });
+  });
+  test("a required slot mapped to a Duplicate state still refuses", () => {
+    const now = Date.now(),
+      value = wire(now);
+    value.stages.push({ id: "stage-duplicate", name: "Duplicate", type: "duplicate", position: 5 });
+    value.rows = value.rows.map((row) =>
+      row.slot === "canceled" ? { ...row, linearStateId: "stage-duplicate" } : row,
+    );
+    expect(observeOnboardWorkflow(value, team, now)).toBeNull();
+  });
   test.each([299_999, 300_000, -1])(
     "honors exact server five-minute age boundary %s",
     (age) => {
