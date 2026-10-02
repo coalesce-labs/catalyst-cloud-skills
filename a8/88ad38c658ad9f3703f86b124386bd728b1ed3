@@ -1,0 +1,1 @@
+Review fixes: an interrupt while the session refreshes between steps no longer marks the finished step as interrupted (current is cleared, abort re-checked). Added CLI wiring tests: a dry run never refreshes, a real run refreshes a short session first. Each shown to fail without its fix.
