@@ -1,0 +1,1 @@
+Reconcile once onto verified headless main2946984; publish final customer install v2 as0.15.0 with literalSDK0.14.1 and matching lock/schema-test dependency; retain current changelog assertion and owned-resource fixture repairs. No intermediate0.14.11 publication.
