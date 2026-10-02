@@ -173,6 +173,7 @@ describe("bounded personal-bearer Linear workspace consent", () => {
       evidence: {
         provider: "linear",
         workspace: "workspace-a",
+        workspaceSlug: "fixture",
         checkedAt: now,
       },
     });

@@ -1,19 +1,38 @@
+import { selectedOnboardTeam } from "./onboard-existing.js";
 import type { OnboardAdapter } from "./onboard.js";
 
-/** Rule management is unbuilt. This disposition does not assess the customer's actual rules.
- * Cloud readiness and first-ticket eligibility must still reject conflicting or unreadable rules.
- */
-export function onboardAutomationManagementAdapter(
-  input: { message?: (text: string) => void } = {},
-): OnboardAdapter {
+/** Setup cannot change Linear's pull request automations. It reports what cloud readiness saw for
+ * the selected team, as the workflow step recorded it, and never reads the network itself. Only a
+ * fresh record for the same team proves "nothing to change"; anything else stays the plain skip,
+ * which keeps counting as satisfied because readiness and first-ticket eligibility check again. */
+export function onboardAutomationManagementAdapter(): OnboardAdapter {
   return {
-    check: async (_ctx, _journal, signal) => {
+    check: async (ctx, journal, signal) => {
       if (signal?.aborted) return { state: "waiting", reason: "interrupted" };
-      input.message?.(
-        "Linear automation management is unavailable. Setup made no automation change. Cloud readiness still checks your existing rules.",
-      );
-      if (signal?.aborted) return { state: "waiting", reason: "interrupted" };
-      return { state: "skipped", reason: "automation_management_unavailable" };
+      const skip = {
+        state: "skipped" as const,
+        reason: "automation_management_unavailable",
+      };
+      const adopt = journal.steps.find((step) => step.id === "linear.adopt");
+      const team = selectedOnboardTeam(journal);
+      const evidence = adopt?.state === "done" ? adopt.evidence : undefined;
+      const checkedAt = evidence?.checkedAt;
+      const automations = evidence?.automations;
+      if (
+        !team ||
+        evidence?.team !== team ||
+        typeof checkedAt !== "number" ||
+        ctx.now().getTime() - checkedAt >= 300_000 ||
+        ctx.now().getTime() < checkedAt ||
+        typeof automations !== "string" ||
+        !/^(?:none|(?:open|review|ready|merge)(?:,(?:open|review|ready|merge))*)$/.test(
+          automations,
+        )
+      )
+        return skip;
+      return automations === "none"
+        ? { state: "done", reason: "automations_compatible" }
+        : { ...skip, evidence: { automations } };
     },
   };
 }

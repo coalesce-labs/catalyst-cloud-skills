@@ -198,6 +198,9 @@ function observation(body: unknown, now: number): OnboardStepResult {
     evidence: {
       provider: "linear",
       workspace: workspace.workspaceId,
+      ...(typeof workspace.workspaceSlug === "string"
+        ? { workspaceSlug: workspace.workspaceSlug }
+        : {}),
       checkedAt: verification.checkedAt,
     },
   };

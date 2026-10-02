@@ -375,10 +375,15 @@ export function createOnboardRuntime(
     }),
     "linear.adopt": onboardWorkflowVerificationAdapter({
       message: (text) => (hooks.ui ? hooks.ui.message(text) : ctx.stderr(text)),
+      ...(hooks.ui?.confirmWorkflowAdoption
+        ? {
+            confirm: (team: string, lines: readonly string[]) =>
+              hooks.ui!.confirmWorkflowAdoption!(team, lines),
+          }
+        : {}),
+      yes: args.flags.yes === true,
     }),
-    "linear.automations": onboardAutomationManagementAdapter({
-      message: (text) => (hooks.ui ? hooks.ui.message(text) : ctx.stderr(text)),
-    }),
+    "linear.automations": onboardAutomationManagementAdapter(),
     "linear.personal": personalAdapter("linear"),
     "github.personal": personalAdapter("github"),
     daemon: {

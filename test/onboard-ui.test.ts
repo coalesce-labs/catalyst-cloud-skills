@@ -536,6 +536,7 @@ test("a login expiring after Q1 stays neutral and displays the actual renewal co
 const adoptedTeam = (extra: OnboardJournal["steps"] = []) =>
   journal({
     steps: [
+      { id: "linear.workspace", state: "done", evidence: { workspaceSlug: "fixture" } },
       {
         id: "linear.team",
         state: "done",
@@ -590,6 +591,9 @@ test.each([
   "runner_host_not_ready",
   "runner_admission_operator",
   "runner_enrollment_stale",
+  "workflow_admin_required",
+  "workflow_plan_changed",
+  "verification_pending",
 ])("%s renders a written next action, never the raw reason", (reason) => {
   const text = warned(reason);
   expect(text).not.toContain(reason.replaceAll("_", " "));
@@ -807,4 +811,93 @@ test("the runner question defaults to no, and only an explicit yes starts one", 
   const cancelled = fixture(Symbol("cancel"));
   expect(await cancelled.ui.chooseRunner!()).toBeNull();
   expect(cancelled.ui.signal.aborted).toBe(true);
+});
+
+// CTC-4630: the workflow plan is approved inline, and the automation check speaks plainly.
+test.each([
+  ["apply", true],
+  ["skip", false],
+] as const)("the workflow plan question answered %s returns %s", async (answer, expected) => {
+  const f = fixture(answer);
+  expect(
+    await f.ui.confirmWorkflowAdoption!("ENG", [
+      "Create stages: Research, Plan",
+      "Keep existing stages: Todo, Done",
+    ]),
+  ).toBe(expected);
+  expect(f.events).toContainEqual({
+    kind: "message",
+    text: "Catalyst workflow plan for ENG:\nCreate stages: Research, Plan\nKeep existing stages: Todo, Done",
+  });
+  expect(f.selections).toHaveLength(1);
+  expect(f.selections[0]!.initialValue).toBe("apply");
+  expect(f.selections[0]!.options.map((option) => option.value)).toEqual([
+    "apply",
+    "skip",
+  ]);
+  expect(f.ui.signal.aborted).toBe(false);
+  f.ui.dispose();
+});
+
+test("cancelling the workflow plan question applies nothing and stops setup", async () => {
+  const f = fixture(Symbol("cancel"));
+  expect(await f.ui.confirmWorkflowAdoption!("ENG", ["Create stages: Plan"])).toBe(
+    false,
+  );
+  expect(f.ui.signal.aborted).toBe(true);
+  f.ui.dispose();
+});
+
+const ended = (
+  step: OnboardJournal["steps"][number],
+  value: OnboardJournal = adoptedTeam(),
+) => {
+  const f = fixture();
+  f.ui.stepStart(step.id);
+  f.ui.stepEnd(step, value);
+  f.ui.dispose();
+  return f.events
+    .filter((event) => ["info", "message", "warn", "error"].includes(event.kind))
+    .at(-1)!;
+};
+
+test("compatible pull request automations show one green line", () => {
+  expect(
+    ended({ id: "linear.automations", state: "done", reason: "automations_compatible" }),
+  ).toEqual({
+    kind: "info",
+    text: "✓ Check Linear's pull request automations: Nothing to change.",
+  });
+});
+
+test("conflicting pull request automations say what to change in Linear and where", () => {
+  const line = ended({
+    id: "linear.automations",
+    state: "skipped",
+    reason: "automation_management_unavailable",
+    evidence: { automations: "open,merge" },
+  });
+  expect(line.kind).toBe("message");
+  expect(line.text).toContain("Open https://linear.app/fixture/settings/teams/ENG/workflow and set each pull request automation to No action.");
+  expect(line.text).not.toMatch(/automation management unavailable/i);
+});
+
+test("unread pull request automations say plainly that cloud readiness checks them", () => {
+  const line = ended({
+    id: "linear.automations",
+    state: "skipped",
+    reason: "automation_management_unavailable",
+  });
+  expect(line.kind).toBe("message");
+  expect(line.text).toContain("could not read them; checked again before work starts");
+  expect(line.text).not.toMatch(/automation management unavailable/i);
+});
+
+
+test.each([undefined, "../other", "bad/slug", "x\u001b[31m"])("automation action does not invent a link from unsafe workspace slug %s", (workspaceSlug) => {
+  const value = adoptedTeam();
+  value.steps[0]!.evidence = workspaceSlug === undefined ? {} : { workspaceSlug };
+  const line = ended({ id: "linear.automations", state: "skipped", reason: "automation_management_unavailable", evidence: { automations: "merge" } }, value);
+  expect(line.text).toContain("Open your ENG team's workflow settings in Linear and set each pull request automation to No action.");
+  expect(line.text).not.toContain("https://linear.app/");
 });

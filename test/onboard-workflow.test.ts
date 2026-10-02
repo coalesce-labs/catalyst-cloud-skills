@@ -23,6 +23,8 @@ import {
   type MeIdentity,
 } from "../src/config.js";
 import {
+  adoptPlanLines,
+  adoptRequestAllowed,
   onboardWorkflowVerificationAdapter,
   observeOnboardWorkflow,
 } from "../src/onboard-workflow.js";
@@ -107,7 +109,12 @@ afterEach(async () => {
   for (const home of homes.splice(0))
     rmSync(home, { recursive: true, force: true });
 });
-function fixture() {
+function fixture(
+  adopt: {
+    confirm?: (team: string, lines: readonly string[]) => Promise<boolean>;
+    yes?: boolean;
+  } = {},
+) {
   const home = mkdtempSync(join(realpathSync(tmpdir()), "onboard-workflow-"));
   homes.push(home);
   const me: MeIdentity = {
@@ -142,7 +149,7 @@ function fixture() {
     membershipId: me.user!.id,
     baseUrl: origin,
     exit: null,
-    steps: [{ id: "linear.team", state: "done", evidence: { team } }],
+    steps: [{ id: "linear.team", state: "done", evidence: { team, teamKey: "ENG" } }],
     changes: [],
   };
   const stop = new AbortController();
@@ -161,10 +168,16 @@ function fixture() {
     afterContract: undefined as undefined | (() => void),
     message: undefined as undefined | ((text: string) => void),
     second: undefined as ReturnType<typeof wire> | undefined,
+    adoptRoute: true,
+    adoptBodies: [] as Array<Record<string, unknown>>,
+    adoptReplies: [] as Array<() => Response>,
   };
   const contract = () => ({
     contractVersion: "1.0.0",
     account: { id: me.account },
+    routes: state.adoptRoute
+      ? [{ method: "POST", path: "/api/v1/agent/team-workflow/adopt" }]
+      : [],
     onboarding: {
       schema: 1,
       routes: state.advertised
@@ -214,6 +227,12 @@ function fixture() {
         state.afterWorkflow?.(state.workflowCount);
         return Response.json(value);
       }
+      if (url.pathname === "/api/v1/agent/team-workflow/adopt") {
+        state.adoptBodies.push(JSON.parse(String(init?.body)));
+        const reply = state.adoptReplies.shift();
+        if (!reply) throw new Error("unexpected adopt request");
+        return reply();
+      }
       throw new Error("unexpected workflow request");
     },
   };
@@ -222,6 +241,7 @@ function fixture() {
       messages.push(text);
       state.message?.(text);
     },
+    ...adopt,
   });
   const run = () => {
     const task = adapter.check(ctx, journal, stop.signal);
@@ -275,6 +295,29 @@ describe("existing workflow wire truth", () => {
         ?.state,
     ).toBe("fail");
   });
+  test.each([
+    [["pass", "pass", "pass", "pass"], "none"],
+    [["fail", "pass", "pass", "fail"], "open,merge"],
+    [["fail", "unknown", "pass", "pass"], undefined],
+  ] as const)(
+    "reports Linear's pull request automations %j as %s",
+    (states, expected) => {
+      const now = Date.now(),
+        value = wire(now);
+      const ids = [
+        "linear_automation_pr_open",
+        "linear_automation_pr_review",
+        "linear_automation_pr_ready",
+        "linear_automation_pr_merge",
+      ];
+      value.readiness.checks = value.readiness.checks
+        .filter((check) => !ids.includes(check.id))
+        .concat(ids.map((id, n) => ({ id, state: states[n]! })));
+      expect(observeOnboardWorkflow(value, team, now)?.automations).toBe(
+        expected,
+      );
+    },
+  );
   test.each(required)(
     "missing required %s mapping never passes despite claimed server checks",
     (slot) => {
@@ -487,7 +530,7 @@ describe("actual installed HTTP SDK onboarding verifier", () => {
   test("config changes during final verified display refuse before publishing done evidence", async () => {
     const f = fixture();
     f.state.message = (text) => {
-      if (text.includes("are verified")) {
+      if (text.includes("already has every state and label")) {
         const cfg = loadConfig(f.home)!;
         cfg.user!.id = "foreign-person";
         saveConfig(f.home, cfg);
@@ -685,3 +728,326 @@ test("actual native 30s body deadline joins real cancel/socket closure and held 
     }),
   );
 }, 45_000);
+
+// CTC-4630: the workflow step adopts inline through the same SDK routes as `catalyst team adopt`.
+describe("inline workflow adoption", () => {
+  function unadopted(now = Date.now()) {
+    const value = wire(now);
+    value.rows = [];
+    value.readiness.checks = value.readiness.checks.map((check) =>
+      check.id === "mapping_total" || check.id === "labels_present"
+        ? { ...check, state: "fail" }
+        : check,
+    );
+    return value;
+  }
+  function plan(hash: string, apply = false) {
+    return {
+      teamId: team,
+      teamKey: "ENG",
+      mode: "adopted-recommended" as const,
+      stages: [
+        { name: "Todo", type: "unstarted", outcome: "already-present", stateId: "state-0" },
+        { name: "Research", type: "started", outcome: apply ? "created" : "would-create" },
+        { name: "Plan", type: "started", outcome: apply ? "created" : "would-create" },
+        { name: "Done", type: "completed", outcome: "already-present", stateId: "state-3" },
+      ],
+      planHash: hash,
+      unfilledLoadBearing: [],
+      provenanceGaps: [],
+      labels: [
+        { name: "catalyst", outcome: "already-present" },
+        { name: "catalyst-blocked", outcome: apply ? "created" : "would-create" },
+      ],
+      labelProvenanceGaps: [],
+      labelsNotCreated: [],
+      ...(apply ? { readiness: null } : { checklist: [] }),
+    };
+  }
+  function adopting(options: Parameters<typeof fixture>[0]) {
+    const f = fixture(options);
+    f.state.workflow = unadopted(f.state.now);
+    return f;
+  }
+  const applied = (f: ReturnType<typeof fixture>, hash: string) => () => {
+    f.state.workflow = wire(f.state.now);
+    return Response.json(plan(hash, true));
+  };
+
+  test("an unadopted team shows the plan, asks once, applies with the server hash, then verifies", async () => {
+    const asked: Array<{ team: string; lines: readonly string[] }> = [];
+    const f = adopting({
+      confirm: async (key, lines) => {
+        asked.push({ team: key, lines });
+        return true;
+      },
+    });
+    f.state.adoptReplies.push(() => Response.json(plan("abc-2")));
+    f.state.adoptReplies.push(applied(f, "abc-2"));
+    expect(await f.run()).toMatchObject({
+      state: "pending",
+      reason: "workflow_mapping_unverified",
+    });
+    expect(f.state.adoptBodies).toEqual([]);
+    expect(await f.adapter.act!(f.ctx, f.journal, f.stop.signal)).toMatchObject({
+      state: "done",
+    });
+    expect(f.state.adoptBodies).toEqual([
+      { team, mode: "preview" },
+      { team, mode: "apply", planHash: "abc-2" },
+    ]);
+    expect(asked).toHaveLength(1);
+    expect(asked[0]!.team).toBe("ENG");
+    expect(asked[0]!.lines).toEqual([
+      "Create stages: Research, Plan",
+      "Keep existing stages: Todo, Done",
+      "Create labels: catalyst-blocked",
+      "Labels already present: catalyst",
+    ]);
+    expect(f.messages.join("\n")).toContain(
+      "Applied the Catalyst workflow to ENG: created 2 stages and 1 label.",
+    );
+    expect(await f.run()).toMatchObject({ state: "done" });
+    expect(f.messages.at(-1)).toBe("ENG already has every state and label");
+    const adoptCalls = f.calls.filter((c) => c.url.pathname.endsWith("/adopt"));
+    expect(adoptCalls.every((c) => c.method === "POST")).toBe(true);
+    expect(
+      adoptCalls.every(
+        (c) =>
+          new Headers(c.init?.headers).get("authorization") ===
+          "Bearer ctc_user_private_fixture",
+      ),
+    ).toBe(true);
+  });
+
+  test("declining keeps today's waiting reason and applies nothing", async () => {
+    const f = adopting({ confirm: async () => false });
+    f.state.adoptReplies.push(() => Response.json(plan("abc-2")));
+    expect(await f.adapter.act!(f.ctx, f.journal, f.stop.signal)).toEqual({
+      state: "waiting",
+      reason: "workflow_adoption_declined",
+    });
+    expect(f.state.adoptBodies).toEqual([{ team, mode: "preview" }]);
+  });
+
+  test("--yes displays the exact plan before applying without a question", async () => {
+    const f = adopting({ yes: true });
+    f.state.adoptReplies.push(() => Response.json(plan("abc-2")));
+    f.state.adoptReplies.push(() => {
+      expect(f.messages.join("\n")).toContain("Create stages: Research, Plan");
+      expect(f.messages.join("\n")).toContain("Create labels: catalyst-blocked");
+      return applied(f, "abc-2")();
+    });
+    expect(await f.run()).toMatchObject({ state: "pending" });
+    expect(await f.adapter.act!(f.ctx, f.journal, f.stop.signal)).toMatchObject({
+      state: "done",
+    });
+    expect(f.state.adoptBodies.map((body) => body.mode)).toEqual([
+      "preview",
+      "apply",
+    ]);
+  });
+
+  test("without a question or --yes there is no action and the step waits as before", async () => {
+    const f = adopting({});
+    expect(f.adapter.act).toBeUndefined();
+    expect(await f.run()).toEqual({
+      state: "waiting",
+      reason: "workflow_mapping_unverified",
+    });
+    expect(f.state.adoptBodies).toEqual([]);
+  });
+
+  test("a plan that changed before apply is planned again once and asked again", async () => {
+    let asked = 0;
+    const f = adopting({
+      confirm: async () => {
+        asked++;
+        return true;
+      },
+    });
+    f.state.adoptReplies.push(() => Response.json(plan("abc-2")));
+    f.state.adoptReplies.push(() =>
+      Response.json(
+        { error: "plan-stale", reason: "Your board changed", ...plan("def-3") },
+        { status: 409 },
+      ),
+    );
+    f.state.adoptReplies.push(() => Response.json(plan("def-3")));
+    f.state.adoptReplies.push(applied(f, "def-3"));
+    expect(await f.adapter.act!(f.ctx, f.journal, f.stop.signal)).toMatchObject({
+      state: "done",
+    });
+    expect(asked).toBe(2);
+    expect(f.state.adoptBodies).toEqual([
+      { team, mode: "preview" },
+      { team, mode: "apply", planHash: "abc-2" },
+      { team, mode: "preview" },
+      { team, mode: "apply", planHash: "def-3" },
+    ]);
+  });
+
+  test("a changed plan in --yes mode stops before another preview or apply", async () => {
+    const f = adopting({ yes: true });
+    const stale = () =>
+      Response.json({ error: "plan-stale", ...plan("zzz-1") }, { status: 409 });
+    f.state.adoptReplies.push(() => Response.json(plan("abc-2")), stale);
+    f.state.adoptReplies.push(() => Response.json(plan("def-3")), stale);
+    expect(await f.adapter.act!(f.ctx, f.journal, f.stop.signal)).toEqual({
+      state: "waiting",
+      reason: "workflow_plan_changed",
+    });
+    expect(f.state.adoptBodies).toHaveLength(2);
+  });
+
+  test("a non-admin refusal from the server is kept and nothing is applied", async () => {
+    const asked: string[] = [];
+    const f = adopting({
+      confirm: async (key) => {
+        asked.push(key);
+        return true;
+      },
+    });
+    f.state.adoptReplies.push(() =>
+      Response.json(
+        {
+          error: "not-an-admin",
+          reason: "Adopting a workflow needs an admin of this workspace.",
+        },
+        { status: 403 },
+      ),
+    );
+    expect(await f.adapter.act!(f.ctx, f.journal, f.stop.signal)).toEqual({
+      state: "waiting",
+      reason: "workflow_admin_required",
+    });
+    expect(asked).toEqual([]);
+    expect(f.state.adoptBodies).toEqual([{ team, mode: "preview" }]);
+  });
+
+  test("a server without the adopt route keeps the plain unavailable reason and posts nothing", async () => {
+    const f = adopting({ yes: true });
+    f.state.adoptRoute = false;
+    expect(await f.adapter.act!(f.ctx, f.journal, f.stop.signal)).toEqual({
+      state: "waiting",
+      reason: "cloud_capability_unavailable",
+    });
+    expect(f.state.adoptBodies).toEqual([]);
+  });
+
+  test("the onboard engine runs check, the inline apply and the re-check to a done step", async () => {
+    const f = adopting({ yes: true });
+    f.ctx.stdout = () => {};
+    f.state.adoptReplies.push(() => Response.json(plan("abc-2")));
+    f.state.adoptReplies.push(applied(f, "abc-2"));
+    const statePath = onboardStatePath(f.home);
+    mkdirSync(dirname(statePath), { recursive: true });
+    writeFileSync(statePath, JSON.stringify(f.journal));
+    expect(
+      await cmdOnboard(
+        parseArgs(["onboard", "--only", "linear.adopt", "--yes"]),
+        f.ctx,
+        {
+          adapters: {
+            // Port the prerequisites; the workflow step is the real adapter.
+            signin: { check: async () => ({ state: "done" }) },
+            "linear.workspace": { check: async () => ({ state: "done" }) },
+            "linear.personal": { check: async () => ({ state: "done" }) },
+            "linear.team": {
+              check: async () => ({ state: "done", evidence: { team } }),
+            },
+            "linear.adopt": f.adapter,
+          },
+          bindSignals: false,
+        },
+        "0.14.6",
+      ),
+    ).toBe(0);
+    const saved = JSON.parse(readFileSync(statePath, "utf8")) as OnboardJournal;
+    expect(saved.steps.find((step) => step.id === "linear.adopt")).toMatchObject({
+      state: "done",
+      evidence: { team, count: 5 },
+    });
+    expect(f.state.adoptBodies.map((body) => body.mode)).toEqual([
+      "preview",
+      "apply",
+    ]);
+  });
+
+  test.each([
+    ["the approved apply", { team, mode: "apply", planHash: "abc-2" }, true],
+    ["a preview during apply", { team, mode: "preview" }, false],
+    ["another hash", { team, mode: "apply", planHash: "def-3" }, false],
+    ["another team", { team: "team-two", mode: "apply", planHash: "abc-2" }, false],
+    ["an extra field", { team, mode: "apply", planHash: "abc-2", undo: true }, false],
+  ] as const)("an apply session allows %s: %s", (_name, body, expected) => {
+    const allow = { mode: "apply", team, planHash: "abc-2" } as const;
+    expect(adoptRequestAllowed(JSON.stringify(body), team, allow)).toBe(expected);
+  });
+  test.each([
+    ["a preview", JSON.stringify({ team, mode: "preview" }), true],
+    ["an apply", JSON.stringify({ team, mode: "apply", planHash: "abc-2" }), false],
+    ["a non-string body", { team, mode: "preview" }, false],
+    ["broken JSON", "{", false],
+  ] as const)("a preview session allows %s: %s", (_name, body, expected) => {
+    expect(adoptRequestAllowed(body, team, { mode: "preview" })).toBe(expected);
+  });
+  test("an apply approved for one team cannot post for a team selected since", async () => {
+    const f = adopting({
+      confirm: async () => {
+        f.journal.steps = [
+          { id: "linear.team", state: "done", evidence: { team: "team-two" } },
+        ];
+        return true;
+      },
+    });
+    f.state.adoptReplies.push(() => Response.json(plan("abc-2")));
+    expect(await f.adapter.act!(f.ctx, f.journal, f.stop.signal)).toEqual({
+      state: "waiting",
+      reason: "workflow_identity_unverified",
+    });
+    expect(f.state.adoptBodies).toEqual([{ team, mode: "preview" }]);
+  });
+  test("a revoked key during preview asks for a new login", async () => {
+    const f = adopting({ yes: true });
+    f.state.adoptReplies.push(() =>
+      Response.json({ error: "unauthorized" }, { status: 401 }),
+    );
+    expect(await f.adapter.act!(f.ctx, f.journal, f.stop.signal)).toEqual({
+      state: "waiting",
+      reason: "workflow_login_refresh_required",
+    });
+  });
+
+  test("plan lines drop terminal controls from Linear names and bound long lists", () => {
+    const value = plan("abc-2");
+    value.stages = [
+      { name: "Re\u001b[2Jsearch", type: "started", outcome: "would-create" },
+      ...Array.from({ length: 14 }, (_, n) => ({
+        name: `Stage ${n}`,
+        type: "started",
+        outcome: "already-present",
+        stateId: `s-${n}`,
+      })),
+    ];
+    value.labels = [];
+    const lines = adoptPlanLines(value);
+    expect(lines[0]).toBe("Create stages: Re[2Jsearch");
+    expect(lines[1]).toMatch(/^Keep existing stages: Stage 0, .*, Stage 9, and 4 more$/);
+    expect(lines.join("\n")).not.toContain("\u001b");
+    expect(
+      adoptPlanLines({
+        stages: [{ name: "Plan\u202e\u200b\ufeff", type: "started", outcome: "would-create" }],
+        labels: [],
+      }),
+    ).toEqual(["Create stages: Plan"]);
+  });
+});
+
+
+test("stale or unknown existing workflow checks never trigger adoption", async () => {
+  const f = fixture({ yes: true });
+  f.state.workflow.readiness.checkedAt = f.state.now - 300_001;
+  expect(await f.run()).toMatchObject({ state: "waiting", reason: "workflow_mapping_unverified" });
+  expect(f.state.adoptBodies).toEqual([]);
+});

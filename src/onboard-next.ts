@@ -137,12 +137,21 @@ const REASONS: Record<string, string> = {
     "Settings still need review and approval; kept drafts do not count. Settings are optional for a first ticket. To finish them later, run catalyst onboard from the repository's checkout.",
   repository_selection_unverified:
     "Your selected repositories could not be verified. Run catalyst onboard --repo <owner/name> to choose again.",
+  workflow_adoption_declined:
+    "Skipped for now. Run catalyst onboard to review the changes again.",
   workflow_identity_unverified:
     "Setup could not confirm the signed-in workspace, person or role for this team. Run catalyst onboard again as a workspace owner or administrator.",
   workflow_login_refresh_required:
     "Renew your login with catalyst login, then run catalyst onboard.",
   workflow_mapping_changed:
     "The team's workflow changed while setup checked it. Run catalyst onboard again.",
+  workflow_admin_required:
+    "Applying the Catalyst workflow needs a workspace owner or administrator. Ask one to run catalyst onboard for this team.",
+  workflow_plan_changed:
+    "The team's Linear workflow changed while setup was applying it. Run catalyst onboard again to see the new plan.",
+  verification_pending:
+    "Setup made the change but could not confirm it yet. Run catalyst onboard again to check.",
+  automations_compatible: "Nothing to change.",
   workflow_unavailable:
     "Setup could not read the team's workflow. Run catalyst onboard again to retry.",
   capacity_admission_unverified:
@@ -250,6 +259,28 @@ export function onboardReasonText(
       ? `at ${normalizeBaseUrl(context.baseUrl)}/settings/coding-accounts, the Settings → AI accounts page`
       : "in the web app on the Settings → AI accounts page";
     return `No coding account is enrolled. A workspace owner or administrator adds one ${where}. A Claude account needs its email and the token printed by \`claude setup-token\`. Then run catalyst onboard.`;
+  }
+  if (reason === "automation_management_unavailable") {
+    const conflicts =
+      typeof step.evidence?.automations === "string" &&
+      /^(?:open|review|ready|merge)(?:,(?:open|review|ready|merge))*$/.test(
+        step.evidence.automations,
+      );
+    if (!conflicts)
+      return "could not read them; checked again before work starts";
+    const key = onboardTeamKey(context.journal);
+    const workspace = context.journal?.steps.find(
+      (row) => row.id === "linear.workspace" && row.state === "done",
+    );
+    const slug = workspace?.evidence?.workspaceSlug;
+    if (
+      key &&
+      /^[A-Za-z0-9][A-Za-z0-9-]*$/.test(key) &&
+      typeof slug === "string" &&
+      /^[A-Za-z0-9][A-Za-z0-9-]*$/.test(slug)
+    )
+      return `Open https://linear.app/${slug}/settings/teams/${key}/workflow and set each pull request automation to No action.`;
+    return `Open your ${key ? `${key} team's` : "team's"} workflow settings in Linear and set each pull request automation to No action.`;
   }
   if (reason === "cloud_capability_unavailable") {
     // The capability guard records the web page in evidence.path only when it printed it.
