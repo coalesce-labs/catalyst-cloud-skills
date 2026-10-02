@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.14.9
+
+- Onboarding's workflow step passes on Linear teams that have the built-in Duplicate state. Before, it waited even after the team was adopted.
+- While an earlier setup step still waits, for example for a coding account, the readiness step waits too instead of reporting a failure.
+
 ## 0.14.8
 
 - Onboarding on a computer with no browser, such as a Docker container, prints the Catalyst page that finishes each Linear and GitHub approval and keeps waiting, instead of stopping.
