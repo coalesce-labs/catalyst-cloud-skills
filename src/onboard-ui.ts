@@ -12,6 +12,7 @@ import {
   ONBOARD_TITLES,
   onboardIdentityLines,
   onboardNextActions,
+  onboardReadyForWork,
   onboardStepAction,
   type OnboardIdentity,
   type OnboardJournal,
@@ -327,6 +328,12 @@ export function createClackOnboardUi(
           "Setup paused. Your progress is saved.\nresume: catalyst onboard";
       else if (journal.complete && journal.exit === 0 && !only)
         text = "Onboarding complete.";
+      else if (onboardReadyForWork(journal, only))
+        text = [
+          "Ready for work.",
+          "Next, when you want:",
+          ...onboardNextActions(journal, deps.baseUrl?.()),
+        ].join("\n");
       else if (only && journal.exit === 0)
         text = `${ONBOARD_TITLES[only]} finished. Onboarding still has other steps.\nresume: catalyst onboard`;
       prompts.outro(text, { output: streams.output });
