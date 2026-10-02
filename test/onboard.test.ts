@@ -26,6 +26,7 @@ import type { OnboardUi } from "../src/onboard-ui.js";
 import { main } from "../src/cli.js";
 import {
   cmdOnboard,
+  ONBOARD_STEPS,
   onboardLockPath,
   onboardStatePath,
   readOnboardJournal,
@@ -453,6 +454,80 @@ function q1Fixture() {
     counts: () => ({ acceptCalls, stageCalls, actions }),
   };
 }
+
+describe("plain finish names what is left (CTC-4477)", () => {
+  const run = async (waits: Partial<Record<string, string>>) => {
+    const path = home();
+    writeConfig(path, {
+      baseUrl: "https://cloud.example.dev/",
+      account: "tenant-a",
+      slug: "tenant-a",
+      name: "tenant-a",
+      permissions: null,
+      principal: "session",
+      key: "personal-key",
+      joinedAt: "2026-09-30T13:00:00.000Z",
+      lastSkillBundleVersion: "0.14.0",
+    });
+    const output: string[] = [];
+    const adapters: NonNullable<OnboardDeps["adapters"]> = Object.fromEntries(
+      ONBOARD_STEPS.map((id) => [
+        id,
+        {
+          check: async () =>
+            id === "linear.team"
+              ? {
+                  state: "done" as const,
+                  evidence: { team: "team-1", teamKey: "ENG" },
+                }
+              : waits[id]
+                ? { state: "waiting" as const, reason: waits[id] }
+                : { state: "done" as const },
+        },
+      ]),
+    );
+    const code = await cmdOnboard(
+      parseArgs(["onboard", "--yes"]),
+      context(path, output),
+      { adapters, bindSignals: false },
+      "0.14.0",
+    );
+    return { code, text: output.join("\n") };
+  };
+
+  test("--yes lists each unfinished step with its action and keeps the waiting exit", async () => {
+    const { code, text } = await run({
+      accounts: "account_enrollment_required",
+      capacity: "capacity_admission_unverified",
+      housekeeping: "housekeeping_service_unverified",
+    });
+    expect(code).toBe(11);
+    expect(text).toContain("Setup still needs 4 checks.");
+    expect(text).toContain(
+      "Check coding accounts: No coding account is enrolled.",
+    );
+    expect(text).toContain(
+      "https://cloud.example.dev/settings/coding-accounts",
+    );
+    expect(text).toContain("Check runner capacity: No runner is allowed");
+    expect(text).toContain("Schedule the daily update: ");
+    expect(text).toContain('Start a first ticket: Runs after "Check coding accounts".');
+    expect(text).not.toContain("Onboarding complete");
+    expect(text).not.toContain("Move a ticket");
+    expect(text).toContain("resume: catalyst onboard");
+  });
+
+  test("--yes says a first ticket can start once its work prerequisites are done", async () => {
+    const { code, text } = await run({
+      housekeeping: "housekeeping_service_unverified",
+    });
+    expect(code).toBe(11);
+    expect(text).toContain(
+      "Move a ticket in ENG to Todo; `catalyst explain <ticket>` says why it is or is not starting.",
+    );
+    expect(text).not.toContain("Onboarding complete");
+  });
+});
 
 describe("fresh Q1 follows staged identity once", () => {
   function fresh() {
