@@ -329,8 +329,10 @@ export function createClackOnboardUi(
           "Renew your login with catalyst login, then run catalyst onboard to resume.",
         personal_status_unavailable:
           "Your personal connection could not be checked. Run catalyst onboard to try again.",
+        workspace_browser_unavailable:
+          "This computer could not open a browser. Connect Linear from this workspace’s Integrations page in your browser, then run catalyst onboard to resume.",
         personal_browser_unavailable:
-          "The browser could not open. Run catalyst onboard to try again.",
+          "This computer could not open a browser. Finish this login’s connection from Connected accounts in your browser, then run catalyst onboard to resume.",
         cloud_capability_unavailable:
           "This setup step is not available on this server yet. Use the web app link shown above, then resume after the server update.",
         onboarding_capability_unavailable:
@@ -356,7 +358,7 @@ export function createClackOnboardUi(
         github_installation_login_refresh_required:
           "Your login needs a refresh. Run catalyst onboard to resume.",
         github_installation_browser_unavailable:
-          "The GitHub App approval page could not be opened. Use your workspace's Connections page, then resume.",
+          "This computer could not open a browser. Install the GitHub App from this workspace’s Integrations page in your browser, then run catalyst onboard to resume.",
         step_not_available_in_this_release:
           "This setup step is not available yet.",
         prerequisite_not_ready: "Waiting for an earlier setup step.",

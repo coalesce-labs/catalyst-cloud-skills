@@ -1,3 +1,4 @@
+import { finishOnTheWeb } from "./consent-browser.js";
 import {
   loadConfig,
   normalizeBaseUrl,
@@ -30,7 +31,7 @@ const same = (a: CustomerConfig, b?: CustomerConfig | null) =>
 
 export interface PersonalConsentOptions {
   provider: Provider;
-  openBrowser: (url: string) => void;
+  openBrowser: (url: string, signal?: AbortSignal) => void | Promise<void>;
   wait?: <T>(message: string, work: () => Promise<T>) => Promise<T>;
   sleep?: (ms: number) => Promise<void>;
   requestTimeoutMs?: number;
@@ -264,10 +265,13 @@ export function personalConsentAdapter(
       const name = options.provider === "linear" ? "Linear" : "GitHub";
       ctx.stderr(`Approve your personal ${name} connection in the browser.`);
       // Signed continuation credentials belong only to the browser, never transcript or journal.
+      let browserUnavailable = false;
       try {
-        options.openBrowser(url);
+        await options.openBrowser(url, signal);
       } catch {
-        return waiting("personal_browser_unavailable");
+        if (signal?.aborted) return waiting("interrupted");
+        browserUnavailable = true;
+        ctx.stderr(finishOnTheWeb(cfg.baseUrl, "connected-accounts", `connect your ${name} account`));
       }
       let latest: OnboardStepResult = waiting("personal_status_unavailable");
       const run = () =>
@@ -290,7 +294,10 @@ export function personalConsentAdapter(
       const result = options.wait
         ? await options.wait(`Waiting for your ${name} approval`, run)
         : await run();
-      return result.state === "done" ? latest : result;
+      if (result.state === "done") return latest;
+      return browserUnavailable && result.reason === "consent_timeout"
+        ? waiting("personal_browser_unavailable")
+        : result;
     },
   };
 }
