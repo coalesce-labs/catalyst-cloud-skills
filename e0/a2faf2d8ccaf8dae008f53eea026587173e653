@@ -1,0 +1,6 @@
+Revision history for #217:
+
+rev 2 (content) 2026-10-02 03:00 UTC — Rebased onto main after #215 merged; kept #215's no-browser tests and this PR's login-expiry tests side by side. Focused 175 tests and typecheck pass.
+rev 1 (initial) 2026-10-02 03:00 UTC
+
+<!-- mergify-revision-data: {"schema_version":1,"pull_number":217,"entries":[{"number":1,"change_type":"initial","old_sha":null,"new_sha":"588e264959da90063215b6814b0c25bf3b08ca88","timestamp_iso":"2026-10-02T03:00:01Z","reason":"","replay_sha":null,"compare_url":null},{"number":2,"change_type":"content","old_sha":"588e264959da90063215b6814b0c25bf3b08ca88","new_sha":"f05cc9ada0e366b967576324b5acc826f11be8b7","timestamp_iso":"2026-10-02T03:00:01Z","reason":"Rebased onto main after #215 merged; kept #215's no-browser tests and this PR's login-expiry tests side by side. Focused 175 tests and typecheck pass.","replay_sha":null,"compare_url":"https://github.com/coalesce-labs/catalyst-cloud-skills/compare/588e264959da90063215b6814b0c25bf3b08ca88...f05cc9ada0e366b967576324b5acc826f11be8b7"}]} -->
