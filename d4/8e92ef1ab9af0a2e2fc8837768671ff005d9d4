@@ -1,0 +1,1 @@
+Keep successful connection grants out of the default outcome; show permission details only with onboard --verbose
