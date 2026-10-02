@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.14.8
+
+- Onboarding on a computer with no browser, such as a Docker container, prints the Catalyst page that finishes each Linear and GitHub approval and keeps waiting, instead of stopping.
+- Onboarding accepts cloud repository IDs such as `tenant-9:owner__repo`, so registering a project no longer fails on them.
+- When the sign-in expires during a provider approval, onboarding stops and says to run `catalyst login`, instead of waiting for the approval to time out.
+- Steps that wait name the next action and the page to use, and the end of a run lists what is left.
+- `catalyst login` says the browser opened only when it did.
+- Onboarding finishes once everything work needs is in place. Repository settings, values and the daily update are listed as next steps instead of blocking.
+
 ## 0.14.7
 
 - Setup uses cloud reads by default and offers local sync as an option. Onboarding preserves verified account and repository choices when it resumes.
