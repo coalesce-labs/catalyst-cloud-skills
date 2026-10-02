@@ -283,6 +283,8 @@ export function personalConsentAdapter(
             latest = await inspect(ctx, journal, pollSignal);
             if (latest.reason === "cloud_capability_unavailable")
               return { outcome: "waiting", reason: latest.reason };
+            if (latest.reason === "personal_login_refresh_required")
+              return { outcome: "waiting", reason: latest.reason };
             if (latest.state === "done") return { outcome: "connected" };
             if (latest.state === "refused" || latest.state === "failed")
               return { outcome: latest.state, reason: latest.reason };

@@ -60,6 +60,29 @@ function context(path: string, output: string[] = [], errors: string[] = []) {
 }
 
 describe("catalyst onboard", () => {
+  test("a refresh-required step saves its cause and stops before later adapters", async () => {
+    const path = home();
+    let laterChecks = 0;
+    const done = { check: async () => ({ state: "done" as const }) };
+    const code = await cmdOnboard(parseArgs(["onboard", "--yes"]), context(path), {
+      bindSignals: false,
+      adapters: {
+        machine: done, cli: done, skills: done, legacy: done, signin: done,
+        "linear.workspace": { check: async () => ({ state: "waiting", reason: "workspace_login_refresh_required" }) },
+        // GitHub install depends only on sign-in, so base code would enter it
+        // even after the Linear workspace step asks for a refreshed login.
+        "github.install": { check: async () => { laterChecks++; return { state: "pending" }; } },
+      },
+    }, "0.14.7");
+    expect(code).toBe(11);
+    expect(laterChecks).toBe(0);
+    const journal = readOnboardJournal(onboardStatePath(path), "0.14.7");
+    expect(journal?.steps.find(step => step.id === "linear.workspace")).toMatchObject({ state: "waiting", reason: "workspace_login_refresh_required" });
+    expect(journal?.steps.find(step => step.id === "github.install")).toMatchObject({ id: "github.install", state: "pending" });
+    expect(journal?.complete).toBe(false);
+    expect(existsSync(onboardLockPath(path))).toBe(false);
+  });
+
   test("JSON dry run prints one plan object and creates no state or lock", async () => {
     const path = home();
     const output: string[] = [];
