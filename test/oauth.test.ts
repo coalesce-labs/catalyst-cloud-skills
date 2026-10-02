@@ -88,8 +88,31 @@ describe("deviceFlowLogin", () => {
     server.oauth.pendingPolls = 0;
     const opened: string[] = [];
     const { sleep } = fakeSleep();
-    await deviceFlowLogin(ctx, server.url, { isTty: () => true, openBrowser: (u) => opened.push(u), sleep });
+    await deviceFlowLogin(ctx, server.url, { isTty: () => true, openBrowser: (u) => { opened.push(u); }, sleep });
     expect(opened).toEqual([`${server.url}/activate?user_code=WXYZ-1234`]);
+  });
+
+  it("claims an opened browser only when the opener succeeded (CTC-4477)", async () => {
+    server.oauth.pendingPolls = 0;
+    const { sleep } = fakeSleep();
+    await deviceFlowLogin(ctx, server.url, { isTty: () => true, openBrowser: async () => {}, sleep });
+    expect(ctx.out.join("\n")).toContain("Opened your browser to that page");
+    expect(ctx.out.join("\n")).not.toContain("Open the link above in a browser.");
+  });
+
+  it.each([
+    ["rejects", async () => { throw new Error("no opener"); }],
+    ["throws", () => { throw new Error("no opener"); }],
+    ["is missing", undefined],
+  ] as const)("a TTY whose opener %s says to open the link, and still prints the code and link (CTC-4477)", async (_name, openBrowser) => {
+    server.oauth.pendingPolls = 0;
+    const { sleep } = fakeSleep();
+    await deviceFlowLogin(ctx, server.url, { isTty: () => true, ...(openBrowser ? { openBrowser } : {}), sleep });
+    const printed = ctx.out.join("\n");
+    expect(printed).not.toContain("Opened your browser");
+    expect(printed).toContain("Open the link above in a browser.");
+    expect(printed).toContain("WXYZ-1234");
+    expect(printed).toContain(`${server.url}/activate?user_code=WXYZ-1234`);
   });
 
   it("stops on access_denied with a named CliError and never loops", async () => {
@@ -155,7 +178,7 @@ describe("deviceFlowLogin", () => {
       server.oauth.omitVerificationUriComplete = true;
       const opened: string[] = [];
       const { sleep } = fakeSleep();
-      await deviceFlowLogin(ctx, server.url, { isTty: () => true, openBrowser: (u) => opened.push(u), sleep });
+      await deviceFlowLogin(ctx, server.url, { isTty: () => true, openBrowser: (u) => { opened.push(u); }, sleep });
       const printed = ctx.out.join("\n");
       expect(printed).not.toContain("Or open this link");
       expect(printed).toContain(`${server.url}/activate`);
@@ -166,7 +189,7 @@ describe("deviceFlowLogin", () => {
       server.oauth.expireNextCodes = 2;
       const opened: string[] = [];
       const { sleep } = fakeSleep();
-      await deviceFlowLogin(ctx, server.url, { isTty: () => true, openBrowser: (u) => opened.push(u), sleep });
+      await deviceFlowLogin(ctx, server.url, { isTty: () => true, openBrowser: (u) => { opened.push(u); }, sleep });
       expect(opened).toEqual([
         `${server.url}/activate?user_code=WXYZ-1234`,
         `${server.url}/activate?user_code=WXYZ-1235`,
@@ -178,7 +201,7 @@ describe("deviceFlowLogin", () => {
       server.oauth.expireNextCodes = 2;
       const opened: string[] = [];
       const { sleep } = fakeSleep();
-      await deviceFlowLogin(ctx, server.url, { isTty: () => false, openBrowser: (u) => opened.push(u), sleep });
+      await deviceFlowLogin(ctx, server.url, { isTty: () => false, openBrowser: (u) => { opened.push(u); }, sleep });
       expect(opened).toEqual([]);
     });
 

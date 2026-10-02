@@ -34,7 +34,8 @@ export interface DeviceFlowDeps {
   waitForApproval?: <T>(run: () => Promise<T>) => Promise<T>;
   /** Whether a terminal is attached — a TTY gets its browser opened at the completion URL. */
   isTty?: () => boolean;
-  openBrowser?: (url: string) => void;
+  /** Throws or rejects when no browser opened, so login never claims one. */
+  openBrowser?: (url: string) => void | Promise<void>;
   /** Injected so tests never wait on the wall clock. */
   sleep?: (ms: number) => Promise<void>;
 }
@@ -240,7 +241,8 @@ export async function deviceFlowLogin(
       );
     if (round === 1 ? (deps.isTty ?? (() => false))() : browserOpened) {
       try {
-        (deps.openBrowser ?? (() => {}))(
+        if (!deps.openBrowser) throw new Error("browser-unavailable");
+        await deps.openBrowser(
           auth.verification_uri_complete ?? auth.verification_uri,
         );
         browserOpened = true;
@@ -249,6 +251,7 @@ export async function deviceFlowLogin(
         );
       } catch {
         // a browser that will not open is not a failure; the code and URL still work
+        ctx.stdout("Open the link above in a browser.");
       }
     }
     ctx.stdout("Waiting for you to approve… (Ctrl-C to cancel)");
