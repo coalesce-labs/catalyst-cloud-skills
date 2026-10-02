@@ -1,1 +1,6 @@
-Address uncertain-create review: unnamed responses retain key, persist before send, preserve SIGINT recovery, and retain key when resuming naming
+Revision history for #240:
+
+rev 2 (content) 2026-10-02 16:11 UTC — Address uncertain-create review: unnamed responses retain key, persist before send, preserve SIGINT recovery, and retain key when resuming naming
+rev 1 (initial) 2026-10-02 16:11 UTC
+
+<!-- mergify-revision-data: {"schema_version":1,"pull_number":240,"entries":[{"number":1,"change_type":"initial","old_sha":null,"new_sha":"15f862cf708209b657c3d71b876c84a1d335bd84","timestamp_iso":"2026-10-02T16:11:01Z","reason":"","replay_sha":null,"compare_url":null},{"number":2,"change_type":"content","old_sha":"15f862cf708209b657c3d71b876c84a1d335bd84","new_sha":"cfd2de11cb1965f8a63037b04c453a6f1bba02b4","timestamp_iso":"2026-10-02T16:11:01Z","reason":"Address uncertain-create review: unnamed responses retain key, persist before send, preserve SIGINT recovery, and retain key when resuming naming","replay_sha":null,"compare_url":"https://github.com/coalesce-labs/catalyst-cloud-skills/compare/15f862cf708209b657c3d71b876c84a1d335bd84...cfd2de11cb1965f8a63037b04c453a6f1bba02b4"}]} -->
