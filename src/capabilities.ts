@@ -17,6 +17,8 @@ export interface Capability {
   bootstrapHandoff?: boolean;
   /** CTC-4625: the install engine's event protocol `setup` speaks; install.sh checks it before use. */
   engineProtocol?: number;
+  /** `onboard --headless`: inputs by flag, env or file; no prompt, no browser (CTC-4633). */
+  headless?: boolean;
   /** The verb as typed after `catalyst`. */
   verb: string;
   /** One line a guide can say to the person. */
@@ -35,7 +37,7 @@ const agent = (method: "GET" | "POST", name: string) => ({ method, path: `/api/v
  *  in the same change, or `catalyst capabilities` lies to every guide that reads it. */
 export const CAPABILITIES: readonly Capability[] = [
   { verb: "setup", does: "show install.sh's plan, progress and sign-in in this terminal, and ask its questions", needs: "member", routes: [], since: "0.15.0", engineProtocol: 1 },
-  { verb: "onboard", does: "run and resume Catalyst setup with a saved step record", needs: "member", routes: [], since: "0.14.0", bootstrapHandoff: true },
+  { verb: "onboard", does: "run and resume Catalyst setup with a saved step record", needs: "member", routes: [], since: "0.14.0", bootstrapHandoff: true, headless: true },
   { verb: "status", does: "say whether this machine is connected, as whom, and to which cloud", needs: "member", routes: [], since: "0.1.0" },
   { verb: "me", does: "read the person's seat, role and Linear identity", needs: "member", routes: [], since: "0.1.0" },
   { verb: "ready", does: "read the machine and the workspace's per-project readiness in one verdict", needs: "member", routes: [], since: "0.1.0" },
