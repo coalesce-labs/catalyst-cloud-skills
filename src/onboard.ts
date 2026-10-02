@@ -437,6 +437,8 @@ function normalizeStep(value: unknown, fallbackAt: string): OnboardStep | null {
     "capacity",
     "failing",
     "image",
+    "automations",
+    "workspaceSlug",
   ] as const) {
     const item = evidence?.[key];
     if (

@@ -3,7 +3,18 @@ import { readFileSync } from "node:fs";
 import { configPathFor, loadConfig, normalizeBaseUrl } from "./config.js";
 import { verifyOnboardRoutes } from "./onboard-capabilities.js";
 import { selectedOnboardTeam } from "./onboard-existing.js";
-import type { OnboardAdapter, OnboardStepResult } from "./onboard.js";
+import type {
+  TeamAdoptResult,
+  TeamWorkflowFailure,
+  TenantClient,
+} from "@catalyst-cloud/sdk";
+import { onboardTeamKey } from "./onboard-next.js";
+import type {
+  OnboardAdapter,
+  OnboardJournal,
+  OnboardStepResult,
+} from "./onboard.js";
+import type { Ctx } from "./config.js";
 import { ownedFetch } from "./owned-fetch.js";
 import { loadHttpSdk } from "./sdk.js";
 import { fetchMe } from "./transport.js";
@@ -47,7 +58,16 @@ interface WorkflowObservation {
   readinessRevision: number;
   checkedAt: number;
   mappedSlots: number;
+  /** Cloud readiness's four pull request automation checks: "none" when all pass, the conflicting
+   * events when any fail, absent when any is unknown or missing. */
+  automations?: string;
 }
+const automationChecks = [
+  ["open", "linear_automation_pr_open"],
+  ["review", "linear_automation_pr_review"],
+  ["ready", "linear_automation_pr_ready"],
+  ["merge", "linear_automation_pr_merge"],
+] as const;
 
 /** Existing mappings can satisfy this step by observation. This never means a preview was applied. */
 export function observeOnboardWorkflow(
@@ -153,217 +173,420 @@ export function observeOnboardWorkflow(
     ].some((check) => checks.get(check) !== "pass")
   )
     return null;
+  const automations = automationChecks.map(([event, check]) => [
+    event,
+    checks.get(check),
+  ]);
+  const conflicts = automations
+    .filter(([, state]) => state === "fail")
+    .map(([event]) => event);
   return {
     mappingHash: row.mappingHash,
     mappingRevision: config.workflowRev,
     readinessRevision: readiness.workflowRev,
     checkedAt: readiness.checkedAt,
     mappedSlots: [...mapping.values()].filter((value) => value !== null).length,
+    ...(automations.every(([, state]) => state === "pass" || state === "fail")
+      ? { automations: conflicts.length ? conflicts.join(",") : "none" }
+      : {}),
   };
 }
 
-/** HTTP only, without rotating credentials or calling adopt/apply. Every entered fetch/body joins. */
-export function onboardWorkflowVerificationAdapter(
-  input: { message?: (text: string) => void } = {},
-): OnboardAdapter {
-  return {
-    check: async (ctx, journal, external) => {
-      let cfg: ReturnType<typeof loadConfig>;
-      try {
-        cfg = loadConfig(ctx.home);
-      } catch {
-        return waiting("workflow_identity_unverified");
-      }
-      const team = selectedOnboardTeam(journal);
-      if (
-        !team ||
-        !cfg?.user ||
-        (cfg.user.role !== "owner" && cfg.user.role !== "admin") ||
-        cfg.account !== (journal.account ?? journal.tenant) ||
-        cfg.user.id !== journal.membershipId ||
-        !journal.baseUrl ||
-        normalizeBaseUrl(cfg.baseUrl) !== normalizeBaseUrl(journal.baseUrl)
-      )
-        return waiting("workflow_identity_unverified");
-      const origin = normalizeBaseUrl(cfg.baseUrl),
-        person = cfg.user.id,
-        role = cfg.user.role;
-      let url: URL;
-      try {
-        url = new URL(origin);
-      } catch {
-        return waiting("workflow_identity_unverified");
-      }
-      if (
-        url.protocol !== "https:" ||
-        url.origin !== origin ||
-        url.username ||
-        url.password
-      )
-        return waiting("workflow_identity_unverified");
-      const credential =
-        cfg.key ||
-        (cfg.auth &&
-        Date.parse(cfg.auth.expiresAt) - ctx.now().getTime() > 30_000
-          ? cfg.auth.accessToken
-          : undefined);
-      if (!credential) return waiting("workflow_login_refresh_required");
-      const configWitness = () =>
-        createHash("sha256")
-          .update(readFileSync(configPathFor(ctx.home)))
-          .digest("hex");
-      let before: string;
-      try {
-        before = configWitness();
-      } catch {
-        return waiting("workflow_identity_unverified");
-      }
-      const current = () => {
-        try {
-          const now = loadConfig(ctx.home);
-          return (
-            now?.user?.id === person &&
-            now.user.role === role &&
-            now.account === cfg.account &&
-            normalizeBaseUrl(now.baseUrl) === origin &&
-            configWitness() === before &&
-            selectedOnboardTeam(journal) === team &&
-            (!!cfg.key ||
-              (!!cfg.auth &&
-                Date.parse(cfg.auth.expiresAt) > ctx.now().getTime()))
-          );
-        } catch {
-          return false;
-        }
-      };
-      const deadline = new AbortController();
-      const timer = setTimeout(() => deadline.abort(), 30_000);
-      const signal = external
-        ? AbortSignal.any([external, deadline.signal])
-        : deadline.signal;
-      const owned = ownedFetch(ctx.fetch, signal, { maxBodyBytes: 524_288 });
-      const read: typeof fetch = (request, init) => {
-        if (!current() || signal.aborted)
-          return Promise.reject(new Error("workflow_read_stopped"));
-        const requested = new URL(
-          request instanceof Request ? request.url : String(request),
-        );
-        const method =
-          init?.method ?? (request instanceof Request ? request.method : "GET");
-        if (
-          method !== "GET" ||
-          requested.origin !== origin ||
-          requested.username ||
-          requested.password ||
-          requested.hash ||
-          !["/api/v1/me", "/api/v1/agent/contract", path].includes(
-            requested.pathname,
-          ) ||
+const label = (text: string) =>
+  text
+    .replace(
+      /[\u0000-\u001f\u007f-\u009f\u200b-\u200f\u2028-\u202e\u2066-\u2069\ufeff]/g,
+      "",
+    )
+    .trim()
+    .slice(0, 80);
+const listed = (names: readonly string[]) =>
+  names.length > 10
+    ? `${names.slice(0, 10).join(", ")}, and ${names.length - 10} more`
+    : names.join(", ");
+
+/** The adopt preview in plain words: stages and labels it creates or keeps. Linear's names are data. */
+export function adoptPlanLines(
+  plan: Pick<TeamAdoptResult, "stages" | "labels"> & Partial<Pick<TeamAdoptResult, "mode" | "unfilledLoadBearing" | "provenanceGaps" | "labelProvenanceGaps" | "labelsNotCreated">>,
+): string[] {
+  const group = (
+    rows: readonly { name: string; outcome: string }[],
+    outcome: string,
+  ) => rows.filter((row) => row.outcome === outcome).map((row) => label(row.name));
+  return (
+    [
+      ["Create stages", group(plan.stages, "would-create")],
+      ["Keep existing stages", group(plan.stages, "already-present")],
+      ["Linear refused stages", group(plan.stages, "refused")],
+      ["Create labels", group(plan.labels, "would-create")],
+      ["Labels already present", group(plan.labels, "already-present")],
+      ["Linear refused labels", group(plan.labels, "refused")],
+    ] as const
+  )
+    .filter(([, names]) => names.length > 0)
+    .map(([title, names]) => `${title}: ${listed(names)}`)
+    .concat(
+      
+      plan.unfilledLoadBearing?.length ? [`Required work stages still missing: ${plan.unfilledLoadBearing.length}`] : [],
+      (plan.provenanceGaps?.length ?? 0) + (plan.labelProvenanceGaps?.length ?? 0) ? ["Some existing states or labels have no recorded creator; setup keeps them"] : [],
+      plan.labelsNotCreated?.length ? [`Labels that cannot be added: ${plan.labelsNotCreated.length}`] : [],
+    );
+}
+
+type WorkflowClient = TenantClient["teamWorkflow"];
+/** What one adopt session may post: a preview, or the apply of the exact plan the person approved. */
+export type AdoptAllow =
+  | { mode: "preview" }
+  | { mode: "apply"; team: string; planHash: string };
+
+/** The only adopt bodies setup sends: this team, and the approved mode and hash. */
+export function adoptRequestAllowed(
+  body: unknown,
+  team: string,
+  allow: AdoptAllow,
+): boolean {
+  if (typeof body !== "string") return false;
+  try {
+    const sent = object(JSON.parse(body));
+    return (
+      !!sent &&
+      sent.team === team &&
+      sent.mode === allow.mode &&
+      Object.keys(sent).length === (allow.mode === "apply" ? 3 : 2) &&
+      (allow.mode === "preview" ||
+        (allow.team === team && sent.planHash === allow.planHash))
+    );
+  } catch {
+    return false;
+  }
+}
+interface WorkflowSession {
+  team: string;
+  client: WorkflowClient;
+  live: () => Promise<boolean>;
+}
+
+/** One bounded, identity-pinned exchange. Reads are GETs on the workflow, /me and the contract;
+ * `adopt` also allows the one POST it names to the adopt route, the same route `catalyst team adopt`
+ * uses. No credential rotation, no config write. Every entered fetch/body joins before return. */
+async function workflowSession(
+  ctx: Ctx,
+  journal: OnboardJournal,
+  external: AbortSignal | undefined,
+  adopt: AdoptAllow | null,
+  run: (session: WorkflowSession) => Promise<OnboardStepResult>,
+  announce?: () => void,
+): Promise<OnboardStepResult> {
+  let cfg: ReturnType<typeof loadConfig>;
+  try {
+    cfg = loadConfig(ctx.home);
+  } catch {
+    return waiting("workflow_identity_unverified");
+  }
+  const team = selectedOnboardTeam(journal);
+  if (
+    !team ||
+    !cfg?.user ||
+    (cfg.user.role !== "owner" && cfg.user.role !== "admin") ||
+    cfg.account !== (journal.account ?? journal.tenant) ||
+    cfg.user.id !== journal.membershipId ||
+    !journal.baseUrl ||
+    normalizeBaseUrl(cfg.baseUrl) !== normalizeBaseUrl(journal.baseUrl)
+  )
+    return waiting("workflow_identity_unverified");
+  if (adopt?.mode === "apply" && adopt.team !== team)
+    return waiting("workflow_identity_unverified");
+  const origin = normalizeBaseUrl(cfg.baseUrl),
+    person = cfg.user.id,
+    role = cfg.user.role;
+  let url: URL;
+  try {
+    url = new URL(origin);
+  } catch {
+    return waiting("workflow_identity_unverified");
+  }
+  if (
+    url.protocol !== "https:" ||
+    url.origin !== origin ||
+    url.username ||
+    url.password
+  )
+    return waiting("workflow_identity_unverified");
+  const credential =
+    cfg.key ||
+    (cfg.auth && Date.parse(cfg.auth.expiresAt) - ctx.now().getTime() > 30_000
+      ? cfg.auth.accessToken
+      : undefined);
+  if (!credential) return waiting("workflow_login_refresh_required");
+  const configWitness = () =>
+    createHash("sha256")
+      .update(readFileSync(configPathFor(ctx.home)))
+      .digest("hex");
+  let before: string;
+  try {
+    before = configWitness();
+  } catch {
+    return waiting("workflow_identity_unverified");
+  }
+  const current = () => {
+    try {
+      const now = loadConfig(ctx.home);
+      return (
+        now?.user?.id === person &&
+        now.user.role === role &&
+        now.account === cfg.account &&
+        normalizeBaseUrl(now.baseUrl) === origin &&
+        configWitness() === before &&
+        selectedOnboardTeam(journal) === team &&
+        (!!cfg.key ||
+          (!!cfg.auth && Date.parse(cfg.auth.expiresAt) > ctx.now().getTime()))
+      );
+    } catch {
+      return false;
+    }
+  };
+  const deadline = new AbortController();
+  const timer = setTimeout(() => deadline.abort(), 30_000);
+  const signal = external
+    ? AbortSignal.any([external, deadline.signal])
+    : deadline.signal;
+  const owned = ownedFetch(ctx.fetch, signal, { maxBodyBytes: 524_288 });
+  const read: typeof fetch = (request, init) => {
+    if (!current() || signal.aborted)
+      return Promise.reject(new Error("workflow_read_stopped"));
+    const requested = new URL(
+      request instanceof Request ? request.url : String(request),
+    );
+    const method =
+      init?.method ?? (request instanceof Request ? request.method : "GET");
+    const write =
+      !!adopt &&
+      method === "POST" &&
+      requested.pathname === `${path}/adopt` &&
+      requested.search === "" &&
+      !(request instanceof Request) &&
+      adoptRequestAllowed(init?.body, team, adopt);
+    if (
+      (method !== "GET" && !write) ||
+      requested.origin !== origin ||
+      requested.username ||
+      requested.password ||
+      requested.hash ||
+      (!write &&
+        (!["/api/v1/me", "/api/v1/agent/contract", path].includes(
+          requested.pathname,
+        ) ||
           (requested.pathname === path
             ? requested.search !== `?team=${encodeURIComponent(team)}`
-            : requested.search !== "")
-        )
-          return Promise.reject(new Error("workflow_read_scope"));
-        return owned.fetch(request, { ...init, signal, redirect: "error" });
-      };
-      const live = async () => {
-        const me = await fetchMe(origin, credential, read);
-        return (
-          current() &&
-          !signal.aborted &&
-          me.account === cfg.account &&
-          me.user?.id === person &&
-          me.user.role === role
-        );
-      };
-      const result = await (async (): Promise<OnboardStepResult> => {
-        try {
-          if (!(await live())) return waiting("workflow_identity_unverified");
-          const support = await verifyOnboardRoutes(
-            { ...ctx, fetch: read },
-            journal,
-            [{ method: "GET", path }],
-            signal,
-          );
-          if ("reason" in support) return waiting(support.reason);
-          if (!current() || signal.aborted)
-            return waiting("workflow_identity_unverified");
-          const sdk = await loadHttpSdk();
-          if (!current() || signal.aborted)
-            return waiting("workflow_identity_unverified");
-          const client = sdk.createTenantClient({
-            baseUrl: origin,
-            key: credential,
-            fetch: read,
-            timeoutMs: 30_000,
-            now: () => ctx.now().getTime(),
-          });
-          const first = await client.teamWorkflow.get(team);
-          const observed =
-            first.outcome === "ok"
-              ? observeOnboardWorkflow(first, team, ctx.now().getTime())
-              : null;
-          if (!observed || !current() || signal.aborted) {
-            input.message?.(
-              "Workflow adoption is waiting for a verified mapping or full-plan server support. Setup made no workflow change.",
-            );
-            return waiting("workflow_mapping_unverified");
-          }
-          if (!(await live())) return waiting("workflow_identity_unverified");
-          const last = await client.teamWorkflow.get(team);
-          const verified =
-            last.outcome === "ok"
-              ? observeOnboardWorkflow(last, team, ctx.now().getTime())
-              : null;
-          if (
-            !verified ||
-            verified.mappingHash !== observed.mappingHash ||
-            verified.mappingRevision !== observed.mappingRevision ||
-            verified.readinessRevision !== observed.readinessRevision ||
-            !current() ||
-            signal.aborted
+            : requested.search !== "")))
+    )
+      return Promise.reject(new Error("workflow_read_scope"));
+    return owned.fetch(request, { ...init, signal, redirect: "error" });
+  };
+  const live = async () => {
+    const me = await fetchMe(origin, credential, read);
+    return (
+      current() &&
+      !signal.aborted &&
+      me.account === cfg.account &&
+      me.user?.id === person &&
+      me.user.role === role
+    );
+  };
+  const result = await (async (): Promise<OnboardStepResult> => {
+    try {
+      if (!(await live())) return waiting("workflow_identity_unverified");
+      const support = await verifyOnboardRoutes(
+        { ...ctx, fetch: read },
+        journal,
+        [{ method: "GET", path }],
+        signal,
+      );
+      if ("reason" in support) return waiting(support.reason);
+      if (adopt) {
+        // Onboarding's own route list does not carry adopt; the tenant contract does, and it is the
+        // list `catalyst team adopt` requires before it posts.
+        const reply = await read(`${origin}/api/v1/agent/contract`, {
+          headers: {
+            authorization: `Bearer ${credential}`,
+            accept: "application/json",
+          },
+        });
+        const routes = reply.ok ? object(await reply.json())?.routes : null;
+        if (
+          !Array.isArray(routes) ||
+          !routes.some(
+            (route) =>
+              object(route)?.method === "POST" &&
+              object(route)?.path === `${path}/adopt`,
           )
-            return waiting("workflow_mapping_changed");
-          if (!(await live())) return waiting("workflow_identity_unverified");
-          if (!current() || signal.aborted)
-            return waiting("workflow_identity_unverified");
-          return {
-            state: "done",
-            evidence: {
-              team,
-              revision: verified.readinessRevision,
-              mappingRevision: verified.mappingRevision,
-              checkedAt: verified.checkedAt,
-              mappingHash: verified.mappingHash,
-              count: verified.mappedSlots,
-            },
-          };
-        } catch {
-          return waiting(
-            external?.aborted ? "interrupted" : "workflow_unavailable",
-          );
-        } finally {
-          try {
-            owned.abort(new Error("workflow_read_complete"));
-            await owned.settle();
-          } finally {
-            clearTimeout(timer);
-          }
-        }
-      })();
-      if (!current()) return waiting("workflow_identity_unverified");
-      if (signal.aborted)
-        return waiting(
-          external?.aborted ? "interrupted" : "workflow_unavailable",
-        );
-      if (result.state === "done") {
-        input.message?.(
-          "The selected team's existing workflow mapping and labels are verified. Setup made no workflow change.",
-        );
-        if (!current() || signal.aborted)
-          return waiting("workflow_identity_unverified");
+        )
+          return waiting("cloud_capability_unavailable");
       }
-      return result;
+      if (!current() || signal.aborted)
+        return waiting("workflow_identity_unverified");
+      const sdk = await loadHttpSdk();
+      if (!current() || signal.aborted)
+        return waiting("workflow_identity_unverified");
+      const client = sdk.createTenantClient({
+        baseUrl: origin,
+        key: credential,
+        fetch: read,
+        timeoutMs: 30_000,
+        now: () => ctx.now().getTime(),
+      });
+      return await run({ team, client: client.teamWorkflow, live });
+    } catch {
+      return waiting(external?.aborted ? "interrupted" : "workflow_unavailable");
+    } finally {
+      try {
+        owned.abort(new Error("workflow_read_complete"));
+        await owned.settle();
+      } finally {
+        clearTimeout(timer);
+      }
+    }
+  })();
+  if (!current()) return waiting("workflow_identity_unverified");
+  if (signal.aborted)
+    return waiting(external?.aborted ? "interrupted" : "workflow_unavailable");
+  if (result.state === "done" && announce) {
+    // The display runs outside the bounded exchange, so identity is checked again after it.
+    announce();
+    if (!current() || signal.aborted)
+      return waiting("workflow_identity_unverified");
+  }
+  return result;
+}
+
+/** Verifies the selected team's mapping by observation. With a plan question or --yes, an unadopted
+ * team is `pending` and `act` previews, asks and applies the same adopt plan `catalyst team adopt`
+ * applies, then the engine checks again. Without either, setup never writes the workflow. */
+export function onboardWorkflowVerificationAdapter(
+  input: {
+    message?: (text: string) => void;
+    confirm?: (team: string, lines: readonly string[]) => Promise<boolean>;
+    yes?: boolean;
+  } = {},
+): OnboardAdapter {
+  const adopts = !!input.confirm || input.yes === true;
+  const check: OnboardAdapter["check"] = (ctx, journal, external) =>
+    workflowSession(
+      ctx,
+      journal,
+      external,
+      null,
+      async ({ team, client, live }) => {
+        const first = await client.get(team);
+        const observed =
+          first.outcome === "ok"
+            ? observeOnboardWorkflow(first, team, ctx.now().getTime())
+            : null;
+        if (!observed)
+          return first.outcome === "ok" && adopts && Array.isArray(first.rows) && first.rows.length === 0
+            ? { state: "pending", reason: "workflow_mapping_unverified" }
+            : waiting("workflow_mapping_unverified");
+        if (!(await live())) return waiting("workflow_identity_unverified");
+        const last = await client.get(team);
+        const verified =
+          last.outcome === "ok"
+            ? observeOnboardWorkflow(last, team, ctx.now().getTime())
+            : null;
+        if (
+          !verified ||
+          verified.mappingHash !== observed.mappingHash ||
+          verified.mappingRevision !== observed.mappingRevision ||
+          verified.readinessRevision !== observed.readinessRevision
+        )
+          return waiting("workflow_mapping_changed");
+        if (!(await live())) return waiting("workflow_identity_unverified");
+        return {
+          state: "done",
+          evidence: {
+            team,
+            revision: verified.readinessRevision,
+            mappingRevision: verified.mappingRevision,
+            checkedAt: verified.checkedAt,
+            mappingHash: verified.mappingHash,
+            count: verified.mappedSlots,
+            ...(verified.automations
+              ? { automations: verified.automations }
+              : {}),
+          },
+        };
+      },
+      () =>
+        input.message?.(
+          `${onboardTeamKey(journal) ?? "This team"} already has every state and label`,
+        ),
+    );
+  if (!adopts) return { check };
+  // A local non-admin never gets here; a 403 means the seat changed after login.
+  const refusal = (reply: TeamWorkflowFailure) =>
+    reply.outcome === "unauthorized"
+      ? waiting("workflow_login_refresh_required")
+      : "status" in reply && reply.status === 403
+        ? waiting("workflow_admin_required")
+        : waiting("workflow_unavailable");
+  return {
+    check,
+    act: async (ctx, journal, external) => {
+      // A plan that changed between preview and apply is planned and approved once more.
+      for (let attempt = 0; attempt < 2; attempt++) {
+        let plan: TeamAdoptResult | undefined, previewedTeam = "";
+        const previewed = await workflowSession(
+          ctx,
+          journal,
+          external,
+          { mode: "preview" },
+          async ({ team, client }) => {
+            const reply = await client.adoptPreview(team);
+            if (reply.outcome !== "ok") return refusal(reply);
+            plan = reply;
+            previewedTeam = team;
+            return { state: "done" };
+          },
+        );
+        if (previewed.state !== "done" || !plan) return previewed;
+        const key = onboardTeamKey(journal) ?? (label(plan.teamKey) || "this team");
+        const lines = adoptPlanLines(plan);
+        if (!input.confirm) input.message?.([`Catalyst workflow plan for ${key}:`, ...lines].join("\n"));
+        const approved = input.confirm
+          ? await input.confirm(key, lines)
+          : input.yes === true;
+        if (external?.aborted) return waiting("interrupted");
+        if (!approved) return waiting("workflow_adoption_declined");
+        const hash = plan.planHash;
+        let stale = false,
+          summary = "";
+        const applied = await workflowSession(
+          ctx,
+          journal,
+          external,
+          { mode: "apply", team: previewedTeam, planHash: hash },
+          async ({ team, client }) => {
+            const reply = await client.adoptApply(team, hash);
+            if (reply.outcome !== "ok") {
+              stale =
+                "status" in reply &&
+                reply.status === 409 &&
+                reply.error === "plan-stale";
+              return stale ? waiting("workflow_plan_changed") : refusal(reply);
+            }
+            const created = (rows: readonly { outcome: string }[]) =>
+              rows.filter((row) => row.outcome === "created").length;
+            const stages = created(reply.stages),
+              labels = created(reply.labels);
+            summary = `Applied the Catalyst workflow to ${key}: created ${stages} ${stages === 1 ? "stage" : "stages"} and ${labels} ${labels === 1 ? "label" : "labels"}.`;
+            return { state: "done" };
+          },
+          () => input.message?.(summary),
+        );
+        // Only the server's own plan-stale answer plans again; a later identity refusal does not.
+        if (!input.confirm || !(stale && applied.reason === "workflow_plan_changed"))
+          return applied;
+      }
+      return waiting("workflow_plan_changed");
     },
   };
 }

@@ -29,6 +29,10 @@ export interface OnboardUi {
     signin?: "saved" | "required" | "unavailable",
   ): Promise<{ proceed: boolean; localSync: boolean; signin?: boolean }>;
   chooseTeam?(teams: ExistingOnboardTeam[]): Promise<string | null>;
+  confirmWorkflowAdoption?(
+    team: string,
+    lines: readonly string[],
+  ): Promise<boolean>;
   chooseRepositories?(
     repositories: ExistingOnboardRepository[],
   ): Promise<string[] | null>;
@@ -220,6 +224,25 @@ export function createClackOnboardUi(
         return null;
       }
       return typeof answer === "string" ? answer : null;
+    },
+    async confirmWorkflowAdoption(team, lines) {
+      stop();
+      if (abort.signal.aborted) return false;
+      message([`Catalyst workflow plan for ${team}:`, ...lines].join("\n"));
+      const answer = await prompts.select({
+        ...options,
+        message: `Apply this to ${team}?`,
+        initialValue: "apply",
+        options: [
+          { value: "apply", label: "Yes, apply it" },
+          { value: "skip", label: "No, not now" },
+        ],
+      });
+      if (prompts.isCancel(answer)) {
+        abort.abort();
+        return false;
+      }
+      return answer === "apply";
     },
     ...(prompts.multiselect
       ? {

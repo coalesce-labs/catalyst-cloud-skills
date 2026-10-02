@@ -1527,3 +1527,37 @@ describe("Q1 live identity preview", () => {
     );
   });
 });
+
+// CTC-4630: the workflow step may apply its plan only with a question to ask or --yes.
+describe("inline workflow adoption wiring", () => {
+  const ctx = () => ({
+    ...defaultCtx(),
+    home: mkdtempSync(join(tmpdir(), "onboard-adopt-wiring-")),
+    env: {} as NodeJS.ProcessEnv,
+  });
+  const hooks = { login: async () => 0, ready: async () => ({ state: "done" as const }) };
+  test.each([
+    [["onboard"], false, false],
+    [["onboard", "--yes"], false, true],
+    [["onboard"], true, true],
+  ] as const)("%j with a plan question %s has an apply action: %s", (argv, question, expected) => {
+    const c = ctx();
+    homes.push(c.home);
+    const ui: OnboardUi | undefined = question
+      ? {
+          signal: new AbortController().signal,
+          plan: () => {},
+          confirmPlan: async () => ({ proceed: true, localSync: false }),
+          confirmWorkflowAdoption: async () => true,
+          stepStart: () => {},
+          stepEnd: () => {},
+          message: () => {},
+          finish: () => {},
+          wait: async (_text, run) => run(),
+          dispose: () => {},
+        }
+      : undefined;
+    const runtime = createOnboardRuntime(parseArgs([...argv]), c, { ...hooks, ui });
+    expect(typeof runtime.adapters?.["linear.adopt"]?.act === "function").toBe(expected);
+  });
+});

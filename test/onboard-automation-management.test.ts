@@ -183,10 +183,9 @@ function graph(f: ReturnType<typeof fixture>, automation: OnboardAdapter) {
 describe("unbuilt automation management disposition", () => {
   test("direct adapter has no action and changes no real file, config, receipt or network state", async () => {
     const f = fixture(),
-      before = files(f.home),
-      message = vi.fn();
+      before = files(f.home);
     const journalBefore = JSON.stringify(f.journal);
-    const adapter = onboardAutomationManagementAdapter({ message });
+    const adapter = onboardAutomationManagementAdapter();
     expect(adapter.act).toBeUndefined();
     expect(await adapter.check(f.ctx, f.journal)).toEqual({
       state: "skipped",
@@ -195,10 +194,6 @@ describe("unbuilt automation management disposition", () => {
     expect(files(f.home)).toEqual(before);
     expect(JSON.stringify(f.journal)).toBe(journalBefore);
     expect(f.network).not.toHaveBeenCalled();
-    expect(message).toHaveBeenCalledTimes(1);
-    expect(message.mock.calls[0]?.[0]).toContain(
-      "Cloud readiness still checks your existing rules",
-    );
     expect(f.output).toEqual([]);
     expect(f.errors).toEqual([]);
   });
@@ -226,54 +221,76 @@ describe("unbuilt automation management disposition", () => {
     expect(port.chooseRepositories).not.toHaveBeenCalled();
     expect(port.reviewSettings).not.toHaveBeenCalled();
     expect(port.chooseFirstRepository).not.toHaveBeenCalled();
-    expect(port.message).toHaveBeenCalledTimes(1);
+    // CTC-4630: the step's own line says it once; no second message.
+    expect(port.message).not.toHaveBeenCalled();
   });
-  test("pre-aborted direct disposition returns waiting with no message or side effect", async () => {
-    const f = fixture(),
-      before = files(f.home),
-      abort = new AbortController(),
-      message = vi.fn();
-    abort.abort(new Error("private stop"));
-    expect(
-      await onboardAutomationManagementAdapter({ message }).check(
-        f.ctx,
-        f.journal,
-        abort.signal,
-      ),
-    ).toEqual({ state: "waiting", reason: "interrupted" });
-    expect(message).not.toHaveBeenCalled();
-    expect(f.network).not.toHaveBeenCalled();
-    expect(files(f.home)).toEqual(before);
-  });
-  test("abort during synchronous message refuses the skipped positive", async () => {
+  test("pre-aborted direct disposition returns waiting with no side effect", async () => {
     const f = fixture(),
       before = files(f.home),
       abort = new AbortController();
-    const message = vi.fn(() => abort.abort(new Error("private message stop")));
+    abort.abort(new Error("private stop"));
     expect(
-      await onboardAutomationManagementAdapter({ message }).check(
+      await onboardAutomationManagementAdapter().check(
         f.ctx,
         f.journal,
         abort.signal,
       ),
     ).toEqual({ state: "waiting", reason: "interrupted" });
-    expect(message).toHaveBeenCalledTimes(1);
     expect(f.network).not.toHaveBeenCalled();
     expect(files(f.home)).toEqual(before);
   });
-  test("message failure remains a failure instead of returning an optional positive", async () => {
-    const f = fixture(),
-      failure = new Error("private renderer failure"),
-      before = files(f.home);
-    await expect(
-      onboardAutomationManagementAdapter({
-        message: () => {
-          throw failure;
+});
+
+// CTC-4630: the workflow step records cloud readiness's four pull request automation checks for the
+// selected team; this step reads that record and never the network.
+describe("Linear pull request automations from the workflow step's readiness", () => {
+  const recorded = (
+    automations: string | undefined,
+    extra: { team?: string; checkedAt?: number } = {},
+  ) => {
+    const f = fixture();
+    const now = f.ctx.now().getTime();
+    f.journal.steps = [
+      { id: "linear.team", state: "done", evidence: { team: "team-1", teamKey: "ENG" } },
+      {
+        id: "linear.adopt",
+        state: "done",
+        evidence: {
+          team: extra.team ?? "team-1",
+          checkedAt: extra.checkedAt ?? now - 10_000,
+          ...(automations === undefined ? {} : { automations }),
         },
-      }).check(f.ctx, f.journal),
-    ).rejects.toBe(failure);
+      },
+    ];
+    return f;
+  };
+  test("all four automations compatible is done with nothing to change", async () => {
+    const f = recorded("none");
+    expect(await onboardAutomationManagementAdapter().check(f.ctx, f.journal)).toEqual({
+      state: "done",
+      reason: "automations_compatible",
+    });
     expect(f.network).not.toHaveBeenCalled();
-    expect(files(f.home)).toEqual(before);
+  });
+  test("conflicting automations stay a satisfied skip that names the events", async () => {
+    const f = recorded("open,merge");
+    expect(await onboardAutomationManagementAdapter().check(f.ctx, f.journal)).toEqual({
+      state: "skipped",
+      reason: "automation_management_unavailable",
+      evidence: { automations: "open,merge" },
+    });
+  });
+  test.each([
+    ["unread", undefined, {}],
+    ["another team's", "none", { team: "team-2" }],
+    ["stale", "none", { checkedAt: Date.parse("2026-10-01T07:50:00Z") }],
+    ["unknown events", "open,typo", {}],
+  ] as const)("%s readiness proves nothing and keeps the plain skip", async (_name, automations, extra) => {
+    const f = recorded(automations, extra);
+    expect(await onboardAutomationManagementAdapter().check(f.ctx, f.journal)).toEqual({
+      state: "skipped",
+      reason: "automation_management_unavailable",
+    });
   });
 });
 
@@ -365,38 +382,11 @@ describe("actual cmdOnboard optional-step graph policy", () => {
       ).toMatchObject({ state: "waiting", reason });
     },
   );
-  test("message abort in the engine produces no green receipt or dependent action", async () => {
-    const f = fixture(),
-      abort = new AbortController(),
-      cfgBefore = readFileSync(f.config),
-      g = graph(
-        f,
-        onboardAutomationManagementAdapter({ message: () => abort.abort() }),
-      );
-    expect(
-      await cmdOnboard(
-        parseArgs(["onboard", "--only", "first-ticket", "--yes", "--json"]),
-        f.ctx,
-        { ...g.deps, signal: abort.signal },
-        "0.14.6",
-      ),
-    ).toBe(11);
-    expect(g.ticket).not.toHaveBeenCalled();
-    expect(f.receipt().exit).toBe(11);
-    expect(
-      f.receipt().steps.find((step) => step.id === "linear.automations")?.state,
-    ).not.toBe("skipped");
-    expect(f.output).toHaveLength(1);
-    expect(JSON.parse(f.output[0]!).complete).toBe(false);
-    expect(readFileSync(f.config)).toEqual(cfgBefore);
-    expect(existsSync(onboardLockPath(f.home))).toBe(false);
-  });
   test("pre-aborted engine never enters management or a dependent action", async () => {
     const f = fixture(),
       abort = new AbortController(),
-      message = vi.fn(),
       cfgBefore = readFileSync(f.config);
-    const g = graph(f, onboardAutomationManagementAdapter({ message }));
+    const g = graph(f, onboardAutomationManagementAdapter());
     abort.abort();
     expect(
       await cmdOnboard(
@@ -406,7 +396,6 @@ describe("actual cmdOnboard optional-step graph policy", () => {
         "0.14.6",
       ),
     ).toBe(11);
-    expect(message).not.toHaveBeenCalled();
     expect(g.ticket).not.toHaveBeenCalled();
     expect(f.network).not.toHaveBeenCalled();
     expect(f.receipt()).toMatchObject({ exit: 11, complete: false });
