@@ -180,8 +180,12 @@ const REASONS: Record<string, string> = {
     "Docker could not create the catalyst-session-v1 network. Check that Docker is running, then run catalyst onboard again.",
   runner_docker_socket_unreadable:
     "Setup could not read the group of the Docker socket at /var/run/docker.sock. Check that Docker is running, then run catalyst onboard again.",
+  runner_engine_unsupported:
+    "Runner setup needs local Docker Desktop or OrbStack on Mac, or native Linux Docker at /var/run/docker.sock. Select a supported local engine, then run catalyst onboard --runner.",
   runner_enrollment_unavailable:
     "Setup could not read this workspace's runner hosts. Run catalyst onboard again to retry.",
+  runner_enrolled_for_other_team:
+    "This runner is enrolled for another Linear team. Keep using that team, or ask your administrator to revoke the old enrollment before setting up this machine for the selected team.",
   runner_enrollment_stale:
     "This machine still holds the credential of a runner enrollment that was revoked. Stop the runner with docker compose -p catalyst-host down, remove the credential with docker volume rm catalyst-host_host-credential (this also removes the organization key), then run catalyst onboard --runner.",
   runner_login_refresh_required:
@@ -190,6 +194,10 @@ const REASONS: Record<string, string> = {
     "Catalyst did not issue a join token for this machine. Run catalyst onboard again to retry.",
   runner_org_key_file_invalid:
     "CATALYST_RUNNER_ORG_KEY_FILE must name a regular file that holds one organization key. Fix the file, then run catalyst onboard again.",
+  runner_org_key_invalid:
+    "The runner account key is invalid, belongs to another workspace, or lacks mirror read, write and feed permissions. Supply a scoped key for this workspace with CATALYST_RUNNER_ORG_KEY_FILE, then run catalyst onboard --runner.",
+  runner_org_key_unavailable:
+    "The runner account key could not be checked with Catalyst. Run catalyst onboard --runner to retry.",
   runner_org_key_write_failed:
     "Setup could not place the organization key on the runner. Check that Docker is running, then run catalyst onboard again.",
   runner_compose_failed:
