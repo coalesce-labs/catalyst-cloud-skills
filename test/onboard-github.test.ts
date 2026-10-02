@@ -501,3 +501,354 @@ describe("native personal-bearer GitHub App installation", () => {
     expect(f.logs.join("\n")).not.toMatch(/expired-token-sentinel|unused-refresh-sentinel/);
   });
 });
+
+describe("CTC-4629: an existing installation whose permissions or repositories are out of date", () => {
+  const review = "https://github.com/organizations/fixture/settings/installations/123/permissions/update";
+  const settings = "https://github.com/organizations/fixture/settings/installations/123";
+  const current = {
+    state: "current",
+    grant: "github-installation",
+    granted: ["contents (write)", "issues (write)"],
+  };
+  const live = (permissions: unknown, state = "connected", missing?: string[]) => ({
+    ...installation("123", state),
+    verification: { source: "live-probe", state, checkedAt: now, ...(missing ? { missing } : {}) },
+    permissions,
+  });
+  const outdated = {
+    state: "outdated",
+    grant: "github-installation",
+    granted: ["contents (read)"],
+    missing: ["issues (write)"],
+    action: { kind: "review-permissions", url: review, actor: "github-org-admin" },
+  };
+
+  test("a pending permission request waits as an org-admin action with the installation's direct review URL", async () => {
+    const f = fixture();
+    f.status({
+      connected: false,
+      installations: [live(outdated, "missing-scope", ["issues (write)"])],
+      pending: [],
+      repositories: { state: "covered", checked: [] },
+    });
+    const expected = {
+      state: "waiting",
+      reason: "github_app_permissions_outdated",
+      evidence: {
+        provider: "github",
+        grant: "github-installation",
+        installation: "123",
+        org: "fixture",
+        granted: "contents (read)",
+        missing: "issues (write)",
+        url: review,
+        actor: "github-org-admin",
+      },
+    };
+    expect(await f.adapter().check(f.ctx, f.journal)).toEqual(expected);
+    // It is GitHub's own review page, not a new installation: no handoff is minted or opened.
+    expect(await f.adapter().act!(f.ctx, f.journal)).toEqual(expected);
+    expect(f.reads.every((row) => row.path === path)).toBe(true);
+    expect(f.opened).toEqual([]);
+  });
+
+  test("an installation lacking a registered repository names it and links to the installation's repository settings", async () => {
+    const f = fixture();
+    f.status({
+      connected: true,
+      installations: [live(current)],
+      pending: [],
+      repositories: {
+        state: "missing",
+        checked: ["fixture/api", "fixture/web"],
+        unchecked: [],
+        missing: [
+          {
+            repository: "fixture/api",
+            installationId: "123",
+            githubOrg: "fixture",
+            settingsUrl: settings,
+            actor: "github-org-admin",
+          },
+        ],
+      },
+    });
+    expect(await f.adapter().check(f.ctx, f.journal)).toEqual({
+      state: "waiting",
+      reason: "github_app_repository_missing",
+      evidence: {
+        provider: "github",
+        installation: "123",
+        org: "fixture",
+        repository: "fixture/api",
+        url: settings,
+        actor: "github-org-admin",
+      },
+    });
+  });
+
+  test("a registered repository whose owner has no installation is an installation still to make", async () => {
+    const f = fixture();
+    f.status({
+      connected: true,
+      installations: [live(current)],
+      pending: [],
+      repositories: {
+        state: "missing",
+        checked: ["globex/site"],
+        unchecked: [],
+        missing: [
+          {
+            repository: "globex/site",
+            installationId: null,
+            githubOrg: "globex",
+            settingsUrl: null,
+            actor: null,
+          },
+        ],
+      },
+    });
+    expect(await f.adapter().check(f.ctx, f.journal)).toEqual({
+      state: "pending",
+      reason: "github_app_repository_not_installed",
+      evidence: { provider: "github", repository: "globex/site", org: "globex" },
+    });
+  });
+
+  test("everything matching is done with the granted permissions in its details", async () => {
+    const f = fixture();
+    f.status({
+      connected: true,
+      installations: [live(current)],
+      pending: [],
+      repositories: { state: "covered", checked: ["fixture/api"] },
+    });
+    expect(await f.adapter().check(f.ctx, f.journal)).toEqual({
+      state: "done",
+      evidence: {
+        provider: "github",
+        installation: '["123"]',
+        checkedAt: now,
+        granted: "fixture: contents (write), issues (write)",
+      },
+    });
+  });
+
+  test("repository access that could not be checked waits and never claims done", async () => {
+    const f = fixture();
+    f.status({
+      connected: true,
+      installations: [live(current)],
+      pending: [],
+      repositories: { state: "unknown", reason: "unreachable" },
+    });
+    expect(await f.adapter().check(f.ctx, f.journal)).toEqual({
+      state: "waiting",
+      reason: "github_app_repository_access_unverified",
+    });
+  });
+
+  test.each([
+    ["an unrelated host", "https://evil.example/organizations/fixture/settings/installations/123/permissions/update"],
+    ["another installation", "https://github.com/organizations/fixture/settings/installations/999/permissions/update"],
+    ["another organization", "https://github.com/organizations/other/settings/installations/123/permissions/update"],
+    ["a query", `${review}?next=x`],
+  ])("a review URL on %s is a shape error, never printed", async (_label, url) => {
+    const f = fixture();
+    f.status({
+      connected: false,
+      installations: [
+        live({ ...outdated, action: { ...outdated.action, url } }, "missing-scope", ["issues (write)"]),
+      ],
+      pending: [],
+    });
+    expect(await f.adapter().check(f.ctx, f.journal)).toEqual({
+      state: "waiting",
+      reason: "github_installation_status_shape",
+    });
+  });
+
+  test("a current verdict on a missing-scope row is a shape error", async () => {
+    const f = fixture();
+    f.status({
+      connected: false,
+      installations: [live(current, "missing-scope", ["issues (write)"])],
+      pending: [],
+    });
+    expect(await f.adapter().check(f.ctx, f.journal)).toEqual({
+      state: "waiting",
+      reason: "github_installation_status_shape",
+    });
+  });
+});
+
+test("CTC-4629: an installation made for an uncovered repository that still lacks it stops polling with the settings link", async () => {
+  const f = fixture();
+  const settings = "https://github.com/organizations/fixture/settings/installations/123";
+  f.status({
+    connected: true,
+    installations: [installation()],
+    pending: [],
+    repositories: {
+      state: "missing",
+      checked: ["fixture/site"],
+      unchecked: [],
+      missing: [
+        {
+          repository: "fixture/site",
+          installationId: null,
+          githubOrg: "fixture",
+          settingsUrl: null,
+          actor: null,
+        },
+      ],
+    },
+  });
+  const adapter = githubInstallationAdapter({
+    ...f.options,
+    openBrowser: (url) => {
+      f.opened.push(url);
+      f.status({
+        connected: true,
+        installations: [installation()],
+        pending: [],
+        repositories: {
+          state: "missing",
+          checked: ["fixture/site"],
+          unchecked: [],
+          missing: [
+            {
+              repository: "fixture/site",
+              installationId: "123",
+              githubOrg: "fixture",
+              settingsUrl: settings,
+              actor: "github-org-admin",
+            },
+          ],
+        },
+      });
+    },
+    sleep: async () => {
+      throw new Error("a GitHub-side action must not keep polling");
+    },
+  });
+  expect(await adapter.act!(f.ctx, f.journal)).toEqual({
+    state: "waiting",
+    reason: "github_app_repository_missing",
+    evidence: {
+      provider: "github",
+      installation: "123",
+      org: "fixture",
+      repository: "fixture/site",
+      url: settings,
+      actor: "github-org-admin",
+    },
+  });
+  expect(f.opened).toEqual([link]);
+});
+
+describe("CTC-4629 review: coverage and permission verdicts that cannot be verified", () => {
+  const current = {
+    state: "current",
+    grant: "github-installation",
+    granted: ["contents (write)"],
+  };
+  const live = (permissions: unknown) => ({ ...installation(), permissions });
+
+  test("a connected installation whose permissions could not be checked waits and never claims done", async () => {
+    const f = fixture();
+    f.status({
+      connected: true,
+      installations: [
+        live({ state: "unknown", grant: "github-installation", reason: "grant-unreadable" }),
+      ],
+      pending: [],
+    });
+    expect(await f.adapter().check(f.ctx, f.journal)).toEqual({
+      state: "waiting",
+      reason: "github_app_permissions_unverified",
+    });
+  });
+
+  test("a missing repository next to unchecked ones reports the missing one", async () => {
+    const f = fixture();
+    f.status({
+      connected: true,
+      installations: [live(current)],
+      pending: [],
+      repositories: {
+        state: "missing",
+        checked: ["globex/site"],
+        missing: [
+          {
+            repository: "globex/site",
+            installationId: null,
+            githubOrg: "globex",
+            settingsUrl: null,
+            actor: null,
+          },
+        ],
+        unchecked: [{ repository: "fixture/api", reason: "listing-truncated" }],
+      },
+    });
+    expect((await f.adapter().check(f.ctx, f.journal)).reason).toBe(
+      "github_app_repository_not_installed",
+    );
+  });
+
+  test("a truncated listing is an unverified repository check", async () => {
+    const f = fixture();
+    f.status({
+      connected: true,
+      installations: [live(current)],
+      pending: [],
+      repositories: { state: "unknown", reason: "listing-truncated" },
+    });
+    expect(await f.adapter().check(f.ctx, f.journal)).toEqual({
+      state: "waiting",
+      reason: "github_app_repository_access_unverified",
+    });
+  });
+
+  test.each([
+    [
+      "a missing repository absent from checked",
+      {
+        state: "missing",
+        checked: [],
+        unchecked: [],
+        missing: [
+          { repository: "globex/site", installationId: null, githubOrg: "globex", settingsUrl: null, actor: null },
+        ],
+      },
+    ],
+    [
+      "a covered verdict carrying missing rows",
+      { state: "covered", checked: ["globex/site"], missing: [] },
+    ],
+    [
+      "a missing verdict without its unchecked list",
+      {
+        state: "missing",
+        checked: ["globex/site"],
+        missing: [
+          { repository: "globex/site", installationId: null, githubOrg: "globex", settingsUrl: null, actor: null },
+        ],
+      },
+    ],
+  ])("%s is a shape error", async (_label, repositories) => {
+    const f = fixture();
+    f.status({ connected: true, installations: [live(current)], pending: [], repositories });
+    expect(await f.adapter().check(f.ctx, f.journal)).toEqual({
+      state: "waiting",
+      reason: "github_installation_status_shape",
+    });
+  });
+});
+
+
+test.each(["permissions", "repositories"])("a GitHub approval with unreadable %s reports its actual check failure immediately", async (kind) => {
+ const f = fixture(); f.status(absent());
+ const adapter = githubInstallationAdapter({ ...f.options, openBrowser: () => f.status({ ...done(), ...(kind === "permissions" ? { installations: [{ ...installation(), permissions: { state: "unknown", grant: "github-installation", reason: "grant-unreadable" } }] } : { repositories: { state: "unknown", reason: "listing-truncated" } }) }), sleep: async () => { throw new Error("permission failure must not poll"); } });
+ expect(await adapter.act!(f.ctx, f.journal)).toEqual({ state: "waiting", reason: kind === "permissions" ? "github_app_permissions_unverified" : "github_app_repository_access_unverified" });
+});

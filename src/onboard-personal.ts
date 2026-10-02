@@ -6,6 +6,11 @@ import {
   type CustomerConfig,
 } from "./config.js";
 import { pollConsent, type ConsentStatus } from "./onboard-consent.js";
+import {
+  LINEAR_SCOPE,
+  parsePermissions,
+  savedOrigin,
+} from "./onboard-permissions.js";
 import type {
   OnboardAdapter,
   OnboardJournal,
@@ -218,15 +223,48 @@ export function personalConsentAdapter(
         (body.connected || body.reason !== "lapsed"))
     )
       return { state: "failed", reason: "personal_status_shape" };
-    return body.connected
-      ? {
-          state: "done",
-          evidence: {
-            provider: options.provider,
-            checkedAt: ctx.now().getTime(),
-          },
-        }
-      : { state: "pending" };
+    if (!body.connected) return { state: "pending" };
+    // CTC-4629: only a Linear grant carries scopes; GitHub's are the App's, checked at installation.
+    const permissions =
+      options.provider === "linear"
+        ? parsePermissions(body.permissions, {
+            grant: "linear-personal",
+            action: "reauthorize",
+            label: LINEAR_SCOPE,
+            actorFor: (url) =>
+              url.origin === savedOrigin(ctx) &&
+              url.pathname === "/connect/linear/personal/start"
+                ? "member"
+                : null,
+          })
+        : undefined;
+    if (permissions === null)
+      return { state: "failed", reason: "personal_status_shape" };
+    if (permissions?.state === "unknown")
+      return waiting("personal_permissions_unverified");
+    if (permissions?.state === "outdated")
+      return {
+        state: "waiting",
+        reason: "linear_personal_scope_outdated",
+        evidence: {
+          provider: "linear",
+          grant: "linear-personal",
+          granted: permissions.granted.join(", "),
+          missing: permissions.missing.join(", "),
+          url: permissions.url,
+          actor: permissions.actor,
+        },
+      };
+    return {
+      state: "done",
+      evidence: {
+        provider: options.provider,
+        checkedAt: ctx.now().getTime(),
+        ...(permissions?.state === "current"
+          ? { granted: permissions.granted.join(", ") }
+          : {}),
+      },
+    };
   };
   return {
     check: inspect,
@@ -283,7 +321,11 @@ export function personalConsentAdapter(
             latest = await inspect(ctx, journal, pollSignal);
             if (latest.reason === "cloud_capability_unavailable")
               return { outcome: "waiting", reason: latest.reason };
-            if (latest.reason === "personal_login_refresh_required")
+            // An outdated grant is re-authorized at its own URL; polling longer cannot finish it.
+            if (
+              latest.reason === "personal_login_refresh_required" ||
+              (latest.reason === "linear_personal_scope_outdated" || latest.reason === "personal_permissions_unverified")
+            )
               return { outcome: "waiting", reason: latest.reason };
             if (latest.state === "done") return { outcome: "connected" };
             if (latest.state === "refused" || latest.state === "failed")
@@ -296,7 +338,8 @@ export function personalConsentAdapter(
       const result = options.wait
         ? await options.wait(`Waiting for your ${name} approval`, run)
         : await run();
-      if (result.state === "done") return latest;
+      if (result.state === "done" || (latest.reason === "linear_personal_scope_outdated" || latest.reason === "personal_permissions_unverified"))
+        return latest;
       return browserUnavailable && result.reason === "consent_timeout"
         ? waiting("personal_browser_unavailable")
         : result;

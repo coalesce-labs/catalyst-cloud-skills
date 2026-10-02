@@ -6,6 +6,11 @@ import type {
   OnboardStepResult,
 } from "./onboard.js";
 import { pollConsent, type ConsentStatus } from "./onboard-consent.js";
+import {
+  LINEAR_SCOPE,
+  parsePermissions,
+  savedOrigin,
+} from "./onboard-permissions.js";
 
 const STATUS = "/api/v1/me/connections/linear/workspace";
 const HANDOFF = "/connect/linear/workspace/handoff";
@@ -143,7 +148,11 @@ function readFailure(value: Read): OnboardStepResult | null {
 }
 
 /** Live liveness plus stored grant scopes is a connection verdict, not live workspace identity. */
-function observation(body: unknown, now: number): OnboardStepResult {
+function observation(
+  body: unknown,
+  now: number,
+  origin: string,
+): OnboardStepResult {
   const row = object(body);
   const workspace = object(row?.workspace);
   const credential = object(row?.credential);
@@ -185,7 +194,44 @@ function observation(body: unknown, now: number): OnboardStepResult {
     return waiting("workspace_status_shape");
   if (verification.state === "unreachable")
     return waiting("workspace_status_unavailable");
+  // CTC-4629: an existing grant short of this version's scopes is re-authorized at the one URL the
+  // cloud names, and only when that URL is this cloud's own OAuth start.
+  const permissions = parsePermissions(row.permissions, {
+    grant: "linear-workspace",
+    action: "reauthorize",
+    label: LINEAR_SCOPE,
+    actorFor: (url) =>
+      url.origin === origin &&
+      url.pathname === "/settings/connections" &&
+      url.search === "?reauthorize=linear"
+        ? "workspace-admin"
+        : null,
+  });
+  // The verdict is derived from the verification: outdated only for missing-scope, current only
+  // for connected, and unknown may accompany either.
+  if (
+    permissions === null ||
+    (permissions?.state === "outdated" &&
+      verification.state !== "missing-scope") ||
+    (permissions?.state === "current" && verification.state !== "connected")
+  )
+    return waiting("workspace_status_shape");
+  if (permissions?.state === "outdated")
+    return {
+      state: "waiting",
+      reason: "linear_workspace_scope_outdated",
+      evidence: {
+        provider: "linear",
+        grant: "linear-workspace",
+        granted: permissions.granted.join(", "),
+        missing: permissions.missing.join(", "),
+        url: permissions.url,
+        actor: permissions.actor,
+      },
+    };
   if (!row.connected) return { state: "pending" };
+  if (permissions?.state === "unknown")
+    return waiting("linear_workspace_permissions_unverified");
   // A working credential alone cannot prove this account has a bound Linear workspace.
   if (
     !workspace.bound ||
@@ -202,6 +248,9 @@ function observation(body: unknown, now: number): OnboardStepResult {
         ? { workspaceSlug: workspace.workspaceSlug }
         : {}),
       checkedAt: verification.checkedAt,
+      ...(permissions?.state === "current"
+        ? { granted: permissions.granted.join(", ") }
+        : {}),
     },
   };
 }
@@ -279,6 +328,7 @@ export function linearWorkspaceAdapter(
         observation(
           "body" in result ? result.body : undefined,
           ctx.now().getTime(),
+          savedOrigin(ctx),
         ),
     };
   };
@@ -328,7 +378,9 @@ export function linearWorkspaceAdapter(
       } catch {
         if (signal?.aborted) return waiting("interrupted");
         browserUnavailable = true;
-        ctx.stderr(finishOnTheWeb(current.baseUrl, "connections", "connect Linear"));
+        ctx.stderr(
+          finishOnTheWeb(current.baseUrl, "connections", "connect Linear"),
+        );
       }
       let latest: OnboardStepResult = waiting("workspace_status_unavailable");
       const run = () =>
@@ -344,7 +396,12 @@ export function linearWorkspaceAdapter(
                 outcome: "waiting",
                 reason: "cloud_capability_unavailable",
               };
-            if (latest.reason === "workspace_login_refresh_required")
+            // An outdated grant is re-authorized at its own URL; polling longer cannot finish it.
+            if (
+              latest.reason === "workspace_login_refresh_required" ||
+              latest.reason === "linear_workspace_scope_outdated" ||
+              latest.reason === "linear_workspace_permissions_unverified"
+            )
               return { outcome: "waiting", reason: latest.reason };
             if (latest.state === "done") return { outcome: "connected" };
             if (latest.state === "refused" || latest.state === "failed")
@@ -357,7 +414,12 @@ export function linearWorkspaceAdapter(
       const result = options.wait
         ? await options.wait("Waiting for workspace approval", run)
         : await run();
-      if (result.state === "done") return latest;
+      if (
+        result.state === "done" ||
+        latest.reason === "linear_workspace_scope_outdated" ||
+        latest.reason === "linear_workspace_permissions_unverified"
+      )
+        return latest;
       return browserUnavailable && result.reason === "consent_timeout"
         ? waiting("workspace_browser_unavailable")
         : result;

@@ -602,17 +602,240 @@ describe("bounded personal-bearer Linear workspace consent", () => {
       ...f.options,
       openBrowser: () => {
         const config = loadConfig(f.home)!;
-        writeConfig(f.home, { ...config, key: undefined, auth: {
-          kind: "oauth", accessToken: "expired-token-sentinel", refreshToken: "unused-refresh-sentinel",
-          expiresAt: new Date(now - 1).toISOString(), sessionId: "original-session",
-        } });
+        writeConfig(f.home, {
+          ...config,
+          key: undefined,
+          auth: {
+            kind: "oauth",
+            accessToken: "expired-token-sentinel",
+            refreshToken: "unused-refresh-sentinel",
+            expiresAt: new Date(now - 1).toISOString(),
+            sessionId: "original-session",
+          },
+        });
       },
-      sleep: async () => { throw new Error("refresh-required status must not poll again"); },
+      sleep: async () => {
+        throw new Error("refresh-required status must not poll again");
+      },
     });
     expect(await adapter.act!(f.ctx, f.journal)).toMatchObject({
-      state: "waiting", reason: "workspace_login_refresh_required",
+      state: "waiting",
+      reason: "workspace_login_refresh_required",
     });
     expect(f.reads).toHaveLength(2);
-    expect(f.logs.join("\n")).not.toMatch(/expired-token-sentinel|unused-refresh-sentinel/);
+    expect(f.logs.join("\n")).not.toMatch(
+      /expired-token-sentinel|unused-refresh-sentinel/,
+    );
+  });
+});
+
+describe("CTC-4629: an existing workspace grant whose scopes are out of date", () => {
+  const reauthorize = `${origin}/settings/connections?reauthorize=linear`;
+  const outdated = () => ({
+    ...done(),
+    connected: false,
+    verification: {
+      source: "live-probe",
+      state: "missing-scope",
+      checkedAt: now,
+      missing: ["app:assignable", "app:mentionable"],
+    },
+    permissions: {
+      state: "outdated",
+      grant: "linear-workspace",
+      granted: ["read", "write", "initiative:read"],
+      missing: ["app:assignable", "app:mentionable"],
+      action: {
+        kind: "reauthorize",
+        url: reauthorize,
+        actor: "workspace-admin",
+      },
+    },
+  });
+  const outdatedResult = {
+    state: "waiting",
+    reason: "linear_workspace_scope_outdated",
+    evidence: {
+      provider: "linear",
+      grant: "linear-workspace",
+      granted: "read, write, initiative:read",
+      missing: "app:assignable, app:mentionable",
+      url: reauthorize,
+      actor: "workspace-admin",
+    },
+  };
+
+  test("waits with which grant, which scopes and the one re-authorize URL, and never starts a new consent", async () => {
+    const f = fixture();
+    f.status(outdated());
+    expect(await f.adapter().check(f.ctx, f.journal)).toEqual(outdatedResult);
+    expect(await f.adapter().act!(f.ctx, f.journal)).toEqual(outdatedResult);
+    expect(f.reads.every((row) => row.path === path)).toBe(true);
+    expect(f.opened).toEqual([]);
+  });
+
+  test("a current grant is done with the granted scopes in its details", async () => {
+    const f = fixture();
+    f.status({
+      ...done(),
+      permissions: {
+        state: "current",
+        grant: "linear-workspace",
+        granted: [
+          "read",
+          "write",
+          "initiative:read",
+          "app:assignable",
+          "app:mentionable",
+        ],
+      },
+    });
+    expect(await f.adapter().check(f.ctx, f.journal)).toEqual({
+      state: "done",
+      evidence: {
+        provider: "linear",
+        workspace: "workspace-a",
+        workspaceSlug: "fixture",
+        checkedAt: now,
+        granted:
+          "read, write, initiative:read, app:assignable, app:mentionable",
+      },
+    });
+  });
+
+  test("a working connection whose scopes could not be checked waits and never claims done", async () => {
+    const f = fixture();
+    f.status({
+      ...done(),
+      permissions: {
+        state: "unknown",
+        grant: "linear-workspace",
+        reason: "grant-unreadable",
+      },
+    });
+    expect(await f.adapter().check(f.ctx, f.journal)).toEqual({
+      state: "waiting",
+      reason: "linear_workspace_permissions_unverified",
+    });
+  });
+
+  test.each([
+    [
+      "another origin",
+      "https://elsewhere.invalid/settings/connections?reauthorize=linear",
+    ],
+    [
+      "another path",
+      `${origin}/connect/linear/workspace/handoff?handoff=signed`,
+    ],
+    [
+      "an extra query",
+      `${origin}/settings/connections?reauthorize=linear&next=/a/account/connections`,
+    ],
+    [
+      "a duplicate query",
+      `${origin}/settings/connections?reauthorize=linear&reauthorize=linear`,
+    ],
+    ["a missing query", `${origin}/settings/connections`],
+    ["the retired grant start", `${origin}/connect/linear/start`],
+    [
+      "plain http",
+      "http://fixture.invalid/settings/connections?reauthorize=linear",
+    ],
+  ])(
+    "a re-authorize URL on %s is never trusted or printed",
+    async (_label, url) => {
+      const f = fixture();
+      const status = outdated();
+      status.permissions.action.url = url;
+      f.status(status);
+      expect(await f.adapter().check(f.ctx, f.journal)).toEqual({
+        state: "waiting",
+        reason: "workspace_status_shape",
+      });
+    },
+  );
+
+  test("a verdict that disagrees with the verification is a shape error", async () => {
+    const f = fixture();
+    f.status({ ...done(), permissions: outdated().permissions });
+    expect(await f.adapter().check(f.ctx, f.journal)).toEqual({
+      state: "waiting",
+      reason: "workspace_status_shape",
+    });
+  });
+
+  test("an older cloud without the verdict keeps today's behavior: missing-scope is a consent to start", async () => {
+    const f = fixture();
+    const { permissions: _omitted, ...older } = outdated();
+    f.status(older);
+    expect(await f.adapter().check(f.ctx, f.journal)).toEqual({
+      state: "pending",
+    });
+  });
+});
+
+test("CTC-4629 review: a fresh workspace consent that is still short of scopes stops polling and keeps its URL", async () => {
+  const f = fixture();
+  f.status(absent());
+  const reauthorize = `${origin}/settings/connections?reauthorize=linear`;
+  const adapter = linearWorkspaceAdapter({
+    ...f.options,
+    openBrowser: (url) => {
+      f.opened.push(url);
+      f.status({
+        ...done(),
+        connected: false,
+        verification: {
+          source: "live-probe",
+          state: "missing-scope",
+          checkedAt: now,
+          missing: ["app:mentionable"],
+        },
+        permissions: {
+          state: "outdated",
+          grant: "linear-workspace",
+          granted: ["read"],
+          missing: ["app:mentionable"],
+          action: {
+            kind: "reauthorize",
+            url: reauthorize,
+            actor: "workspace-admin",
+          },
+        },
+      });
+    },
+    sleep: async () => {
+      throw new Error("an outdated grant must not keep polling");
+    },
+  });
+  expect(await adapter.act!(f.ctx, f.journal)).toMatchObject({
+    state: "waiting",
+    reason: "linear_workspace_scope_outdated",
+    evidence: { url: reauthorize, missing: "app:mentionable" },
+  });
+});
+
+test("a workspace approval with unreadable permissions reports the check failure immediately", async () => {
+  const f = fixture();
+  f.status(absent());
+  const adapter = linearWorkspaceAdapter({
+    ...f.options,
+    openBrowser: () =>
+      f.status({
+        ...done(),
+        permissions: {
+          state: "unknown",
+          grant: "linear-workspace",
+          reason: "grant-unreadable",
+        },
+      }),
+    sleep: async () => {
+      throw new Error("permission failure must not poll");
+    },
+  });
+  expect(await adapter.act!(f.ctx, f.journal)).toEqual({
+    state: "waiting",
+    reason: "linear_workspace_permissions_unverified",
   });
 });

@@ -70,6 +70,7 @@ export const FLAG_TABLES: Record<string, FlagTable> = {
   },
   install: {},
   onboard: {
+    verbose: { value: false, help: "show granted permissions for connected steps in interactive setup" },
     team: {
       value: true,
       help: "explicitly select an existing Linear team by ID or unique key",
