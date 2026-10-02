@@ -264,7 +264,20 @@ function fixture(
     contract,
   };
 }
-function assertInstalled0131() {
+function assertInstalled0141() {
+  const declaration: unknown = JSON.parse(
+    readFileSync(new URL("../package.json", import.meta.url), "utf8"),
+  );
+  if (
+    !declaration ||
+    typeof declaration !== "object" ||
+    !("dependencies" in declaration) ||
+    !declaration.dependencies ||
+    typeof declaration.dependencies !== "object" ||
+    !("@catalyst-cloud/sdk" in declaration.dependencies) ||
+    declaration.dependencies["@catalyst-cloud/sdk"] !== "0.14.1"
+  )
+    throw new Error("CLI must declare the exact SDK 0.14.1 dependency");
   const require = createRequire(import.meta.url);
   const entry = require.resolve("@catalyst-cloud/sdk");
   const pkg: unknown = JSON.parse(
@@ -274,9 +287,9 @@ function assertInstalled0131() {
     !pkg ||
     typeof pkg !== "object" ||
     !("version" in pkg) ||
-    pkg.version !== "0.13.1"
+    pkg.version !== "0.14.1"
   )
-    throw new Error("actual installed SDK 0.13.1 required");
+    throw new Error("actual installed SDK 0.14.1 required");
 }
 
 describe("existing workflow wire truth", () => {
@@ -414,8 +427,8 @@ describe("actual installed HTTP SDK onboarding verifier", () => {
       expect(readFileSync(configPathFor(f.home))).toEqual(before);
     },
   );
-  test("actual SDK0.13.1 normal HTTP transport verifies only existing mapping, with zero apply/config writes", async () => {
-    assertInstalled0131();
+  test("actual SDK0.14.1 normal HTTP transport verifies only existing mapping, with zero apply/config writes", async () => {
+    assertInstalled0141();
     resetSdkCache();
     const actual = await loadHttpSdk();
     expect(typeof actual.createTenantClient).toBe("function");
@@ -589,7 +602,7 @@ describe("actual installed HTTP SDK onboarding verifier", () => {
 });
 
 test("actual native 30s body deadline joins real cancel/socket closure and held cleanup ACK before canonical unlock", async () => {
-  assertInstalled0131();
+  assertInstalled0141();
   const f = fixture(),
     entered = deferred<void>(),
     cancelled = deferred<void>(),

@@ -283,14 +283,16 @@ describe("fresh personal cache authority", () => {
 });
 
 describe("optional managed cache filesystem ownership", () => {
-  test("actual pinned SDK load refuses before cache or authority I/O", async () => {
+  test("actual pinned SDK requires current authority before cache I/O", async () => {
     resetSdkCache();
     try {
       const sdk = await loadSdk();
       const h = home(),
-        authority = vi.fn();
+        authority = vi.fn(() => {
+          throw new Error("current_authority_changed");
+        });
       expect(typeof sdk.CatalystReplica).toBe("function");
-      expect("closeAndWait" in sdk.CatalystReplica.prototype).toBe(false);
+      expect(typeof sdk.CatalystReplica.prototype.closeAndWait).toBe("function");
       expect(() =>
         preparePersonCache({
           home: h,
@@ -298,14 +300,53 @@ describe("optional managed cache filesystem ownership", () => {
           assertCurrent: authority,
           replicaClass: sdk.CatalystReplica,
         }),
-      ).toThrow("daemon_sdk_shutdown_unavailable");
-      expect(authority).not.toHaveBeenCalled();
+      ).toThrow("current_authority_changed");
+      expect(authority).toHaveBeenCalledOnce();
       expectUntouchedHome(h);
     } finally {
       resetSdkCache();
     }
   });
-  test("released SDK and absent current authority refuse before filesystem or authority work", () => {
+  test("actual pinned SDK admits a private cache with current authority", async () => {
+    resetSdkCache();
+    try {
+      const sdk = await loadSdk();
+      const h = home(),
+        authority = vi.fn();
+      expect(() =>
+        requireAwaitedReplicaShutdown(sdk.CatalystReplica),
+      ).not.toThrow();
+      const cache = preparePersonCache({
+        home: h,
+        scope: scope(),
+        assertCurrent: authority,
+        replicaClass: sdk.CatalystReplica,
+      });
+      expect(authority).toHaveBeenCalled();
+      expect(existsSync(cache.directory)).toBe(true);
+      expect(lstatSync(cache.directory).mode & 0o777).toBe(0o700);
+      expect(existsSync(join(cache.directory, "identity.json"))).toBe(true);
+      expect(lstatSync(join(cache.directory, "identity.json")).mode & 0o777).toBe(
+        0o600,
+      );
+      expect(() => cache.assertBound()).not.toThrow();
+      expect(() => cache.assertOwnedPaths()).not.toThrow();
+      expect(existsSync(cache.replicaDb)).toBe(false);
+      expect(existsSync(cache.eventDirectory)).toBe(false);
+      const witness = readFileSync(join(cache.directory, "identity.json"), "utf8");
+      for (const privateValue of [
+        "fixture-access-private",
+        "fixture-refresh-private",
+        "Private Name",
+        "private@example.test",
+        "Private Tenant",
+      ])
+        expect(witness).not.toContain(privateValue);
+    } finally {
+      resetSdkCache();
+    }
+  });
+  test("legacy SDK and absent current authority refuse before filesystem or authority work", () => {
     const h = home(),
       authority = vi.fn();
     expect(() => requireAwaitedReplicaShutdown(ReleasedReplica)).toThrow(
