@@ -1,3 +1,4 @@
+import { finishOnTheWeb } from "./consent-browser.js";
 import { loadConfig, normalizeBaseUrl, type Ctx } from "./config.js";
 import type {
   OnboardAdapter,
@@ -32,7 +33,7 @@ interface WorkspaceObservation {
   unsupported?: boolean;
 }
 export interface GithubInstallationOptions {
-  openBrowser: (url: string) => void;
+  openBrowser: (url: string, signal?: AbortSignal) => void | Promise<void>;
   wait?: <T>(message: string, work: () => Promise<T>) => Promise<T>;
   sleep?: (ms: number) => Promise<void>;
   requestTimeoutMs?: number;
@@ -362,10 +363,13 @@ export function githubInstallationAdapter(
         "Approve the GitHub App installation in your browser. Your personal GitHub connection is checked separately.",
       );
       // The signed URL is transient credential material: only the browser receives it.
+      let browserUnavailable = false;
       try {
-        options.openBrowser(url);
+        await options.openBrowser(url, signal);
       } catch {
-        return waiting("github_installation_browser_unavailable");
+        if (signal?.aborted) return waiting("interrupted");
+        browserUnavailable = true;
+        ctx.stderr(finishOnTheWeb(current.baseUrl, "connections", "install the GitHub App"));
       }
       let latest: OnboardStepResult = waiting(
         "github_installation_status_unavailable",
@@ -394,7 +398,10 @@ export function githubInstallationAdapter(
       const result = options.wait
         ? await options.wait("Waiting for GitHub App approval", run)
         : await run();
-      return result.state === "done" ? latest : result;
+      if (result.state === "done") return latest;
+      return browserUnavailable && result.reason === "consent_timeout"
+        ? waiting("github_installation_browser_unavailable")
+        : result;
     },
   };
 }
