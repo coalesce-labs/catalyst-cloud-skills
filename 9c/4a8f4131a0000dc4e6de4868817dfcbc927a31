@@ -1,6 +1,1 @@
-Revision history for #246:
-
-rev 2 (content) 2026-10-02 16:57 UTC — address independent Claude review: read credential before cloud enrollment snapshot; refuse conflicting Docker endpoint selectors
-rev 1 (initial) 2026-10-02 16:57 UTC
-
-<!-- mergify-revision-data: {"schema_version":1,"pull_number":246,"entries":[{"number":1,"change_type":"initial","old_sha":null,"new_sha":"8492c64587eea0171e6f1500c7209bbad31c582d","timestamp_iso":"2026-10-02T16:57:02Z","reason":"","replay_sha":null,"compare_url":null},{"number":2,"change_type":"content","old_sha":"8492c64587eea0171e6f1500c7209bbad31c582d","new_sha":"8b3029c334d8d8747f67526a9c1ce08a3d078b9c","timestamp_iso":"2026-10-02T16:57:02Z","reason":"address independent Claude review: read credential before cloud enrollment snapshot; refuse conflicting Docker endpoint selectors","replay_sha":null,"compare_url":"https://github.com/coalesce-labs/catalyst-cloud-skills/compare/8492c64587eea0171e6f1500c7209bbad31c582d...8b3029c334d8d8747f67526a9c1ce08a3d078b9c"}]} -->
+Address independent Claude review: distinguish valid unenrolled credentials from stale enrollment and recover spent/expired join tokens without deleting retained secret/key. Exercise actual credential/key programs under Bun; preserve unavailable on rate limit. Full sbx2814 pass/1 skip.
