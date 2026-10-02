@@ -1,0 +1,6 @@
+Revision history for #244:
+
+rev 2 (content) 2026-10-02 17:03 UTC — Codex takeover: converge the shared rail, immediate sign-in, prompt cleanup, bounded account waits and same-lock recheck; retain draft/hold pending independent review and repaired-helper served preflight.
+rev 1 (initial) 2026-10-02 17:03 UTC
+
+<!-- mergify-revision-data: {"schema_version":1,"pull_number":244,"entries":[{"number":1,"change_type":"initial","old_sha":null,"new_sha":"035019f8ab5f365b00b917bda09c2d51ac6b76e4","timestamp_iso":"2026-10-02T17:03:10Z","reason":"","replay_sha":null,"compare_url":null},{"number":2,"change_type":"content","old_sha":"035019f8ab5f365b00b917bda09c2d51ac6b76e4","new_sha":"ca2aca331b8f74182fb16c026e6e41011c4695b9","timestamp_iso":"2026-10-02T17:03:10Z","reason":"Codex takeover: converge the shared rail, immediate sign-in, prompt cleanup, bounded account waits and same-lock recheck; retain draft/hold pending independent review and repaired-helper served preflight.","replay_sha":null,"compare_url":"https://github.com/coalesce-labs/catalyst-cloud-skills/compare/035019f8ab5f365b00b917bda09c2d51ac6b76e4...ca2aca331b8f74182fb16c026e6e41011c4695b9"}]} -->
