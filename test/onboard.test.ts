@@ -456,7 +456,10 @@ function q1Fixture() {
 }
 
 describe("plain finish names what is left (CTC-4477)", () => {
-  const run = async (waits: Partial<Record<string, string>>) => {
+  const run = async (
+    waits: Partial<Record<string, string>>,
+    failures: readonly string[] = [],
+  ) => {
     const path = home();
     writeConfig(path, {
       baseUrl: "https://cloud.example.dev/",
@@ -475,7 +478,9 @@ describe("plain finish names what is left (CTC-4477)", () => {
         id,
         {
           check: async () =>
-            id === "linear.team"
+            failures.includes(id)
+              ? { state: "failed" as const, reason: "step_failed" }
+              : id === "linear.team"
               ? {
                   state: "done" as const,
                   evidence: { team: "team-1", teamKey: "ENG" },
@@ -492,7 +497,8 @@ describe("plain finish names what is left (CTC-4477)", () => {
       { adapters, bindSignals: false },
       "0.14.0",
     );
-    return { code, text: output.join("\n") };
+    const receipt = readOnboardJournal(onboardStatePath(path), "0.14.0")!;
+    return { code, text: output.join("\n"), receipt };
   };
 
   test("--yes lists each unfinished step with its action and keeps the waiting exit", async () => {
@@ -517,15 +523,64 @@ describe("plain finish names what is left (CTC-4477)", () => {
     expect(text).toContain("resume: catalyst onboard");
   });
 
-  test("--yes says a first ticket can start once its work prerequisites are done", async () => {
-    const { code, text } = await run({
+  test("deferred steps that wait still exit 0 as ready for work, without claiming complete", async () => {
+    const { code, text, receipt } = await run({
+      settings: "settings_checkout_unverified",
       housekeeping: "housekeeping_service_unverified",
     });
-    expect(code).toBe(11);
+    expect(code).toBe(0);
+    expect(receipt).toMatchObject({ exit: 0, complete: false });
+    expect(receipt.steps.find((step) => step.id === "values")).toMatchObject({
+      state: "waiting",
+      reason: "prerequisite_not_ready",
+    });
+    // first-ticket needs what dispatch needs; repository settings are not part of it.
+    expect(
+      receipt.steps.find((step) => step.id === "first-ticket"),
+    ).toMatchObject({ state: "done" });
+    expect(text).toContain("Ready for work.");
+    expect(text).toContain("Next, when you want:");
+    expect(text).toContain("Review repository settings: ");
+    expect(text).toContain(
+      'Import selected local values: Runs after "Review repository settings".',
+    );
+    expect(text).toContain("Schedule the daily update: ");
     expect(text).toContain(
       "Move a ticket in ENG to Todo; `catalyst explain <ticket>` says why it is or is not starting.",
     );
     expect(text).not.toContain("Onboarding complete");
+    expect(text).not.toContain("Setup still needs");
+  });
+
+  test.each([
+    ["capacity", "capacity_admission_unverified"],
+    ["linear.adopt", "workflow_mapping_unverified"],
+    ["ready", "onboarding_checks_pending"],
+  ])("a waiting required step %s still exits 11", async (id, reason) => {
+    const { code, receipt } = await run({
+      [id]: reason,
+      housekeeping: "housekeeping_service_unverified",
+    });
+    expect(code).toBe(11);
+    expect(receipt.complete).toBe(false);
+  });
+
+  test.each(["settings", "housekeeping"])(
+    "a failed deferred step %s still exits 10",
+    async (id) => {
+      const { code, text, receipt } = await run({}, [id]);
+      expect(code).toBe(10);
+      expect(receipt.complete).toBe(false);
+      expect(text).not.toContain("Ready for work.");
+    },
+  );
+
+  test("every step done exits 0 and says onboarding is complete", async () => {
+    const { code, text, receipt } = await run({});
+    expect(code).toBe(0);
+    expect(receipt.complete).toBe(true);
+    expect(text).toContain("Onboarding complete.");
+    expect(text).not.toContain("Ready for work.");
   });
 });
 
