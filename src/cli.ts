@@ -78,7 +78,11 @@ import { cmdRepo } from "./repo.js";
 import { cmdLegacy, type LegacyDeps } from "./legacy.js";
 import { cmdIdentity, type IdentityDeps } from "./identity.js";
 import { cmdConnections, type ConnectionsDeps } from "./connections.js";
-import { cmdOnboard, onboardErrorJournal } from "./onboard.js";
+import {
+  cmdOnboard,
+  onboardErrorJournal,
+  onboardRequiredStepsWaiting,
+} from "./onboard.js";
 import type { OnboardBootstrapPreview } from "./onboard-bootstrap.js";
 import {
   createClackOnboardUi,
@@ -455,9 +459,10 @@ export async function main(
                       journal?.localSync ?? args.flags["local-sync"] === true,
                     observe: observeCloudOnboarding,
                   });
-                  const failed = report.checks.some(
-                    (check) => check.required && check.state === "fail",
-                  );
+                  const failed =
+                    report.checks.some(
+                      (check) => check.required && check.state === "fail",
+                    ) && !onboardRequiredStepsWaiting(journal);
                   return {
                     state:
                       report.state === "complete"

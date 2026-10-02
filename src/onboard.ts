@@ -870,6 +870,20 @@ export const ONBOARD_DEFERRED_STEPS: ReadonlySet<OnboardStepId> = new Set([
   "first-ticket",
 ]);
 
+/** Readiness repeats earlier steps' checks. While a required step still waits, a failing readiness
+ * check is that same wait, so readiness waits too instead of reporting a new failure. */
+export function onboardRequiredStepsWaiting(
+  journal: Pick<OnboardJournal, "steps"> | undefined,
+): boolean {
+  return !!journal?.steps.some(
+    (step) =>
+      step.id !== "ready" &&
+      !ONBOARD_DEFERRED_STEPS.has(step.id) &&
+      step.state !== "failed" &&
+      !stepSatisfied(step),
+  );
+}
+
 /** A full run that exited 0 with deferred steps still open: ready for work, not complete. */
 export function onboardReadyForWork(
   journal: OnboardJournal,
