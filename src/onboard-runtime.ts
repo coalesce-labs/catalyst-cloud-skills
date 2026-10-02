@@ -10,7 +10,7 @@ import {
   readManifest,
   type Ctx,
 } from "./config.js";
-import { CliError } from "./errors.js";
+import { CliError, UsageError } from "./errors.js";
 import { cmdLegacy, findLegacy, type LegacyDeps } from "./legacy.js";
 import { personalConsentAdapter } from "./onboard-personal.js";
 import { boundedOnboardSignin } from "./onboard-signin.js";
@@ -18,6 +18,7 @@ import { existingLinearAdapters } from "./onboard-existing.js";
 import { linearWorkspaceAdapter } from "./onboard-workspace.js";
 import { firstProjectAdapters } from "./onboard-projects.js";
 import { onboardCapacityAdapter } from "./onboard-capacity.js";
+import { onboardRunnerAdapter, type RunnerEngine } from "./onboard-runner.js";
 import { onboardAutomationManagementAdapter } from "./onboard-automation-management.js";
 import { onboardWorkflowVerificationAdapter } from "./onboard-workflow.js";
 import { onboardAccountsAdapter } from "./onboard-accounts.js";
@@ -54,6 +55,7 @@ export interface OnboardRuntimeHooks {
   sleep?: (ms: number) => Promise<void>;
   realHome?: () => string;
   skillNames?: readonly string[];
+  runnerEngine?: RunnerEngine;
 }
 
 const waiting = (reason: string): OnboardStepResult => ({
@@ -74,6 +76,8 @@ export function createOnboardRuntime(
   ctx: Ctx,
   hooks: OnboardRuntimeHooks,
 ): OnboardDeps {
+  if (args.flags.runner === true && args.flags["no-runner"] === true)
+    throw new UsageError("choose one of --runner and --no-runner");
   const identity = async (
     stepCtx = ctx,
     journal?: OnboardJournal,
@@ -353,6 +357,20 @@ export function createOnboardRuntime(
       message: (text) => (hooks.ui ? hooks.ui.message(text) : ctx.stderr(text)),
     }),
     capacity: onboardCapacityAdapter({
+      message: (text) => (hooks.ui ? hooks.ui.message(text) : ctx.stderr(text)),
+    }),
+    runner: onboardRunnerAdapter({
+      selected:
+        args.flags.runner === true
+          ? true
+          : args.flags["no-runner"] === true
+            ? false
+            : undefined,
+      choose: hooks.ui?.chooseRunner
+        ? () => hooks.ui!.chooseRunner!()
+        : undefined,
+      engine: hooks.runnerEngine,
+      sleep: hooks.sleep,
       message: (text) => (hooks.ui ? hooks.ui.message(text) : ctx.stderr(text)),
     }),
     "linear.adopt": onboardWorkflowVerificationAdapter({

@@ -582,6 +582,14 @@ test.each([
   "workflow_login_refresh_required",
   "workflow_mapping_changed",
   "workflow_unavailable",
+  "runner_not_selected",
+  "runner_docker_missing",
+  "runner_image_unpinned",
+  "runner_images_unavailable",
+  "runner_org_key_missing",
+  "runner_host_not_ready",
+  "runner_admission_operator",
+  "runner_enrollment_stale",
 ])("%s renders a written next action, never the raw reason", (reason) => {
   const text = warned(reason);
   expect(text).not.toContain(reason.replaceAll("_", " "));
@@ -788,4 +796,15 @@ test("exit 0 with deferred steps waiting renders ready for work and the optional
   expect(text).toContain("Schedule the daily update: ");
   expect(text).toContain("Move a ticket in ENG to Todo;");
   expect(text).not.toMatch(/onboarding complete|still needs|resume:/i);
+});
+
+test("the runner question defaults to no, and only an explicit yes starts one", async () => {
+  const no = fixture("no");
+  expect(await no.ui.chooseRunner!()).toBe(false);
+  expect(no.selections[0]!.initialValue).toBe("no");
+  expect(no.selections[0]!.options.map((o) => o.value)).toEqual(["no", "yes"]);
+  expect(await fixture("yes").ui.chooseRunner!()).toBe(true);
+  const cancelled = fixture(Symbol("cancel"));
+  expect(await cancelled.ui.chooseRunner!()).toBeNull();
+  expect(cancelled.ui.signal.aborted).toBe(true);
 });

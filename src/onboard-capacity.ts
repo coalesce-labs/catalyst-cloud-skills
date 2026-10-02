@@ -147,7 +147,7 @@ const selection = (journal: OnboardJournal) =>
     selectedOnboardTeam(journal),
     selectedOnboardRepositories(journal),
   ]);
-async function liveTeamKey(
+export async function liveTeamKey(
   ctx: Ctx,
   teamId: string,
   signal: AbortSignal,
@@ -186,6 +186,20 @@ async function liveTeamKey(
     if (team.teamId === teamId) selected = team.teamKey;
   }
   return selected;
+}
+/** Whether `teamKey`'s pool admits hosts, from a fresh capacity read. Null when the read is
+ * unavailable, stale or does not name the team. */
+export async function onboardTeamAdmission(
+  ctx: Ctx,
+  teamKey: string,
+  signal?: AbortSignal,
+): Promise<boolean | null> {
+  const read = await readExistingOnboardJson(ctx, route, signal);
+  if ("reason" in read) return null;
+  const teams = snapshot(read.body, ctx.now().getTime())?.buckets.flatMap(
+    (b) => b.teams.filter((t) => t.key === teamKey),
+  );
+  return teams?.length ? teams.some((t) => t.admission) : null;
 }
 async function liveIdentity(
   ctx: Ctx,
