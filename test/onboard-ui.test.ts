@@ -20,7 +20,7 @@ function journal(extra: Partial<OnboardJournal> = {}): OnboardJournal {
     ...extra,
   };
 }
-function fixture(answer: string | symbol = "cloud") {
+function fixture(answer: string | symbol = "cloud", baseUrl?: string) {
   const events: Array<{ kind: string; text?: string }> = [];
   const selections: Array<{
     options: Array<{ value: string }>;
@@ -72,7 +72,7 @@ function fixture(answer: string | symbol = "cloud") {
   const ui = createClackOnboardUi(
     prompts,
     { input: new PassThrough(), output: new PassThrough() },
-    { signals, progress },
+    { signals, progress, baseUrl: () => baseUrl },
   );
   return {
     ui,
@@ -530,4 +530,228 @@ test("a login expiring after Q1 stays neutral and displays the actual renewal co
     f.events.some((event) => event.kind === "error" || event.kind === "info"),
   ).toBe(false);
   f.ui.dispose();
+});
+
+// CTC-4477: every step that waits names the next action a person can take.
+const adoptedTeam = (extra: OnboardJournal["steps"] = []) =>
+  journal({
+    steps: [
+      {
+        id: "linear.team",
+        state: "done",
+        evidence: { team: "team-1", teamKey: "ENG" },
+      },
+      ...extra,
+    ],
+  });
+const warned = (
+  reason: string,
+  options: {
+    id?: OnboardJournal["steps"][number]["id"];
+    baseUrl?: string;
+    evidence?: OnboardJournal["steps"][number]["evidence"];
+    journal?: OnboardJournal;
+  } = {},
+) => {
+  const f = fixture("cloud", options.baseUrl);
+  const id = options.id ?? "accounts";
+  f.ui.stepStart(id);
+  f.ui.stepEnd(
+    {
+      id,
+      state: "waiting",
+      reason,
+      ...(options.evidence ? { evidence: options.evidence } : {}),
+    },
+    options.journal,
+  );
+  f.ui.dispose();
+  return f.events.filter((event) => event.kind === "warn").at(-1)!.text!;
+};
+
+test.each([
+  "workflow_mapping_unverified",
+  "account_enrollment_required",
+  "settings_checkout_unverified",
+  "settings_approval_unverified",
+  "capacity_admission_unverified",
+  "capacity_currently_full",
+  "capacity_unavailable",
+  "housekeeping_service_unverified",
+  "workflow_identity_unverified",
+  "workflow_login_refresh_required",
+  "workflow_mapping_changed",
+  "workflow_unavailable",
+])("%s renders a written next action, never the raw reason", (reason) => {
+  const text = warned(reason);
+  expect(text).not.toContain(reason.replaceAll("_", " "));
+  expect(text).not.toContain(reason);
+});
+
+test("an unadopted workflow names the adopt command for the selected team key", () => {
+  const text = warned("workflow_mapping_unverified", {
+    id: "linear.adopt",
+    journal: adoptedTeam(),
+  });
+  expect(text).toContain("catalyst team adopt ENG");
+  expect(text).toContain("--yes --plan-hash");
+  expect(text).toContain("catalyst onboard");
+  expect(warned("workflow_mapping_unverified")).toContain(
+    "catalyst team adopt <TEAM KEY>",
+  );
+});
+
+test("a team key that could carry terminal text is replaced by the placeholder", () => {
+  const text = warned("workflow_mapping_unverified", {
+    id: "linear.adopt",
+    journal: journal({
+      steps: [
+        {
+          id: "linear.team",
+          state: "done",
+          evidence: { team: "team-1", teamKey: "ENG\u001b[2J" },
+        },
+      ],
+    }),
+  });
+  expect(text).toContain("catalyst team adopt <TEAM KEY>");
+  expect(text).not.toContain("\u001b");
+});
+
+test("missing coding accounts name the saved workspace's AI accounts page and the setup token", () => {
+  const text = warned("account_enrollment_required", {
+    baseUrl: "https://cloud.example.dev/",
+  });
+  expect(text).toContain("https://cloud.example.dev/settings/coding-accounts");
+  expect(text).toContain("Settings → AI accounts");
+  expect(text).toContain("claude setup-token");
+  expect(warned("account_enrollment_required")).toContain(
+    "Settings → AI accounts",
+  );
+  expect(warned("account_enrollment_required")).not.toContain("undefined");
+});
+
+test("closed runner admission names a self-hosted host or cloud runners from Catalyst", () => {
+  const text = warned("capacity_admission_unverified", { id: "capacity" });
+  expect(text).toContain("No runner is allowed to take work");
+  expect(text).toContain("Enroll a self-hosted runner host");
+  expect(text).toContain("ask Catalyst to enable cloud runners");
+});
+
+test("the daily update explains the service manager it needs and that it is optional", () => {
+  const text = warned("housekeeping_service_unverified", {
+    id: "housekeeping",
+  });
+  expect(text).toMatch(/user service manager/);
+  expect(text).toMatch(/launchd/);
+  expect(text).toMatch(/systemd/);
+  expect(text).toMatch(/optional/);
+});
+
+test.each(["settings_checkout_unverified", "settings_approval_unverified"])(
+  "%s says settings are optional for a first ticket and how to finish them",
+  (reason) => {
+    const text = warned(reason, { id: "settings" });
+    expect(text).toContain("optional for a first ticket");
+    expect(text).toContain("catalyst onboard from the repository's checkout");
+  },
+);
+
+test("an unavailable server step mentions a web link only when one was printed", () => {
+  const without = warned("cloud_capability_unavailable", { id: "linear.adopt" });
+  expect(without).not.toMatch(/shown above|link/i);
+  expect(without).toContain("catalyst onboard");
+  const withLink = warned("cloud_capability_unavailable", {
+    id: "linear.workspace",
+    evidence: { path: "https://cloud.example.dev/a/account/connections" },
+  });
+  expect(withLink).toContain("https://cloud.example.dev/a/account/connections");
+  expect(withLink).not.toContain("shown above");
+});
+
+const observedRun = (extra: OnboardJournal["steps"] = []) =>
+  journal({
+    exit: 11,
+    steps: [
+      { id: "signin", state: "done" },
+      {
+        id: "linear.team",
+        state: "done",
+        evidence: { team: "team-1", teamKey: "ENG" },
+      },
+      {
+        id: "linear.adopt",
+        state: "waiting",
+        reason: "cloud_capability_unavailable",
+      },
+      { id: "projects", state: "done" },
+      {
+        id: "accounts",
+        state: "waiting",
+        reason: "account_enrollment_required",
+      },
+      {
+        id: "settings",
+        state: "waiting",
+        reason: "settings_checkout_unverified",
+      },
+      { id: "values", state: "waiting", reason: "prerequisite_not_ready" },
+      {
+        id: "capacity",
+        state: "waiting",
+        reason: "capacity_admission_unverified",
+      },
+      { id: "daemon", state: "skipped", reason: "local_sync_not_selected" },
+      {
+        id: "housekeeping",
+        state: "waiting",
+        reason: "housekeeping_service_unverified",
+      },
+      ...extra,
+    ],
+  });
+const outro = (value: OnboardJournal, baseUrl?: string) => {
+  const f = fixture("cloud", baseUrl);
+  f.ui.finish(value);
+  f.ui.dispose();
+  return f.events.find((event) => event.kind === "outro")!.text!;
+};
+
+test("an incomplete finish lists each unfinished step with its next action", () => {
+  const text = outro(observedRun(), "https://cloud.example.dev");
+  expect(text).not.toMatch(/onboarding complete/i);
+  expect(text).toContain(
+    "Apply the Catalyst workflow: This setup step is not available on this server yet.",
+  );
+  expect(text).toContain(
+    "Check coding accounts: No coding account is enrolled.",
+  );
+  expect(text).toContain("https://cloud.example.dev/settings/coding-accounts");
+  expect(text).toContain("Review repository settings: ");
+  expect(text).toContain(
+    'Import selected local values: Runs after "Review repository settings".',
+  );
+  expect(text).toContain("Check runner capacity: No runner is allowed");
+  expect(text).toContain("Schedule the daily update: ");
+  expect(text).not.toContain("Register your projects:");
+  expect(text).not.toContain("Check optional local sync:");
+  expect(text).not.toContain("Sign in to Catalyst:");
+  expect(text).toMatch(/resume: catalyst onboard/);
+  expect(text).not.toContain("Move a ticket");
+});
+
+test("a finish with the work prerequisites done says a first ticket can start now", () => {
+  const done = (id: OnboardJournal["steps"][number]["id"]) =>
+    ({ id, state: "done" }) as const;
+  const value = observedRun();
+  value.steps = value.steps.map((step) =>
+    ["linear.adopt", "accounts", "capacity"].includes(step.id)
+      ? done(step.id)
+      : step,
+  );
+  const text = outro(value);
+  expect(text).toContain(
+    "Move a ticket in ENG to Todo; `catalyst explain <ticket>` says why it is or is not starting.",
+  );
+  expect(text).not.toMatch(/onboarding complete/i);
 });
