@@ -244,6 +244,7 @@ describe("catalyst onboard", () => {
   test("does not release a lock whose owner token changed while a step ran", async () => {
     const path = home();
     const lock = onboardLockPath(path);
+    let receiptBeforeReplacement = "";
     const code = await cmdOnboard(
       parseArgs(["onboard", "--only", "legacy", "--yes"]),
       context(path),
@@ -251,6 +252,7 @@ describe("catalyst onboard", () => {
         processId: 91,
         token: () => "mine",
         runStep: async () => {
+          receiptBeforeReplacement = readFileSync(onboardStatePath(path), "utf8");
           writeFileSync(
             join(lock, "owner.json"),
             JSON.stringify({ pid: 92, token: "replacement" }),
@@ -259,7 +261,8 @@ describe("catalyst onboard", () => {
         },
       },
     );
-    expect(code).toBe(0);
+    expect(code).toBe(12);
+    expect(readFileSync(onboardStatePath(path), "utf8")).toBe(receiptBeforeReplacement);
     expect(readFileSync(join(lock, "owner.json"), "utf8")).toContain(
       "replacement",
     );

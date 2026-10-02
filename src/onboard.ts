@@ -1,4 +1,5 @@
 import { randomBytes, randomUUID } from "node:crypto";
+import { parseFirstTicketReceipt } from "./onboard-first-ticket.js";
 import {
   chmodSync,
   existsSync,
@@ -129,6 +130,8 @@ export interface OnboardStepResult {
   evidence?: OnboardStep["evidence"];
 }
 
+export type OnboardCheckpoint = (receipt: string) => void;
+
 export interface OnboardAdapter {
   check: (
     ctx: Ctx,
@@ -139,6 +142,7 @@ export interface OnboardAdapter {
     ctx: Ctx,
     journal: OnboardJournal,
     signal?: AbortSignal,
+    checkpoint?: OnboardCheckpoint,
   ) => Promise<OnboardStepResult>;
 }
 
@@ -408,6 +412,7 @@ function normalizeStep(value: unknown, fallbackAt: string): OnboardStep | null {
     "phaseStarted",
     "linearComment",
     "fleetActivity",
+    "firstTicket",
     "requiredValues",
     "paused",
     "revision",
@@ -710,7 +715,16 @@ function journalStep(
   return journal.steps.find((step) => step.id === id);
 }
 
-function setStep(journal: OnboardJournal, step: OnboardStep): void {
+function setStep(journal: OnboardJournal, step: OnboardStep, validatedCheckpoint?: string): void {
+  // Only the strict checkpoint callback replaces this reserved durable field. An adapter
+  // result can describe a check, but cannot replace an approved intent or erase it on exit.
+  if (step.id === "first-ticket") {
+    const receipt = validatedCheckpoint ?? journalStep(journal, step.id)?.evidence?.firstTicket;
+    const evidence = { ...step.evidence };
+    delete evidence.firstTicket;
+    if (typeof receipt === "string") evidence.firstTicket = receipt;
+    step = { ...step, ...(Object.keys(evidence).length ? { evidence } : { evidence: undefined }) };
+  }
   const index = journal.steps.findIndex((existing) => existing.id === step.id);
   if (index === -1) journal.steps.push(step);
   else journal.steps[index] = step;
@@ -852,6 +866,7 @@ function stepSatisfied(step: OnboardStep | undefined): boolean {
       (step.id === "legacy" ||
         step.reason === "member_scope" ||
         (step.id === "daemon" && step.reason === "local_sync_not_selected") ||
+        (step.id === "first-ticket" && step.reason === "first_ticket_not_selected") ||
         (step.id === "linear.automations" &&
           step.reason === "automation_management_unavailable")))
   );
@@ -1185,6 +1200,54 @@ export async function cmdOnboard(
       );
     return error.exitCode;
   }
+  const ownedDirectory = lstatSync(lock.path);
+  const receiptObservation = () => {
+    let before: ReturnType<typeof lstatSync> | null = null;
+    try { before = lstatSync(statePath); } catch (error) {
+      if (object(error)?.code !== "ENOENT") throw error;
+    }
+    const bytes = onboardFileSnapshot(statePath);
+    let after: ReturnType<typeof lstatSync> | null = null;
+    try { after = lstatSync(statePath); } catch (error) {
+      if (object(error)?.code !== "ENOENT") throw error;
+    }
+    if ((before === null) !== (after === null) || before && after &&
+        (before.dev !== after.dev || before.ino !== after.ino || before.mode !== after.mode ||
+         before.size !== after.size || before.mtimeMs !== after.mtimeMs || before.ctimeMs !== after.ctimeMs))
+      throw new CliError("Your setup record changed. Run catalyst onboard again.", "onboard-receipt-changed", EXIT_REFUSED);
+    return JSON.stringify([bytes, after?.dev, after?.ino, after?.mode, after?.size, after?.mtimeMs, after?.ctimeMs]);
+  };
+  let expectedReceipt: string;
+  try { expectedReceipt = receiptObservation(); }
+  catch (error) {
+    // Initial witness failure occurs before any adapter IO. Release only this original directory.
+    try {
+      const directory = lstatSync(lock.path);
+      if (directory.isDirectory() && !directory.isSymbolicLink() &&
+          directory.dev === ownedDirectory.dev && directory.ino === ownedDirectory.ino)
+        releaseLock(lock);
+    } catch { /* Preserve a replaced or unverifiable owner. */ }
+    deps.ui?.dispose();
+    throw error;
+  }
+  let publicationRefused = false;
+  const assertPublicationOwner = () => {
+    try {
+      const directory = lstatSync(lock.path), owner = readLockOwner(lock.path);
+      if (publicationRefused || !directory.isDirectory() || directory.isSymbolicLink() ||
+          directory.dev !== ownedDirectory.dev || directory.ino !== ownedDirectory.ino ||
+          owner?.pid !== lock.owner.pid || owner.token !== lock.owner.token || receiptObservation() !== expectedReceipt)
+        throw new Error("changed owner or receipt");
+    } catch {
+      publicationRefused = true;
+      throw new CliError("Your setup owner or record changed. Run catalyst onboard again.", "onboard-checkpoint-ownership", EXIT_REFUSED);
+    }
+  };
+  const persistOwnedJournal = () => {
+    assertPublicationOwner();
+    writeOnboardJournal(statePath, journal);
+    expectedReceipt = receiptObservation();
+  };
   const stop = new AbortController();
   const signal = AbortSignal.any([
     stop.signal,
@@ -1220,7 +1283,7 @@ export async function cmdOnboard(
     journal.exit = EXIT_WAITING;
     journal.complete = false;
     try {
-      writeOnboardJournal(statePath, journal);
+      persistOwnedJournal();
     } catch {
       /* keep the last atomic receipt */
     }
@@ -1231,7 +1294,7 @@ export async function cmdOnboard(
   const finish = (code: number) => {
     journal.exit = code;
     journal.complete = !only && code === 0;
-    writeOnboardJournal(statePath, journal);
+    persistOwnedJournal();
     if (args.json) ctx.stdout(JSON.stringify(journal));
     else if (deps.ui) deps.ui.finish(journal, only);
     else {
@@ -1315,7 +1378,7 @@ export async function cmdOnboard(
     );
     journal.operations ??= {};
     if (candidate) {
-      writeOnboardJournal(statePath, journal);
+      persistOwnedJournal();
       mayRecordProgress = true;
     }
     if (bootstrap && bootstrapPlan && reviewedBootstrapHash) {
@@ -1360,7 +1423,7 @@ export async function cmdOnboard(
         state: "running",
         at: isoNow(ctx, deps),
       });
-      writeOnboardJournal(statePath, journal);
+      persistOwnedJournal();
       try {
         await bootstrap.continue(
           Object.freeze({
@@ -1441,7 +1504,7 @@ export async function cmdOnboard(
           reason: "prerequisite_not_ready",
           at: isoNow(ctx, deps),
         });
-        writeOnboardJournal(statePath, journal);
+        persistOwnedJournal();
         deps.ui?.stepEnd(journalStep(journal, id)!);
         continue;
       }
@@ -1465,7 +1528,7 @@ export async function cmdOnboard(
           reason: "step_not_available_in_this_release",
           at: isoNow(ctx, deps),
         });
-        writeOnboardJournal(statePath, journal);
+        persistOwnedJournal();
         deps.ui?.stepEnd(journalStep(journal, id)!);
         continue;
       }
@@ -1487,16 +1550,50 @@ export async function cmdOnboard(
                 reason: "member_scope",
                 at: isoNow(ctx, deps),
               });
-              writeOnboardJournal(statePath, journal);
+              persistOwnedJournal();
               deps.ui?.stepEnd(journalStep(journal, id)!);
               continue;
             }
           }
           journal.operations[id] ??= `${journal.runId}:${id}`;
-          setStep(journal, { id, state: "running", at: isoNow(ctx, deps) });
+          const previousEvidence = id === "first-ticket" ? journalStep(journal, id)?.evidence : undefined;
+          setStep(journal, { id, state: "running", at: isoNow(ctx, deps),
+            ...(previousEvidence ? { evidence: { ...previousEvidence } } : {}) });
           journal.exit = null;
-          writeOnboardJournal(statePath, journal);
-          const action = await adapter.act(stepCtx, journal, signal);
+          persistOwnedJournal();
+          const ownerDirectory = lstatSync(lock.path);
+          const checkpointBinding = JSON.stringify([journal.account, journal.membershipId, journal.baseUrl]);
+          const checkpointConfig = onboardFileSnapshot(configPathFor(ctx.home));
+          const checkpointOperation = journal.operations[id];
+          let actionActive = true;
+          const checkpoint: OnboardCheckpoint = (receipt) => {
+            // This callback is valid only while this actual action owns its original lock/scope.
+            // It acknowledges a durable local intent, never provider acceptance or launch.
+            if (!actionActive || id !== "first-ticket" || current !== id || signal.aborted || typeof receipt !== "string" || receipt.length > 16_384)
+              throw new CliError("The first-ticket checkpoint is unavailable. Resume setup.", "onboard-checkpoint-unavailable", EXIT_WAITING);
+            assertPublicationOwner();
+            const directory = lstatSync(lock.path), owner = readLockOwner(lock.path);
+            if (!directory.isDirectory() || directory.isSymbolicLink() || directory.dev !== ownerDirectory.dev || directory.ino !== ownerDirectory.ino ||
+                owner?.pid !== lock.owner.pid || owner.token !== lock.owner.token ||
+                checkpointBinding !== JSON.stringify([journal.account, journal.membershipId, journal.baseUrl]) ||
+                checkpointConfig !== onboardFileSnapshot(configPathFor(ctx.home)) ||
+                journal.operations?.[id] !== checkpointOperation) {
+              publicationRefused = true;
+              throw new CliError("Setup ownership changed. Resume setup.", "onboard-checkpoint-ownership", EXIT_REFUSED);
+            }
+            let parsed: ReturnType<typeof parseFirstTicketReceipt>;
+            try { parsed = parseFirstTicketReceipt(JSON.parse(receipt)); } catch { parsed = null; }
+            if (!parsed || parsed.intent.account !== journal.account || parsed.intent.person !== journal.membershipId || parsed.intent.origin !== journal.baseUrl ||
+                parsed.intent.operationKey !== checkpointOperation)
+              throw new CliError("The first-ticket intent changed. Resume setup.", "onboard-checkpoint-intent", EXIT_REFUSED);
+            setStep(journal, { id, state: "running", at: isoNow(ctx, deps), evidence: {
+              ...journalStep(journal, id)?.evidence,
+            } }, JSON.stringify(parsed));
+            persistOwnedJournal();
+          };
+          let action: OnboardStepResult;
+          try { action = await adapter.act(stepCtx, journal, signal, checkpoint); }
+          finally { actionActive = false; }
           if (action.state === "done") {
             result = await adapter.check(stepCtx, journal, signal);
             if (result.state === "pending")
@@ -1512,7 +1609,7 @@ export async function cmdOnboard(
                 reason: "member_scope",
                 at: isoNow(ctx, deps),
               });
-              writeOnboardJournal(statePath, journal);
+              persistOwnedJournal();
               deps.ui?.stepEnd(journalStep(journal, id)!);
               continue;
             }
@@ -1536,6 +1633,7 @@ export async function cmdOnboard(
           };
         setStep(journal, sanitizedResult(id, result, isoNow(ctx, deps)));
       } catch (error) {
+        if (publicationRefused) throw error;
         if (error instanceof CliError && error.exitCode === EXIT_REFUSED)
           refused = true;
         const reason = signal.aborted
@@ -1569,7 +1667,7 @@ export async function cmdOnboard(
         return finish(EXIT_WAITING);
       }
       deps.ui?.stepEnd(journalStep(journal, id)!);
-      writeOnboardJournal(statePath, journal);
+      persistOwnedJournal();
       if (refused) break;
     }
     current = null;
@@ -1606,7 +1704,12 @@ export async function cmdOnboard(
   } finally {
     if (deps.bindSignals !== false)
       for (const name of signals) process.off(name, interrupted);
-    releaseLock(lock);
+    try {
+      const directory = lstatSync(lock.path);
+      if (directory.isDirectory() && !directory.isSymbolicLink() &&
+          directory.dev === ownedDirectory.dev && directory.ino === ownedDirectory.ino)
+        releaseLock(lock);
+    } catch { /* Preserve a replaced or unverifiable lock. */ }
     deps.ui?.dispose();
   }
 }
