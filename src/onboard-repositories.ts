@@ -1,3 +1,4 @@
+import { isRepositoryId } from "./repository-id.js";
 import type { ParsedArgs } from "./args.js";
 import {
   loadConfig,
@@ -43,8 +44,7 @@ const valid = (value: unknown): value is ExistingOnboardRepository => {
     !!row &&
     typeof row.teamId === "string" &&
     id.test(row.teamId) &&
-    typeof row.repoId === "string" &&
-    id.test(row.repoId) &&
+    isRepositoryId(row.repoId) &&
     typeof row.owner === "string" &&
     part.test(row.owner) &&
     typeof row.name === "string" &&
@@ -200,8 +200,7 @@ export async function readOnboardRepositoryInventory(
       !part.test(row.owner) ||
       typeof row.name !== "string" ||
       !part.test(row.name) ||
-      typeof row.repoId !== "string" ||
-      !id.test(row.repoId)
+      !isRepositoryId(row.repoId)
     )
       return { reason: "repository_contract_unverified" };
     const name = key({ owner: row.owner, name: row.name });
