@@ -94,15 +94,9 @@ export function observeOnboardWorkflow(
       !stage ||
       !id(stage.id) ||
       stages.has(stage.id) ||
+      // Linear adds types such as "duplicate"; only the required slots' targets are type-checked below.
       typeof stage.type !== "string" ||
-      ![
-        "triage",
-        "backlog",
-        "unstarted",
-        "started",
-        "completed",
-        "canceled",
-      ].includes(stage.type)
+      !/^[a-z][a-z_-]{0,39}$/.test(stage.type)
     )
       return null;
     stages.set(stage.id, stage.type);
