@@ -23,6 +23,11 @@ import type { OnboardUi } from "./onboard-ui.js";
 import { CliError, UsageError } from "./errors.js";
 import { onboardFileSnapshot } from "./onboard-file-snapshot.js";
 import {
+  onboardReasonText,
+  onboardTeamKey,
+  savedOnboardBaseUrl,
+} from "./onboard-next.js";
+import {
   parseBootstrapPlan,
   bootstrapPlanHash,
   bootstrapPlanLines,
@@ -857,6 +862,50 @@ function stepSatisfied(step: OnboardStep | undefined): boolean {
   );
 }
 
+/** A recorded step's next action; a prerequisite wait names the first unfinished step it needs. */
+export function onboardStepAction(
+  journal: OnboardJournal | undefined,
+  step: OnboardStep,
+  baseUrl?: string,
+): string {
+  if (!step.reason) return "Not checked yet. Run catalyst onboard.";
+  const waitsFor =
+    journal &&
+    (ONBOARD_DEPENDENCIES[step.id] ?? []).find(
+      (parent) => !stepSatisfied(journalStep(journal, parent)),
+    );
+  return onboardReasonText(step, {
+    baseUrl,
+    journal,
+    ...(waitsFor ? { waitsFor: ONBOARD_TITLES[waitsFor] } : {}),
+  });
+}
+
+/** "<title>: <action>" for each recorded step still blocking onboarding, then the first-ticket hint
+ * once the steps a ticket needs are done. Display only: completeness and exits stay with the engine. */
+export function onboardNextActions(
+  journal: OnboardJournal,
+  baseUrl?: string,
+  only?: OnboardStepId,
+): string[] {
+  const lines = journal.steps
+    .filter((step) => (!only || step.id === only) && !stepSatisfied(step))
+    .sort((a, b) => ONBOARD_STEPS.indexOf(a.id) - ONBOARD_STEPS.indexOf(b.id))
+    .map(
+      (step) =>
+        `${ONBOARD_TITLES[step.id]}: ${onboardStepAction(journal, step, baseUrl)}`,
+    );
+  if (
+    (["projects", "accounts", "linear.adopt", "capacity"] as const).every(
+      (id) => journalStep(journal, id)?.state === "done",
+    )
+  )
+    lines.push(
+      `Move a ticket in ${onboardTeamKey(journal) ?? "<TEAM KEY>"} to Todo; \`catalyst explain <ticket>\` says why it is or is not starting.`,
+    );
+  return lines;
+}
+
 function requireMatchingIdentity(
   journal: OnboardJournal,
   identity: OnboardIdentity | null,
@@ -1240,10 +1289,17 @@ export async function cmdOnboard(
         ctx.stdout(
           `${ONBOARD_TITLES[only]} finished. Onboarding still has other steps.`,
         );
-      else
+      else {
         ctx.stdout(
           `Setup still needs ${journal.steps.filter((step) => !stepSatisfied(step)).length} checks.`,
         );
+        for (const line of onboardNextActions(
+          journal,
+          savedOnboardBaseUrl(ctx.home),
+          only,
+        ))
+          ctx.stdout(line);
+      }
       ctx.stdout(
         bootstrap && journalStep(journal, "machine")?.state !== "done"
           ? "resume: run the original setup command"
@@ -1428,7 +1484,7 @@ export async function cmdOnboard(
           reason: "member_scope",
           at: isoNow(ctx, deps),
         });
-        deps.ui?.stepEnd(journalStep(journal, id)!);
+        deps.ui?.stepEnd(journalStep(journal, id)!, journal);
         continue;
       }
       const missing = (ONBOARD_DEPENDENCIES[id] ?? []).find(
@@ -1442,7 +1498,7 @@ export async function cmdOnboard(
           at: isoNow(ctx, deps),
         });
         writeOnboardJournal(statePath, journal);
-        deps.ui?.stepEnd(journalStep(journal, id)!);
+        deps.ui?.stepEnd(journalStep(journal, id)!, journal);
         continue;
       }
       let adapter = deps.adapters?.[id];
@@ -1466,7 +1522,7 @@ export async function cmdOnboard(
           at: isoNow(ctx, deps),
         });
         writeOnboardJournal(statePath, journal);
-        deps.ui?.stepEnd(journalStep(journal, id)!);
+        deps.ui?.stepEnd(journalStep(journal, id)!, journal);
         continue;
       }
       try {
@@ -1488,7 +1544,7 @@ export async function cmdOnboard(
                 at: isoNow(ctx, deps),
               });
               writeOnboardJournal(statePath, journal);
-              deps.ui?.stepEnd(journalStep(journal, id)!);
+              deps.ui?.stepEnd(journalStep(journal, id)!, journal);
               continue;
             }
           }
@@ -1513,7 +1569,7 @@ export async function cmdOnboard(
                 at: isoNow(ctx, deps),
               });
               writeOnboardJournal(statePath, journal);
-              deps.ui?.stepEnd(journalStep(journal, id)!);
+              deps.ui?.stepEnd(journalStep(journal, id)!, journal);
               continue;
             }
           }
@@ -1568,7 +1624,7 @@ export async function cmdOnboard(
         });
         return finish(EXIT_WAITING);
       }
-      deps.ui?.stepEnd(journalStep(journal, id)!);
+      deps.ui?.stepEnd(journalStep(journal, id)!, journal);
       writeOnboardJournal(statePath, journal);
       // Later steps share the same login; preserve the actionable cause instead of cascading failures.
       if (journalStep(journal, id)?.reason?.endsWith("_login_refresh_required"))

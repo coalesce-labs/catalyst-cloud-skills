@@ -32,7 +32,7 @@ import { loadContract, pickPath } from "./contract.js";
 import { CliError, MeError, UsageError } from "./errors.js";
 import { fetchMe } from "./transport.js";
 import { bearerFor, deviceFlowLogin, type OauthAuth } from "./oauth.js";
-import { openBrowser as defaultOpenBrowser } from "./browser.js";
+import { openBrowserChecked as defaultOpenBrowser } from "./browser.js";
 import {
   cmdAccounts,
   cmdExplain,
@@ -86,6 +86,7 @@ import {
   type OnboardUi,
 } from "./onboard-ui.js";
 import { createOnboardRuntime } from "./onboard-runtime.js";
+import { savedOnboardBaseUrl } from "./onboard-next.js";
 import {
   onboardingReadyReport,
   observeCloudOnboarding,
@@ -387,10 +388,11 @@ export async function main(
           }
           if (input.isTTY) {
             try {
-              ui = createClackOnboardUi(await import("@clack/prompts"), {
-                input,
-                output: process.stdout,
-              });
+              ui = createClackOnboardUi(
+                await import("@clack/prompts"),
+                { input, output: process.stdout },
+                { baseUrl: () => savedOnboardBaseUrl(ctx.home) },
+              );
             } catch (error) {
               terminal?.destroy();
               throw error;
