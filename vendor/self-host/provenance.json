@@ -1,0 +1,7 @@
+{
+  "repository": "coalesce-labs/catalyst-cloud",
+  "commit": "8861fa0c6d9063be62d003c95f71c8a5ccaf4d0d",
+  "sha256": {
+    "deploy/self-host/compose.yaml": "302f4cd6740572bf1a40386f8ec0d3a1b6919fe8c5e303f232c36969d8f36a53"
+  }
+}

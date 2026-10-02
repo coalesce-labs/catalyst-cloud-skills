@@ -7,3 +7,7 @@ Run `CATALYST_PATHS_SOURCE=/path/to/catalyst-cloud node scripts/vendor-paths.mjs
 Replica selection is `--db` where accepted, `CATALYST_REPLICA_DB`, then the machine manifest's `replicaDb`. Before a machine manifest exists, the CLI retains its saved customer.json path or legacy default. A manifest without replicaDb leaves replication optional and unconfigured. A malformed or missing explicit manifest fails instead of selecting another database.
 
 The reader derives the lock from the selected database on each status check. No existing database is copied, moved, opened for writing, or reseeded by path resolution. Setup must import a discovered populated replica into the manifest before activating it. This PR does not install a manifest or start a writer.
+
+# Self-hosted runner Compose file
+
+`self-host/compose.yaml` is catalyst-cloud's `deploy/self-host/compose.yaml` at the commit in `self-host/provenance.json`, byte for byte. `catalyst onboard` copies it to this machine when a person chooses to run Catalyst's work here, because the source repository is private. Run `CATALYST_SELF_HOST_SOURCE=/path/to/catalyst-cloud node scripts/vendor-self-host.mjs` after moving the commit in that script. `npm run self-host:check` validates the file against the recorded hash.
