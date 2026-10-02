@@ -1,0 +1,1 @@
+No-browser path now names the web page and keeps polling instead of stopping, so a Docker run needs no resume per consent
