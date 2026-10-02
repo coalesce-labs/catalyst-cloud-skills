@@ -3,13 +3,15 @@ import {
   chmodSync,
   lstatSync,
   mkdirSync,
+  mkdtempSync,
   readFileSync,
   renameSync,
+  rmSync,
   statSync,
   writeFileSync,
 } from "node:fs";
 import { randomBytes } from "node:crypto";
-import { hostname } from "node:os";
+import { hostname, tmpdir } from "node:os";
 import { join } from "node:path";
 import { loadConfig, normalizeBaseUrl, packageRoot, type Ctx } from "./config.js";
 import { verifyOnboardRoutes } from "./onboard-capabilities.js";
@@ -28,14 +30,14 @@ import {
 
 // "Run Catalyst's work on this machine": the self-hosted host from catalyst-cloud's deploy/self-host
 // (a supervisor and a deadline watchdog under Compose), enrolled with the person's own owner or
-// admin login. Never the operator token, and setup never runs a registry login: an image the engine
-// does not have is pulled with whatever the engine already trusts, or the step stops and names it.
+// admin login. Never the operator token. Missing host images are pulled anonymously with an empty
+// disposable Docker config; private runner delivery requires its own scoped Catalyst contract.
 
 /** The Compose project name the vendored file declares. */
 export const RUNNER_PROJECT = "catalyst-host";
 export const RUNNER_SESSION_NETWORK = "catalyst-session-v1";
 /** Published by catalyst-cloud's supervisor-image workflow from main 0b5495e144 (run 36999325814). A
- * customer cannot list the private packages, so a release carries the pins; the CATALYST_SUPERVISOR_IMAGE
+ * release carries exact multi-architecture host-image pins; the CATALYST_SUPERVISOR_IMAGE
  * and CATALYST_WATCHDOG_IMAGE variables override them. */
 export const RUNNER_HOST_IMAGES = {
   supervisor:
@@ -57,9 +59,23 @@ export interface RunnerEngineInfo {
   /** Docker Desktop or OrbStack: the engine runs in a VM, its socket is gid 0 and shared
    * directories keep the container's uid. */
   vm: boolean;
+  /** A reachable engine whose bind paths/socket ownership cannot be verified locally. */
+  unsupported?: true;
 }
+export interface RunnerEnrollment {
+  hostId: string;
+  tenant: string;
+  team: string;
+  enrollmentKind: "self_hosted" | "dedicated";
+}
+export type RunnerOrgKeyStatus = "valid" | "different" | "missing" | "invalid" | "unavailable";
 type VolumeFile = "CATALYST_ORG_KEY_FILE" | "CATALYST_HOST_CREDENTIAL_FILE";
 /** Every Docker call the step makes. Each answers false or null instead of throwing. */
+export interface RunnerUnenrolled { unenrolled: true; tokenSpent: boolean }
+function isUnenrolled(value: RunnerEnrollment | RunnerUnenrolled | null): value is RunnerUnenrolled {
+  return value !== null && "unenrolled" in value;
+}
+
 export interface RunnerEngine {
   /** Null when there is no docker command, no reachable Linux engine, or no Compose plugin. */
   info(signal?: AbortSignal): Promise<RunnerEngineInfo | null>;
@@ -79,6 +95,10 @@ export interface RunnerEngine {
     variable: VolumeFile,
     signal?: AbortSignal,
   ): Promise<boolean>;
+  /** Reads only public enrollment metadata, never the host secret. */
+  enrollment(dir: string, signal?: AbortSignal): Promise<RunnerEnrollment | RunnerUnenrolled | null>;
+  /** Validates the stored or supplied host key against this tenant. Supplied keys reach stdin only. */
+  orgKeyStatus(dir: string, account: string, baseUrl: string, candidate?: string, signal?: AbortSignal): Promise<RunnerOrgKeyStatus>;
   writeVolumeFile(
     dir: string,
     variable: "CATALYST_ORG_KEY_FILE",
@@ -124,7 +144,7 @@ const spawnDocker: RunnerExec = (args, options) =>
 /** The real engine, through the docker CLI. Compose reads `.env` only: the caller's CATALYST_ and
  * DOCKER_SOCKET_ variables are removed, because Compose prefers an exported value over the file. */
 export function dockerRunnerEngine(
-  deps: { exec?: RunnerExec; env?: NodeJS.ProcessEnv; socketPath?: string } = {},
+  deps: { exec?: RunnerExec; env?: NodeJS.ProcessEnv; socketPath?: string; platform?: NodeJS.Platform } = {},
 ): RunnerEngine {
   const exec = deps.exec ?? spawnDocker;
   const env = Object.fromEntries(
@@ -134,7 +154,7 @@ export function dockerRunnerEngine(
   );
   const docker = async (
     args: string[],
-    options: Omit<RunnerExecOptions, "env"> = {},
+    options: Omit<RunnerExecOptions, "env"> & { env?: NodeJS.ProcessEnv } = {},
   ): Promise<{ code: number; stdout: string }> => {
     try {
       return await exec(args, { env, ...options });
@@ -163,8 +183,18 @@ export function dockerRunnerEngine(
     "-c",
     script,
   ];
+  let nativeLocal = false;
+  const endpoint = async (signal?: AbortSignal): Promise<string | null> => {
+    // Reject conflicting selectors rather than infer precedence across Docker/Compose versions.
+    if (env.DOCKER_CONTEXT && env.DOCKER_HOST) return null;
+    if (!env.DOCKER_CONTEXT && env.DOCKER_HOST) return env.DOCKER_HOST;
+    const read = await docker(["context", "inspect", ...(env.DOCKER_CONTEXT ? [env.DOCKER_CONTEXT] : []),
+      "--format", '{{(index .Endpoints "docker").Host}}'], { signal });
+    return read.code === 0 ? read.stdout.trim() || null : null;
+  };
   return {
     async info(signal) {
+      nativeLocal = false;
       const read = await docker(["info", "--format", "{{json .}}"], { signal });
       if (read.code !== 0) return null;
       let body: Record<string, unknown>;
@@ -182,7 +212,12 @@ export function dockerRunnerEngine(
       const arch = arches[String(body.Architecture)];
       if (body.OSType !== "linux" || !arch) return null;
       if ((await docker(["compose", "version"], { signal })).code !== 0) return null;
-      return { arch, vm: /docker desktop|orbstack/i.test(String(body.OperatingSystem)) };
+      const vm = /docker desktop|orbstack/i.test(String(body.OperatingSystem));
+      const host = await endpoint(signal);
+      const platform = deps.platform ?? process.platform;
+      nativeLocal = platform === "linux" && !vm && host === "unix:///var/run/docker.sock";
+      const supportedVm = platform === "darwin" && vm && host?.startsWith("unix:///");
+      return { arch, vm, ...(!nativeLocal && !supportedVm ? { unsupported: true as const } : {}) };
     },
     async imageArch(ref, signal) {
       const read = await docker(
@@ -192,9 +227,19 @@ export function dockerRunnerEngine(
       return read.code === 0 ? read.stdout.trim() || null : null;
     },
     async pull(ref, signal) {
-      return (
-        (await docker(["pull", "--quiet", ref], { signal, timeoutMs: 900_000 })).code === 0
-      );
+      const host = await endpoint(signal);
+      if (!host?.startsWith("unix:///")) return false;
+      let config: string | undefined;
+      try {
+        config = mkdtempSync(join(tmpdir(), "catalyst-pull-"));
+        writeFileSync(join(config, "config.json"), JSON.stringify({ auths: {} }), { mode: 0o600 });
+        const anonymousEnv: NodeJS.ProcessEnv = { ...env, DOCKER_CONFIG: config };
+        delete anonymousEnv.DOCKER_CONTEXT;
+        delete anonymousEnv.DOCKER_AUTH_CONFIG;
+        return (await docker(["--host", host, "--config", config, "pull", "--quiet", ref],
+          { env: anonymousEnv, signal, timeoutMs: 900_000 })).code === 0;
+      } catch { return false; }
+      finally { if (config) rmSync(config, { recursive: true, force: true }); }
     },
     async network(name, signal) {
       const read = await docker(["network", "inspect", name], { signal });
@@ -231,6 +276,7 @@ export function dockerRunnerEngine(
       return (await docker(args, { signal })).code === 0;
     },
     async socketGid() {
+      if (!nativeLocal) return null;
       try {
         return statSync(deps.socketPath ?? "/var/run/docker.sock").gid;
       } catch {
@@ -268,9 +314,70 @@ export function dockerRunnerEngine(
         ).code === 0
       );
     },
+    async enrollment(dir, signal) {
+      const script = `(() => { const {readFileSync}=require("node:fs");
+        try { const state=JSON.parse(readFileSync(process.env.CATALYST_HOST_CREDENTIAL_FILE,"utf8"));
+          if (state.version!==1 || typeof state.secret!=="string" || !/^[A-Za-z0-9_-]{32,256}$/.test(state.secret)) process.exit(1);
+          if (state.enrollment===null) {
+            if (!Array.isArray(state.spentJoinTokens) || !state.spentJoinTokens.every(v=>typeof v==="string" && /^[0-9a-f]{64}$/.test(v))) process.exit(1);
+            const token=process.env.CATALYST_HOST_JOIN_TOKEN;
+            const hash=token ? require("node:crypto").createHash("sha256").update(token).digest("hex") : null;
+            process.stdout.write(JSON.stringify({unenrolled:true,tokenSpent:!hash || state.spentJoinTokens.includes(hash)})); return;
+          }
+          const e=state.enrollment;
+          if (!e) process.exit(1);
+          process.stdout.write(JSON.stringify({hostId:e.hostId,tenant:e.tenant,team:e.team,enrollmentKind:e.enrollmentKind}));
+        } catch { process.exit(1); } })();`;
+      const read = await docker([...compose(dir), "run", "--rm", "-T", "--no-deps", "--entrypoint", "bun", "supervisor", "-e", script],
+        { cwd: dir, signal, timeoutMs: 120_000 });
+      if (read.code !== 0) return null;
+      try {
+        const parsed = JSON.parse(read.stdout);
+        const e = object(parsed);
+        if (e?.unenrolled === true && typeof e.tokenSpent === "boolean") return { unenrolled: true, tokenSpent: e.tokenSpent };
+        return e && [e.hostId, e.tenant, e.team].every((v) => typeof v === "string" && v.length > 0) &&
+          (e.enrollmentKind === "self_hosted" || e.enrollmentKind === "dedicated")
+          ? { hostId: e.hostId as string, tenant: e.tenant as string, team: e.team as string, enrollmentKind: e.enrollmentKind } : null;
+      } catch { return null; }
+    },
+    async orgKeyStatus(dir, account, baseUrl, candidate, signal) {
+      // Only a status leaves the container. No stored key or provider response is printed.
+      const script = `(async () => {
+        const {readFileSync,lstatSync}=require("node:fs");
+        let input=""; for await (const chunk of process.stdin) input+=chunk;
+        let stored="", storedInvalid=false;
+        try {
+          const info=lstatSync(process.env.CATALYST_ORG_KEY_FILE);
+          if (!info.isFile() || (info.mode & 0o077)!==0) storedInvalid=true;
+          else stored=readFileSync(process.env.CATALYST_ORG_KEY_FILE,"utf8").trim();
+        } catch (error) { if (error.code!=="ENOENT") storedInvalid=true; }
+        const proposed=input.trim(), key=proposed||stored;
+        const status=(s)=>process.stdout.write(s);
+        if (!proposed && storedInvalid) return status("invalid");
+        if (!key) return status("missing");
+        if (!/^[\x21-\x7e]{16,1024}$/.test(key)) return status("invalid");
+        try {
+          const response=await fetch(process.argv[1]+"/api/v1/me", {redirect:"error",signal:AbortSignal.timeout(10000),
+            headers:{authorization:"Bearer "+key,accept:"application/json"}});
+          if (response.status===429 || response.status>=500) return status("unavailable");
+          if (!response.ok) return status("invalid");
+          const body=await response.json();
+          if (body.account!==process.argv[2] || body.principal!=="service" || body.user!==undefined ||
+            !Array.isArray(body.permissions) || body.permissions.length!==3 ||
+            !["mirror:read","mirror:write","mirror:feed"].every(p=>body.permissions.includes(p)))
+            return status("invalid");
+          return status(proposed && proposed!==stored ? "different" : "valid");
+        } catch { return status("unavailable"); }
+      })().catch(()=>process.stdout.write("unavailable"));`;
+      const read = await docker([...compose(dir), "run", "--rm", "-T", "--no-deps", "--entrypoint", "bun", "supervisor", "-e", script, baseUrl, account],
+        { cwd: dir, input: candidate ? `${candidate}\n` : undefined, signal, timeoutMs: 120_000 });
+      const status = read.stdout.trim();
+      return read.code === 0 && ["valid", "different", "missing", "invalid", "unavailable"].includes(status)
+        ? status as RunnerOrgKeyStatus : "unavailable";
+    },
     async writeVolumeFile(dir, variable, value, signal) {
       if (variable !== "CATALYST_ORG_KEY_FILE") return false;
-      const script = `umask 077 && cat > "$${variable}" && test -s "$${variable}"`;
+      const script = `umask 077 && tmp=$(mktemp "$${variable}.onboard.XXXXXX") && trap 'rm -f "$tmp"' EXIT && cat > "$tmp" && test -s "$tmp" && chmod 600 "$tmp" && mv -f "$tmp" "$${variable}"`;
       return (
         (
           await docker(supervisorShell(dir, script), {
@@ -301,6 +408,7 @@ export function dockerRunnerEngine(
 interface ListedHost {
   hostId: string;
   hostName: string;
+  team: string;
   revoked: boolean;
   capacity: number | null;
   failing: string[];
@@ -325,10 +433,13 @@ function parseHosts(body: unknown): ListedHost[] | null {
       !host ||
       typeof host.hostId !== "string" ||
       typeof host.hostName !== "string" ||
+      typeof host.team !== "string" ||
       !(host.revokedAtMs === null || typeof host.revokedAtMs === "number") ||
       (host.capability !== null &&
         (!capability ||
           !Number.isSafeInteger(capability.placeableCapacity) ||
+          (capability.placeableCapacity as number) < 0 ||
+          typeof capability.runtimeLive !== "boolean" ||
           !Array.isArray(capability.failingRequired) ||
           !capability.failingRequired.every((id) => typeof id === "string")))
     )
@@ -336,8 +447,9 @@ function parseHosts(body: unknown): ListedHost[] | null {
     parsed.push({
       hostId: host.hostId,
       hostName: host.hostName,
+      team: host.team,
       revoked: host.revokedAtMs !== null,
-      capacity: capability ? (capability.placeableCapacity as number) : null,
+      capacity: capability ? (capability.runtimeLive ? (capability.placeableCapacity as number) : 0) : null,
       failing: capability ? (capability.failingRequired as string[]) : [],
     });
   }
@@ -378,7 +490,7 @@ function writePrivate(path: string, text: string): void {
   renameSync(temporary, path);
 }
 
-/** Enrollment is matched by name across the account, so two machines with one hostname must not
+/** Enrollment uses the stored host id and exact team/name. Two machines with one hostname must not
  * share it: a random suffix, kept in `.env` from the first write on. */
 export function runnerDefaultHostName(): string {
   const suffix = randomBytes(3).toString("hex");
@@ -457,6 +569,7 @@ export function onboardRunnerAdapter(input: OnboardRunnerInput = {}): OnboardAda
       };
     const info = await engine.info(signal);
     if (!info) return { state: "skipped", reason: "runner_docker_missing", evidence: selected };
+    if (info.unsupported) return waiting("runner_engine_unsupported", selected);
     const cfg = loadConfig(ctx.home);
     const account = journal.account ?? journal.tenant;
     if (
@@ -609,10 +722,13 @@ export function onboardRunnerAdapter(input: OnboardRunnerInput = {}): OnboardAda
       const want = await desiredEnv(p);
       if (!want) return waiting("runner_docker_socket_unreadable", selected);
       const name = want.CATALYST_HOST_NAME!;
+      let enrolled: RunnerEnrollment | null = null;
       const live = (hosts: ListedHost[] | null) =>
-        hosts?.find((host) => host.hostName === name && !host.revoked);
+        hosts?.find((host) => host.hostId === enrolled?.hostId && host.hostName === name && host.team === p.teamKey && !host.revoked);
       let hosts = await listHosts(ctx, p, signal);
       if (!hosts) return waiting("runner_enrollment_unavailable", selected);
+      if (hosts.some((host) => host.hostName === name && !host.revoked && host.team !== p.teamKey))
+        return waiting("runner_enrolled_for_other_team", { ...selected, hostName: name });
       const running = await engine.composeRunning(p.dir, signal);
       const changed = !saved || Object.entries(want).some(([key, value]) => saved[key] !== value);
       const hostEvidence = { ...selected, hostName: name };
@@ -622,22 +738,34 @@ export function onboardRunnerAdapter(input: OnboardRunnerInput = {}): OnboardAda
         return afterAct ? waiting("runner_compose_not_running", hostEvidence) : pending();
       // The supervisor enrolls on its first start and advertises shortly after.
       for (let attempt = 1; ; attempt++) {
+        const credential = await engine.enrollment(p.dir, signal);
+        enrolled = isUnenrolled(credential) ? null : credential;
+        // Enrollment can complete while the container metadata read is running. The cloud
+        // snapshot must follow that read before a missing credential ID can be called stale.
+        hosts = await listHosts(ctx, p, signal);
+        if (!hosts) return waiting("runner_enrollment_unavailable", hostEvidence);
+        if (enrolled && (enrolled.tenant !== p.account || enrolled.enrollmentKind !== "self_hosted"))
+          return waiting("runner_identity_unverified", hostEvidence);
+        if (enrolled && enrolled.team !== p.teamKey)
+          return waiting("runner_enrolled_for_other_team", hostEvidence);
+        if (enrolled && !hosts.some((host) => host.hostId === enrolled!.hostId && host.hostName === name && !host.revoked))
+          return waiting("runner_enrollment_stale", hostEvidence);
         const host = live(hosts);
         if (host && host.capacity !== null) break;
         if (!host && !afterAct) return pending();
         if (attempt >= Math.max(1, Math.ceil(waitMs / pollMs)) || signal?.aborted)
           return waiting(host ? "runner_capability_pending" : "runner_enrollment_unverified", hostEvidence);
         await sleep(pollMs);
-        hosts = await listHosts(ctx, p, signal);
-        if (!hosts) return waiting("runner_enrollment_unavailable", hostEvidence);
       }
       const host = live(hosts)!;
       const evidence = { ...hostEvidence, hostId: host.hostId, capacity: host.capacity! };
-      if (!(await engine.hasVolumeFile(p.dir, "CATALYST_ORG_KEY_FILE", signal))) {
-        const orgKey = orgKeyFromFile(ctx);
-        if (orgKey === null) return waiting("runner_org_key_file_invalid", evidence);
-        return orgKey && !afterAct ? pending() : waiting("runner_org_key_missing", evidence);
-      }
+      const orgKey = orgKeyFromFile(ctx);
+      if (orgKey === null) return waiting("runner_org_key_file_invalid", evidence);
+      const keyStatus = await engine.orgKeyStatus(p.dir, p.account, p.baseUrl, orgKey, signal);
+      if (keyStatus === "different")
+        return !afterAct ? pending() : waiting("runner_org_key_write_failed", evidence);
+      if (keyStatus !== "valid")
+        return waiting(keyStatus === "missing" ? "runner_org_key_missing" : keyStatus === "invalid" ? "runner_org_key_invalid" : "runner_org_key_unavailable", evidence);
       if (host.capacity === 0 || host.failing.length > 0)
         return waiting("runner_host_not_ready", { ...evidence, failing: host.failing.join(",") });
       const admission = await onboardTeamAdmission(ctx, p.teamKey, signal);
@@ -701,13 +829,25 @@ export function onboardRunnerAdapter(input: OnboardRunnerInput = {}): OnboardAda
       if (!p.info.vm && !(await engine.claimDirs(p.dir, DIRS.map((sub) => join(p.dir, sub)), signal)))
         return { state: "failed", reason: "runner_directory_unavailable", evidence: selected };
       const name = want.CATALYST_HOST_NAME!;
+      const hasCredential = await engine.hasVolumeFile(p.dir, "CATALYST_HOST_CREDENTIAL_FILE", signal);
+      const credential = hasCredential ? await engine.enrollment(p.dir, signal) : null;
+      const enrolled = isUnenrolled(credential) ? null : credential;
       const hosts = await listHosts(ctx, p, signal);
       if (!hosts) return waiting("runner_enrollment_unavailable", selected);
-      if (!hosts.some((host) => host.hostName === name && !host.revoked)) {
-        // A credential for a revoked enrollment would be used before any new token; replacing it
-        // also drops the organization key beside it, so that is the person's call, not this step's.
-        if (await engine.hasVolumeFile(p.dir, "CATALYST_HOST_CREDENTIAL_FILE", signal))
-          return waiting("runner_enrollment_stale", { ...selected, hostName: name });
+      if (hosts.some((host) => host.hostName === name && !host.revoked && host.team !== p.teamKey))
+        return waiting("runner_enrolled_for_other_team", { ...selected, hostName: name });
+      if (enrolled && (enrolled.tenant !== p.account || enrolled.enrollmentKind !== "self_hosted"))
+        return waiting("runner_identity_unverified", { ...selected, hostName: name });
+      if (enrolled && enrolled.team !== p.teamKey)
+        return waiting("runner_enrolled_for_other_team", { ...selected, hostName: name });
+      if (hasCredential && !isUnenrolled(credential) && (!enrolled || !hosts.some((host) => host.hostId === enrolled.hostId && host.hostName === name && host.team === p.teamKey && !host.revoked)))
+        return waiting("runner_enrollment_stale", { ...selected, hostName: name });
+      // A lost volume also lost the secret that redeemed the old token. Mint a new token and match
+      // the new host id from the supervisor's credential, never an old advertisement with this name.
+      // A lost reply must retry the same token and retained secret: a new token would be
+      // refused as identity_invalid after the cloud committed that secret's enrollment.
+      // Only a token known refused/spent (or missing) can be replaced for an unenrolled file.
+      if (!hasCredential || (isUnenrolled(credential) && credential.tokenSpent)) {
         const token = await mintJoinToken(ctx, p, name, signal);
         if (typeof token !== "string") return token;
         want = (await desiredEnv(p, token))!;
@@ -716,7 +856,10 @@ export function onboardRunnerAdapter(input: OnboardRunnerInput = {}): OnboardAda
       }
       const orgKey = orgKeyFromFile(ctx);
       if (orgKey === null) return waiting("runner_org_key_file_invalid", selected);
-      if (orgKey && !(await engine.hasVolumeFile(p.dir, "CATALYST_ORG_KEY_FILE", signal)))
+      const keyStatus = await engine.orgKeyStatus(p.dir, p.account, p.baseUrl, orgKey, signal);
+      if (keyStatus === "invalid" || keyStatus === "unavailable")
+        return waiting(keyStatus === "invalid" ? "runner_org_key_invalid" : "runner_org_key_unavailable", selected);
+      if (orgKey && keyStatus === "different")
         if (!(await engine.writeVolumeFile(p.dir, "CATALYST_ORG_KEY_FILE", orgKey, signal)))
           return { state: "failed", reason: "runner_org_key_write_failed", evidence: selected };
       if (!(await engine.composeUp(p.dir, signal)))

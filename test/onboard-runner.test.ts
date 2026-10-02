@@ -6,8 +6,11 @@ import {
   realpathSync,
   rmSync,
   statSync,
+  symlinkSync,
   writeFileSync,
 } from "node:fs";
+import { spawn } from "node:child_process";
+import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
@@ -80,6 +83,22 @@ function fakeEngine(
       return true;
     },
     hasVolumeFile: async (_dir, variable) => engine.files.has(variable),
+    enrollment: async (dir) => {
+      try {
+        const stored = JSON.parse(engine.files.get("CATALYST_HOST_CREDENTIAL_FILE") ?? "null");
+        if (stored?.enrollment !== null) return stored?.enrollment ?? null;
+        const token = /^CATALYST_HOST_JOIN_TOKEN=(.*)$/m.exec(readFileSync(join(dir,".env"),"utf8"))?.[1]?.replace(/^'|'$/g,"");
+        return { unenrolled: true, tokenSpent: !token || stored.spentJoinTokens.includes(createHash("sha256").update(token).digest("hex")) };
+      }
+      catch { return null; }
+    },
+    orgKeyStatus: async (_dir, _account, _baseUrl, candidate) => {
+      const stored = engine.files.get("CATALYST_ORG_KEY_FILE");
+      const key = candidate ?? stored;
+      if (!key) return "missing";
+      if (!key.startsWith("ctc_org_")) return "invalid";
+      return candidate && candidate !== stored ? "different" : "valid";
+    },
     writeVolumeFile: async (_dir, variable, value) => {
       engine.calls.push(`writeVolumeFile ${variable}`);
       engine.files.set(variable, value);
@@ -186,6 +205,7 @@ function fixture(
     admission: true,
     // A host enrolls as soon as its supervisor starts with a minted token.
     enrollOnUp: true as boolean,
+    minimumEnrollmentMint: 1,
     capability: {
       placeableCapacity: 2,
       runtimeLive: true,
@@ -234,19 +254,24 @@ function fixture(
         liveTeamRead: { error: null },
       });
     if (url.pathname === "/api/v1/hosts/enrollments" && method === "GET") {
-      if (state.enrollOnUp && engine.running && state.mints.length > 0) {
+      if (state.enrollOnUp && engine.running && state.mints.length >= state.minimumEnrollmentMint) {
         const minted = state.mints[state.mints.length - 1] as {
           hostName: string;
         };
-        if (!state.hosts.some((h) => h.hostName === minted.hostName))
+        const hostId = `host-${state.mints.length}`;
+        if (!state.hosts.some((h) => h.hostId === hostId)) {
           state.hosts.push({
-            hostId: "host-1",
+            hostId,
             hostName: minted.hostName,
             team: "A",
             enrollmentKind: "self_hosted",
             revokedAtMs: null,
             capability: state.capability,
           });
+        engine.files.set("CATALYST_HOST_CREDENTIAL_FILE", JSON.stringify({
+          version: 1, enrollment: { hostId, tenant: config.account, team: "A", enrollmentKind: "self_hosted" },
+        }));
+        }
       }
       return Response.json({ hosts: state.hosts });
     }
@@ -256,7 +281,7 @@ function fixture(
         {
           ok: true,
           tokenId: "tok-1",
-          joinToken: JOIN_TOKEN,
+          joinToken: state.mints.length === 1 ? JOIN_TOKEN : `${JOIN_TOKEN}-${state.mints.length}`,
           expiresAtMs: now.getTime() + 3_600_000,
         },
         { status: 201 },
@@ -552,6 +577,20 @@ describe("bringing the host up", () => {
     );
   });
 
+  test("a host name enrolled for another team never verifies the selected team", async () => {
+    const f = fixture({ selected: true });
+    withOrgKey(f);
+    await run(f);
+    f.state.hosts[0]!.team = "B";
+    f.engine.calls.length = 0;
+    expect(await run(f)).toMatchObject({
+      state: "waiting",
+      reason: "runner_enrolled_for_other_team",
+    });
+    expect(f.state.mints).toHaveLength(1);
+    expect(f.engine.calls).not.toContain("composeUp");
+  });
+
   test("a rerun on an enrolled, running host mints nothing and changes nothing", async () => {
     const f = fixture({ selected: true });
     withOrgKey(f);
@@ -563,6 +602,73 @@ describe("bringing the host up", () => {
     expect(f.state.mints).toHaveLength(1);
     expect(f.engine.calls).not.toContain("composeUp");
     expect(readFileSync(join(f.dir, ".env"), "utf8")).toBe(env);
+  });
+
+  test("losing the credential volume obtains a fresh join token instead of reusing a spent one", async () => {
+    const f = fixture({ selected: true });
+    withOrgKey(f);
+    await run(f);
+    f.engine.files.delete("CATALYST_HOST_CREDENTIAL_FILE");
+    f.engine.running = false;
+    const result = await run(f);
+    expect(result).toMatchObject({ state: "done", evidence: { hostId: "host-2" } });
+    expect(f.state.mints).toHaveLength(2);
+  });
+
+  test("an old live advertisement cannot verify a runner whose credential was lost", async () => {
+    const f = fixture({ selected: true });
+    withOrgKey(f);
+    await run(f);
+    f.engine.files.delete("CATALYST_HOST_CREDENTIAL_FILE");
+    f.state.enrollOnUp = false;
+    expect((await run(f)).reason).toBe("runner_enrollment_unverified");
+    expect(f.state.mints).toHaveLength(2);
+    expect(readFileSync(join(f.dir, ".env"), "utf8")).toContain(`${JOIN_TOKEN}-2`);
+  });
+
+  test("a credential appearing after the first host list is verified against a fresh list", async () => {
+    const f = fixture({ selected: true });
+    withOrgKey(f);
+    f.state.enrollOnUp = false;
+    f.engine.enrollment = async () => {
+      const enrollment = { hostId: "host-1", tenant: "account-a", team: "A", enrollmentKind: "self_hosted" as const };
+      f.state.hosts = [{ ...enrollment, hostName: "catalyst-laptop", revokedAtMs: null, capability: f.state.capability }];
+      return enrollment;
+    };
+    expect((await run(f)).state).toBe("done");
+  });
+
+  test("a repair reads the credential before reconciling its cloud enrollment", async () => {
+    const f = fixture({ selected: true });
+    withOrgKey(f);
+    await run(f);
+    const previous = f.state.hosts[0]!;
+    f.state.hosts = [];
+    f.state.enrollOnUp = false;
+    const read = f.engine.enrollment;
+    f.engine.enrollment = async (dir, signal) => { f.state.hosts.push(previous); return read(dir, signal); };
+    const next = `ghcr.io/coalesce-labs/catalyst-supervisor@sha256:${"d".repeat(64)}`;
+    f.ctx.env.CATALYST_SUPERVISOR_IMAGE = next;
+    f.engine.images.set(next, "arm64");
+    expect((await run(f)).state).toBe("done");
+  });
+
+  test.each([false, true])("an unenrolled credential with spent token=%s preserves retry identity and its key", async (spent) => {
+    const f = fixture({ selected: true });
+    withOrgKey(f);
+    f.state.enrollOnUp = false;
+    const up = f.engine.composeUp;
+    let starts = 0;
+    f.engine.composeUp = async (dir, signal) => {
+      f.state.enrollOnUp = ++starts > 1;
+      f.engine.files.set("CATALYST_HOST_CREDENTIAL_FILE", JSON.stringify({ version: 1, enrollment: null, spentJoinTokens: spent ? [createHash("sha256").update(JOIN_TOKEN).digest("hex")] : [] }));
+      return up(dir, signal);
+    };
+    expect((await run(f)).reason).toBe("runner_enrollment_unverified");
+    f.state.minimumEnrollmentMint = spent ? 2 : 1;
+    expect(await run(f)).toMatchObject({ state: "done", evidence: { hostId: spent ? "host-2" : "host-1" } });
+    expect(f.state.mints).toHaveLength(spent ? 2 : 1);
+    expect(f.engine.files.get("CATALYST_ORG_KEY_FILE")).toBe(ORG_KEY);
   });
 
   test("a native Linux engine gets its socket group and directories handed to the runner uid", async () => {
@@ -616,6 +722,16 @@ describe("bringing the host up", () => {
     expect(env).toContain("CATALYST_SLOTS=4\n");
     expect(env).toContain(`CATALYST_HOST_JOIN_TOKEN=${JOIN_TOKEN}\n`);
     expect(f.state.mints).toHaveLength(1);
+  });
+
+  test("an explicitly supplied replacement organization key replaces the saved key", async () => {
+    const f = fixture({ selected: true });
+    withOrgKey(f);
+    await run(f);
+    const replacement = "ctc_org_replacement_fixture_secret";
+    writeFileSync(f.ctx.env.CATALYST_RUNNER_ORG_KEY_FILE!, replacement, { mode: 0o600 });
+    expect((await run(f)).state).toBe("done");
+    expect(f.engine.files.get("CATALYST_ORG_KEY_FILE")).toBe(replacement);
   });
 
   test("an unreadable organization key file is named as invalid, not as missing", async () => {
@@ -686,6 +802,13 @@ describe("bringing the host up", () => {
       reason: "runner_host_not_ready",
       evidence: { failing: "host.session-network", capacity: 0 },
     });
+  });
+
+  test("a non-live host advertisement cannot claim usable capacity", async () => {
+    const f = fixture({ selected: true });
+    withOrgKey(f);
+    f.state.capability!.runtimeLive = false;
+    expect(await run(f)).toMatchObject({ state: "waiting", reason: "runner_host_not_ready", evidence: { capacity: 0 } });
   });
 
   test("a ready host whose team does not admit hosts names the operator ask", async () => {
@@ -775,13 +898,32 @@ describe("the Docker engine", () => {
     ]);
   });
 
+  test.each(["unenrolled", "spent", "missing token", "enrolled", "malformed"])("the actual credential program handles %s without exposing its secret", async (kind) => {
+    const home = mkdtempSync(join(tmpdir(), "runner-credential-program-")); homes.push(home);
+    const path = join(home, "credential");
+    const enrollment = { hostId: "host-fixture", tenant: "account-a", team: "A", enrollmentKind: "self_hosted" };
+    const privateSecret = "fixture_secret_"+"x".repeat(32);
+    writeFileSync(path, kind === "malformed" ? "{" : JSON.stringify({ version: 1, secret: privateSecret, enrollment: ["unenrolled", "spent", "missing token"].includes(kind) ? null : enrollment, spentJoinTokens: kind === "spent" ? [createHash("sha256").update(JOIN_TOKEN).digest("hex")] : [] }), { mode: 0o600 });
+    const outputs: string[] = [];
+    const engine = dockerRunnerEngine({ env: {}, exec: async args => {
+      const index = args.indexOf("-e");
+      return await new Promise((resolve, reject) => {
+        const child = spawn(process.env.RUNNER_JS_TEST_RUNTIME ?? process.execPath, ["-e", args[index+1]!], { env: { CATALYST_HOST_CREDENTIAL_FILE: path, ...(kind === "missing token" ? {} : { CATALYST_HOST_JOIN_TOKEN: JOIN_TOKEN }) }, stdio: ["ignore", "pipe", "ignore"] });
+        let stdout = ""; child.stdout.on("data", chunk => { stdout+=String(chunk); });
+        child.on("error", reject); child.on("close", code => { outputs.push(stdout); resolve({ code: code ?? 1, stdout }); });
+      });
+    } });
+    expect(await engine.enrollment(home)).toEqual(["unenrolled", "spent", "missing token"].includes(kind) ? { unenrolled: true, tokenSpent: kind !== "unenrolled" } : kind === "enrolled" ? enrollment : null);
+    expect(outputs.join("")).not.toContain(privateSecret);
+  });
+
   test("a secret reaches the volume on stdin, never in arguments", async () => {
     const r = recordingExec();
     const engine = dockerRunnerEngine({ exec: r.exec, env: {} });
     await engine.writeVolumeFile("/r", "CATALYST_ORG_KEY_FILE", ORG_KEY);
     expect(r.runs[0]!.input).toBe(`${ORG_KEY}\n`);
     expect(r.runs[0]!.args.join(" ")).not.toContain(ORG_KEY);
-    expect(r.runs[0]!.args.join(" ")).toContain('cat > "$CATALYST_ORG_KEY_FILE"');
+    expect(r.runs[0]!.args.join(" ")).toContain('mv -f "$tmp" "$CATALYST_ORG_KEY_FILE"');
   });
 
   test("info reads the engine architecture and whether it runs in a VM", async () => {
@@ -792,8 +934,35 @@ describe("the Docker engine", () => {
       },
       "compose version": { code: 0, stdout: "v2.40.0" },
     });
-    const engine = dockerRunnerEngine({ exec: r.exec, env: {} });
+    const engine = dockerRunnerEngine({ exec: r.exec, env: { DOCKER_HOST: "unix:///var/run/docker.sock" }, platform: "darwin" });
     expect(await engine.info()).toEqual({ arch: "arm64", vm: true });
+  });
+
+  test.each([
+    { platform: "darwin" as const, operatingSystem: "Colima", endpoint: "unix:///var/run/docker.sock" },
+    { platform: "linux" as const, operatingSystem: "Ubuntu", endpoint: "tcp://remote:2376" },
+    { platform: "darwin" as const, operatingSystem: "Docker Desktop", endpoint: "ssh://remote" },
+    { platform: "linux" as const, operatingSystem: "Ubuntu", endpoint: "unix:///run/user/1000/docker.sock" },
+  ])("an unsupported $endpoint engine never uses the client's local socket gid", async ({ platform, operatingSystem, endpoint }) => {
+    const r = recordingExec({
+      info: { code: 0, stdout: JSON.stringify({ Architecture: "amd64", OperatingSystem: operatingSystem, OSType: "linux" }) },
+      "context inspect": { code: 0, stdout: endpoint },
+    });
+    const engine = dockerRunnerEngine({ exec: r.exec, env: {}, platform, socketPath: tmpdir() });
+    expect(await engine.info()).toMatchObject({ unsupported: true });
+    expect(await engine.socketGid()).toBeNull();
+  });
+
+  test("conflicting Docker endpoint variables refuse setup and pulls without local gid", async () => {
+    const r = recordingExec({
+      info: { code: 0, stdout: JSON.stringify({ Architecture: "amd64", OperatingSystem: "Ubuntu", OSType: "linux" }) },
+      "context inspect": { code: 0, stdout: "unix:///var/run/docker.sock" },
+    });
+    const engine = dockerRunnerEngine({ exec: r.exec, env: { DOCKER_CONTEXT: "local", DOCKER_HOST: "tcp://remote:2376" }, platform: "linux", socketPath: tmpdir() });
+    expect(await engine.info()).toMatchObject({ unsupported: true });
+    expect(await engine.socketGid()).toBeNull();
+    expect(await engine.pull(SUPERVISOR)).toBe(false);
+    expect(r.runs.some(run => run.args.includes("pull"))).toBe(false);
   });
 
   test("no Docker CLI, no engine or no Compose plugin is no engine", async () => {
@@ -862,17 +1031,25 @@ describe("the Docker engine", () => {
     expect(await at("", 1)).toBe("missing");
   });
 
-  test("a pull is a plain docker pull of the pinned reference", async () => {
-    const r = recordingExec();
+  test("host image pulls use an empty disposable config and preserve the engine endpoint", async () => {
+    const r = recordingExec({ "context inspect": { code: 0, stdout: "unix:///local/docker.sock" } });
+    let pullConfig = "";
     const engine = dockerRunnerEngine({
-      exec: r.exec,
-      env: { DOCKER_CONFIG: "/home/x/.docker" },
+      exec: async (args, opts) => {
+        if (args.includes("pull")) {
+          pullConfig = args[args.indexOf("--config") + 1]!;
+          expect(JSON.parse(readFileSync(join(pullConfig, "config.json"), "utf8"))).toEqual({ auths: {} });
+          expect(opts.env.DOCKER_CONFIG).toBe(pullConfig);
+          expect(opts.env.DOCKER_CONTEXT).toBeUndefined();
+        }
+        return r.exec(args, opts);
+      },
+      env: { DOCKER_CONFIG: "/home/x/.docker", DOCKER_CONTEXT: "local" },
     });
-    await engine.pull(SUPERVISOR);
-    expect(r.runs).toHaveLength(1);
-    expect(r.runs[0]!.args).toEqual(["pull", "--quiet", SUPERVISOR]);
-  });
-});
+    expect(await engine.pull(SUPERVISOR)).toBe(true);
+    expect(r.runs.at(-1)!.args).toEqual(["--host", "unix:///local/docker.sock", "--config", pullConfig, "pull", "--quiet", SUPERVISOR]);
+    expect(existsSync(pullConfig)).toBe(false);
+  });});
 
 test("the vendored Compose file matches its recorded provenance", () => {
   const root = join(__dirname, "..", "vendor", "self-host");
@@ -880,4 +1057,80 @@ test("the vendored Compose file matches its recorded provenance", () => {
   expect(
     createHash("sha256").update(readFileSync(join(root, "compose.yaml"))).digest("hex"),
   ).toBe(manifest.sha256["deploy/self-host/compose.yaml"]);
+});
+
+
+describe("runner account key enrollment policy", () => {
+  async function keyFixture() {
+    const home = mkdtempSync(join(tmpdir(), "runner-key-policy-"));
+    homes.push(home);
+    const file = join(home, "key");
+    writeFileSync(file, ORG_KEY, { mode: 0o600 });
+    const policy = { status: 200, body: { account: "account-a", principal: "service", permissions: ["mirror:read", "mirror:write", "mirror:feed"] } as Record<string, unknown> };
+    const server = createServer((req, res) => {
+      expect(req.url).toBe("/api/v1/me");
+      expect(req.headers.authorization).toBe(`Bearer ${ORG_KEY}`);
+      res.writeHead(policy.status, { "content-type": "application/json" });
+      res.end(JSON.stringify(policy.body));
+    });
+    await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
+    const addr = server.address();
+    if (!addr || typeof addr === "string") throw new Error("test_listener_missing");
+    const baseUrl = `http://127.0.0.1:${addr.port}`;
+    let storedPath = file;
+    const output: string[] = [];
+    const engine = dockerRunnerEngine({ env: {}, exec: async (args, options) => {
+      const scriptIndex = args.indexOf("-e");
+      return await new Promise((resolve, reject) => {
+        // Execute the actual in-container program against a loopback provider, without Docker.
+        const child = spawn(process.env.RUNNER_JS_TEST_RUNTIME ?? process.execPath, ["-e", args[scriptIndex + 1]!, ...args.slice(scriptIndex + 2)], {
+          env: { CATALYST_ORG_KEY_FILE: storedPath }, stdio: ["pipe", "pipe", "ignore"],
+        });
+        let stdout = "";
+        child.stdout.on("data", chunk => { stdout += String(chunk); });
+        child.on("error", reject);
+        child.on("close", code => { output.push(stdout); resolve({ code: code ?? 1, stdout }); });
+        child.stdin.end(options.input ?? "");
+      });
+    } });
+    return { policy, engine, file, home, baseUrl, output, stored: (path: string) => { storedPath = path; }, close: () => new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve())) };
+  }
+
+  test.each([
+    ["same tenant scoped key", {}, "valid"],
+    ["other tenant", { account: "account-b" }, "invalid"],
+    ["personal key", { user: { id: "person-a" } }, "invalid"],
+    ["missing feed scope", { permissions: ["mirror:read", "mirror:write"] }, "invalid"],
+    ["broad key", { permissions: ["mirror:read", "mirror:write", "mirror:feed", "admin:write"] }, "invalid"],
+  ])("validates %s against the actual enrollment policy", async (_name, body, expected) => {
+    const f = await keyFixture();
+    try {
+      Object.assign(f.policy.body, body);
+      expect(await f.engine.orgKeyStatus(f.home, "account-a", f.baseUrl)).toBe(expected);
+      expect(f.output.join("")).not.toContain(ORG_KEY);
+    } finally { await f.close(); }
+  });
+
+  test("rate limiting does not tell the person to replace a valid key", async () => {
+    const f = await keyFixture();
+    try { f.policy.status = 429; expect(await f.engine.orgKeyStatus(f.home, "account-a", f.baseUrl)).toBe("unavailable"); }
+    finally { await f.close(); }
+  });
+
+  test("a stored key symlink cannot verify readiness", async () => {
+    const f = await keyFixture();
+    try {
+      const link = join(f.home, "link"); symlinkSync(f.file, link); f.stored(link);
+      expect(await f.engine.orgKeyStatus(f.home, "account-a", f.baseUrl)).toBe("invalid");
+    } finally { await f.close(); }
+  });
+
+  test("a valid supplied replacement is distinct and travels only on stdin", async () => {
+    const f = await keyFixture();
+    try {
+      writeFileSync(f.file, "ctc_org_old_fixture_secret");
+      expect(await f.engine.orgKeyStatus(f.home, "account-a", f.baseUrl, ORG_KEY)).toBe("different");
+      expect(f.output.join("")).toBe("different");
+    } finally { await f.close(); }
+  });
 });
