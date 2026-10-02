@@ -1,1 +1,6 @@
-Correct the stale symlink-owner-loss test exposed by full Node CI: require exit12, unchanged journal receipt, and preserved foreign lock. Exact archive v4 passes 24 recovery tests plus typecheck/build under official Node24/Bun1.3.14.
+Revision history for #218:
+
+rev 2 (content) 2026-10-02 02:01 UTC — Correct the stale symlink-owner-loss test exposed by full Node CI: require exit12, unchanged journal receipt, and preserved foreign lock. Exact archive v4 passes 24 recovery tests plus typecheck/build under official Node24/Bun1.3.14.
+rev 1 (initial) 2026-10-02 02:01 UTC
+
+<!-- mergify-revision-data: {"schema_version":1,"pull_number":218,"entries":[{"number":1,"change_type":"initial","old_sha":null,"new_sha":"9c9821a2b3eb3174040643469a28fb3d3b21fec8","timestamp_iso":"2026-10-02T02:01:49Z","reason":"","replay_sha":null,"compare_url":null},{"number":2,"change_type":"content","old_sha":"9c9821a2b3eb3174040643469a28fb3d3b21fec8","new_sha":"547f597aa6060bb74af9ab7cdfb89250cb8375c8","timestamp_iso":"2026-10-02T02:01:49Z","reason":"Correct the stale symlink-owner-loss test exposed by full Node CI: require exit12, unchanged journal receipt, and preserved foreign lock. Exact archive v4 passes 24 recovery tests plus typecheck/build under official Node24/Bun1.3.14.","replay_sha":null,"compare_url":"https://github.com/coalesce-labs/catalyst-cloud-skills/compare/9c9821a2b3eb3174040643469a28fb3d3b21fec8...547f597aa6060bb74af9ab7cdfb89250cb8375c8"}]} -->
