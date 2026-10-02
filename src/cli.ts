@@ -31,7 +31,16 @@ import {
 import { loadContract, pickPath } from "./contract.js";
 import { CliError, MeError, UsageError } from "./errors.js";
 import { fetchMe } from "./transport.js";
-import { bearerFor, deviceFlowLogin, type OauthAuth } from "./oauth.js";
+import {
+  bearerFor,
+  deviceFlowLogin,
+  refreshSessionIfShort,
+  type OauthAuth,
+} from "./oauth.js";
+
+const ONBOARD_SESSION_MIN_MS = 20 * 60_000;
+// A consent step waits up to 10 minutes, so each step starts with more than that left.
+const ONBOARD_STEP_MIN_MS = 11 * 60_000;
 import { openBrowserChecked as defaultOpenBrowser } from "./browser.js";
 import {
   cmdAccounts,
@@ -403,11 +412,19 @@ export async function main(
             }
           }
         }
+        // Start with a full access token: a session saved long ago would otherwise expire part way
+        // through, or send the person back through the device sign-in. A dry run changes nothing.
+        if (args.flags["dry-run"] !== true)
+          await refreshSessionIfShort(ctx, ONBOARD_SESSION_MIN_MS);
         try {
           return await cmdOnboard(
             args,
             ctx,
             {
+              beforeStep: async () => {
+                if (args.flags["dry-run"] !== true)
+                  await refreshSessionIfShort(ctx, ONBOARD_STEP_MIN_MS);
+              },
               ...createOnboardRuntime(args, ctx, {
                 ui,
                 signinTimeoutMs: deps.onboardSigninTimeoutMs,

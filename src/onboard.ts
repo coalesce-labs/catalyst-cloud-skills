@@ -157,6 +157,9 @@ export interface OnboardDeps {
     signal?: AbortSignal,
   ) => Promise<import("./onboard-login-candidate.js").OnboardLoginCandidate>;
   signal?: AbortSignal;
+  /** Runs between steps, never inside one: the CLI refreshes a short OAuth session here so a step's
+   *  consent wait cannot outlive its access token. */
+  beforeStep?: (id: OnboardStepId) => Promise<void>;
   bindSignals?: boolean;
   processId?: number;
   isProcessAlive?: (pid: number) => boolean;
@@ -1514,6 +1517,10 @@ export async function cmdOnboard(
     else for (const id of ONBOARD_STEPS) needed.add(id);
     const fromIndex = resumeFrom ? ONBOARD_STEPS.indexOf(resumeFrom) : 0;
     for (const id of ONBOARD_STEPS.filter((id) => needed.has(id))) {
+      if (signal.aborted) return finish(EXIT_WAITING);
+      // No step is running while the session refreshes, so an interrupt here marks none of them.
+      current = null;
+      await deps.beforeStep?.(id);
       if (signal.aborted) return finish(EXIT_WAITING);
       current = id;
       deps.ui?.stepStart(id);

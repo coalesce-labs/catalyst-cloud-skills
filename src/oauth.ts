@@ -530,6 +530,40 @@ export async function bearerFor(
   return rotated.accessToken;
 }
 
+/** A long command such as onboarding refreshes a saved OAuth session that has less than
+ * `minValidityMs` left, so it starts with a full access token instead of expiring part way.
+ * Shares bearerFor's single-flight refresh. A key config, no config or a failed refresh is left
+ * alone and returns false: the command's own sign-in check decides what happens next. */
+export async function refreshSessionIfShort(
+  ctx: Ctx,
+  minValidityMs: number,
+  deps: RefreshDeps = {},
+): Promise<boolean> {
+  let cfg: CustomerConfig | null;
+  try {
+    cfg = loadConfig(ctx.home);
+  } catch {
+    return false;
+  }
+  if (!cfg?.auth || (typeof cfg.key === "string" && cfg.key !== "")) return false;
+  const msToExpiry = Date.parse(cfg.auth.expiresAt) - ctx.now().getTime();
+  if (Number.isFinite(msToExpiry) && msToExpiry > minValidityMs) return false;
+  try {
+    const pending = inFlight.get(ctx.home);
+    if (pending) await pending;
+    else {
+      const promise = refreshAndPersist(ctx, cfg, deps).finally(() =>
+        inFlight.delete(ctx.home),
+      );
+      inFlight.set(ctx.home, promise);
+      await promise;
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 async function refreshAndPersist(
   ctx: Ctx,
   cfg: CustomerConfig,

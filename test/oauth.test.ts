@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { CustomerConfig } from "../src/config";
 import { loadConfig, writeConfig } from "../src/config";
 import { CliError } from "../src/errors";
-import { authStrategyFor, bearerFor, deviceFlowLogin, fetchDiscovery, MAX_DEVICE_CODES, resetDiscoveryCache, type OauthAuth } from "../src/oauth";
+import { authStrategyFor, bearerFor, deviceFlowLogin, fetchDiscovery, MAX_DEVICE_CODES, refreshSessionIfShort, resetDiscoveryCache, type OauthAuth } from "../src/oauth";
 import { startMeFixture, type FixtureServer } from "./fixture";
 import { makeCtx, tempHome, type TestCtx } from "./helpers";
 
@@ -268,6 +268,39 @@ describe("deviceFlowLogin", () => {
     expect((err as CliError).code).toBe("login-expired");
     expect((err as CliError).code).not.toBe("network");
     expect(server.oauth.tokenPollCount).toBe(0); // never polled past the deadline
+  });
+});
+
+describe("refreshSessionIfShort — a long command starts with a full session", () => {
+  const minutes = (n: number) => new Date(FIXED_NOW.getTime() + n * 60_000).toISOString();
+  it("refreshes and persists a saved session with less than the requested time left", async () => {
+    writeConfig(home, oauthConfig({ expiresAt: minutes(5) }));
+    expect(await refreshSessionIfShort(ctx, 20 * 60_000)).toBe(true);
+    expect(server.oauth.refreshCount).toBe(1);
+    expect(loadConfig(home)!.auth?.refreshToken).toBe("refresh-2");
+  });
+  it("refreshes an already expired session", async () => {
+    writeConfig(home, oauthConfig({ expiresAt: minutes(-10) }));
+    expect(await refreshSessionIfShort(ctx, 20 * 60_000)).toBe(true);
+    expect(server.oauth.refreshCount).toBe(1);
+  });
+  it("leaves a session with enough time alone", async () => {
+    writeConfig(home, oauthConfig({ expiresAt: minutes(25) }));
+    expect(await refreshSessionIfShort(ctx, 20 * 60_000)).toBe(false);
+    expect(server.oauth.refreshCount).toBe(0);
+  });
+  it("never refreshes a personal-key config or a missing config", async () => {
+    expect(await refreshSessionIfShort(ctx, 20 * 60_000)).toBe(false);
+    writeConfig(home, { baseUrl: server.url, key: "ctc_user_abc", account: "a", slug: "s", name: "n", permissions: null, principal: "service", joinedAt: "x", lastSkillBundleVersion: "0.4.0" } as CustomerConfig);
+    expect(await refreshSessionIfShort(ctx, 20 * 60_000)).toBe(false);
+    expect(server.oauth.refreshCount).toBe(0);
+  });
+  it("a revoked session is left for the command's own sign-in check, without throwing", async () => {
+    server.oauth.refreshInvalidGrant = true;
+    const before = oauthConfig({ expiresAt: minutes(-10) });
+    writeConfig(home, before);
+    expect(await refreshSessionIfShort(ctx, 20 * 60_000)).toBe(false);
+    expect(loadConfig(home)!.auth?.refreshToken).toBe(before.auth?.refreshToken);
   });
 });
 
