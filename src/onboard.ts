@@ -252,15 +252,14 @@ export const ONBOARD_DEPENDENCIES: Partial<
   values: ["settings"],
   capacity: ["projects"],
   daemon: ["signin"],
+  // What dispatch needs. Environment approval gates only implement and pr, and the first phase
+  // needs no imported values, so repository settings and local sync do not hold a first ticket.
   "first-ticket": [
     "projects",
     "linear.adopt",
     "linear.automations",
     "accounts",
-    "settings",
-    "values",
     "capacity",
-    "daemon",
   ],
 };
 
@@ -862,6 +861,23 @@ function stepSatisfied(step: OnboardStep | undefined): boolean {
   );
 }
 
+/** Steps whose wait does not hold a full run's exit code: work runs without them. A failure still
+ * fails the run, and the receipt's `complete` still needs them satisfied. Never used for gating. */
+export const ONBOARD_DEFERRED_STEPS: ReadonlySet<OnboardStepId> = new Set([
+  "settings",
+  "values",
+  "housekeeping",
+  "first-ticket",
+]);
+
+/** A full run that exited 0 with deferred steps still open: ready for work, not complete. */
+export function onboardReadyForWork(
+  journal: OnboardJournal,
+  only?: OnboardStepId,
+): boolean {
+  return !only && journal.exit === 0 && !journal.complete;
+}
+
 /** A recorded step's next action; a prerequisite wait names the first unfinished step it needs. */
 export function onboardStepAction(
   journal: OnboardJournal | undefined,
@@ -1279,13 +1295,24 @@ export async function cmdOnboard(
     for (const name of signals) process.on(name, interrupted);
   const finish = (code: number) => {
     journal.exit = code;
-    journal.complete = !only && code === 0;
+    journal.complete =
+      !only &&
+      code === 0 &&
+      ONBOARD_STEPS.every((id) => stepSatisfied(journalStep(journal, id)));
     writeOnboardJournal(statePath, journal);
     if (args.json) ctx.stdout(JSON.stringify(journal));
     else if (deps.ui) deps.ui.finish(journal, only);
     else {
       if (journal.complete) ctx.stdout("Onboarding complete.");
-      else if (only && code === 0)
+      else if (onboardReadyForWork(journal, only)) {
+        ctx.stdout("Ready for work.");
+        ctx.stdout("Next, when you want:");
+        for (const line of onboardNextActions(
+          journal,
+          savedOnboardBaseUrl(ctx.home),
+        ))
+          ctx.stdout(line);
+      } else if (only && code === 0)
         ctx.stdout(
           `${ONBOARD_TITLES[only]} finished. Onboarding still has other steps.`,
         );
@@ -1637,7 +1664,11 @@ export async function cmdOnboard(
       ? EXIT_REFUSED
       : scope.some((id) => journalStep(journal, id)?.state === "failed")
         ? EXIT_FAILED
-        : scope.every((id) => stepSatisfied(journalStep(journal, id)))
+        : scope.every(
+              (id) =>
+                stepSatisfied(journalStep(journal, id)) ||
+                (!only && ONBOARD_DEFERRED_STEPS.has(id)),
+            )
           ? 0
           : EXIT_WAITING;
     return finish(code);

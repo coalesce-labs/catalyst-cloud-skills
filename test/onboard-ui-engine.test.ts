@@ -411,7 +411,8 @@ test("engine and Clack renderer present one coherent journey with honest waiting
   const f = fixture();
   const rendered = renderedUi();
   const adapters = complete();
-  adapters.settings = {
+  // A required step: deferred steps such as settings no longer hold the exit code.
+  adapters.accounts = {
     check: async () => ({
       state: "waiting",
       reason: "onboarding_checks_pending",

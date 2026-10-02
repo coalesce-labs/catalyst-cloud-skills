@@ -438,7 +438,7 @@ describe("actual cmdOnboard optional-step graph policy", () => {
     ).toMatchObject({ state: "skipped", reason: "member_scope" });
   });
   test.each([false, true])(
-    "local sync selection %s retains its actual runtime disposition",
+    "local sync selection %s is kept and does not hold the first ticket",
     async (localSync) => {
       const f = fixture(),
         args = parseArgs([
@@ -457,22 +457,13 @@ describe("actual cmdOnboard optional-step graph policy", () => {
       });
       const g = graph(f, requiredAdapter(runtime, "linear.automations"));
       g.adapters.daemon = requiredAdapter(runtime, "daemon");
-      expect(await cmdOnboard(args, f.ctx, g.deps, "0.14.6")).toBe(
-        localSync ? 11 : 0,
-      );
+      expect(await cmdOnboard(args, f.ctx, g.deps, "0.14.6")).toBe(0);
       expect(f.receipt().localSync).toBe(localSync);
+      // CTC-4477: local sync is optional for dispatch, so a first-ticket run leaves it unchecked.
       expect(
         f.receipt().steps.find((step) => step.id === "daemon"),
-      ).toMatchObject(
-        localSync
-          ? { state: "waiting", reason: "local_sync_capability_unavailable" }
-          : {
-              state: "skipped",
-              reason: "local_sync_not_selected",
-              evidence: { provider: "cloud" },
-            },
-      );
-      expect(g.ticket).toHaveBeenCalledTimes(localSync ? 0 : 1);
+      ).toMatchObject({ state: "pending" });
+      expect(g.ticket).toHaveBeenCalledTimes(1);
       expect(f.network).not.toHaveBeenCalled();
     },
   );
