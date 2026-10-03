@@ -1,1 +1,6 @@
-Reconcile onto shipped install-v2 main; retain SDK0.14.1 and exact lock, preserve published-update notice, prepare next free patch0.15.2 with synchronized metadata.
+Revision history for #254:
+
+rev 2 (content) 2026-10-03 16:40 UTC — Reconcile onto shipped install-v2 main; retain SDK0.14.1 and exact lock, preserve published-update notice, prepare next free patch0.15.2 with synchronized metadata.
+rev 1 (initial) 2026-10-03 16:40 UTC
+
+<!-- mergify-revision-data: {"schema_version":1,"pull_number":254,"entries":[{"number":1,"change_type":"initial","old_sha":null,"new_sha":"ff1adc309ea56fc5ce1fc082123c1c12155c0a7d","timestamp_iso":"2026-10-03T16:40:46Z","reason":"","replay_sha":null,"compare_url":null},{"number":2,"change_type":"content","old_sha":"ff1adc309ea56fc5ce1fc082123c1c12155c0a7d","new_sha":"6369f97a665a9f63e010be2c93319b5a10d2e73f","timestamp_iso":"2026-10-03T16:40:46Z","reason":"Reconcile onto shipped install-v2 main; retain SDK0.14.1 and exact lock, preserve published-update notice, prepare next free patch0.15.2 with synchronized metadata.","replay_sha":null,"compare_url":"https://github.com/coalesce-labs/catalyst-cloud-skills/compare/ff1adc309ea56fc5ce1fc082123c1c12155c0a7d...6369f97a665a9f63e010be2c93319b5a10d2e73f"}]} -->
