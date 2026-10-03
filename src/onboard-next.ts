@@ -2,6 +2,7 @@ import {nativeEgressInstallCommands} from "./onboard-runner-egress.js";
 import { INSTALL_COMMAND, loadConfig, normalizeBaseUrl } from "./config.js";
 import type { OnboardJournal, OnboardStep } from "./onboard.js";
 import { githubInstallationPage } from "./onboard-permissions.js";
+import { valuesFacts, valuesFix } from "./ready-copy.js";
 
 /** What a person reads for a step that is not done. Each line ends in an action they can take. */
 const REASONS: Record<string, string> = {
@@ -97,6 +98,8 @@ const REASONS: Record<string, string> = {
   local_sync_capability_unavailable:
     "Local sync was selected but could not be verified.",
   member_scope: "Your workspace administrator handles this step.",
+  member_team_required:
+    "Setup needs your Linear team to check what Catalyst can work on. Run catalyst setup again with --team <KEY>, using your team's key from Linear.",
   onboarding_checks_pending: "Some required checks are still unverified.",
   interrupted: "Setup paused. Run the same command to resume.",
   signin_timeout: "Sign-in timed out. Run catalyst onboard to try again.",
@@ -280,6 +283,12 @@ const REASONS: Record<string, string> = {
     "Your personal Linear connection is missing scopes this version needs. Re-authorize it from Connected accounts, then run catalyst onboard.",
   personal_permissions_unverified:
     "Your personal connection's granted scopes could not be checked. Run catalyst onboard to try again.",
+  required_values_unverified:
+    "Catalyst has not read the repository's settings yet. Run catalyst setup again in a few minutes.",
+  first_ticket_team_unverified:
+    "Setup could not confirm the selected Linear team. Run catalyst setup again.",
+  first_ticket_dispatch_unmapped:
+    "Catalyst does not know which of the team's stages starts its work yet. Set up the team's Catalyst workflow, then run catalyst setup again.",
   housekeeping_service_unverified:
     "The daily update needs a user service manager, launchd on macOS or systemd --user on Linux. Setup cannot schedule it on this computer. It is optional, and work does not depend on it.",
   housekeeping_off_chosen:
@@ -428,6 +437,28 @@ export function onboardStepDetail(step: OnboardStep): string | undefined {
   return granted ? `granted ${granted}` : undefined;
 }
 
+/** The dispatch stage's name as the contract gave it, or what it does when unknown. */
+export function dispatchStageName(value: unknown): string {
+  return typeof value === "string" && /^[\p{L}\p{N}][\p{L}\p{N} ._&'()-]{0,59}$/u.test(value)
+    ? value
+    : "the stage that starts Catalyst's work";
+}
+
+function firstTicketText(reason: string, key: string | undefined, stage: unknown): string | undefined {
+  const move = `move one of ${key ? `${key}'s` : "your team's"} tickets to ${dispatchStageName(stage)} in Linear`;
+  switch (reason) {
+    case "first_ticket_choice_required":
+      return `${move.charAt(0).toUpperCase()}${move.slice(1)}. Catalyst picks it up next.`;
+    case "first_ticket_move_refused":
+      return `Catalyst could not move the ticket for you. Ask a Catalyst owner or admin to check its Linear connection, or ${move} yourself.`;
+    case "first_ticket_unavailable":
+      return `Setup could not read or move the team's tickets. Run catalyst setup to try again, or ${move} yourself.`;
+    case "first_ticket_unverified":
+      return `Setup could not confirm which ticket moved. Check ${dispatchStageName(stage)} in Linear before choosing again.`;
+  }
+  return undefined;
+}
+
 /** One step's next action. `waitsFor` names the unfinished step a prerequisite wait is blocked on. */
 export function onboardReasonText(
   step: OnboardStep,
@@ -465,6 +496,38 @@ export function onboardReasonText(
     return `Only an owner or admin of your Catalyst workspace can install Catalyst on GitHub. Ask one to open ${
       context.baseUrl ? `${normalizeBaseUrl(context.baseUrl)}/settings/connections` : "Catalyst settings, Integrations,"
     } and install it there.`;
+  if (reason === "admin_setup_pending") {
+    const words: Record<string, string> = {
+      "linear.workspace": "connect Linear",
+      "github.install": "install Catalyst on GitHub",
+      "linear.adopt": "set up the team's Catalyst workflow",
+    };
+    const left = String(step.evidence?.admin ?? "")
+      .split(",")
+      .flatMap((id) => (words[id] ? [words[id]] : []));
+    const list = left.length > 1 ? `${left.slice(0, -1).join(", ")} and ${left.at(-1)}` : (left[0] ?? "finish setup");
+    return `A Catalyst owner or admin still has to ${list}. Ask one to open ${
+      context.baseUrl ? `${normalizeBaseUrl(context.baseUrl)}/settings/connections` : "Catalyst settings"
+    }, then run catalyst setup.`;
+  }
+  // A member is told which admin action is left and where an admin takes it.
+  if (reason === "member_scope") {
+    const key = onboardTeamKey(context.journal);
+    const adminOnly: Partial<Record<OnboardStep["id"], [string, string, string]>> = {
+      "linear.workspace": ["connect Linear", "/settings/connections", " and connect it there"],
+      "linear.adopt": [
+        "set up the team's Catalyst workflow",
+        key ? `/settings/linear-teams/${encodeURIComponent(key)}/adopt` : "/settings/linear-teams",
+        "",
+      ],
+    };
+    const admin = adminOnly[step.id];
+    if (admin) {
+      const [what, path, rest] = admin;
+      const url = context.baseUrl ? `${normalizeBaseUrl(context.baseUrl)}${path}` : "Catalyst settings";
+      return `Only a Catalyst owner or admin can ${what}. Ask one to open ${url}${rest}.`;
+    }
+  }
   // An install request can sit on GitHub for good (a wrong organization, or an owner who said no),
   // so the step always keeps a way to install it directly.
   if (reason === "github_installation_approval_pending" && context.baseUrl)
@@ -563,6 +626,26 @@ export function onboardReasonText(
   }
   if (reason === "runner_admission_operator")
     return `The admission policy for team ${onboardTeamKey(context.journal) ?? "<TEAM KEY>"} needs a Catalyst operator to check it. Setup changes only restricted admission and preserves existing policy fields. Ask Catalyst support to confirm a compatible policy, then run the same setup command.`;
+  if (reason === "required_values_missing") {
+    let facts: unknown;
+    try {
+      facts = JSON.parse(String(step.evidence?.requiredValues ?? "null"));
+    } catch {
+      facts = null;
+    }
+    const fix =
+      valuesFix(context.baseUrl, valuesFacts(facts)) ??
+      valuesFix(context.baseUrl, { names: ["the missing values"] })!;
+    // A member cannot set a value; the line says who does, and still never prints one.
+    const member = context.journal?.steps.find((row) => row.id === "signin")?.evidence?.role === "member";
+    if (member)
+      return fix.startsWith("set ")
+        ? `Ask a Catalyst owner or admin to ${fix}. Then run catalyst setup.`
+        : `${fix.charAt(0).toUpperCase()}${fix.slice(1)}. Ask a Catalyst owner or admin to fix it, then run catalyst setup.`;
+    return `${fix.charAt(0).toUpperCase()}${fix.slice(1)}. Then run catalyst setup.`;
+  }
+  const firstTicket = firstTicketText(reason, onboardTeamKey(context.journal), step.evidence?.stage);
+  if (step.id === "first-ticket" && firstTicket) return firstTicket;
   if (reason === "prerequisite_not_ready" && context.waitsFor)
     return `Runs after "${context.waitsFor}".`;
   const permission = permissionText(step, context.baseUrl);

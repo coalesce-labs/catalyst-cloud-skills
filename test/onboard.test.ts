@@ -685,13 +685,14 @@ describe("plain finish names what is left (CTC-4477)", () => {
   test("deferred steps that wait still exit 0 as ready for work, without claiming complete", async () => {
     const { code, text, receipt } = await run({
       settings: "settings_checkout_unverified",
+      values: "required_values_missing",
       housekeeping: "housekeeping_service_unverified",
     });
     expect(code).toBe(0);
     expect(receipt).toMatchObject({ exit: 0, complete: false });
     expect(receipt.steps.find((step) => step.id === "values")).toMatchObject({
       state: "waiting",
-      reason: "prerequisite_not_ready",
+      reason: "required_values_missing",
     });
     // first-ticket needs what dispatch needs; repository settings are not part of it.
     expect(
@@ -701,11 +702,11 @@ describe("plain finish names what is left (CTC-4477)", () => {
     expect(text).toContain("Next, when you want:");
     expect(text).toContain("Review repository settings: ");
     expect(text).toContain(
-      'Import selected local values: Runs after "Review repository settings".',
+      "Check the repository's values: Set the missing values on the repository's Environment page: open https://cloud.example.dev/settings/projects, then the project, then the repository. Then run catalyst setup.",
     );
     expect(text).toContain("Schedule the daily update: ");
     expect(text).toContain(
-      "Move a ticket in ENG to Todo; `catalyst explain <ticket>` says why it is or is not starting.",
+      "Move a ticket in ENG to the stage that starts Catalyst's work; `catalyst explain <ticket>` says why it is or is not starting.",
     );
     expect(text).not.toContain("Onboarding complete");
     expect(text).not.toContain("Setup still needs");
@@ -767,6 +768,15 @@ describe("plain finish names what is left (CTC-4477)", () => {
     expect(lines.some((line) => line.startsWith("Run Catalyst's work"))).toBe(
       false,
     );
+  });
+
+  test("an optional settings wait leaves nothing to do, so setup is complete", async () => {
+    const { code, text, receipt } = await run({
+      settings: "settings_checkout_unverified",
+    });
+    expect(code).toBe(0);
+    expect(receipt.complete).toBe(true);
+    expect(text).toContain("Onboarding complete.");
   });
 
   test("every step done exits 0 and says onboarding is complete", async () => {

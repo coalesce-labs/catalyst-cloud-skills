@@ -105,7 +105,7 @@ describe("setup polish", () => {
         // Folded pairs share a row on purpose: the second resolves the first's line.
         expect(
           ids.length === 1 ||
-            ["machine,cli,skills,legacy", "github.repos,projects", "settings,values"].includes(ids.join(",")),
+            ["machine,cli,skills,legacy", "github.repos,projects"].includes(ids.join(",")),
           ids.join(","),
         ).toBe(true);
     }

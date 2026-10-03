@@ -40,6 +40,11 @@ import {
 import type { ExistingOnboardRepository } from "./onboard-repositories.js";
 import type { OnboardSettingsSummary } from "./onboard-settings.js";
 import {
+  FIRST_TICKET_SAMPLE,
+  FIRST_TICKET_SKIP,
+  type FirstTicketOption,
+} from "./onboard-first-ticket.js";
+import {
   ONBOARD_STEPS,
   ONBOARD_TITLES,
   stepSatisfied,
@@ -93,6 +98,12 @@ export interface OnboardUi {
   ): Promise<"keep" | "cancel">;
   chooseFirstRepository?(
     repositories: Array<{ owner: string; name: string }>,
+  ): Promise<string | null>;
+  /** A ticket identifier from `tickets`, `FIRST_TICKET_SAMPLE` or `FIRST_TICKET_SKIP`; null when
+   *  cancelled. */
+  chooseFirstTicket?(
+    tickets: FirstTicketOption[],
+    where: { teamKey: string; stage: string },
   ): Promise<string | null>;
   /** "Run Catalyst's work on this machine?", default no. Null when cancelled. */
   chooseRunner?(): Promise<boolean | null>;
@@ -748,6 +759,35 @@ export function createClackOnboardUi(
       }
       return typeof answer === "string" ? answer : null;
     },
+    async chooseFirstTicket(tickets, { teamKey, stage }) {
+      stop();
+      if (abort.signal.aborted) return null;
+      const answer = await select({
+        ...options,
+        message: `Which ticket should Catalyst start first? It moves to ${stage} in ${teamKey}.`,
+        initialValue: tickets[0]?.identifier ?? FIRST_TICKET_SAMPLE,
+        options: [
+          ...tickets.map((ticket) => ({
+            value: ticket.identifier,
+            label: `${ticket.identifier} ${ticket.title}`,
+            ...(ticket.estimate !== null
+              ? { hint: `estimate ${ticket.estimate}` }
+              : {}),
+          })),
+          {
+            value: FIRST_TICKET_SAMPLE,
+            label: "Create a sample ticket",
+            hint: "documents how to run the tests; changes only CONTRIBUTING.md",
+          },
+          { value: FIRST_TICKET_SKIP, label: "Skip for now" },
+        ],
+      });
+      if (prompts.isCancel(answer)) {
+        abort.abort();
+        return null;
+      }
+      return typeof answer === "string" ? answer : null;
+    },
     async chooseRunner() {
       stop();
       if (abort.signal.aborted) return null;
@@ -852,7 +892,7 @@ export function createClackOnboardUi(
           return;
         }
         if (hidden(id)) return;
-        if (id === "projects" || id === "values") return;
+        if (id === "projects") return;
         enterPart(id);
         start(ONBOARD_TITLES[id]);
         return;
@@ -918,11 +958,8 @@ export function createClackOnboardUi(
         )
           return;
         if (
-          (step.id === "projects" || step.id === "values") &&
-          journal?.steps.find(
-            (s) =>
-              s.id === (step.id === "projects" ? "github.repos" : "settings"),
-          )?.state !== "done"
+          step.id === "projects" &&
+          journal?.steps.find((s) => s.id === "github.repos")?.state !== "done"
         )
           return;
         const view = setupStepView(step, journal);
@@ -1191,6 +1228,7 @@ export function createClackOnboardUi(
     delete ui.chooseFirstRepository;
     delete ui.reviewSettings;
     delete ui.chooseRunner;
+    delete ui.chooseFirstTicket;
     delete ui.retryTimedOut;
     delete ui.confirmWorkflowAdoption;
   }

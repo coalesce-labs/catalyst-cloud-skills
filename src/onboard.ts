@@ -28,6 +28,7 @@ import {
 import { CliError, UsageError } from "./errors.js";
 import { onboardFileSnapshot } from "./onboard-file-snapshot.js";
 import {
+  dispatchStageName,
   onboardReasonText,
   onboardTeamKey,
   savedOnboardBaseUrl,
@@ -282,7 +283,8 @@ export const ONBOARD_DEPENDENCIES: Partial<
   projects: ["linear.team", "github.repos"],
   accounts: ["signin"],
   settings: ["projects"],
-  values: ["settings"],
+  // The cloud's required-values check reads the registered repositories, not a local checkout.
+  values: ["projects"],
   capacity: ["projects"],
   // The join token names the selected team's pool.
   runner: ["linear.team"],
@@ -306,7 +308,7 @@ const ADMIN_STEPS = new Set<OnboardStepId>([
   "github.repos",
   "projects",
   "settings",
-  "values",
+  // `values` is not here: its check only reads, so a member's run finds missing values too.
   "capacity",
   "runner",
   "first-ticket",
@@ -329,7 +331,7 @@ export const ONBOARD_TITLES: Record<OnboardStepId, string> = {
   projects: "Register your projects",
   accounts: "Check AI accounts",
   settings: "Review repository settings",
-  values: "Import selected local values",
+  values: "Check the repository's values",
   capacity: "Check runner capacity",
   runner: "Run Catalyst's work on this machine",
   daemon: "Check optional local sync",
@@ -439,6 +441,10 @@ function normalizeStep(value: unknown, fallbackAt: string): OnboardStep | null {
     "repository",
     "installation",
     "ticket",
+    // The team's dispatch stage name, as the contract gave it.
+    "stage",
+    // Admin-owned step ids a member's run found unfinished.
+    "admin",
     "cursor",
     "lag",
     "heartbeatAgeMs",
@@ -929,13 +935,29 @@ export function stepSatisfied(step: OnboardStep | undefined): boolean {
         step.reason === "member_scope" ||
         (step.id === "daemon" && step.reason === "local_sync_not_selected") ||
         (step.id === "runner" && step.reason === "runner_not_selected") ||
+        (step.id === "first-ticket" && step.reason === "first_ticket_skipped") ||
         (step.id === "linear.automations" &&
           step.reason === "automation_management_unavailable")))
   );
 }
 
+/** Optional work this computer or checkout cannot do. Work runs without it, so its wait never holds
+ * a complete setup. */
+const OPTIONAL_WAITS: ReadonlySet<string> = new Set([
+  "settings_checkout_unverified",
+  "settings_approval_unverified",
+]);
+
+/** Satisfied, or an optional wait. What a complete setup needs of every step. */
+export function stepSettled(step: OnboardStep | undefined): boolean {
+  return (
+    stepSatisfied(step) ||
+    (step?.state === "waiting" && OPTIONAL_WAITS.has(step.reason ?? ""))
+  );
+}
+
 /** Steps whose wait does not hold a full run's exit code: work runs without them. A failure still
- * fails the run, and the receipt's `complete` still needs them satisfied. Never used for gating. */
+ * fails the run, and the receipt's `complete` still needs them settled. Never used for gating. */
 export const ONBOARD_DEFERRED_STEPS: ReadonlySet<OnboardStepId> = new Set([
   "settings",
   "values",
@@ -1001,13 +1023,16 @@ export function onboardNextActions(
       (step) =>
         `${ONBOARD_TITLES[step.id]}: ${onboardStepAction(journal, step, baseUrl)}`,
     );
+  // A waiting first ticket already says to move a ticket, in its own line.
+  const firstTicket = journalStep(journal, "first-ticket");
   if (
     (["projects", "accounts", "linear.adopt", "capacity"] as const).every(
       (id) => journalStep(journal, id)?.state === "done",
-    )
+    ) &&
+    firstTicket?.state !== "waiting"
   )
     lines.push(
-      `Move a ticket in ${onboardTeamKey(journal) ?? "<TEAM KEY>"} to Todo; \`catalyst explain <ticket>\` says why it is or is not starting.`,
+      `Move a ticket in ${onboardTeamKey(journal) ?? "<TEAM KEY>"} to ${dispatchStageName(firstTicket?.evidence?.stage)}; \`catalyst explain <ticket>\` says why it is or is not starting.`,
     );
   return lines;
 }
@@ -1083,10 +1108,11 @@ export async function cmdOnboard(
     typeof args.flags.only === "string"
       ? (args.flags.only as OnboardStepId)
       : undefined;
+  // A member's values check reads the selected team, so without --team it waits on the same skip.
   const memberScopeSkips = (id: OnboardStepId) =>
     ADMIN_STEPS.has(id) ||
-    (id === "linear.team" &&
-      only !== "linear.team" &&
+    ((id === "linear.team" || id === "values") &&
+      only !== id &&
       typeof args.flags.team !== "string");
   const resume =
     typeof args.flags["resume-from"] === "string"
@@ -1478,7 +1504,7 @@ export async function cmdOnboard(
     journal.complete =
       !only &&
       code === 0 &&
-      ONBOARD_STEPS.every((id) => stepSatisfied(journalStep(journal, id)));
+      ONBOARD_STEPS.every((id) => stepSettled(journalStep(journal, id)));
     writeOnboardJournal(statePath, journal);
     if (args.json) ctx.stdout(JSON.stringify(journal));
     else if (deps.ui) deps.ui.finish(journal, only);
@@ -1904,7 +1930,7 @@ export async function cmdOnboard(
       journal.complete =
         !only &&
         code === 0 &&
-        ONBOARD_STEPS.every((id) => stepSatisfied(journalStep(journal, id)));
+        ONBOARD_STEPS.every((id) => stepSettled(journalStep(journal, id)));
       const unfinished = journal.steps.filter((step) => !stepSatisfied(step));
       if (
         !only &&
