@@ -4,6 +4,10 @@ export default defineConfig({
   test: {
     include: ["test/**/*.test.ts"],
     environment: "node",
+    // Several subprocess suites rebuild the shared dist/ tree, and npm pack runs prepare too.
+    // Concurrent readers can import a file while tsc is rewriting it and see missing exports.
+    // Run files in sequence so real launcher assertions read complete compiled modules.
+    fileParallelism: false,
     // ⛔ NOT THE DEFAULT 5s, AND THIS IS A STARVATION FIX, NOT A SLOW TEST. Two files in this suite
     // do real package work — `smoke-publish` packs and installs the tarball, `git-install-rail`
     // clones and installs over git — and both already carry their own minutes-long timeouts because
