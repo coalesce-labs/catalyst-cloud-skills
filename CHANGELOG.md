@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.15.0
+
+- Installation and onboarding share a plan and progress display. Browser approvals stay in the same flow, and resumed runs recheck saved choices against current access.
+- Linear permission updates open an explicit review page. Opening that page does not change the connection.
+- Onboarding can choose an existing Linear team or create one when the connected person has permission. Missing permission names the action needed to continue.
+- Onboarding can configure this machine as a Catalyst runner. It checks Docker, image compatibility, enrollment, capacity and team admission, and reports prerequisites that still need attention.
+- Headless and JSON runs avoid interactive prompts and report missing inputs. Readiness reports distinguish completed setup from evidence of a first ticket running.
+- The CLI uses SDK 0.14.1, which accepts the current cloud contract while refusing unknown write routes.
+
 ## 0.14.10
 
 - `catalyst onboard` refreshes its sign-in when it starts and between steps. A run started a while after signing in no longer asks for the browser sign-in again, and a long run of approvals no longer stops with "Renew your login".
