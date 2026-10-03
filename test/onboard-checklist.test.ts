@@ -307,7 +307,7 @@ describe("Catalyst on GitHub, when the cloud has the checklist", () => {
     });
   });
 
-  test("a timed-out wait still asks to try again, and yes opens the page again", async () => {
+  test("a timed-out wait still asks to try again, and yes waits on the page already open", async () => {
     const f = fixture();
     const asked: string[] = [];
     let waits = 0;
@@ -327,7 +327,8 @@ describe("Catalyst on GitHub, when the cloud has the checklist", () => {
     await step.check(f.ctx, f.journal);
     expect((await step.act!(f.ctx, f.journal)).state).toBe("done");
     expect(asked).toEqual(["github.install"]);
-    expect(f.opened).toEqual([page, page]);
+    // CTC-4680: one tab per run; keep waiting points at the page already open.
+    expect(f.opened).toEqual([page]);
   });
 
   test("the AI account step points at the page already open instead of opening it again", async () => {
@@ -581,6 +582,37 @@ test("a read cut off at the wait's deadline still counts toward the 10-second sp
   expect(f.checklistReadsAt.length).toBeGreaterThanOrEqual(3);
   expect(f.spacing()).toBe(true);
   expect(clockSleeps).toBeGreaterThan(0);
+});
+
+test("keep waiting does not open the Connect accounts page again: the wait points at the page already open", async () => {
+  const f = fixture();
+  const opened: string[] = [];
+  const instructions: string[] = [];
+  const adapter = connectChecklistAdapter({
+    step: "github.install",
+    item: "github-app",
+    fallback: { check: async () => ({ state: "waiting", reason: "fixture" }) },
+    openBrowser: (url) => {
+      opened.push(url);
+    },
+    wait: (_text, run, page) => {
+      instructions.push(page.instruction);
+      return run();
+    },
+    sleep: async () => {
+      f.tick(10_000);
+      await new Promise((resolve) => setImmediate(resolve));
+    },
+    page: { openedBy: null },
+    cache: { last: null },
+    timeoutMs: 200,
+  });
+  expect(await adapter.check(f.ctx, f.journal)).toEqual({ state: "pending" });
+  expect(await adapter.act!(f.ctx, f.journal)).toMatchObject({ reason: "consent_timeout" });
+  // "Yes, keep waiting": the same step waits again on the page it opened, without a new tab.
+  expect(await adapter.act!(f.ctx, f.journal)).toMatchObject({ reason: "consent_timeout" });
+  expect(opened).toHaveLength(1);
+  expect(instructions[1]).toMatch(/already open in your browser/);
 });
 
 test("an unknown row without canAct does not switch the checklist off", async () => {

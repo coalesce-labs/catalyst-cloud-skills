@@ -343,10 +343,9 @@ export function connectChecklistAdapter(
       // The contract advertised the route for this read; the wait's polls read the checklist alone.
       const origin = new URL(url).origin;
       let instruction: string;
-      if (
-        options.page.openedBy === null ||
-        options.page.openedBy === options.step
-      ) {
+      // One tab per run: a second wait (Keep waiting, or another step) points at the page already
+      // open, and the wait still shows its address.
+      if (options.page.openedBy === null) {
         try {
           await options.openBrowser(url, signal);
           options.page.openedBy = options.step;
