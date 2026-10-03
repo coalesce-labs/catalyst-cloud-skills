@@ -8,6 +8,18 @@
 import { styleText } from "node:util";
 import { wrapAnsi } from "fast-wrap-ansi";
 import stringWidth from "fast-string-width";
+import {
+  colourLevel,
+  markSkipped,
+  markSpan,
+  pixelNucleusLines,
+} from "./setup-brand.js";
+import {
+  detectTheme,
+  envTheme,
+  type QueryInput,
+  type Theme,
+} from "./terminal-background.js";
 
 /** The part of a writable stream the renderer uses; process.stdout and process.stderr fit. */
 export interface SetupStream {
@@ -30,6 +42,7 @@ export type StepMark =
   "done" | "fail" | "act" | "skip" | "later" | "run" | "ask" | "now";
 
 const DEFAULT_COLUMNS = 80;
+const graphemes = new Intl.Segmenter(undefined, { granularity: "grapheme" });
 const MIN_COLUMNS = 40;
 
 function utf8Locale(env: NodeJS.ProcessEnv): boolean {
@@ -104,36 +117,6 @@ const UNICODE_MARKS: Record<
   now: ["◆", "cyan"],
 };
 
-/** CTC-4680: the Pixel Nucleus core, copper on a dark terminal and rust on a light one
- *  (catalyst-cloud docs/brand-mark.md), with the nearest 256- and 16-colour background. */
-const CORE = {
-  dark: { rgb: "210;142;99", x256: 173, x16: 43 },
-  light: { rgb: "169;81;47", x256: 130, x16: 41 },
-};
-
-/**
- * The mark's 4×4 grid in two terminal lines, each cell 2 columns by half a line. The ring is a
- * glyph in the terminal's own foreground colour; the core is a background colour, so no
- * foreground is ever set and the C reads on light and dark terminals alike. The second line
- * reverses video so the core's half block takes the copper and its other half the ring.
- */
-export function pixelNucleusLines(env: NodeJS.ProcessEnv): [string, string] {
-  // COLORFGBG is "fg;bg" (rxvt, Konsole, iTerm2); 7 and 15 are the light backgrounds.
-  const light = ["7", "15"].includes(
-    (env.COLORFGBG ?? "").split(";").at(-1) ?? "",
-  );
-  const core = light ? CORE.light : CORE.dark;
-  const bg = /^(truecolor|24bit)$/i.test(env.COLORTERM ?? "")
-    ? `48;2;${core.rgb}`
-    : /256/.test(env.TERM ?? "")
-      ? `48;5;${core.x256}`
-      : String(core.x16);
-  return [
-    `▄▄\u001b[${bg}m▀▀▀▀\u001b[49m▀▀`,
-    `▀▀\u001b[7;${bg}m▀▀▀▀\u001b[27;49m▄▄`,
-  ];
-}
-
 /** One part in setup's three-part tracker. */
 export interface TrackerRow {
   readonly mark: StepMark;
@@ -144,9 +127,14 @@ export interface TrackerRow {
 
 export interface SetupRenderer {
   intro(title: string): void;
-  /** CTC-4680: the Pixel Nucleus mark beside "Catalyst Cloud", once per program start. A plain
-   *  line where colour, a terminal, UTF-8 or 50 columns is missing. */
-  brand(program: string, version?: string): void;
+  /** CTC-4680: "Catalyst Cloud", the program and version and, once known, who and where, once per
+   *  program start, beside the Pixel Nucleus mark where the banner options allow it (see
+   *  markSkipped) and as plain lines otherwise. True when the words included the identity. */
+  brand(
+    program: string,
+    version?: string,
+    identity?: { readonly user: string; readonly workspace: string },
+  ): boolean;
   /** Setup's parts, one row each, like step rows but never touching the live step. */
   tracker(rows: readonly TrackerRow[]): void;
   outro(text: string): void;
@@ -185,9 +173,45 @@ export interface SetupRenderer {
   mark(mark: StepMark): string;
 }
 
+/** CTC-4680: where and how the banner is drawn. */
+export interface BannerOptions {
+  /** Draw the mark. Only `catalyst setup` sets this; every other verb gets the words alone. */
+  readonly mark?: boolean;
+  /** Where the banner goes (stderr in the CLI); the renderer's own stream when left out. */
+  readonly stream?: SetupStream;
+  /** The detected background; CATALYST_THEME, then COLORFGBG, then dark when left out. */
+  readonly theme?: Theme;
+  /** --no-color. */
+  readonly noColor?: boolean;
+}
+
+/**
+ * The banner options for the onboard flow: the mark only for `catalyst setup`, and the background
+ * asked of the terminal only when the mark will be drawn and both stdin and stdout are terminals.
+ */
+export async function setupBanner(options: {
+  readonly setup: boolean;
+  readonly env: NodeJS.ProcessEnv;
+  readonly input: QueryInput;
+  readonly stdout: { readonly isTTY?: boolean };
+  readonly stream: SetupStream;
+  readonly noColor?: boolean;
+}): Promise<BannerOptions> {
+  const { setup, env, input, stream, noColor } = options;
+  const tty = stream.isTTY === true && options.stdout.isTTY === true;
+  const columns =
+    stream.columns && stream.columns > 0 ? stream.columns : DEFAULT_COLUMNS;
+  const ask =
+    !markSkipped({ setup, tty, columns, env, noColor }) && input.isTTY === true
+      ? { input, output: stream }
+      : undefined;
+  return { mark: setup, stream, noColor, theme: await detectTheme(env, ask) };
+}
+
 export function createSetupRenderer(
   stream: SetupStream,
   env: NodeJS.ProcessEnv,
+  banner: BannerOptions = {},
 ): SetupRenderer {
   let traits = terminalTraits(stream, env);
   const style = (format: Parameters<typeof styleText>[0], text: string) =>
@@ -363,21 +387,63 @@ export function createSetupRenderer(
       refresh();
       ordinary([prefix(textCol) + style("bold", title)]);
     },
-    brand(program, version) {
-      if (branded) return;
+    brand(program, version, identity) {
+      if (branded) return false;
       branded = true;
       refresh();
-      if (!traits.color || traits.columns < 50) {
-        ordinary([
-          `${prefix(textCol)}Catalyst Cloud ${program}${version ? ` ${version}` : ""}`,
-        ]);
-        return;
+      const out = banner.stream ?? stream;
+      const tty = out.isTTY === true && stream.isTTY === true;
+      const columns =
+        tty && out.columns && out.columns > 0 ? out.columns : traits.columns;
+      const separator = utf8Locale(env) ? " · " : " ";
+      const words = [
+        "Catalyst Cloud",
+        `${program}${version ? `${separator}${version}` : ""}`,
+        ...(identity
+          ? [`user:      ${identity.user}`, `workspace: ${identity.workspace}`]
+          : []),
+      ];
+      const print = (lines: string[]) => out.write(lines.join("\n") + "\n");
+      const level = colourLevel(env, { tty, noColor: banner.noColor });
+      if (
+        level === "none" ||
+        markSkipped({ setup: banner.mark === true, tty, columns, env, noColor: banner.noColor })
+      ) {
+        // Without the mark the words carry everything, plainly: a screen reader reads blocks aloud.
+        print(words.map((w) => prefix(textCol) + w));
+        return identity !== undefined;
       }
-      const [one, two] = pixelNucleusLines(env);
-      ordinary([
-        `${prefix(textCol)}${one}  ${style("bold", "Catalyst Cloud")}`,
-        `${prefix(textCol)}${two}  ${style("dim", `${program}${version ? ` · ${version}` : ""}`)}`,
-      ]);
+      // Beside the middle of the mark, 4 columns from it, each cut short with … rather than
+      // wrapped under it when the terminal is narrow.
+      const textAt = textCol + markSpan() + 4;
+      const room = columns - textAt - 1;
+      const fit = (text: string) => {
+        if (stringWidth(text) <= room) return text;
+        // Cut by what the terminal draws: whole graphemes, counted in columns.
+        let cut = "";
+        for (const { segment } of graphemes.segment(text)) {
+          if (stringWidth(cut + segment) > room - 1) break;
+          cut += segment;
+        }
+        return `${cut}…`;
+      };
+      const styled = words.map((w, i) =>
+        i === 0 && fit(w) === w ? `\u001b[1m${w}\u001b[22m` : fit(w),
+      );
+      const mark = pixelNucleusLines(
+        banner.theme ?? envTheme(env) ?? "dark",
+        level,
+      );
+      const first = Math.floor((mark.length - styled.length) / 2);
+      print(
+        mark.map((line, i) => {
+          const text = styled[i - first];
+          return text
+            ? `${prefix(textCol)}${line}    ${text}`
+            : `${prefix(textCol)}${line}`.trimEnd();
+        }),
+      );
+      return identity !== undefined;
     },
     tracker(parts) {
       ordinary(

@@ -95,6 +95,10 @@ export const FLAG_TABLES: Record<string, FlagTable> = {
       value: false,
       help: "do not run Catalyst's work on this machine, and do not ask",
     },
+    "no-color": {
+      value: false,
+      help: "print setup in plain text, without colour or the Catalyst Cloud mark",
+    },
     "resume-from": {
       value: true,
       help: "resume at a verified onboarding step",
@@ -494,7 +498,7 @@ export const VERB_USAGE: Record<string, string> = {
   login:
     "login [--base-url <url>] [--start-replica]   (keyless; or --key <personal-key> / CATALYST_CLOUD_TOKEN)",
   onboard:
-    "onboard [--team <ID|key>] [--repo <owner/name>]... [--coding-account <slot>] [--resume-from <step>] [--only <step>] [--local-sync] [--runner|--no-runner] [--yes] [--dry-run] [--json] | onboard --headless [--key-file <path>] [--team ...] [--repo ...]... [--coding-account ...] [--runner yes|no] [--json]",
+    "onboard [--team <ID|key>] [--repo <owner/name>]... [--coding-account <slot>] [--resume-from <step>] [--only <step>] [--local-sync] [--runner|--no-runner] [--no-color] [--yes] [--dry-run] [--json] | onboard --headless [--key-file <path>] [--team ...] [--repo ...]... [--coding-account ...] [--runner yes|no] [--json]",
   install: "install [--skills-dir <dir>] [--force]",
   status: "status",
   notice: "notice",
