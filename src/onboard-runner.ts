@@ -789,10 +789,13 @@ export function onboardRunnerAdapter(input: OnboardRunnerInput = {}): OnboardAda
         const admission=await runnerAdmission(ctx,journal,p.teamId,false,signal);
         if("reason" in admission)return waiting(admission.reason,evidence);
         if(!admission.ready)return mayAct && !afterAct ? pending() : waiting("runner_admission_disabled",evidence);
+      } else {
+        // Legacy capacity only names repo-mapped teams. The supported personal route above
+        // verifies runner admission independently of repository setup.
+        const admission = await onboardTeamAdmission(ctx, p.teamKey, signal);
+        if (admission !== true)
+          return waiting(admission === false ? "runner_admission_operator" : "runner_admission_unverified", evidence);
       }
-      const admission = await onboardTeamAdmission(ctx, p.teamKey, signal);
-      if (admission !== true)
-        return waiting(admission === false ? "runner_admission_operator" : "runner_admission_unverified", evidence);
       input.message?.(
         `This machine runs Catalyst's work as host ${name}, with ${host.capacity} slots free.`,
       );
