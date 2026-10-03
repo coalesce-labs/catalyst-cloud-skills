@@ -4,7 +4,7 @@ When the script prints "<provider> account <slot> needs a new credential" (quara
 
 ## The steps
 
-An AI account is an API key from a supported provider, billed per token by that provider.
+For an API key, billed per token by its provider:
 
 1. The person creates a new key in the provider's console, under the same provider account the AI account was made from.
 2. In the browser, they open Settings → AI accounts, then that account.
