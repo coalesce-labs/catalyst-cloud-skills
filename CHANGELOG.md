@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.15.1
+
+- Runner setup accepts verified personal team admission before a repository has been mapped to that team. Older cloud servers keep their existing admission check.
+
 ## 0.15.0
 
 - Installation and onboarding share a plan and progress display. Browser approvals stay in the same flow, and resumed runs recheck saved choices against current access.
