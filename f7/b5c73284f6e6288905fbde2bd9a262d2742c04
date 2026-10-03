@@ -1,0 +1,6 @@
+Revision history for #262:
+
+rev 2 (content) 2026-10-03 16:53 UTC — drop an internal ticket id from a customer skill script's comment (skills-content gate)
+rev 1 (initial) 2026-10-03 16:53 UTC
+
+<!-- mergify-revision-data: {"schema_version":1,"pull_number":262,"entries":[{"number":1,"change_type":"initial","old_sha":null,"new_sha":"eba62c23198016bd67d81eb272669432633a3cb6","timestamp_iso":"2026-10-03T16:53:13Z","reason":"","replay_sha":null,"compare_url":null},{"number":2,"change_type":"content","old_sha":"eba62c23198016bd67d81eb272669432633a3cb6","new_sha":"5ae44c69f0898d8a9adc3d26a96d980ef812de5b","timestamp_iso":"2026-10-03T16:53:13Z","reason":"drop an internal ticket id from a customer skill script's comment (skills-content gate)","replay_sha":null,"compare_url":"https://github.com/coalesce-labs/catalyst-cloud-skills/compare/eba62c23198016bd67d81eb272669432633a3cb6...5ae44c69f0898d8a9adc3d26a96d980ef812de5b"}]} -->
