@@ -222,7 +222,10 @@ function unfinished(step: OnboardStep): string {
   if (step.reason === "local_sync_not_selected")
     return "off, reads come from the cloud";
   if (step.reason === "runner_docker_missing") return "Docker is not running";
-  if (step.reason === "member_scope") return "an admin handles this step";
+  if (step.reason === "member_scope")
+    return step.id === "linear.team" || step.id === "values"
+      ? "run catalyst setup --team <KEY> to choose your team"
+      : "an admin handles this step";
   if (step.reason === "automation_management_unavailable")
     return "could not read them; checked again before work starts";
   if (step.reason === "interrupted" || step.reason === "first_ticket_skipped")
@@ -318,26 +321,89 @@ export function setupStepView(
     outcome,
   };
 }
+/** The signed-in person's Catalyst role, when the sign-in step recorded one. */
+function signedInRole(journal?: OnboardJournal): string | undefined {
+  const role = journal?.steps.find(
+    (s) => s.id === "signin" && s.state === "done",
+  )?.evidence?.role;
+  return typeof role === "string" ? role : undefined;
+}
+const notOwnerOrAdmin = (journal?: OnboardJournal) => {
+  const role = signedInRole(journal);
+  return role !== undefined && role !== "owner" && role !== "admin";
+};
+/** The steps readiness says an owner or admin has left (`admin_setup_pending`), if it said so. */
+function readinessAdminSteps(journal?: OnboardJournal): ReadonlySet<string> {
+  const ready = journal?.steps.find((s) => s.id === "ready");
+  const ids = ready?.evidence?.admin;
+  return ready?.reason === "admin_setup_pending" && typeof ids === "string"
+    ? new Set(ids.split(","))
+    : new Set();
+}
+/** A member's skip of their own team (or the values it gates): rerun with --team, nobody else. */
+const memberOwnSkip = (step: OnboardStep) =>
+  step.reason === "member_scope" &&
+  (step.id === "linear.team" || step.id === "values");
+/**
+ * CTC-4680: a step only an owner or admin of the Catalyst workspace can finish, for the person
+ * running setup. A member's run skips every admin step whether or not the admin has done it, so a
+ * skip waits on an admin only when readiness names that step. Refusals for the person's role, a
+ * member's unverified runner or workflow, and a member's AI account or values do too.
+ */
+export function setupWaitsOnAdmin(
+  step: OnboardStep,
+  journal?: OnboardJournal,
+): boolean {
+  if (step.state === "done") return false;
+  const reason = step.reason ?? "";
+  if (reason === "member_scope")
+    return !memberOwnSkip(step) && readinessAdminSteps(journal).has(step.id);
+  if (reason === "github_installation_admin_required") return true;
+  if (
+    reason === "runner_identity_unverified" ||
+    reason === "workflow_identity_unverified"
+  )
+    return notOwnerOrAdmin(journal);
+  // Only reasons an owner or admin clears. A probe that could not finish (a stale read, a login
+  // to refresh) is the person's own to check again.
+  if (
+    (step.id === "accounts" &&
+      (reason === "account_enrollment_required" ||
+        reason === "ai_account_not_usable")) ||
+    (step.id === "values" && reason === "required_values_missing")
+  )
+    return notOwnerOrAdmin(journal);
+  return false;
+}
 export interface SetupPartProgress {
   /** Numbered rows in the part, counting rows that share a number once. */
   total: number;
   done: number;
-  /** Rows a person must act on, failed ones included. */
+  /** Rows the person running setup must act on, failed ones included. */
   needs: number;
   failed: number;
+  /** Rows that wait on an owner or admin of the Catalyst workspace. */
+  admin: number;
+  /** Rows a member skipped as an owner's or admin's that nothing yet shows done: mid-run, or at the
+   *  end while readiness has not passed. */
+  aside: number;
 }
 /** How far each part has got, by its numbered rows. A row is done when every step in it is done
- *  or skipped, and needs someone when any of its steps does. */
+ *  or skipped by choice, needs someone when any of its steps does, and waits on an owner or admin
+ *  when only they can finish it. */
 export function setupPartProgress(
   journal: OnboardJournal,
   scope?: readonly OnboardStepId[],
+  /** "run" before readiness is known: a member's admin skips count aside, neither done nor owed.
+   *  At the end they count done only when readiness passed. */
+  moment: "run" | "end" = "end",
 ): Record<SetupPart, SetupPartProgress> {
-  const progress = {
-    1: { total: 0, done: 0, needs: 0, failed: 0 },
-    2: { total: 0, done: 0, needs: 0, failed: 0 },
-    3: { total: 0, done: 0, needs: 0, failed: 0 },
-  };
-  const rows = new Map<string, StepMark[]>();
+  const empty = () => ({ total: 0, done: 0, needs: 0, failed: 0, admin: 0, aside: 0 });
+  const progress = { 1: empty(), 2: empty(), 3: empty() };
+  type Kind = "admin" | "aside" | "own";
+  const readinessPassed =
+    journal.steps.find((s) => s.id === "ready")?.state === "done";
+  const rows = new Map<string, Array<{ mark: StepMark; kind: Kind }>>();
   for (const id of ONBOARD_STEPS) {
     const number = SETUP_PART_NUMBERS[id];
     if (number === undefined || (scope && !scope.includes(id))) continue;
@@ -346,16 +412,32 @@ export function setupPartProgress(
       state: "pending" as const,
     };
     const key = `${SETUP_PART_OF[id]}:${number}`;
-    rows.set(key, [...(rows.get(key) ?? []), setupStepView(step, journal).mark]);
+    rows.set(key, [
+      ...(rows.get(key) ?? []),
+      {
+        // A member's own skip (no --team) is theirs to finish, so it is never counted done.
+        mark: memberOwnSkip(step) ? "act" : setupStepView(step, journal).mark,
+        kind: setupWaitsOnAdmin(step, journal)
+          ? "admin"
+          : step.reason === "member_scope" &&
+              !memberOwnSkip(step) &&
+              (moment === "run" || !readinessPassed)
+            ? "aside"
+            : "own",
+      },
+    ]);
   }
-  for (const [key, marks] of rows) {
+  for (const [key, steps] of rows) {
     const part = progress[Number(key.split(":")[0]) as SetupPart];
     part.total++;
-    if (marks.every((m) => m === "done" || m === "skip")) part.done++;
-    else if (marks.some((m) => m === "act" || m === "fail")) {
+    const own = steps.filter((s) => s.kind === "own");
+    if (own.length === steps.length && own.every((s) => s.mark === "done" || s.mark === "skip"))
+      part.done++;
+    else if (own.some((s) => s.mark === "act" || s.mark === "fail")) {
       part.needs++;
-      if (marks.includes("fail")) part.failed++;
-    }
+      if (own.some((s) => s.mark === "fail")) part.failed++;
+    } else if (steps.some((s) => s.kind === "admin")) part.admin++;
+    else if (steps.some((s) => s.kind === "aside")) part.aside++;
   }
   return progress;
 }
@@ -368,6 +450,8 @@ export function setupTrackerRows(
   moment: { plan: SetupPart } | { next: SetupPart } | "end",
 ): TrackerRow[] {
   const steps = (n: number) => `${n} ${n === 1 ? "step" : "steps"}`;
+  const waiting = (n: number) =>
+    `${steps(n)} ${n === 1 ? "waits" : "wait"} on an owner or admin`;
   return ([1, 2, 3] as const)
     .filter((p) => progress[p].total > 0)
     .map((p): TrackerRow => {
@@ -389,15 +473,26 @@ export function setupTrackerRows(
       if (typeof moment === "object") {
         if (p === moment.next) return row("now", `next · ${estimate}`);
         if (p > moment.next) return row("later", estimate);
-        return finished
-          ? row("done", "done")
-          : row(needsMark, `${steps(got.total - got.done)} not finished`);
+        if (finished) return row("done", "done");
+        const theirs = got.admin + got.aside;
+        if (theirs && got.done + theirs === got.total)
+          return row(
+            "act",
+            `${steps(theirs)} ${theirs === 1 ? "is" : "are"} for an owner or admin`,
+          );
+        return row(needsMark, `${steps(got.total - got.done)} not finished`);
       }
       if (finished) return row("done", "");
       if (got.needs)
         return row(
           needsMark,
           `${steps(got.needs)} ${got.needs === 1 ? "needs" : "need"} someone`,
+        );
+      if (got.admin) return row("act", waiting(got.admin));
+      if (got.aside)
+        return row(
+          "act",
+          `${steps(got.aside)} ${got.aside === 1 ? "is" : "are"} for an owner or admin`,
         );
       return row("later", `${got.done} of ${steps(got.total)} done`);
     });
