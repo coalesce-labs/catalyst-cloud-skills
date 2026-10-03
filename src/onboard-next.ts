@@ -40,9 +40,9 @@ const REASONS: Record<string, string> = {
   personal_status_unavailable:
     "Your personal connection could not be checked. Run catalyst onboard to try again.",
   workspace_browser_unavailable:
-    "This computer could not open a browser. Connect Linear from this workspace’s Integrations page in your browser, then run catalyst onboard to resume.",
+    "The link to connect Linear timed out. Run catalyst setup for a new one.",
   personal_browser_unavailable:
-    "This computer could not open a browser. Finish this login’s connection from Connected accounts in your browser, then run catalyst onboard to resume.",
+    "The link to connect your own account timed out. Run catalyst setup for a new one.",
   onboarding_capability_unavailable:
     "The server's setup capabilities could not be checked. Run catalyst onboard to try again.",
   onboarding_capability_identity_unverified:
@@ -68,7 +68,12 @@ const REASONS: Record<string, string> = {
   github_installation_login_refresh_required:
     "Renew your login with catalyst login, then run catalyst onboard to resume.",
   github_installation_browser_unavailable:
-    "This computer could not open a browser. Install the GitHub App from this workspace’s Integrations page in your browser, then run catalyst onboard to resume.",
+    "The link to install Catalyst on GitHub timed out. Run catalyst setup for a new one.",
+  github_installation_approval_pending:
+    "An install request is waiting on GitHub. An owner of your GitHub organization approves it there, then run catalyst setup.",
+  github_install_pending:
+    "Runs after Catalyst is installed on GitHub.",
+  consent_timeout: "The link timed out. Run catalyst setup for a new one.",
   skills_install_unverified:
     "The Catalyst skills are not in this user's skills folder. Run catalyst install, then run catalyst onboard.",
   step_not_available_in_this_release:
@@ -421,13 +426,17 @@ export function onboardReasonText(
       reason === "workspace_approval_required"
         ? "/settings/connections?connect=linear"
         : reason === "github_installation_approval_required"
-          ? "/settings/connections?install=github"
+          ? "/connect/github/start"
           : `/settings/connected-accounts?connect=${step.id === "github.personal" ? "github" : "linear"}`;
     const where = context.baseUrl
       ? `${normalizeBaseUrl(context.baseUrl)}${path}`
       : "Catalyst settings";
     return `Open ${where} and approve this connection, then run catalyst onboard.`;
   }
+  // An install request can sit on GitHub for good (a wrong organization, or an owner who said no),
+  // so the step always keeps a way to install it directly.
+  if (reason === "github_installation_approval_pending" && context.baseUrl)
+    return `${REASONS[reason] ?? ""} If you own the organization, or want a different one, install it at ${normalizeBaseUrl(context.baseUrl)}/connect/github/start.`;
   if (reason === "workflow_mapping_unverified")
     return `This team's workflow mapping is not verified yet. Run catalyst team adopt ${onboardTeamKey(context.journal) ?? "<TEAM KEY>"} to preview the adoption plan. Run it again with the --yes --plan-hash value it prints. Then run catalyst onboard.`;
   if (

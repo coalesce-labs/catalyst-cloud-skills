@@ -132,7 +132,7 @@ describe("loadContract", () => {
     expect(cfg.cliPath.endsWith("bin/catalyst.js")).toBe(true);
     expect(cfg.replicaDb).toBe(`${home}/.config/catalyst-cloud/replica.db`);
     expect(existsSync(contractPathFor(home))).toBe(true);
-    expect(ctx.out.join("\n")).toContain("Tenant contract 1.0.0 cached at");
+    expect(ctx.out.join("\n")).toContain("Saved your workspace settings (version 1.0.0) to");
   });
 });
 

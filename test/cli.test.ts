@@ -30,7 +30,7 @@ beforeEach(() => {
 describe("dispatcher", () => {
   test("--version and bare usage", async () => {
     expect(await main(["--version"], ctx)).toBe(0);
-    expect(ctx.out[0]).toMatch(/^@catalyst-cloud\/cli \d+\.\d+\.\d+ \(tenant contract range: /);
+    expect(ctx.out[0]).toMatch(/^@catalyst-cloud\/cli \d+\.\d+\.\d+ \(contract range: /);
     const c2 = makeCtx(home);
     expect(await main([], c2)).toBe(0);
     expect(c2.out.join("\n")).toContain("Usage:");
