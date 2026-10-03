@@ -14,6 +14,8 @@ The skills under `skills/` are the source of truth for the published package. Th
 
 ## Releases
 
+The CLI is one member of Catalyst's shared release train: every member shares one MAJOR.MINOR, so a MINOR moves only in a coordinated release with the SDK, the installer and the schema packages. Before you bump, load the `release-train` skill (`.agents/skills/release-train/SKILL.md`) and run its train-status script.
+
 1. Bump `version` in `package.json`, then run `npm run version:sync` so `.claude-plugin/plugin.json`, the forwarder in `packages/catalyst-skills`, and every skill's provenance line carry the new version.
 2. Add a `CHANGELOG.md` entry under a `## <version>` heading. The CLI prints that entry's first line to customers when they update.
 3. Push a tag `skills-bundle-v<version>` whose version matches `package.json` exactly. The `skills-bundle publish` workflow rejects a tag that does not name the version being published.

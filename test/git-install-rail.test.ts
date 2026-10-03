@@ -26,7 +26,7 @@
 // and served over `git+file://`, so the test needs no network for the clone and covers the code in
 // front of you rather than the last commit.
 import { spawnSync } from "node:child_process";
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readlinkSync, rmSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -57,7 +57,11 @@ beforeAll(() => {
   for (const rel of listed.stdout.split("\0").filter(Boolean)) {
     const dest = join(repoDir, rel);
     mkdirSync(dirname(dest), { recursive: true });
-    cpSync(join(pkgRoot, rel), dest);
+    // A tracked symlink (.claude/skills -> ../.agents/skills) is checked out as a symlink, not as
+    // the directory it points to, so copy it as one.
+    const src = join(pkgRoot, rel);
+    if (lstatSync(src).isSymbolicLink()) symlinkSync(readlinkSync(src), dest);
+    else cpSync(src, dest);
   }
   expect(run("git", ["init", "-q", "-b", "main"], repoDir).status).toBe(0);
   run("git", ["config", "user.email", "rail@test.invalid"], repoDir);
