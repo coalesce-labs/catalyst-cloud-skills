@@ -1,0 +1,14 @@
+[Unit]
+Description=Prove the Catalyst session egress chain and rewrite its attestation (CTC-4415)
+After=catalyst-session-egress.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 /usr/lib/catalyst/session-egress.py attest
+NoNewPrivileges=yes
+ProtectSystem=strict
+StateDirectory=catalyst/session-egress
+StateDirectoryMode=0755
+ProtectHome=yes
+PrivateTmp=yes

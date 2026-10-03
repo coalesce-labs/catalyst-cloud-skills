@@ -14,6 +14,8 @@ import { randomBytes } from "node:crypto";
 import { hostname, tmpdir } from "node:os";
 import { join } from "node:path";
 import { loadConfig, normalizeBaseUrl, packageRoot, type Ctx } from "./config.js";
+import { nativeEgressReady, NATIVE_EGRESS_DIR } from "./onboard-runner-egress.js";
+import { runnerAdmission, issueRunnerOrgKey, verifyRunnerRoutes } from "./onboard-runner-cloud.js";
 import { verifyOnboardRoutes } from "./onboard-capabilities.js";
 import { liveTeamKey, onboardTeamAdmission } from "./onboard-capacity.js";
 import {
@@ -31,19 +33,21 @@ import {
 // "Run Catalyst's work on this machine": the self-hosted host from catalyst-cloud's deploy/self-host
 // (a supervisor and a deadline watchdog under Compose), enrolled with the person's own owner or
 // admin login. Never the operator token. Missing host images are pulled anonymously with an empty
-// disposable Docker config; private runner delivery requires its own scoped Catalyst contract.
+// disposable Docker config. Customer delivery uses public GHCR pins, without registry credentials.
 
 /** The Compose project name the vendored file declares. */
 export const RUNNER_PROJECT = "catalyst-host";
 export const RUNNER_SESSION_NETWORK = "catalyst-session-v1";
-/** Published by catalyst-cloud's supervisor-image workflow from main 0b5495e144 (run 36999325814). A
- * release carries exact multi-architecture host-image pins; the CATALYST_SUPERVISOR_IMAGE
- * and CATALYST_WATCHDOG_IMAGE variables override them. */
+/** Public multi-architecture images: host images from main 0b5495e144 (run 36999325814),
+ * runner from main 48b5876e56 (run 37057503445). Explicit environment image values override
+ * these pins; the runner also preserves a saved image before choosing its default. */
 export const RUNNER_HOST_IMAGES = {
   supervisor:
     "ghcr.io/coalesce-labs/catalyst-supervisor@sha256:fff1582e3ef763eae6728f195a8e3834383955ee03d39bcfe567f4a7361a8982",
   watchdog:
     "ghcr.io/coalesce-labs/catalyst-deadline-watchdog@sha256:b64e38f9ee34240d1e3d256e954eb8de20e2d3e51ed873019d350aa60be639c1",
+  runner:
+    "ghcr.io/coalesce-labs/catalyst-runner@sha256:50eeb256b4693fc42c81458bdfc887137a0df757260601f2a869738578d00782",
 } as const;
 const IMAGE_REF = /^[a-z0-9][a-z0-9._:/-]{0,255}@sha256:[0-9a-f]{64}$/;
 const HOST_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,62}$/;
@@ -85,9 +89,10 @@ export interface RunnerEngine {
   network(
     name: string,
     signal?: AbortSignal,
-  ): Promise<"ready" | "missing" | "misshaped">;
+  ): Promise<"ready" | "missing" | "misshaped" | "unavailable">;
   createNetwork(name: string, signal?: AbortSignal): Promise<boolean>;
   socketGid(): Promise<number | null>;
+  nativeEgressStatus?(nowMs:number,signal?:AbortSignal):Promise<boolean>;
   /** Native Linux only: hands the host directories to the runner uid through the supervisor image. */
   claimDirs(dir: string, paths: string[], signal?: AbortSignal): Promise<boolean>;
   hasVolumeFile(
@@ -120,7 +125,7 @@ export interface RunnerExecOptions {
 export type RunnerExec = (
   args: string[],
   options: RunnerExecOptions,
-) => Promise<{ code: number; stdout: string }>;
+) => Promise<{ code: number; stdout: string; stderr?: string }>;
 
 const spawnDocker: RunnerExec = (args, options) =>
   new Promise((resolve, reject) => {
@@ -129,15 +134,17 @@ const spawnDocker: RunnerExec = (args, options) =>
       cwd: options.cwd,
       signal: options.signal,
       timeout: options.timeoutMs ?? 30_000,
-      stdio: ["pipe", "pipe", "ignore"],
+      stdio: ["pipe", "pipe", "pipe"],
     });
-    let stdout = "";
+    let stdout = "", stderr = "";
+    child.stderr.setEncoding("utf8");
+    child.stderr.on("data", (chunk:string)=>{if(stderr.length<1_000_000)stderr+=chunk;});
     child.stdout.setEncoding("utf8");
     child.stdout.on("data", (chunk: string) => {
       if (stdout.length < 1_000_000) stdout += chunk;
     });
     child.on("error", reject);
-    child.on("close", (code) => resolve({ code: code ?? 1, stdout }));
+    child.on("close", (code) => resolve({ code: code ?? 1, stdout, stderr }));
     child.stdin.end(options.input ?? "");
   });
 
@@ -155,7 +162,7 @@ export function dockerRunnerEngine(
   const docker = async (
     args: string[],
     options: Omit<RunnerExecOptions, "env"> & { env?: NodeJS.ProcessEnv } = {},
-  ): Promise<{ code: number; stdout: string }> => {
+  ): Promise<{ code: number; stdout: string; stderr?: string }> => {
     try {
       return await exec(args, { env, ...options });
     } catch {
@@ -243,7 +250,9 @@ export function dockerRunnerEngine(
     },
     async network(name, signal) {
       const read = await docker(["network", "inspect", name], { signal });
-      if (read.code !== 0) return "missing";
+      const absent=`Error response from daemon: network ${name} not found`;
+      if (read.code !== 0 && (read.stdout.trim()==="" || read.stdout.trim()==="[]") && read.stderr?.trim()===absent) return "missing";
+      if (read.code !== 0 || read.stderr?.trim()) return "unavailable";
       try {
         const [net] = JSON.parse(read.stdout) as Array<Record<string, unknown>>;
         const options = (net?.Options ?? {}) as Record<string, unknown>;
@@ -275,6 +284,7 @@ export function dockerRunnerEngine(
       ];
       return (await docker(args, { signal })).code === 0;
     },
+    async nativeEgressStatus(nowMs,signal){return nativeLocal && await nativeEgressReady(nowMs,signal);},
     async socketGid() {
       if (!nativeLocal) return null;
       try {
@@ -519,6 +529,8 @@ interface Prepared {
   account: string;
   baseUrl: string;
   teamKey: string;
+  teamId: string;
+  cloud: boolean;
   dir: string;
   info: RunnerEngineInfo;
   images: { supervisor: string; watchdog: string; runner: string };
@@ -595,7 +607,10 @@ export function onboardRunnerAdapter(input: OnboardRunnerInput = {}): OnboardAda
     if ("reason" in support) return waiting(support.reason, selected);
     const teamId = selectedOnboardTeam(journal);
     const teamKey = teamId ? await liveTeamKey(ctx, teamId, signal ?? new AbortController().signal) : null;
-    if (!teamKey) return waiting("runner_context_unverified", selected);
+    if (!teamId || !teamKey) return waiting("runner_context_unverified", selected);
+    const runnerSupport=await verifyRunnerRoutes(ctx,journal,[{method:"GET",path:"/api/v1/agent/runner-admission"}],signal);
+    if("reason" in runnerSupport && runnerSupport.reason!=="cloud_capability_unavailable") return waiting(runnerSupport.reason,selected);
+    const cloud=!("reason" in runnerSupport);
     let state: string;
     try {
       state = onboardStateRoot(ctx.home, ctx.env);
@@ -607,11 +622,12 @@ export function onboardRunnerAdapter(input: OnboardRunnerInput = {}): OnboardAda
     const images = {
       supervisor: ctx.env.CATALYST_SUPERVISOR_IMAGE ?? RUNNER_HOST_IMAGES.supervisor,
       watchdog: ctx.env.CATALYST_WATCHDOG_IMAGE ?? RUNNER_HOST_IMAGES.watchdog,
-      runner: ctx.env.CATALYST_RUNNER_IMAGE ?? saved?.CATALYST_RUNNER_IMAGE ?? "",
+      runner: ctx.env.CATALYST_RUNNER_IMAGE ?? saved?.CATALYST_RUNNER_IMAGE ?? RUNNER_HOST_IMAGES.runner,
     };
     if (!Object.values(images).every((ref) => IMAGE_REF.test(ref)))
       return waiting("runner_image_unpinned", selected);
-    return { account, baseUrl: normalizeBaseUrl(cfg.baseUrl), teamKey, dir, info, images };
+    if(!info.vm && !(await engine.nativeEgressStatus?.(ctx.now().getTime(),signal)))return waiting("runner_native_egress_setup_required",selected);
+    return { account, baseUrl: normalizeBaseUrl(cfg.baseUrl), teamKey, teamId, cloud, dir, info, images };
   }
 
   async function desiredEnv(
@@ -634,7 +650,7 @@ export function onboardRunnerAdapter(input: OnboardRunnerInput = {}): OnboardAda
       CATALYST_SLOTS_DIR: join(p.dir, "slots"),
       CATALYST_THOUGHTS_DIR: join(p.dir, "thoughts"),
       CATALYST_POOL_LOCK_DIR: join(p.dir, "locks"),
-      CATALYST_SESSION_EGRESS_DIR: join(p.dir, "session-egress"),
+      CATALYST_SESSION_EGRESS_DIR: p.info.vm ? join(p.dir, "session-egress") : NATIVE_EGRESS_DIR,
     };
   }
   /** The step owns its own keys only; a person's tuning (CATALYST_SLOTS and the rest) is kept. */
@@ -764,10 +780,16 @@ export function onboardRunnerAdapter(input: OnboardRunnerInput = {}): OnboardAda
       const keyStatus = await engine.orgKeyStatus(p.dir, p.account, p.baseUrl, orgKey, signal);
       if (keyStatus === "different")
         return !afterAct ? pending() : waiting("runner_org_key_write_failed", evidence);
+      if(keyStatus==="missing" && p.cloud && mayAct && !afterAct)return pending();
       if (keyStatus !== "valid")
         return waiting(keyStatus === "missing" ? "runner_org_key_missing" : keyStatus === "invalid" ? "runner_org_key_invalid" : "runner_org_key_unavailable", evidence);
       if (host.capacity === 0 || host.failing.length > 0)
         return waiting("runner_host_not_ready", { ...evidence, failing: host.failing.join(",") });
+      if(p.cloud){
+        const admission=await runnerAdmission(ctx,journal,p.teamId,false,signal);
+        if("reason" in admission)return waiting(admission.reason,evidence);
+        if(!admission.ready)return mayAct && !afterAct ? pending() : waiting("runner_admission_disabled",evidence);
+      }
       const admission = await onboardTeamAdmission(ctx, p.teamKey, signal);
       if (admission !== true)
         return waiting(admission === false ? "runner_admission_operator" : "runner_admission_unverified", evidence);
@@ -779,16 +801,7 @@ export function onboardRunnerAdapter(input: OnboardRunnerInput = {}): OnboardAda
     act: async (ctx, journal, signal) => {
       const p = await prepare(ctx, journal, signal);
       if (!("dir" in p)) return p;
-      for (const ref of Object.values(p.images)) {
-        if (!(await engine.imageArch(ref, signal))) await engine.pull(ref, signal);
-        const arch = await engine.imageArch(ref, signal);
-        if (!arch) return waiting("runner_images_unavailable", { ...selected, image: ref });
-        if (arch !== p.info.arch) return waiting("runner_image_emulated", { ...selected, image: ref });
-      }
-      const network = await engine.network(RUNNER_SESSION_NETWORK, signal);
-      if (network === "misshaped") return waiting("runner_session_network_misshaped", selected);
-      if (network === "missing" && !(await engine.createNetwork(RUNNER_SESSION_NETWORK, signal)))
-        return { state: "failed", reason: "runner_session_network_failed", evidence: selected };
+      if(!mayAct)return waiting("runner_needs_runner_flag",selected);
       try {
         mkdirSync(p.dir, { recursive: true, mode: 0o700 });
         if (lstatSync(p.dir).isSymbolicLink()) throw new Error("runner_directory_unsafe");
@@ -826,6 +839,19 @@ export function onboardRunnerAdapter(input: OnboardRunnerInput = {}): OnboardAda
       };
       if (!writeEnv(want))
         return { state: "failed", reason: "runner_directory_unavailable", evidence: selected };
+      for (const ref of Object.values(p.images)) {
+        if (!(await engine.imageArch(ref, signal))) {
+          await engine.pull(ref, signal);
+        }
+        const arch = await engine.imageArch(ref, signal);
+        if (!arch) return waiting("runner_images_unavailable", { ...selected, image: ref });
+        if (arch !== p.info.arch) return waiting("runner_image_emulated", { ...selected, image: ref });
+      }
+      const network = await engine.network(RUNNER_SESSION_NETWORK, signal);
+      if (network === "misshaped") return waiting("runner_session_network_misshaped", selected);
+      if (network === "unavailable") return waiting("runner_session_network_unavailable",selected);
+      if (network === "missing" && !(await engine.createNetwork(RUNNER_SESSION_NETWORK, signal)))
+        return { state: "failed", reason: "runner_session_network_failed", evidence: selected };
       if (!p.info.vm && !(await engine.claimDirs(p.dir, DIRS.map((sub) => join(p.dir, sub)), signal)))
         return { state: "failed", reason: "runner_directory_unavailable", evidence: selected };
       const name = want.CATALYST_HOST_NAME!;
@@ -856,12 +882,23 @@ export function onboardRunnerAdapter(input: OnboardRunnerInput = {}): OnboardAda
       }
       const orgKey = orgKeyFromFile(ctx);
       if (orgKey === null) return waiting("runner_org_key_file_invalid", selected);
-      const keyStatus = await engine.orgKeyStatus(p.dir, p.account, p.baseUrl, orgKey, signal);
+      let keyStatus = await engine.orgKeyStatus(p.dir, p.account, p.baseUrl, orgKey, signal);
       if (keyStatus === "invalid" || keyStatus === "unavailable")
         return waiting(keyStatus === "invalid" ? "runner_org_key_invalid" : "runner_org_key_unavailable", selected);
       if (orgKey && keyStatus === "different")
         if (!(await engine.writeVolumeFile(p.dir, "CATALYST_ORG_KEY_FILE", orgKey, signal)))
           return { state: "failed", reason: "runner_org_key_write_failed", evidence: selected };
+      if(keyStatus==="missing" && p.cloud){
+        const issued=await issueRunnerOrgKey(ctx,journal,{dir:p.dir,teamId:p.teamId,hostName:name},value=>engine.writeVolumeFile(p.dir,"CATALYST_ORG_KEY_FILE",value,signal),signal);
+        if("reason" in issued)return waiting(issued.reason,selected);
+        keyStatus=await engine.orgKeyStatus(p.dir,p.account,p.baseUrl,undefined,signal);
+        if(keyStatus!=="valid")return waiting(keyStatus==="invalid"?"runner_org_key_invalid":"runner_org_key_unavailable",selected);
+      }
+      if(p.cloud){
+        const read=await runnerAdmission(ctx,journal,p.teamId,false,signal);
+        if("reason" in read)return waiting(read.reason,selected);
+        if(!read.ready){const enabled=await runnerAdmission(ctx,journal,p.teamId,true,signal);if("reason" in enabled)return waiting(enabled.reason,selected);if(!enabled.ready)return waiting("runner_admission_unverified",selected);}
+      }
       if (!(await engine.composeUp(p.dir, signal)))
         return { state: "failed", reason: "runner_compose_failed", evidence: selected };
       acted = true;
