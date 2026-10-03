@@ -130,6 +130,27 @@ export interface OnboardIdentity {
   };
 }
 
+const identityLabel = (text: string) =>
+  text
+    .replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 180);
+
+/** CTC-4680: who and where for the lines beside setup's mark, "user: …" and "workspace: …". */
+export function onboardHeaderIdentity(identity: OnboardIdentity): {
+  user: string;
+  workspace: string;
+} {
+  const display = identity.display;
+  return {
+    user: identityLabel(
+      display?.email || display?.personLabel || identity.membershipId,
+    ),
+    workspace: identityLabel(display?.workspaceName || identity.account),
+  };
+}
+
 export function onboardIdentityLines(
   identity: OnboardIdentity | null,
 ): string[] {
@@ -137,12 +158,7 @@ export function onboardIdentityLines(
     return [
       "Use an existing Catalyst account or accept your invitation before approving sign-in.",
     ];
-  const label = (text: string) =>
-    text
-      .replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]/g, " ")
-      .replace(/\s+/g, " ")
-      .trim()
-      .slice(0, 180);
+  const label = identityLabel;
   const display = identity.display;
   const person = label(display?.personLabel || identity.membershipId);
   const email = display?.email ? label(display.email) : "";
