@@ -109,7 +109,15 @@ export interface OnboardUi {
   message(text: string): void;
   checkAgain?(journal: OnboardJournal): Promise<boolean>;
   finish(journal: OnboardJournal, only?: OnboardStepId): void;
-  wait<T>(message: string, run: () => Promise<T>): Promise<T>;
+  /** `page`: the web page this wait finishes on, with the line that sends the person there. It
+   *  replaces the step's own link (CTC-4680: the Connect accounts page). */
+  wait<T>(
+    message: string,
+    run: () => Promise<T>,
+    page?: { url: string; instruction: string },
+  ): Promise<T>;
+  /** A line that must reach the person while a browser wait runs (message() is quiet then). */
+  note?(text: string): void;
   dispose(): void;
 }
 
@@ -519,7 +527,7 @@ export function createClackOnboardUi(
         "Use cloud reads by default. Local sync is optional for SQL or sustained local reads.",
       );
       message(
-        "Setup may check one stored Claude account using a one-token provider request. This may use Claude quota. It does not refresh Codex credentials.",
+        "Setup reads your AI accounts without sending them a request.",
       );
     },
     async confirmPlan(localSync, signin = "unavailable") {
@@ -955,6 +963,14 @@ export function createClackOnboardUi(
       if (granted) prompts.log.message(granted, { output: streams.output });
     },
     message,
+    note(text) {
+      if (hidden(currentStep)) return;
+      if (renderer) renderer.detail(text);
+      else {
+        stop();
+        prompts.log.message(text, { output: streams.output });
+      }
+    },
     async checkAgain(journal) {
       if (
         !renderer ||
@@ -1052,15 +1068,17 @@ export function createClackOnboardUi(
         text = `${ONBOARD_TITLES[only]} finished. Onboarding still has other steps.\nresume: catalyst onboard`;
       prompts.outro(text, { output: streams.output });
     },
-    async wait(text, run) {
+    async wait(text, run, page) {
       const browser =
-        currentStep &&
-        renderer &&
-        setupBrowserInstruction(
-          currentStep,
-          deps.baseUrl?.(),
-          currentStep !== "accounts" && browserOpened,
-        );
+        currentStep && renderer && page
+          ? { ...page, preparation: undefined }
+          : currentStep &&
+            renderer &&
+            setupBrowserInstruction(
+              currentStep,
+              deps.baseUrl?.(),
+              currentStep !== "accounts" && browserOpened,
+            );
       const signinWait = Boolean(
         renderer && currentStep === "signin" && signinShown,
       );

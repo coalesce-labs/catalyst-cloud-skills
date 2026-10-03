@@ -11,7 +11,7 @@ import type { OnboardJournal, OnboardStepId } from "./onboard.js";
 export const COMPUTER_CHECKS = ["machine", "cli", "skills", "legacy"] as const;
 const PLAN = [
   ["On this computer", "signin", "you approve once in your browser"],
-  ["On this computer", "housekeeping", "schedule the daily update, where supported"],
+  ["On this computer", "housekeeping", "schedule the daily update"],
   ["In Linear and GitHub", "linear.workspace", "an admin connects the workspace"],
   ["In Linear and GitHub", "linear.personal", "you connect your own Linear account"],
   ["In Linear and GitHub", "linear.team", "you choose the team"],
@@ -20,7 +20,7 @@ const PLAN = [
   ["In Linear and GitHub", "github.install", "an admin chooses access on GitHub"],
   ["In Linear and GitHub", "github.personal", "you connect your own GitHub account"],
   ["In Linear and GitHub", "github.repos", "you choose where Catalyst can work"],
-  ["Work", "accounts", "check a coding account"],
+  ["Work", "accounts", "check an AI account"],
   ["Work", "capacity", "check which runners can take work"],
   ["Work", "settings", "you review settings before saving them"],
   ["Work", "first-ticket", "you choose a ticket to start"],
@@ -116,7 +116,7 @@ const CONTINUES: ReadonlyArray<readonly [readonly OnboardStepId[], string]> = [
   [["github.install"], "installs Catalyst on GitHub"],
   [["github.personal"], "connects your GitHub account"],
   [["github.repos", "projects"], "chooses repositories"],
-  [["accounts"], "checks a coding account"],
+  [["accounts"], "checks an AI account"],
   [["capacity", "runner"], "checks runners"],
   [["settings", "values"], "reviews repository settings"],
   [["first-ticket"], "starts a first ticket"],
@@ -144,5 +144,5 @@ export function pendingContinuation(
 }
 
 export function standalonePlanNotes(localSync: boolean): string {
-  return `${localSync ? "Local sync is selected." : "Local sync stays off, so Catalyst reads from the cloud."} Checking a coding account sends Claude one short request, which counts toward its usage. Completed steps are checked again before work starts. Codex credentials are not refreshed. Your code, git settings and other skills stay as they are.`;
+  return `${localSync ? "Local sync is selected." : "Local sync stays off, so Catalyst reads from the cloud."} Setup reads your AI accounts without sending them a request. Completed steps are checked again before work starts. Your code, git settings and other skills stay as they are.`;
 }

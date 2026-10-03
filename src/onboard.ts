@@ -92,12 +92,27 @@ export interface OnboardJournal {
   mode?: "plan" | "run";
   complete?: boolean;
   localSync?: boolean;
+  /** The installer's daily-update choice, carried so this record keeps it when setup rewrites it. */
+  dailyUpdate?: OnboardDailyUpdate;
   account?: string;
   membershipId?: string;
   baseUrl?: string;
   operations?: Partial<Record<OnboardStepId, string>>;
   steps: OnboardStep[];
   changes: Array<{ kind: string; label: string; undo: string }>;
+}
+
+export type OnboardDailyUpdate =
+  | { state: "on" }
+  | { state: "off" }
+  | { state: "skipped"; reason: "no_scheduler" };
+
+function dailyUpdateChoice(value: unknown): OnboardDailyUpdate | undefined {
+  const row = object(value);
+  if (row?.state === "on" || row?.state === "off") return { state: row.state };
+  if (row?.state === "skipped" && row.reason === "no_scheduler")
+    return { state: "skipped", reason: "no_scheduler" };
+  return undefined;
 }
 
 export interface OnboardIdentity {
@@ -312,7 +327,7 @@ export const ONBOARD_TITLES: Record<OnboardStepId, string> = {
   "github.personal": "Connect your GitHub account",
   "github.repos": "Choose repositories",
   projects: "Register your projects",
-  accounts: "Check coding accounts",
+  accounts: "Check AI accounts",
   settings: "Review repository settings",
   values: "Import selected local values",
   capacity: "Check runner capacity",
@@ -510,6 +525,7 @@ export function readOnboardJournal(
       : typeof value.exitCode === "number"
         ? value.exitCode
         : null;
+  const dailyUpdate = dailyUpdateChoice(value.dailyUpdate);
   return {
     schema: 1,
     runId: typeof value.runId === "string" ? value.runId : randomUUID(),
@@ -543,6 +559,7 @@ export function readOnboardJournal(
     ...(typeof value.localSync === "boolean"
       ? { localSync: value.localSync }
       : {}),
+    ...(dailyUpdate ? { dailyUpdate } : {}),
     operations: Object.fromEntries(
       Object.entries(object(value.operations) ?? {}).filter(
         ([key, v]) =>
@@ -905,6 +922,8 @@ export function stepSatisfied(step: OnboardStep | undefined): boolean {
     step?.state === "done" ||
     (step?.state === "skipped" &&
       (step.id === "legacy" ||
+        // Optional: a computer without the daily update still runs work.
+        step.id === "housekeeping" ||
         step.reason === "member_scope" ||
         (step.id === "daemon" && step.reason === "local_sync_not_selected") ||
         (step.id === "runner" && step.reason === "runner_not_selected") ||

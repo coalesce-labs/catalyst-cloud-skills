@@ -120,7 +120,8 @@ const TITLES: Partial<Record<OnboardStepId, string>> = {
   "linear.adopt": "Set up the team's workflow",
   "linear.automations": "Check Linear's PR automations",
   projects: "Choose repositories",
-  accounts: "Add a coding account",
+  accounts: "Add an AI account",
+  housekeeping: "Daily update",
   capacity: "Check runners",
   values: "Review repository settings",
 };
@@ -177,7 +178,9 @@ function succeeded(step: OnboardStep): string {
     case "projects":
       return "repositories are now Catalyst projects";
     case "accounts":
-      return `${value(step, "provider") === "claude" ? "Claude" : value(step, "provider") === "codex" ? "Codex" : "a coding account"} can take work`;
+      return `${value(step, "provider") === "claude" ? "Claude" : value(step, "provider") === "codex" ? "Codex" : "an AI account"} can take work`;
+    case "housekeeping":
+      return "scheduled, runs daily";
     case "capacity":
       return typeof step.evidence?.remainingUnits === "number"
         ? `${step.evidence.remainingUnits} runner slots available`
@@ -208,6 +211,11 @@ function unfinished(step: OnboardStep): string {
     return "could not verify the connection's permissions";
   if (step.reason === "housekeeping_service_unverified")
     return "no scheduler here. catalyst says when an update is out";
+  if (step.reason === "housekeeping_off_chosen") return "skipped, as you chose";
+  if (step.reason === "housekeeping_no_scheduler")
+    return "can't run on this computer";
+  if (step.id === "housekeeping")
+    return "not scheduled; the install command turns it on";
   if (step.reason === "local_sync_not_selected")
     return "off, reads come from the cloud";
   if (step.reason === "runner_docker_missing") return "Docker is not running";
@@ -223,7 +231,7 @@ function unfinished(step: OnboardStep): string {
     case "github.install":
       return "not installed yet";
     case "accounts":
-      return "no coding account ready yet";
+      return "no AI account ready yet";
     case "linear.workspace":
     case "linear.personal":
     case "github.personal":
@@ -439,7 +447,9 @@ function action(
         "connect your GitHub account",
       );
     case "accounts":
-      return link("/settings/coding-accounts", "add a coding account");
+      return step.reason === "ai_account_not_usable"
+        ? onboardReasonText(step, { baseUrl: base, journal })
+        : link("/settings/coding-accounts", "add an AI account");
     case "linear.adopt": {
       const team = journal?.steps.find(
         (row) => row.id === "linear.team" && row.state === "done",
@@ -589,7 +599,7 @@ export function setupBrowserInstruction(
     accounts: [
       "/settings/coding-accounts",
       "add the token with your Claude email",
-      "Add a coding account",
+      "Add an AI account",
     ],
   };
   const words = copy[id];

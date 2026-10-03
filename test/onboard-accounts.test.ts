@@ -11,6 +11,7 @@ import {
   type Ctx,
 } from "../src/config.js";
 import { onboardAccountsAdapter } from "../src/onboard-accounts.js";
+import { onboardReasonText } from "../src/onboard-next.js";
 import { createOnboardRuntime } from "../src/onboard-runtime.js";
 import type { OnboardJournal } from "../src/onboard.js";
 import type { OnboardUi } from "../src/onboard-ui.js";
@@ -19,7 +20,6 @@ const homes: string[] = [];
 const origin = "https://accounts-fixture.invalid";
 const now = Date.parse("2026-10-01T04:00:00Z");
 const accountPath = "/api/v1/coding-accounts";
-const validatePath = "/api/v1/coding-accounts/claude-one/validate";
 interface Route {
   method: "GET" | "POST";
   path: string;
@@ -72,10 +72,7 @@ interface State {
   routes: Route[];
   accounts: unknown;
   observedAtMs: number;
-  validation: unknown;
   inventoryResponse?: () => Response;
-  postResponse?: () => Promise<Response>;
-  message?: (text: string) => void;
 }
 function fixture() {
   const home = mkdtempSync(join(tmpdir(), "onboard-accounts-"));
@@ -126,7 +123,6 @@ function fixture() {
     routes: routes(),
     accounts: [slot()],
     observedAtMs: now,
-    validation: { provider: "claude", result: "working", checkedAtMs: now },
   };
   ctx.fetch = vi.fn<typeof fetch>(async (input, init) => {
     const url = new URL(input instanceof Request ? input.url : String(input));
@@ -157,12 +153,6 @@ function fixture() {
             accounts: state.accounts,
             observedAtMs: state.observedAtMs,
           });
-    if (url.pathname === validatePath && method === "POST") {
-      expect(init?.body).toBeUndefined();
-      return state.postResponse
-        ? state.postResponse()
-        : Response.json(state.validation);
-    }
     throw new Error(`Unexpected request ${method} ${url.pathname}`);
   });
   const ui: OnboardUi = {
@@ -176,7 +166,6 @@ function fixture() {
     wait: async (_text, work) => work(),
     message: (text) => {
       messages.push(text);
-      state.message?.(text);
     },
   };
   const makeAdapter = () => {
@@ -215,72 +204,53 @@ function switchConfig(home: string, dimension: string) {
   if (dimension === "role") cfg.user.role = "member";
   writeConfig(home, cfg);
 }
-function heldJson(value: unknown) {
-  let enteredResolve = () => {};
-  const entered = new Promise<void>((resolve) => {
-    enteredResolve = resolve;
-  });
-  let release = () => {};
-  const bytes = new TextEncoder().encode(JSON.stringify(value));
-  const response = new Response(
-    new ReadableStream<Uint8Array>({
-      start(controller) {
-        controller.enqueue(bytes.subarray(0, 1));
-        release = () => {
-          controller.enqueue(bytes.subarray(1));
-          controller.close();
-        };
-      },
-    }),
-    { status: 200, headers: { "content-type": "application/json" } },
-  );
-  const json = response.json.bind(response);
-  vi.spyOn(response, "json").mockImplementation(() => {
-    enteredResolve();
-    return json();
-  });
-  return { response, entered, release: () => release() };
-}
 afterEach(() => {
   vi.useRealTimers();
   for (const home of homes.splice(0))
     rmSync(home, { recursive: true, force: true });
 });
 
-describe("advertised accounts reads and one existing Claude probe", () => {
-  test.each(["GET", "POST"])(
-    "missing advertised %s prevents its real endpoint call",
-    async (method) => {
-      const f = fixture();
-      f.state.routes = f.state.routes.filter(
-        (route) => route.method !== method,
-      );
-      expect((await f.adapter.act!(f.ctx, f.journal)).reason).toBe(
-        "cloud_capability_unavailable",
-      );
-      expect(f.posts()).toEqual([]);
-      if (method === "GET")
-        expect(f.calls.map((call) => call.path)).toEqual([
-          "/api/v1/agent/contract",
-        ]);
-      else
-        expect(f.calls.map((call) => call.path)).toEqual([
-          "/api/v1/agent/contract",
-          accountPath,
-          "/api/v1/agent/contract",
-        ]);
-    },
-  );
-  test("advertisement with personalBearer false does not authorize the probe", async () => {
+describe("CTC-4680: any usable AI account finishes the step", () => {
+  test.each([
+    ["claude", {}],
+    ["codex", { accountSlot: "codex-one", provider: "codex" }],
+    ["another member's", { ownedByMe: false }],
+    // The server's rule: a canceled subscription works until its paid access ends.
+    ["a canceled but still paid", { renewalStatus: "canceled", accessEndsAtMs: now + 86400000 }],
+    ["a canceled one with no end recorded", { renewalStatus: "canceled", accessEndsAtMs: null }],
+  ])("%s account counts", async (_name, change) => {
     const f = fixture();
-    f.state.routes = routes().map((route) => ({
-      ...route,
-      personalBearer: route.method !== "POST",
-    }));
-    expect((await f.adapter.act!(f.ctx, f.journal)).state).toBe("waiting");
+    f.state.accounts = [slot(change)];
+    expect(await f.adapter.check(f.ctx, f.journal)).toMatchObject({
+      state: "done",
+      evidence: { provider: (change as { provider?: string }).provider ?? "claude" },
+    });
+    // Done is read from the account list alone: no provider request, no write.
     expect(f.posts()).toEqual([]);
   });
-  test("working proof needs the real post-act inventory check and never uses cached receipt proof", async () => {
+  test("one usable account among unusable ones is enough", async () => {
+    const f = fixture();
+    f.state.accounts = [
+      slot({ accountSlot: "claude-walled", walled: true }),
+      slot({ accountSlot: "codex-ok", provider: "codex" }),
+    ];
+    expect(await f.adapter.check(f.ctx, f.journal)).toMatchObject({
+      state: "done",
+      evidence: { provider: "codex" },
+    });
+  });
+  test("missing advertised GET prevents the account read", async () => {
+    const f = fixture();
+    f.state.routes = [];
+    expect((await f.adapter.check(f.ctx, f.journal)).reason).toBe(
+      "cloud_capability_unavailable",
+    );
+    // The contract is read for the checklist and for the list; neither route is called.
+    expect(new Set(f.calls.map((call) => call.path))).toEqual(
+      new Set(["/api/v1/agent/contract"]),
+    );
+  });
+  test("an account list that hides credential fields never echoes them", async () => {
     const f = fixture();
     const before = f.configBytes();
     f.state.accounts = [
@@ -289,187 +259,71 @@ describe("advertised accounts reads and one existing Claude probe", () => {
         enrolledEmail: "hidden@example.invalid",
       }),
     ];
-    f.state.validation = {
-      provider: "claude",
-      result: "working",
-      checkedAtMs: now,
-      token: "hidden-provider-token",
-    };
-    expect(await f.adapter.check(f.ctx, f.journal)).toEqual({
-      state: "pending",
-    });
-    const result = await f.adapter.act!(f.ctx, f.journal);
-    expect(result).toEqual({
-      state: "done",
-      evidence: {
-        accountSlot: "claude-one",
-        provider: "claude",
-        checkedAt: new Date(now).toISOString(),
-      },
-    });
-    expect(f.calls.slice(-2).map((call) => call.path)).toEqual([
-      "/api/v1/agent/contract",
-      accountPath,
-    ]);
-    expect(await f.adapter.check(f.ctx, f.journal)).toEqual(result);
-    expect(f.posts()).toHaveLength(1);
-    const serialized = JSON.stringify([result, f.messages]);
-    expect(serialized).not.toContain("hidden-provider-token");
-    expect(serialized).not.toContain("hidden@example.invalid");
-    expect(serialized).not.toContain("ctc_unused_ambient_synthetic");
-    expect(f.messages.join("\n")).toContain("one-token provider request");
-    expect(f.messages.join("\n")).toContain("does not reserve a runner");
-    f.journal.steps = [
-      { id: "accounts", state: "done", evidence: result.evidence },
-    ];
-    expect(await f.makeAdapter().check(f.ctx, f.journal)).toEqual({
-      state: "pending",
-    });
-    expect(f.posts()).toHaveLength(1);
+    const result = await f.adapter.check(f.ctx, f.journal);
+    expect(result.state).toBe("done");
+    expect(JSON.stringify(result)).not.toContain("hidden");
     expect(f.configBytes()).toEqual(before);
   });
-  test.each([
-    { result: "walled", reason: "account_provider_walled" },
-    { result: "rejected", reason: "account_provider_rejected" },
-    { result: "inconclusive", reason: "account_provider_access_unverified" },
-  ])(
-    "$result spends exactly one attempt and never produces proof",
-    async (outcome) => {
+  test.each(["person", "account", "origin", "role"])(
+    "a login that changed (%s) before the read is refused",
+    async (dimension) => {
       const f = fixture();
-      f.state.validation = {
-        provider: "claude",
-        result: outcome.result,
-        checkedAtMs: now,
-      };
-      expect(await f.adapter.act!(f.ctx, f.journal)).toEqual({
-        state: "waiting",
-        reason: outcome.reason,
-      });
-      expect((await f.adapter.check(f.ctx, f.journal)).state).toBe("waiting");
-      expect((await f.adapter.act!(f.ctx, f.journal)).state).toBe("waiting");
-      expect(f.posts()).toHaveLength(1);
+      switchConfig(f.home, dimension);
+      if (dimension === "role") {
+        // The role is the member's own; the account list stays readable.
+        expect((await f.adapter.check(f.ctx, f.journal)).state).toBe("done");
+        return;
+      }
+      expect((await f.adapter.check(f.ctx, f.journal)).reason).toBe(
+        "account_identity_unverified",
+      );
     },
   );
+});
 
-  test("exactly 1000 distinct valid slots still selects only one Claude probe", async () => {
+describe("an account that cannot take work does not count", () => {
+  test.each([
+    { declaredState: "inactive" },
+    { needsCredential: true },
+    { walled: true },
+    { quarantined: true },
+    { revokedAtMs: 0 },
+    { renewalStatus: "canceled", accessEndsAtMs: now - 1, provider: "codex" },
+    { accessEndsAtMs: now },
+  ])("excluded account %# waits with a plain reason", async (change) => {
     const f = fixture();
-    f.state.accounts = [
-      slot(),
-      ...Array.from({ length: 999 }, (_, index) =>
-        slot({ accountSlot: `zzz-claude-${index}` }),
-      ),
-    ];
-    expect((await f.adapter.act!(f.ctx, f.journal)).state).toBe("done");
-    expect(f.posts()).toHaveLength(1);
-    expect(f.posts()[0]?.path).toBe(validatePath);
+    f.state.accounts = [slot(change)];
+    expect(await f.adapter.check(f.ctx, f.journal)).toEqual({
+      state: "waiting",
+      reason: "ai_account_not_usable",
+    });
+    expect((await f.adapter.act!(f.ctx, f.journal)).reason).toBe(
+      "ai_account_not_usable",
+    );
+    expect(f.posts()).toEqual([]);
   });
-  test("no slots requires enrollment without provider or credential requests", async () => {
+  test("no accounts at all asks for one to be added", async () => {
     const f = fixture();
     f.state.accounts = [];
     expect(await f.adapter.check(f.ctx, f.journal)).toEqual({
       state: "waiting",
       reason: "account_enrollment_required",
     });
-    expect(f.posts()).toEqual([]);
-  });
-  test("fresh inventory cannot extend expired in-memory provider proof", async () => {
-    const f = fixture();
-    expect((await f.adapter.act!(f.ctx, f.journal)).state).toBe("done");
-    f.setTime(now + 30001);
-    f.state.observedAtMs = now + 30001;
-    expect((await f.adapter.check(f.ctx, f.journal)).state).toBe("waiting");
-    expect(f.posts()).toHaveLength(1);
-  });
-  test.each([401, 500, null])(
-    "HTTP/transport failure %s never exposes raw errors or retries",
-    async (status) => {
-      const f = fixture();
-      f.state.postResponse = async () => {
-        if (status === null) throw new Error("hidden-provider-error-token");
-        return Response.json(
-          { error: "hidden-provider-error-token" },
-          { status },
-        );
-      };
-      expect((await f.adapter.act!(f.ctx, f.journal)).reason).toBe(
-        "account_validation_unavailable",
-      );
-      expect((await f.adapter.act!(f.ctx, f.journal)).state).toBe("waiting");
-      expect(f.posts()).toHaveLength(1);
-      expect(f.messages.join("\n")).not.toContain(
-        "hidden-provider-error-token",
-      );
-    },
-  );
-
-  test("success is invalidated by a fresh revoked inventory without another probe", async () => {
-    const f = fixture();
-    expect((await f.adapter.act!(f.ctx, f.journal)).state).toBe("done");
-    f.state.accounts = [slot({ revokedAtMs: now })];
-    expect((await f.adapter.check(f.ctx, f.journal)).state).toBe("waiting");
-    expect((await f.adapter.act!(f.ctx, f.journal)).state).toBe("waiting");
-    expect(f.posts()).toHaveLength(1);
-  });
-});
-
-describe("account metadata cannot substitute for provider access", () => {
-  test.each([
-    { declaredState: "inactive" },
-    { ownedByMe: false },
-    { needsCredential: true },
-    { walled: true },
-    { quarantined: true },
-    { revokedAtMs: 0 },
-    { renewalStatus: "canceled", accessEndsAtMs: now + 86400000 },
-    { accessEndsAtMs: now },
-  ])("excluded slot %# has no provider request", async (change) => {
-    const f = fixture();
-    f.state.accounts = [slot(change)];
-    expect((await f.adapter.check(f.ctx, f.journal)).state).toBe("waiting");
-    expect((await f.adapter.act!(f.ctx, f.journal)).state).toBe("waiting");
-    expect(f.posts()).toEqual([]);
-  });
-  test("canceled Codex never triggers validation, enrollment or credential rotation", async () => {
-    const f = fixture();
-    const before = f.configBytes();
-    f.state.accounts = [
-      slot({
-        provider: "codex",
-        renewalStatus: "canceled",
-        accessEndsAtMs: now - 1,
-      }),
-    ];
-    expect((await f.adapter.check(f.ctx, f.journal)).reason).toBe(
-      "codex_provider_access_unverified",
-    );
-    expect((await f.adapter.act!(f.ctx, f.journal)).state).toBe("waiting");
-    expect(f.posts()).toEqual([]);
-    expect(
-      f.calls.every(
-        (call) =>
-          call.path === accountPath || call.path === "/api/v1/agent/contract",
-      ),
-    ).toBe(true);
-    expect(f.configBytes()).toEqual(before);
   });
   test.each([
     { renewalStatus: "unknown" },
     { revokedAtMs: "0" },
     { accessEndsAtMs: "tomorrow" },
     { declaredState: "disabled" },
-  ])(
-    "malformed nullable/declared metadata %# refuses the inventory",
-    async (change) => {
-      const f = fixture();
-      f.state.accounts = [slot(change)];
-      expect((await f.adapter.act!(f.ctx, f.journal)).reason).toBe(
-        "account_inventory_unverified",
-      );
-      expect(f.posts()).toEqual([]);
-    },
-  );
+  ])("malformed metadata %# refuses the list", async (change) => {
+    const f = fixture();
+    f.state.accounts = [slot(change)];
+    expect((await f.adapter.check(f.ctx, f.journal)).reason).toBe(
+      "account_inventory_unverified",
+    );
+  });
   test.each(["duplicate", "over-limit", "future", "stale"])(
-    "%s inventory cannot grant a probe",
+    "%s list cannot finish the step",
     async (kind) => {
       const f = fixture();
       if (kind === "duplicate") f.state.accounts = [slot(), slot()];
@@ -479,191 +333,94 @@ describe("account metadata cannot substitute for provider access", () => {
         );
       if (kind === "future") f.state.observedAtMs = now + 5001;
       if (kind === "stale") f.state.observedAtMs = now - 30001;
-      expect((await f.adapter.act!(f.ctx, f.journal)).reason).toBe(
+      expect((await f.adapter.check(f.ctx, f.journal)).reason).toBe(
         "account_inventory_unverified",
       );
-      expect(f.posts()).toEqual([]);
     },
   );
-  test.each([
-    { provider: "codex", result: "working", checkedAtMs: now },
-    { provider: "claude", result: "working", checkedAtMs: now + 5001 },
-    { provider: "claude", result: "working", checkedAtMs: now - 30001 },
-    { provider: "claude", result: "unexpected", checkedAtMs: now },
-  ])("validation result %# cannot become fresh proof", async (validation) => {
-    const f = fixture();
-    f.state.validation = validation;
-    expect((await f.adapter.act!(f.ctx, f.journal)).reason).toBe(
-      "account_validation_unverified",
-    );
-    expect((await f.adapter.check(f.ctx, f.journal)).state).toBe("waiting");
-    expect(f.posts()).toHaveLength(1);
-  });
 });
 
-describe("identity and cancellation guard the actual quota-consuming send", () => {
-  test.each(["person", "account", "origin", "role"])(
-    "queued %s switch prevents the actual POST",
-    async (dimension) => {
-      const f = fixture();
-      const beforeJournal = JSON.stringify(f.journal);
-      f.state.message = (text) => {
-        if (text.startsWith("Checking one stored"))
-          queueMicrotask(() => switchConfig(f.home, dimension));
-      };
-      expect(await f.adapter.act!(f.ctx, f.journal)).toEqual({
-        state: "waiting",
-        reason: "account_identity_unverified",
-      });
-      expect(f.posts()).toEqual([]);
-      expect(JSON.stringify(f.journal)).toBe(beforeJournal);
-    },
-  );
-  test.each(["person", "account", "origin", "role"])(
-    "%s switch during native GET body prevents a probe",
-    async (dimension) => {
-      const f = fixture();
-      const held = heldJson({ accounts: [slot()], observedAtMs: now });
-      f.state.inventoryResponse = () => held.response;
-      const pending = f.adapter.act!(f.ctx, f.journal);
-      await held.entered;
-      switchConfig(f.home, dimension);
-      held.release();
-      const replacement = f.configBytes();
-      expect((await pending).reason).toBe("account_identity_unverified");
-      expect(f.posts()).toEqual([]);
-      expect(f.configBytes()).toEqual(replacement);
-    },
-  );
-  test.each(["person", "account", "origin", "role"])(
-    "%s switch during native POST body prevents done proof",
-    async (dimension) => {
-      const f = fixture();
-      const held = heldJson(f.state.validation);
-      f.state.postResponse = async () => held.response;
-      const pending = f.adapter.act!(f.ctx, f.journal);
-      await held.entered;
-      switchConfig(f.home, dimension);
-      held.release();
-      const replacement = f.configBytes();
-      const result = await pending;
-      expect(result).toEqual({
-        state: "waiting",
-        reason: "account_identity_unverified",
-      });
-      expect(result.evidence).toBeUndefined();
-      expect(f.posts()).toHaveLength(1);
-      expect(f.configBytes()).toEqual(replacement);
-      expect(f.messages.join("\n")).not.toContain(
-        "provider access was verified",
-      );
-    },
-  );
-  test("a queued stop from the display callback prevents the actual POST", async () => {
+describe("an interactive owner waits for a usable account", () => {
+  test("empty accounts wait for one to be added, then finish", async () => {
     const f = fixture();
+    f.state.accounts = [];
+    let polls = 0;
+    const adapter = onboardAccountsAdapter({
+      waitForAccount: (work) => work(),
+      sleep: async () => {
+        polls++;
+        f.state.accounts = [slot({ provider: "codex" })];
+      },
+    });
+    expect(await adapter.check(f.ctx, f.journal)).toEqual({ state: "pending" });
+    expect(await adapter.act!(f.ctx, f.journal)).toMatchObject({
+      state: "done",
+      evidence: { provider: "codex" },
+    });
+    expect(polls).toBe(1);
+  });
+  test("an unusable account is waited on too, until it is fixed", async () => {
+    const f = fixture();
+    f.state.accounts = [slot({ walled: true })];
+    const adapter = onboardAccountsAdapter({
+      waitForAccount: (work) => work(),
+      sleep: async () => {
+        f.state.accounts = [slot()];
+      },
+    });
+    expect(await adapter.check(f.ctx, f.journal)).toEqual({ state: "pending" });
+    expect((await adapter.act!(f.ctx, f.journal)).state).toBe("done");
+  });
+  test("the wait has a hard deadline and names what is missing", async () => {
+    const f = fixture();
+    f.state.accounts = [];
+    const adapter = onboardAccountsAdapter({
+      waitForAccount: (work) => work(),
+      accountWaitMs: 20,
+      sleep: () => new Promise(() => {}),
+    });
+    expect(await adapter.act!(f.ctx, f.journal)).toEqual({
+      state: "waiting",
+      reason: "account_enrollment_required",
+    });
+    f.state.accounts = [slot({ walled: true })];
+    expect(await adapter.act!(f.ctx, f.journal)).toEqual({
+      state: "waiting",
+      reason: "ai_account_not_usable",
+    });
+  });
+  test("interrupting the wait stops it", async () => {
+    const f = fixture();
+    f.state.accounts = [];
     const stop = new AbortController();
-    f.state.message = (text) => {
-      if (text.startsWith("Checking one stored"))
-        queueMicrotask(() => stop.abort());
-    };
-    expect(await f.adapter.act!(f.ctx, f.journal, stop.signal)).toEqual({
+    const adapter = onboardAccountsAdapter({
+      waitForAccount: (work) => work(),
+      sleep: async () => {
+        stop.abort();
+      },
+    });
+    expect(await adapter.act!(f.ctx, f.journal, stop.signal)).toMatchObject({
       state: "waiting",
       reason: "interrupted",
     });
-    expect(f.posts()).toEqual([]);
   });
-  test("abort during a native validation body never records late success or retries", async () => {
+  test("a member never waits: adding an account is an admin's", async () => {
     const f = fixture();
-    const stop = new AbortController();
-    const held = heldJson(f.state.validation);
-    f.state.postResponse = async () => held.response;
-    const pending = f.adapter.act!(f.ctx, f.journal, stop.signal);
-    await held.entered;
-    stop.abort();
-    expect(await pending).toEqual({ state: "waiting", reason: "interrupted" });
-    held.release();
-    await Promise.resolve();
-    await Promise.resolve();
-    expect((await f.adapter.act!(f.ctx, f.journal)).state).toBe("waiting");
-    expect(f.posts()).toHaveLength(1);
-    expect(f.messages.join("\n")).not.toContain("provider access was verified");
-  });
-  test("the real 15s validation deadline refuses an ignoring native body", async () => {
-    vi.useFakeTimers();
-    const f = fixture();
-    const held = heldJson(f.state.validation);
-    f.state.postResponse = async () => held.response;
-    const pending = f.adapter.act!(f.ctx, f.journal);
-    await held.entered;
-    await vi.advanceTimersByTimeAsync(15000);
-    expect(await pending).toEqual({
-      state: "waiting",
-      reason: "account_validation_unavailable",
+    switchConfig(f.home, "role");
+    f.state.accounts = [];
+    const adapter = onboardAccountsAdapter({
+      waitForAccount: () => {
+        throw new Error("must not wait");
+      },
     });
-    expect(f.posts()[0]?.init?.signal?.aborted).toBe(true);
-    held.release();
-    await Promise.resolve();
-    expect(f.messages.join("\n")).not.toContain("provider access was verified");
+    expect(await adapter.check(f.ctx, f.journal)).toEqual({
+      state: "waiting",
+      reason: "account_enrollment_required",
+    });
   });
 });
 
-test("interactive empty coding accounts wait for an added account then check it once", async () => {
-  const f = fixture();
-  f.state.accounts = [];
-  let polls = 0;
-  const adapter = onboardAccountsAdapter({
-    waitForAccount: async (work) => {
-      expect(f.posts()).toHaveLength(0);
-      return work();
-    },
-    sleep: async () => {
-      polls++;
-      f.state.accounts = [slot()];
-    },
-  });
-  expect(await adapter.check(f.ctx, f.journal)).toMatchObject({
-    state: "pending",
-  });
-  expect(await adapter.act!(f.ctx, f.journal)).toMatchObject({ state: "done" });
-  expect(polls).toBe(1);
-  expect(f.posts()).toHaveLength(1);
-});
-test("an account-added wait has a hard deadline and preserves the immediate no-UI wait", async () => {
-  const f = fixture();
-  f.state.accounts = [];
-  expect(await f.adapter.check(f.ctx, f.journal)).toMatchObject({
-    state: "waiting",
-    reason: "account_enrollment_required",
-  });
-  const adapter = onboardAccountsAdapter({
-    waitForAccount: (work) => work(),
-    accountWaitMs: 20,
-    sleep: () => new Promise(() => {}),
-  });
-  expect(await adapter.act!(f.ctx, f.journal)).toMatchObject({
-    state: "waiting",
-    reason: "account_enrollment_required",
-  });
-  expect(f.posts()).toHaveLength(0);
-});
-test("interrupting account-added wait never sends a validation request", async () => {
-  const f = fixture();
-  f.state.accounts = [];
-  const stop = new AbortController();
-  const adapter = onboardAccountsAdapter({
-    waitForAccount: (work) => work(),
-    sleep: async () => {
-      stop.abort();
-    },
-  });
-  expect(await adapter.act!(f.ctx, f.journal, stop.signal)).toMatchObject({
-    state: "waiting",
-    reason: "interrupted",
-  });
-  expect(f.posts()).toHaveLength(0);
-});
-
-describe("--coding-account pins the slot setup checks (CTC-4633)", () => {
+describe("--coding-account pins the account setup checks (CTC-4633)", () => {
   const pinned = (f: ReturnType<typeof fixture>, slotName: string) => {
     const adapter = createOnboardRuntime(
       parseArgs(["onboard", "--yes", "--coding-account", slotName]),
@@ -679,31 +436,39 @@ describe("--coding-account pins the slot setup checks (CTC-4633)", () => {
     return adapter;
   };
 
-  test("a slot that is not enrolled waits with a named reason and probes nothing", async () => {
+  test("an account that is not enrolled waits with a named reason", async () => {
     const f = fixture();
     expect(await pinned(f, "claude-absent").check(f.ctx, f.journal)).toEqual({
       state: "waiting",
       reason: "coding_account_not_found",
     });
-    expect(f.posts()).toEqual([]);
   });
 
-  test("the named slot is the one checked, even when another slot sorts first", async () => {
+  test("the named account is the one that must be usable", async () => {
     const f = fixture();
-    f.state.accounts = [slot({ accountSlot: "claude-a-first" }), slot()];
-    const adapter = pinned(f, "claude-one");
-    expect((await adapter.check(f.ctx, f.journal)).state).toBe("pending");
-    await adapter.act!(f.ctx, f.journal);
-    expect(f.posts().map((call) => call.path)).toEqual([validatePath]);
+    f.state.accounts = [slot({ accountSlot: "claude-a-first" }), slot({ provider: "codex" })];
+    expect(await pinned(f, "claude-one").check(f.ctx, f.journal)).toMatchObject({
+      state: "done",
+      evidence: { provider: "codex" },
+    });
   });
 
-  test("an unusable named slot is not replaced by a usable one", async () => {
+  test.each([
+    [{ walled: true }, "coding_account_walled"],
+    [{ needsCredential: true }, "coding_account_needs_login"],
+    [{ quarantined: true }, "coding_account_quarantined"],
+    [{ declaredState: "inactive" }, "coding_account_inactive"],
+    [{ revokedAtMs: 0 }, "coding_account_ended"],
+    [{ renewalStatus: "canceled", accessEndsAtMs: now - 1 }, "coding_account_ended"],
+  ])("an unusable named account %o names its own cause, not the workspace's", async (change, reason) => {
     const f = fixture();
-    f.state.accounts = [slot(), slot({ accountSlot: "claude-two", walled: true })];
+    f.state.accounts = [slot(), slot({ accountSlot: "claude-two", ...change })];
     expect(await pinned(f, "claude-two").check(f.ctx, f.journal)).toEqual({
       state: "waiting",
-      reason: "account_provider_access_unverified",
+      reason,
     });
-    expect(f.posts()).toEqual([]);
+    const text = onboardReasonText({ id: "accounts", state: "waiting", reason });
+    expect(text).toContain("The AI account named by --coding-account");
+    expect(text).not.toContain("No AI account in this workspace");
   });
 });

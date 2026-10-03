@@ -667,7 +667,7 @@ describe("plain finish names what is left (CTC-4477)", () => {
     expect(code).toBe(11);
     expect(text).toContain("Setup still needs 4 checks.");
     expect(text).toContain(
-      "Check coding accounts: No coding account is enrolled.",
+      "Check AI accounts: No AI account is added yet.",
     );
     expect(text).toContain(
       "https://cloud.example.dev/settings/coding-accounts",
@@ -675,7 +675,7 @@ describe("plain finish names what is left (CTC-4477)", () => {
     expect(text).toContain("Check runner capacity: No runner is allowed");
     expect(text).toContain("Schedule the daily update: ");
     expect(text).toContain(
-      'Start a first ticket: Runs after "Check coding accounts".',
+      'Start a first ticket: Runs after "Check AI accounts".',
     );
     expect(text).not.toContain("Onboarding complete");
     expect(text).not.toContain("Move a ticket");

@@ -24,6 +24,14 @@ import { onboardWorkflowVerificationAdapter } from "./onboard-workflow.js";
 import { onboardAccountsAdapter } from "./onboard-accounts.js";
 import { githubInstallationAdapter } from "./onboard-github.js";
 import {
+  connectChecklistAdapter,
+  type ConnectPageWait,
+} from "./onboard-checklist.js";
+import {
+  onboardHousekeepingAdapter,
+  type HousekeepingOptions,
+} from "./onboard-housekeeping.js";
+import {
   guardOnboardCapabilities,
   type OnboardCapabilityOptions,
 } from "./onboard-capabilities.js";
@@ -57,6 +65,8 @@ export interface OnboardRuntimeHooks {
   realHome?: () => string;
   skillNames?: readonly string[];
   runnerEngine?: RunnerEngine;
+  /** How the daily update step reads this computer's scheduler; tests replace it. */
+  scheduler?: HousekeepingOptions;
 }
 
 const HOLD_ON_TIMEOUT: readonly OnboardStepId[] = [
@@ -243,9 +253,27 @@ export function createOnboardRuntime(
   // CTC-4680 round 5: whether the step now acting ran a browser wait, so a timed-out wait can be
   // re-offered with a fresh link instead of moving on to steps that need it.
   let waited = false;
-  const waitFor = <T>(message: string, run: () => Promise<T>): Promise<T> => {
+  const waitFor = <T>(
+    message: string,
+    run: () => Promise<T>,
+    page?: ConnectPageWait,
+  ): Promise<T> => {
     waited = true;
-    return hooks.ui!.wait(message, run);
+    return hooks.ui!.wait(message, run, page);
+  };
+  // CTC-4680: the Connect accounts page opens once per run, whichever step needs it first.
+  const connectPage = { openedBy: null as OnboardStepId | null };
+  const checklistOptions = {
+    openBrowser: hooks.openBrowser ?? openConsentBrowser,
+    wait: interactiveWait
+      ? <T>(message: string, work: () => Promise<T>, page: ConnectPageWait) =>
+          waitFor(message, work, page)
+      : undefined,
+    note: (text: string) =>
+      hooks.ui?.note ? hooks.ui.note(text) : hooks.ui ? hooks.ui.message(text) : ctx.stderr(text),
+    sleep: hooks.sleep,
+    page: connectPage,
+    cache: { last: null },
   };
   const personalAdapter = (provider: "linear" | "github") =>
     personalConsentAdapter({
@@ -355,12 +383,17 @@ export function createOnboardRuntime(
         : undefined,
       sleep: hooks.sleep,
     }),
-    "github.install": githubInstallationAdapter({
-      openBrowser: hooks.openBrowser ?? openConsentBrowser,
-      wait: interactiveWait
-        ? (message, work) => waitFor(message, work)
-        : undefined,
-      sleep: hooks.sleep,
+    "github.install": connectChecklistAdapter({
+      ...checklistOptions,
+      step: "github.install",
+      item: "github-app",
+      fallback: githubInstallationAdapter({
+        openBrowser: hooks.openBrowser ?? openConsentBrowser,
+        wait: interactiveWait
+          ? (message, work) => waitFor(message, work)
+          : undefined,
+        sleep: hooks.sleep,
+      }),
     }),
     settings: onboardSettingsAdapter({
       ...hooks.settings,
@@ -382,22 +415,24 @@ export function createOnboardRuntime(
         : undefined,
       message: (text) => (hooks.ui ? hooks.ui.message(text) : ctx.stderr(text)),
     }),
-    accounts: onboardAccountsAdapter({
-      ...(hooks.ui &&
-      hooks.ui.interactive !== false &&
-      !args.json &&
-      args.flags.yes !== true &&
-      args.flags.headless !== true
-        ? {
-            waitForAccount: <T>(work: () => Promise<T>) =>
-              waitFor("Waiting for a coding account", work),
-            sleep: hooks.sleep,
-          }
-        : {}),
-      message: (text) => (hooks.ui ? hooks.ui.message(text) : ctx.stderr(text)),
-      ...(typeof args.flags["coding-account"] === "string"
-        ? { slot: args.flags["coding-account"] }
-        : {}),
+    accounts: connectChecklistAdapter({
+      ...checklistOptions,
+      step: "accounts",
+      item: "ai-account",
+      // A named account is checked on its own: the checklist answers for the whole workspace.
+      enabled: typeof args.flags["coding-account"] !== "string",
+      fallback: onboardAccountsAdapter({
+        ...(interactiveWait
+          ? {
+              waitForAccount: <T>(work: () => Promise<T>) =>
+                waitFor("Waiting for an AI account", work),
+              sleep: hooks.sleep,
+            }
+          : {}),
+        ...(typeof args.flags["coding-account"] === "string"
+          ? { slot: args.flags["coding-account"] }
+          : {}),
+      }),
     }),
     capacity: onboardCapacityAdapter({
       message: (text) => (hooks.ui ? hooks.ui.message(text) : ctx.stderr(text)),
@@ -439,9 +474,7 @@ export function createOnboardRuntime(
               evidence: { provider: "cloud" },
             },
     },
-    housekeeping: {
-      check: async () => waiting("housekeeping_service_unverified"),
-    },
+    housekeeping: onboardHousekeepingAdapter(hooks.scheduler),
     ready: { check: hooks.ready },
   };
   const get = (path: string) => ({ method: "GET" as const, path });
@@ -535,7 +568,8 @@ export function createOnboardRuntime(
               result.state === "waiting" &&
               (TIMED_OUT_REASONS.has(result.reason ?? "") ||
                 (step === "accounts" &&
-                  result.reason === "account_enrollment_required"));
+                  (result.reason === "account_enrollment_required" ||
+                    result.reason === "ai_account_not_usable")));
             if (!timedOut || !waited || signal?.aborted || hooks.ui?.signal.aborted)
               return result;
             if (!(await retry(step))) return result;

@@ -648,7 +648,7 @@ describe("headless runner integration", () => {
       }, tracker)),
     }, "test")).toBe(11);
     expect(f.out.join("\n")).toContain("Check the Catalyst skills:");
-    expect(f.out.join("\n")).toContain("Check coding accounts:");
+    expect(f.out.join("\n")).toContain("Check AI accounts:");
     expect(f.out.join("\n")).toContain("resume: run the same headless setup command");
     expect(f.out.join("\n")).not.toMatch(/\bcatalyst onboard\b/);
     expect(f.err.join("\n")).not.toMatch(/\bcatalyst onboard\b/);

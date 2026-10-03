@@ -736,7 +736,7 @@ test("an incomplete finish lists each unfinished step with its next action", () 
     "Apply the Catalyst workflow: This setup step is not available on this server yet.",
   );
   expect(text).toContain(
-    "Check coding accounts: No coding account is enrolled.",
+    "Check AI accounts: No AI account is added yet.",
   );
   expect(text).toContain("https://cloud.example.dev/settings/coding-accounts");
   expect(text).toContain("Review repository settings: ");
