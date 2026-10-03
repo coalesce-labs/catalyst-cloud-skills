@@ -1,0 +1,1 @@
+Review fixes: the plain-text plan (--dry-run, --json stderr, --headless) keeps its old groups and JSON's SETUP_NUMBERS so actions[].number matches a plan row; waiting text names this part's steps first and each other part once ("after step 1, and step 4 of part 2", "after steps 3 and 6 of part 2"); part 1's heading prints once.
