@@ -33,6 +33,9 @@ export interface Checklist {
   page: string;
   checkedAt: number;
   items: ChecklistItem[];
+  /** The AI accounts this workspace may add, as "subscription,api-key" or "api-key". Subscriptions
+   *  only when the cloud says so: a missing or unknown answer is API keys alone. */
+  aiAccountKinds: string;
 }
 
 /** Exactly the page's own labels, so the terminal and the browser name each row the same way. */
@@ -135,7 +138,15 @@ function parse(body: unknown, origin: string): Checklist | null {
       canAct: item.canAct,
     });
   }
-  return { page: page.toString(), checkedAt: row.checkedAt, items };
+  const kinds = Array.isArray(row.aiAccountKinds) ? row.aiAccountKinds : [];
+  return {
+    page: page.toString(),
+    checkedAt: row.checkedAt,
+    items,
+    aiAccountKinds: kinds.includes("subscription")
+      ? "subscription,api-key"
+      : "api-key",
+  };
 }
 
 export type ChecklistRead =
@@ -289,12 +300,25 @@ export function connectChecklistAdapter(
     }
     if ("unsupported" in result) return null;
     if ("reason" in result) return result;
+    kinds = result.checklist.aiAccountKinds;
     const item = result.checklist.items.find((row) => row.id === options.item);
     return item ? { checklist: result.checklist, item } : null;
   };
+  // The AI account step's text follows what the workspace may add, so its results carry the kinds
+  // from the read that answered them. No read, no kinds: the text falls back to API keys.
+  let kinds: string | undefined;
+  const tagged =
+    (run: NonNullable<OnboardAdapter["act"]>): NonNullable<OnboardAdapter["act"]> =>
+    async (ctx, journal, signal) => {
+      kinds = undefined;
+      const result = await run(ctx, journal, signal);
+      return options.item === "ai-account" && kinds
+        ? { ...result, evidence: { ...result.evidence, aiAccountKinds: kinds } }
+        : result;
+    };
   const actionable = (item: ChecklistItem) =>
     item.state === "needed" && item.canAct && options.wait !== undefined;
-  return {
+  const adapter: Required<OnboardAdapter> = {
     check: async (ctx, journal, signal) => {
       const current = await read(ctx, journal, signal);
       if (current && "item" in current) {
@@ -389,4 +413,5 @@ export function connectChecklistAdapter(
       return ended;
     },
   };
+  return { check: tagged(adapter.check), act: tagged(adapter.act) };
 }

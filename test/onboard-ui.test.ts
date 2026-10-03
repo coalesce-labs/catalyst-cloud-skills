@@ -630,13 +630,14 @@ test("a team key that could carry terminal text is replaced by the placeholder",
   expect(text).not.toContain("\u001b");
 });
 
-test("missing coding accounts name the saved workspace's AI accounts page and the setup token", () => {
+test("missing AI accounts name the saved workspace's AI accounts page and an API key", () => {
   const text = warned("account_enrollment_required", {
     baseUrl: "https://cloud.example.dev/",
   });
   expect(text).toContain("https://cloud.example.dev/settings/coding-accounts");
   expect(text).toContain("Settings → AI accounts");
-  expect(text).toContain("claude setup-token");
+  expect(text).toContain("an API key, billed per token");
+  expect(text).not.toMatch(/setup-token|subscription/);
   expect(warned("account_enrollment_required")).toContain(
     "Settings → AI accounts",
   );

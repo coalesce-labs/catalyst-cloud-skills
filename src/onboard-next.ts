@@ -18,9 +18,9 @@ const REASONS: Record<string, string> = {
   coding_account_inactive:
     "The AI account named by --coding-account is turned off. Turn it on in the workspace's AI account settings, then run catalyst onboard.",
   coding_account_ended:
-    "The AI account named by --coding-account was removed or its paid access has ended. Name another one with --coding-account, or add one in the workspace's AI account settings.",
+    "The AI account named by --coding-account was removed or its access has ended. Name another one with --coding-account, or add one in the workspace's AI account settings.",
   coding_account_needs_login:
-    "The AI account named by --coding-account needs its login added again. Replace it in the workspace's AI account settings, then run catalyst onboard.",
+    "The AI account named by --coding-account needs its key added again. Replace it in the workspace's AI account settings, then run catalyst onboard.",
   coding_account_quarantined:
     "The AI account named by --coding-account is held after repeated failures. Check it in the workspace's AI account settings, then run catalyst onboard.",
   coding_account_walled:
@@ -491,13 +491,19 @@ export function onboardReasonText(
     const where = context.baseUrl
       ? `at ${normalizeBaseUrl(context.baseUrl)}/settings/coding-accounts`
       : "in the web app on the Settings → AI accounts page";
-    return `No AI account in this workspace can take work yet. A workspace owner or administrator checks them ${where}: one may need its login replaced, or may have reached its usage limit. Then run catalyst onboard.`;
+    return `No AI account in this workspace can take work yet. A workspace owner or administrator checks them ${where}: one may need its key replaced, or may have reached its usage limit. Then run catalyst onboard.`;
   }
   if (reason === "account_enrollment_required") {
     const where = context.baseUrl
       ? `at ${normalizeBaseUrl(context.baseUrl)}/settings/coding-accounts, the Settings → AI accounts page`
       : "in the web app on the Settings → AI accounts page";
-    return `No AI account is added yet. A workspace owner or administrator adds one ${where}. A Claude account needs its email and the token printed by \`claude setup-token\`. Then run catalyst onboard.`;
+    // CTC-4716: subscriptions are offered only to a workspace the cloud enables for them.
+    const kinds = step.evidence?.aiAccountKinds;
+    const what =
+      typeof kinds === "string" && kinds.split(",").includes("subscription")
+        ? "an API key, billed per token, or a subscription, a fixed monthly plan"
+        : "an API key, billed per token";
+    return `No AI account is added yet. A workspace owner or administrator adds one ${where}: ${what}. Then run catalyst onboard.`;
   }
   if (reason === "automation_management_unavailable") {
     const conflicts =

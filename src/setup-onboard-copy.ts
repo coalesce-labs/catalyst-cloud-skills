@@ -598,8 +598,8 @@ export function setupBrowserInstruction(
     ],
     accounts: [
       "/settings/coding-accounts",
-      "add the token with your Claude email",
-      "Add an AI account",
+      "add an API key",
+      "Add an API key",
     ],
   };
   const words = copy[id];
@@ -609,10 +609,6 @@ export function setupBrowserInstruction(
       ? `Opened your browser. ${words[2]} there.`
       : `Open this link and ${words[1]}:`,
     url: page(base, words[0]),
-    preparation:
-      id === "accounts"
-        ? "In another terminal, run claude setup-token."
-        : undefined,
   };
 }
 

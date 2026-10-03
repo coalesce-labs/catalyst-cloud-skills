@@ -1071,7 +1071,7 @@ export function createClackOnboardUi(
     async wait(text, run, page) {
       const browser =
         currentStep && renderer && page
-          ? { ...page, preparation: undefined }
+          ? page
           : currentStep &&
             renderer &&
             setupBrowserInstruction(
@@ -1102,7 +1102,6 @@ export function createClackOnboardUi(
             ? status()
             : "waiting for you, up to 10 minutes",
         );
-        if (browser.preparation) renderer.detail(browser.preparation);
         renderer.action(browser.instruction);
         if (browser.url) renderer.detail(renderer.link(browser.url));
         renderer.detail(
