@@ -9,7 +9,6 @@ import type {
 } from "./onboard.js";
 
 const listPath = "/api/v1/coding-accounts";
-const validatePath = "/api/v1/coding-accounts/:slot/validate";
 const object = (value: unknown): Record<string, unknown> | null =>
   value !== null && typeof value === "object" && !Array.isArray(value)
     ? (value as Record<string, unknown>)
@@ -19,7 +18,7 @@ const waiting = (reason: string): OnboardStepResult => ({
   reason,
 });
 const slotPattern = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/;
-interface Slot {
+export interface Slot {
   accountSlot: string;
   provider: string;
   declaredState: string;
@@ -36,11 +35,6 @@ interface Binding {
   person: string;
   origin: string;
   role: string;
-}
-interface Proof extends Binding {
-  slot: string;
-  checkedAtMs: number;
-  provider: string;
 }
 function binding(ctx: Ctx, journal: OnboardJournal): Binding | null {
   const cfg = loadConfig(ctx.home);
@@ -151,245 +145,112 @@ async function inventory(
   return { slots, identity };
 }
 
-/** Verify one existing Claude slot per run. A stored login, cached poll or Codex shape is not
- * fresh provider access. Enrollment and a phase's actual lease eligibility remain separate. */
+/** Why one account cannot take work, or null when it can. The Connect page's AI-account rule
+ * (the server's isUsableCodingAccount): any provider, any member's account, and a canceled
+ * subscription keeps working until its paid access ends. */
+function unusableCause(row: Slot, now: number): string | null {
+  if (row.declaredState !== "active") return "coding_account_inactive";
+  if (
+    row.revokedAtMs !== null ||
+    (row.accessEndsAtMs !== null && row.accessEndsAtMs <= now)
+  )
+    return "coding_account_ended";
+  if (row.needsCredential) return "coding_account_needs_login";
+  if (row.quarantined) return "coding_account_quarantined";
+  if (row.walled) return "coding_account_walled";
+  return null;
+}
+export function usableAiAccount(row: Slot, now: number): boolean {
+  return unusableCause(row, now) === null;
+}
+
+/** CTC-4680: the step is done when the workspace has at least one usable AI account, from any
+ * provider. With --coding-account, that named account is the one that must be usable. */
 export function onboardAccountsAdapter(
   input: {
-    message?: (text: string) => void;
     waitForAccount?: <T>(work: () => Promise<T>) => Promise<T>;
     accountWaitMs?: number;
     sleep?: (ms: number) => Promise<void>;
-    /** The slot named by --coding-account; without it the first usable Claude slot is checked. */
+    /** The slot named by --coding-account; without it any usable account counts. */
     slot?: string;
   } = {},
 ): OnboardAdapter {
-  let proof: Proof | null = null;
-  let attempted = false;
-  const candidate = (slots: Slot[], now: number) =>
+  const usable = (slots: Slot[], now: number) =>
     slots
       .filter(
         (row) =>
           (input.slot === undefined || row.accountSlot === input.slot) &&
-          row.provider === "claude" &&
-          row.declaredState === "active" &&
-          row.ownedByMe &&
-          !row.needsCredential &&
-          !row.walled &&
-          !row.quarantined &&
-          row.renewalStatus !== "canceled" &&
-          row.revokedAtMs === null &&
-          (row.accessEndsAtMs === null || row.accessEndsAtMs > now),
+          usableAiAccount(row, now),
       )
       .sort((a, b) => a.accountSlot.localeCompare(b.accountSlot))[0];
   const check: OnboardAdapter["check"] = async (ctx, journal, signal) => {
     const live = await inventory(ctx, journal, signal);
     if ("reason" in live) return waiting(live.reason);
-    const selected = candidate(live.slots, ctx.now().getTime());
-    if (
-      proof &&
-      equal(live.identity, proof) &&
-      live.slots.some(
-        (row) =>
-          row.accountSlot === proof!.slot &&
-          row.provider === proof!.provider &&
-          row.declaredState === "active" &&
-          row.ownedByMe &&
-          !row.needsCredential &&
-          !row.walled &&
-          !row.quarantined &&
-          row.renewalStatus !== "canceled" &&
-          row.revokedAtMs === null &&
-          (row.accessEndsAtMs === null ||
-            row.accessEndsAtMs > ctx.now().getTime()),
-      ) &&
-      proof.checkedAtMs <= ctx.now().getTime() + 5000 &&
-      proof.checkedAtMs >= ctx.now().getTime() - 30000
-    )
+    const selected = usable(live.slots, ctx.now().getTime());
+    if (selected)
       return {
         state: "done",
         evidence: {
-          accountSlot: proof.slot,
-          provider: proof.provider,
-          checkedAt: new Date(proof.checkedAtMs).toISOString(),
+          provider: selected.provider,
+          checkedAt: ctx.now().toISOString(),
         },
       };
-    proof = null;
-    if (!live.slots.length)
-      return input.waitForAccount &&
-        ["owner", "admin"].includes(live.identity.role)
-        ? { state: "pending" }
-        : waiting("account_enrollment_required");
-    if (
-      input.slot !== undefined &&
-      !live.slots.some((row) => row.accountSlot === input.slot)
-    )
-      return waiting("coding_account_not_found");
-    if (!selected)
+    if (input.slot !== undefined) {
+      const named = live.slots.find((row) => row.accountSlot === input.slot);
+      // A named account speaks for itself: other accounts in the workspace may be fine.
       return waiting(
-        live.slots.some((row) => row.provider === "codex")
-          ? "codex_provider_access_unverified"
-          : "account_provider_access_unverified",
+        named
+          ? (unusableCause(named, ctx.now().getTime()) ?? "coding_account_not_found")
+          : "coding_account_not_found",
       );
-    if (attempted) return waiting("account_provider_access_unverified");
-    const cfg = loadConfig(ctx.home);
-    if (!cfg?.user || !["owner", "admin"].includes(cfg.user.role))
-      return waiting("account_validation_admin_required");
-    return { state: "pending" };
+    }
+    if (
+      input.waitForAccount &&
+      ["owner", "admin"].includes(live.identity.role)
+    )
+      return { state: "pending" };
+    return waiting(
+      live.slots.length ? "ai_account_not_usable" : "account_enrollment_required",
+    );
   };
   return {
     check,
     act: async (ctx, journal, external) => {
-      if (attempted) return waiting("account_provider_access_unverified");
       const initial = await inventory(ctx, journal, external);
       if ("reason" in initial) return waiting(initial.reason);
-      let live = initial;
       if (
-        !live.slots.length &&
-        input.waitForAccount &&
-        ["owner", "admin"].includes(live.identity.role)
-      ) {
-        const result = await input.waitForAccount(() =>
-          pollConsent({
-            timeoutMs: input.accountWaitMs,
-            signal: external,
-            sleep: input.sleep,
-            readStatus: async (signal) => {
-              const current = await inventory(ctx, journal, signal);
-              if ("reason" in current)
-                return { outcome: "waiting", reason: current.reason };
-              live = current;
-              return { outcome: current.slots.length ? "connected" : "absent" };
-            },
-          }),
-        );
-        if (result.state !== "done")
-          return waiting(
-            result.reason === "consent_timeout"
-              ? "account_enrollment_required"
-              : (result.reason ?? "account_enrollment_required"),
-          );
-      }
-      const selected = candidate(live.slots, ctx.now().getTime());
-      if (!selected) return waiting("account_provider_access_unverified");
-      const support = await verifyOnboardRoutes(
-        ctx,
-        journal,
-        [{ method: "POST", path: validatePath }],
-        external,
-      );
-      if ("reason" in support) return waiting(support.reason);
-      const cfg = loadConfig(ctx.home);
-      if (
-        !equal(binding(ctx, journal), live.identity) ||
-        !cfg?.user ||
-        !["owner", "admin"].includes(cfg.user.role)
+        !input.waitForAccount ||
+        !["owner", "admin"].includes(initial.identity.role)
       )
-        return waiting("account_identity_unverified");
-      const expiry = cfg.auth
-        ? Date.parse(cfg.auth.expiresAt) - ctx.now().getTime()
-        : 0;
-      const bearer =
-        cfg.key ||
-        (cfg.auth && Number.isFinite(expiry) && expiry > 30000
-          ? cfg.auth.accessToken
-          : undefined);
-      if (!bearer) return waiting("account_login_refresh_required");
-      input.message?.(
-        "Checking one stored Claude account with a one-token provider request. This may use Claude quota. Codex credentials are not refreshed. Phase eligibility is checked separately.",
+        return check(ctx, journal, external);
+      let enrolled = initial.slots.length > 0;
+      const result = await input.waitForAccount(() =>
+        pollConsent({
+          timeoutMs: input.accountWaitMs,
+          signal: external,
+          sleep: input.sleep,
+          readStatus: async (signal) => {
+            const current = await inventory(ctx, journal, signal);
+            if ("reason" in current)
+              return { outcome: "waiting", reason: current.reason };
+            enrolled = current.slots.length > 0;
+            return {
+              outcome: usable(current.slots, ctx.now().getTime())
+                ? "connected"
+                : "absent",
+            };
+          },
+        }),
       );
-      // A display callback must not be able to switch the identity used for this request.
-      if (!equal(binding(ctx, journal), live.identity))
-        return waiting("account_identity_unverified");
-      const deadline = new AbortController();
-      const signal = external
-        ? AbortSignal.any([external, deadline.signal])
-        : deadline.signal;
-      const timer = setTimeout(() => deadline.abort(), 15000);
-      let remove = () => {};
-      try {
-        return await new Promise<OnboardStepResult>((resolve) => {
-          const stopped = () =>
-            resolve(
-              waiting(
-                external?.aborted
-                  ? "interrupted"
-                  : "account_validation_unavailable",
-              ),
-            );
-          if (signal.aborted) {
-            stopped();
-            return;
-          }
-          signal.addEventListener("abort", stopped, { once: true });
-          remove = () => signal.removeEventListener("abort", stopped);
-          Promise.resolve()
-            .then(async (): Promise<OnboardStepResult> => {
-              if (signal.aborted) return waiting("interrupted");
-              // UI callbacks can queue a config change before this deferred send executes.
-              if (!equal(binding(ctx, journal), live.identity))
-                return waiting("account_identity_unverified");
-              attempted = true;
-              const response = await ctx.fetch(
-                `${support.origin}/api/v1/coding-accounts/${encodeURIComponent(selected.accountSlot)}/validate`,
-                {
-                  method: "POST",
-                  redirect: "error",
-                  signal,
-                  headers: {
-                    authorization: `Bearer ${bearer}`,
-                    accept: "application/json",
-                  },
-                },
-              );
-              if (response.status !== 200)
-                return waiting("account_validation_unavailable");
-              const body = object(await response.json());
-              if (
-                signal.aborted ||
-                !equal(binding(ctx, journal), live.identity)
-              )
-                return waiting("account_identity_unverified");
-              const now = ctx.now().getTime();
-              if (
-                !body ||
-                body.provider !== selected.provider ||
-                typeof body.checkedAtMs !== "number" ||
-                !Number.isSafeInteger(body.checkedAtMs) ||
-                body.checkedAtMs > now + 5000 ||
-                body.checkedAtMs < now - 30000 ||
-                !["working", "walled", "rejected", "inconclusive"].includes(
-                  String(body.result),
-                )
-              )
-                return waiting("account_validation_unverified");
-              if (body.result !== "working")
-                return waiting(
-                  body.result === "walled"
-                    ? "account_provider_walled"
-                    : body.result === "rejected"
-                      ? "account_provider_rejected"
-                      : "account_provider_access_unverified",
-                );
-              proof = {
-                ...live.identity,
-                slot: selected.accountSlot,
-                provider: selected.provider,
-                checkedAtMs: body.checkedAtMs,
-              };
-              input.message?.(
-                "Claude provider access was verified. This does not reserve a runner or prove that a phase can start.",
-              );
-              return check(ctx, journal, signal);
-            })
-            .then(
-              (result) => (signal.aborted ? stopped() : resolve(result)),
-              () => stopped(),
-            );
-        });
-      } finally {
-        clearTimeout(timer);
-        remove();
-      }
+      if (result.state === "done") return check(ctx, journal, external);
+      // A wait that ran out holds the step and offers another try (round 5).
+      return waiting(
+        result.reason !== "consent_timeout"
+          ? (result.reason ?? "account_enrollment_required")
+          : enrolled
+            ? "ai_account_not_usable"
+            : "account_enrollment_required",
+      );
     },
   };
 }

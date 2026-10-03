@@ -329,7 +329,7 @@ export function planOnboardHeadless(args: ParsedArgs, ctx: Ctx): HeadlessPlan {
       id: "coding_account",
       kind: "input",
       reason: "coding_account_input_missing",
-      text: `Name the coding account with --coding-account <slot> or CATALYST_ONBOARD_CODING_ACCOUNT. catalyst accounts lists the slots; enroll one at ${url.codingAccounts}.`,
+      text: `Name the AI account with --coding-account <slot> or CATALYST_ONBOARD_CODING_ACCOUNT. catalyst accounts lists them; add one at ${url.codingAccounts}.`,
       flag: "--coding-account",
       env: "CATALYST_ONBOARD_CODING_ACCOUNT",
       url: url.codingAccounts,
@@ -339,7 +339,7 @@ export function planOnboardHeadless(args: ParsedArgs, ctx: Ctx): HeadlessPlan {
       id: "coding_account",
       kind: "input",
       reason: "coding_account_input_invalid",
-      text: "The coding-account slot may hold only letters, digits, - and _. catalyst accounts lists the slots.",
+      text: "The AI account name given to --coding-account may hold only letters, digits, - and _. catalyst accounts lists them.",
       flag: "--coding-account",
       env: "CATALYST_ONBOARD_CODING_ACCOUNT",
     });

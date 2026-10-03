@@ -1,20 +1,34 @@
 import {nativeEgressInstallCommands} from "./onboard-runner-egress.js";
-import { loadConfig, normalizeBaseUrl } from "./config.js";
+import { INSTALL_COMMAND, loadConfig, normalizeBaseUrl } from "./config.js";
 import type { OnboardJournal, OnboardStep } from "./onboard.js";
 import { githubInstallationPage } from "./onboard-permissions.js";
 
 /** What a person reads for a step that is not done. Each line ends in an action they can take. */
 const REASONS: Record<string, string> = {
   account_identity_unverified:
-    "Your login changed while coding accounts were checked. Run catalyst onboard again to verify your person and workspace.",
+    "Your login changed while AI accounts were checked. Run catalyst onboard again to verify your person and workspace.",
   account_inventory_unavailable:
-    "Coding accounts could not be read. Run catalyst onboard again to retry.",
+    "AI accounts could not be read. Run catalyst onboard again to retry.",
   account_inventory_unverified:
-    "The server did not return a fresh supported coding-account list. Run catalyst onboard after the server update.",
+    "The server did not return a fresh supported AI account list. Run catalyst onboard after the server update.",
+  connect_checklist_refused:
+    "Catalyst refused to show this login the Connect accounts page's status. Sign in again with catalyst login, then run catalyst onboard.",
+  connect_checklist_identity_unverified:
+    "Your login changed while setup was checking the Connect accounts page. Run catalyst onboard again to verify your person and workspace.",
+  coding_account_inactive:
+    "The AI account named by --coding-account is turned off. Turn it on in the workspace's AI account settings, then run catalyst onboard.",
+  coding_account_ended:
+    "The AI account named by --coding-account was removed or its paid access has ended. Name another one with --coding-account, or add one in the workspace's AI account settings.",
+  coding_account_needs_login:
+    "The AI account named by --coding-account needs its login added again. Replace it in the workspace's AI account settings, then run catalyst onboard.",
+  coding_account_quarantined:
+    "The AI account named by --coding-account is held after repeated failures. Check it in the workspace's AI account settings, then run catalyst onboard.",
+  coding_account_walled:
+    "The AI account named by --coding-account has used its usage limit for now. Check when it resets, then run catalyst onboard again.",
   coding_account_not_found:
-    "The coding account named by --coding-account is not enrolled in this workspace. Run catalyst accounts to list the slots, then run catalyst onboard with one of them.",
+    "The AI account named by --coding-account is not in this workspace. Run catalyst accounts to list the slots, then run catalyst onboard with one of them.",
   account_validation_admin_required:
-    "An administrator must check the workspace's coding-account access.",
+    "An administrator must check the workspace's AI account access.",
   account_login_refresh_required:
     "Renew your login with catalyst login, then run catalyst onboard.",
   account_validation_unavailable:
@@ -22,13 +36,13 @@ const REASONS: Record<string, string> = {
   account_validation_unverified:
     "The server did not return a fresh provider check. Run catalyst onboard after the server update.",
   account_provider_access_unverified:
-    "Coding-account provider access is not freshly verified. Check the account in the workspace's coding-account settings, then resume setup.",
+    "AI account access is not freshly verified. Check the account in the workspace's AI account settings, then resume setup.",
   codex_provider_access_unverified:
     "Codex credentials are stored, but provider access is not freshly verified. Setup did not refresh or rotate the Codex login.",
   account_provider_walled:
     "Claude's usage limit is spent for now. Check the account's reset time, then run catalyst onboard again.",
   account_provider_rejected:
-    "Claude refused the stored login. Replace it in the workspace's coding-account settings, then resume setup.",
+    "Claude refused the stored login. Replace it in the workspace's AI account settings, then resume setup.",
   personal_consent_handoff:
     "The browser approval link could not be verified. Run catalyst onboard to try again.",
   personal_identity_refused:
@@ -268,6 +282,15 @@ const REASONS: Record<string, string> = {
     "Your personal connection's granted scopes could not be checked. Run catalyst onboard to try again.",
   housekeeping_service_unverified:
     "The daily update needs a user service manager, launchd on macOS or systemd --user on Linux. Setup cannot schedule it on this computer. It is optional, and work does not depend on it.",
+  housekeeping_off_chosen:
+    "The daily update is off, as you chose when you installed. It is optional. catalyst says when an update is out.",
+  housekeeping_no_scheduler:
+    "The daily update can't run on this computer: it needs launchd on macOS or systemd --user on Linux. It is optional. catalyst says when an update is out.",
+  housekeeping_not_loaded:
+    "The daily update is installed but not turned on. Run launchctl load ~/Library/LaunchAgents/dev.catalystcloud.housekeeping.plist to turn it on.",
+  housekeeping_not_enabled:
+    "The daily update is installed but not turned on. Run systemctl --user enable --now catalyst-housekeeping.timer to turn it on.",
+  housekeeping_not_scheduled: `The daily update is not scheduled on this computer. Run the installer again to schedule it: ${INSTALL_COMMAND} -s -- --housekeeping yes`,
 };
 
 /** The saved login's web address, or nothing when the config is missing, unreadable or not http(s). */
@@ -464,11 +487,17 @@ export function onboardReasonText(
     if (team)
       return `Setup could not confirm whether Linear created the team ${team}. Check Linear for it. If it is there: ${adopt(team)} If it is not, run catalyst onboard to create it again.`;
   }
+  if (reason === "ai_account_not_usable") {
+    const where = context.baseUrl
+      ? `at ${normalizeBaseUrl(context.baseUrl)}/settings/coding-accounts`
+      : "in the web app on the Settings → AI accounts page";
+    return `No AI account in this workspace can take work yet. A workspace owner or administrator checks them ${where}: one may need its login replaced, or may have reached its usage limit. Then run catalyst onboard.`;
+  }
   if (reason === "account_enrollment_required") {
     const where = context.baseUrl
       ? `at ${normalizeBaseUrl(context.baseUrl)}/settings/coding-accounts, the Settings → AI accounts page`
       : "in the web app on the Settings → AI accounts page";
-    return `No coding account is enrolled. A workspace owner or administrator adds one ${where}. A Claude account needs its email and the token printed by \`claude setup-token\`. Then run catalyst onboard.`;
+    return `No AI account is added yet. A workspace owner or administrator adds one ${where}. A Claude account needs its email and the token printed by \`claude setup-token\`. Then run catalyst onboard.`;
   }
   if (reason === "automation_management_unavailable") {
     const conflicts =

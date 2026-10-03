@@ -945,9 +945,8 @@ describe("CLI dispatch stages the real device candidate", () => {
           "Local sync stays off, so Catalyst reads from the cloud.",
         );
         expect(reviewed).toContain(
-          "one short request, which counts toward its usage",
+          "Setup reads your AI accounts without sending them a request.",
         );
-        expect(reviewed).toContain("Codex credentials are not refreshed");
         expect(reviewed).not.toContain("quota");
       }
     });

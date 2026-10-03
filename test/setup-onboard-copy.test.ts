@@ -201,7 +201,7 @@ test("continuation names only remaining downstream work", async () => {
   const j = journal();
   expect(pendingContinuation(j)).toBeNull();
   j.steps.find((s) => s.id === "accounts")!.state = "waiting";
-  expect(pendingContinuation(j)).toBe("Then setup checks a coding account.");
+  expect(pendingContinuation(j)).toBe("Then setup checks an AI account.");
 });
 
 test("runner and capacity can carry different actionable gates on visible step15", async () => {
