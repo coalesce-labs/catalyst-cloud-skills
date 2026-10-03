@@ -55,6 +55,8 @@ function fixture(options: { checklist?: boolean } = {}) {
     ai: item("ai-account", "needed", "none_usable"),
     page,
     extra: [] as Item[],
+    /** The checklist's aiAccountKinds; undefined leaves the field out, as an older cloud does. */
+    kinds: undefined as unknown,
     accounts: [] as unknown[],
   };
   const routes = [
@@ -106,6 +108,7 @@ function fixture(options: { checklist?: boolean } = {}) {
           allDone: items.every((row) => row.state === "done"),
           checkedAt: now,
           items,
+          ...(state.kinds === undefined ? {} : { aiAccountKinds: state.kinds }),
         });
       }
       if (url.pathname === GITHUB_STATUS)
@@ -340,7 +343,7 @@ describe("Catalyst on GitHub, when the cloud has the checklist", () => {
     f.state.github = item("github-app", "done");
     // The person spends a while between steps; the next read is a fresh one.
     f.tick(10_000);
-    expect(await adapters.accounts!.check(f.ctx, f.journal)).toEqual({ state: "pending" });
+    expect(await adapters.accounts!.check(f.ctx, f.journal)).toMatchObject({ state: "pending" });
     expect(await adapters.accounts!.act!(f.ctx, f.journal)).toMatchObject({ state: "done" });
     expect(f.opened).toEqual([page]);
     expect(f.waits[1]).toEqual({
@@ -387,6 +390,7 @@ describe("AI account, when the cloud has the checklist", () => {
     expect(await f.runtime(["onboard", "--yes"])["accounts"]!.check(f.ctx, f.journal)).toEqual({
       state: "waiting",
       reason: "account_enrollment_required",
+      evidence: { aiAccountKinds: "api-key" },
     });
     expect(f.waits).toEqual([]);
   });
@@ -587,5 +591,39 @@ test("an unknown row without canAct does not switch the checklist off", async ()
   expect(await f.runtime()["github.install"]!.check(f.ctx, f.journal)).toMatchObject({
     state: "done",
     evidence: { scope: "checklist" },
+  });
+});
+
+describe("which AI accounts the workspace may add follows the checklist", () => {
+  test.each([
+    [["subscription", "api-key"], "subscription,api-key"],
+    [["api-key"], "api-key"],
+    [undefined, "api-key"],
+    [["api-key", "something-new"], "api-key"],
+    ["subscription", "api-key"],
+  ])("aiAccountKinds %j reads as %s", async (kinds, expected) => {
+    const f = fixture();
+    f.state.ai = item("ai-account", "done");
+    f.state.kinds = kinds;
+    expect(await f.runtime()["accounts"]!.check(f.ctx, f.journal)).toMatchObject({
+      state: "done",
+      evidence: { aiAccountKinds: expected },
+    });
+  });
+  test("a step that still waits carries the kinds for its text", async () => {
+    const f = fixture();
+    f.state.kinds = ["subscription", "api-key"];
+    expect(await f.runtime(["onboard", "--yes"])["accounts"]!.check(f.ctx, f.journal)).toEqual({
+      state: "waiting",
+      reason: "account_enrollment_required",
+      evidence: { aiAccountKinds: "subscription,api-key" },
+    });
+  });
+  test("without the checklist the step says nothing about kinds, and its text falls back to API keys", async () => {
+    const f = fixture({ checklist: false });
+    expect(await f.runtime(["onboard", "--yes"])["accounts"]!.check(f.ctx, f.journal)).toEqual({
+      state: "waiting",
+      reason: "account_enrollment_required",
+    });
   });
 });
