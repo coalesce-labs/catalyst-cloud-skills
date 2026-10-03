@@ -1,7 +1,9 @@
 // cli.ts — the `catalyst` dispatcher (npm: @catalyst-cloud/cli). Verbs live in
 // their own modules; this file keeps every export the 0.1 tests and the bin import.
+import { createSetupRenderer } from "./setup-render.js";
 import { existsSync, openSync, closeSync } from "node:fs";
 import { ReadStream as TerminalInput } from "node:tty";
+import { Writable } from "node:stream";
 import { parseArgs, positionals, verbHelp, type ParsedArgs } from "./args.js";
 import {
   CONFIG_MODE,
@@ -35,6 +37,7 @@ import {
   bearerFor,
   deviceFlowLogin,
   refreshSessionIfShort,
+  type DeviceFlowDeps,
   type OauthAuth,
 } from "./oauth.js";
 
@@ -50,12 +53,21 @@ import {
   cmdRunning,
 } from "./execution.js";
 import { cmdQuery } from "./query.js";
+import { maybePrintPublishedUpdateNotice } from "./cli-update-notice.js";
 import { cmdReady } from "./ready.js";
 import { cmdReplica, type ReplicaDeps } from "./replica.js";
 import { cmdRuntime, type RuntimeVerbDeps } from "./runtime-verb.js";
 import { cmdEvents, type EventDeps } from "./events.js";
 import { stageOnboardLogin } from "./onboard-login-candidate.js";
 import { stdinIsTty } from "./prompt.js";
+import { cmdSetup, SETUP_USAGE } from "./setup.js";
+import {
+  clackSetupAsk,
+  clackSetupSpinner,
+  openSetupTerminal,
+  setupOnboardStreams,
+} from "./setup-prompts.js";
+import { keepInstalledCliPath, runSetupSignin } from "./setup-signin.js";
 import {
   FIRST_STAMPED_VERSION,
   PROVENANCE_MARKER,
@@ -175,6 +187,7 @@ export function usageText(): string {
     "  catalyst join ...   (deprecated alias of login; removed in the next minor version)",
     "  catalyst install [--skills-dir <dir>] [--force]   (repair path; your agent's own command installs the skills)",
     "  catalyst onboard [--resume-from <step>] [--only <step>] [--runner|--no-runner] [--yes] [--dry-run] [--json]",
+    `  catalyst ${SETUP_USAGE}`,
     "  catalyst status | notice | me | ready | accounts",
     "  catalyst mcp add|list|remove (vault references only)",
     "  catalyst contract [--refresh] [--path <a.b.c>]",
@@ -216,6 +229,9 @@ export function usageText(): string {
 }
 
 export interface MainDeps {
+  /** Internal setup continuation. The combined plan was already approved. */
+  setupUi?: OnboardUi;
+  setupApproved?: boolean;
   /** Internal staged entrypoint passes an owned preview; installed CLI leaves this absent. */
   onboardBootstrap?: OnboardBootstrapPreview;
   onboardSigninTimeoutMs?: number;
@@ -241,6 +257,9 @@ export interface MainDeps {
   openBrowser?: (url: string) => void;
   /** Injected by the tests: the device-flow poll delay (no real waiting under test). */
   sleep?: (ms: number) => Promise<void>;
+  /** CTC-4625: `catalyst setup` draws each device code itself (see DeviceFlowDeps.present). */
+  presentCode?: DeviceFlowDeps["present"];
+  presentBrowser?: DeviceFlowDeps["presentBrowser"];
 }
 
 /**
@@ -340,6 +359,9 @@ export async function main(
   ctx: Ctx = defaultCtx(),
   deps: MainDeps = {},
 ): Promise<number> {
+  // CTC-4625: setup passes the install options through to its engine untouched, so they never meet
+  // this CLI's own flag tables.
+  if (argv[0] === "setup") return runSetup(argv.slice(1), ctx, deps);
   let args: ParsedArgs;
   try {
     args = parseArgs(
@@ -367,6 +389,12 @@ export async function main(
     ctx.stdout(verbHelp(args.command));
     return 0;
   }
+  await maybePrintPublishedUpdateNotice(ctx, {
+    interactive: deps.isTty?.() ?? process.stdout.isTTY === true,
+    json: args.json,
+    command: args.command,
+    version: manifest.version,
+  });
   try {
     if (args.command !== "onboard") {
       migrateLegacyCliPath(ctx);
@@ -378,11 +406,11 @@ export async function main(
       case "install":
         return cmdInstall(args, ctx);
       case "onboard": {
-        let ui: OnboardUi | undefined;
+        let ui: OnboardUi | undefined = deps.setupUi;
         let terminal: TerminalInput | undefined;
         let input: TerminalInput = process.stdin;
         const originalRaw = Boolean(input.isRaw);
-        if (shouldUseOnboardUi(args, Boolean(process.stdout.isTTY))) {
+        if (!ui && shouldUseOnboardUi(args, Boolean(process.stdout.isTTY))) {
           if (!input.isTTY) {
             try {
               const fd = openSync("/dev/tty", "r");
@@ -404,7 +432,13 @@ export async function main(
               ui = createClackOnboardUi(
                 await import("@clack/prompts"),
                 { input, output: process.stdout },
-                { baseUrl: () => savedOnboardBaseUrl(ctx.home), verbose: args.flags.verbose === true },
+                {
+                  baseUrl: () => savedOnboardBaseUrl(ctx.home),
+                  verbose: args.flags.verbose === true,
+                  renderer: createSetupRenderer(process.stdout, ctx.env),
+                  disposeRenderer: true,
+                  signinTimeoutMs: deps.onboardSigninTimeoutMs,
+                },
               );
             } catch (error) {
               terminal?.destroy();
@@ -412,15 +446,51 @@ export async function main(
             }
           }
         }
+        if (!ui && !args.json && args.flags["dry-run"] !== true) {
+          const output =
+            process.stdout.isTTY === true
+              ? process.stdout
+              : new Writable({
+                  write(chunk, _encoding, callback) {
+                    ctx.stdout(chunk.toString().replace(/\n$/, ""));
+                    callback();
+                  },
+                });
+          ui = createClackOnboardUi(
+            await import("@clack/prompts"),
+            { input: process.stdin, output },
+            {
+              baseUrl: () => savedOnboardBaseUrl(ctx.home),
+              renderer: createSetupRenderer(output, ctx.env),
+              disposeRenderer: true,
+              signinTimeoutMs: deps.onboardSigninTimeoutMs,
+              interactive: false,
+              verbose: args.flags.verbose === true,
+            },
+          );
+        }
         // Start with a full access token: a session saved long ago would otherwise expire part way
         // through, or send the person back through the device sign-in. A dry run changes nothing.
         if (args.flags["dry-run"] !== true)
           await refreshSessionIfShort(ctx, ONBOARD_SESSION_MIN_MS);
+        const jsonLines: string[] = [];
+        const onboardCtx = args.json
+          ? {
+              ...ctx,
+              stdout: (line: string) => {
+                jsonLines.push(line);
+              },
+            }
+          : ctx;
+        let code: number;
         try {
-          return await cmdOnboard(
+          code = await cmdOnboard(
             args,
-            ctx,
+            onboardCtx,
             {
+              ...(deps.setupApproved
+                ? { reviewedSetup: true, confirm: async () => true }
+                : {}),
               beforeStep: async () => {
                 if (args.flags["dry-run"] !== true)
                   await refreshSessionIfShort(ctx, ONBOARD_STEP_MIN_MS);
@@ -436,7 +506,12 @@ export async function main(
                       12,
                     );
                   return stageOnboardLogin(
-                    { ...ctx, stdout: ctx.stderr },
+                    {
+                      ...ctx,
+                      stdout: ui
+                        ? (line: string) => ui.message(line)
+                        : ctx.stderr,
+                    },
                     {
                       baseUrl: args.baseUrl,
                       signal,
@@ -518,6 +593,8 @@ export async function main(
             input.setRawMode(originalRaw);
           terminal?.destroy();
         }
+        for (const line of jsonLines) ctx.stdout(line);
+        return code;
       }
       case "notice":
         return 0;
@@ -614,6 +691,15 @@ export async function main(
       ctx.stderr(`catalyst: ${err.message}`);
       return 2;
     }
+    if (args.command === "onboard" && args.json) {
+      ctx.stdout(
+        JSON.stringify(onboardErrorJournal(ctx, manifest.version, 10)),
+      );
+      ctx.stderr(
+        "catalyst: onboarding could not finish. Run catalyst onboard to try again.",
+      );
+      return 10;
+    }
     throw err;
   }
 }
@@ -655,6 +741,78 @@ const VERB_HELP_KNOWN: Record<string, true> = Object.fromEntries(
   ].map((v) => [v, true]),
 );
 
+/** CTC-4625: `catalyst setup`, wired to this terminal, @clack/prompts and the keyless login. */
+async function runSetup(
+  argv: string[],
+  ctx: Ctx,
+  deps: MainDeps,
+): Promise<number> {
+  if (argv[0] === "--help" || argv[0] === "-h") {
+    ctx.stdout(verbHelp("setup"));
+    return 0;
+  }
+  const clack = await import("@clack/prompts");
+  const terminal = openSetupTerminal(process.stdout);
+  const spinner = clackSetupSpinner(clack, Boolean(process.stdin.isTTY));
+  try {
+    return await cmdSetup(argv, ctx, {
+      stdout: process.stdout,
+      stderr: process.stderr,
+      writeJson: (chunk) => process.stdout.write(chunk),
+      interactive: terminal !== null,
+      ...(terminal ? { ask: clackSetupAsk(clack, terminal) } : {}),
+      spinner,
+      onboard: async (renderer, flags) => {
+        // This returns through the dispatcher without launching another CLI or frame.
+        const onboardArgs = [
+          "onboard",
+          ...(flags.json ? ["--json"] : []),
+          ...(flags.verbose ? ["--verbose"] : []),
+          ...(flags.localSync ? ["--local-sync"] : []),
+          ...(flags.yes || flags.json || !terminal ? ["--yes"] : []),
+        ];
+        let ui: OnboardUi | undefined;
+        if (!flags.json) {
+          ui = createClackOnboardUi(clack, setupOnboardStreams(terminal), {
+            baseUrl: () => savedOnboardBaseUrl(ctx.home),
+            renderer,
+            logPath: () => flags.logPath,
+            verbose: flags.verbose,
+            signinTimeoutMs: deps.onboardSigninTimeoutMs,
+            introduced: true,
+            consentGiven: true,
+            interactive: terminal !== null && !flags.yes,
+          });
+        }
+        return main(onboardArgs, ctx, {
+          ...deps,
+          setupUi: ui,
+          setupApproved: true,
+        });
+      },
+      signin: (seconds, r, stop, spin) =>
+        runSetupSignin(ctx, r, seconds, {
+          interrupted: stop,
+          spinner: spin,
+          login: async (loginCtx, login) => {
+            const code = await cmdLogin(parseArgs(["login"]), loginCtx, {
+              ...deps,
+              isTty: deps.isTty ?? (() => terminal !== null),
+              signal: login.signal,
+              waitForApproval: login.waitForApproval,
+              presentCode: login.present,
+              presentBrowser: login.presentBrowser,
+            });
+            if (code === 0) keepInstalledCliPath(ctx, cliPath());
+            return code;
+          },
+        }),
+    });
+  } finally {
+    terminal?.close();
+  }
+}
+
 async function cmdLogin(
   args: ParsedArgs,
   ctx: Ctx,
@@ -686,6 +844,8 @@ async function cmdLogin(
         sleep: deps.sleep,
         signal: deps.signal,
         waitForApproval: deps.waitForApproval,
+        present: deps.presentCode,
+        presentBrowser: deps.presentBrowser,
       })).accessToken;
   checkCancelled();
   const me = await fetchMe(baseUrl, bearer, ctx.fetch);

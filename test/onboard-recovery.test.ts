@@ -1,3 +1,4 @@
+import { expectJsonJournalMatches } from "./json-journal.js";
 import {
   existsSync,
   lstatSync,
@@ -472,7 +473,7 @@ describe("onboarding interruption and changing permissions", () => {
     expect(f.receipt()).toMatchObject({ exit: 11, complete: false });
     expect(
       f.receipt().steps.find((step) => step.id === "legacy"),
-    ).toMatchObject({ state: "failed", reason: "interrupted" });
+    ).toMatchObject({ state: "waiting", reason: "interrupted" });
     expect(existsSync(onboardLockPath(f.home))).toBe(false);
     expect(process.listeners("SIGTERM")).toEqual(existing);
     adapters.legacy.act = async (_ctx, saved) => {
@@ -519,7 +520,7 @@ describe("onboarding interruption and changing permissions", () => {
     expect(f.receipt()).toMatchObject({ exit: 11, complete: false });
     expect(existsSync(onboardLockPath(f.home))).toBe(false);
     expect(f.output).toHaveLength(1);
-    expect(JSON.parse(f.output[0]!)).toEqual(f.receipt());
+    expectJsonJournalMatches(JSON.parse(f.output[0]!),f.receipt(),"paused");
   });
 
   test("an admin demoted after a check cannot perform the pending workspace write", async () => {

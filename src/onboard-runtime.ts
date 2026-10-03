@@ -226,12 +226,18 @@ export function createOnboardRuntime(
       evidence: { found, remaining: found },
     };
   };
+  const interactiveWait =
+    hooks.ui &&
+    hooks.ui.interactive !== false &&
+    !args.json &&
+    args.flags.yes !== true &&
+    args.flags.headless !== true;
   const personalAdapter = (provider: "linear" | "github") =>
     personalConsentAdapter({
       provider,
       openBrowser: hooks.openBrowser ?? openConsentBrowser,
       sleep: hooks.sleep,
-      wait: hooks.ui
+      wait: interactiveWait
         ? (message, run) => hooks.ui!.wait(message, run)
         : undefined,
     });
@@ -329,14 +335,14 @@ export function createOnboardRuntime(
     "linear.workspace": linearWorkspaceAdapter({
       fallback: linear["linear.workspace"],
       openBrowser: hooks.openBrowser ?? openConsentBrowser,
-      wait: hooks.ui
+      wait: interactiveWait
         ? (message, work) => hooks.ui!.wait(message, work)
         : undefined,
       sleep: hooks.sleep,
     }),
     "github.install": githubInstallationAdapter({
       openBrowser: hooks.openBrowser ?? openConsentBrowser,
-      wait: hooks.ui
+      wait: interactiveWait
         ? (message, work) => hooks.ui!.wait(message, work)
         : undefined,
       sleep: hooks.sleep,
@@ -362,6 +368,17 @@ export function createOnboardRuntime(
       message: (text) => (hooks.ui ? hooks.ui.message(text) : ctx.stderr(text)),
     }),
     accounts: onboardAccountsAdapter({
+      ...(hooks.ui &&
+      hooks.ui.interactive !== false &&
+      !args.json &&
+      args.flags.yes !== true &&
+      args.flags.headless !== true
+        ? {
+            waitForAccount: <T>(work: () => Promise<T>) =>
+              hooks.ui!.wait("Waiting for a coding account", work),
+            sleep: hooks.sleep,
+          }
+        : {}),
       message: (text) => (hooks.ui ? hooks.ui.message(text) : ctx.stderr(text)),
     }),
     capacity: onboardCapacityAdapter({

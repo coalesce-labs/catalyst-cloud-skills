@@ -84,6 +84,7 @@ function fixture(provider: "linear" | "github" = "linear") {
       opened.push(url);
     },
     sleep: async () => {},
+    wait: async <T>(_message: string, run: () => Promise<T>) => run(),
     requestTimeoutMs: 20,
     consentTimeoutMs: 50,
   };
@@ -363,18 +364,30 @@ describe("owned personal consent", () => {
       ...f.options,
       openBrowser: () => {
         const config = loadConfig(f.home)!;
-        writeConfig(f.home, { ...config, key: undefined, auth: {
-          kind: "oauth", accessToken: "expired-token-sentinel", refreshToken: "unused-refresh-sentinel",
-          expiresAt: new Date(now - 1).toISOString(), sessionId: "original-session",
-        } });
+        writeConfig(f.home, {
+          ...config,
+          key: undefined,
+          auth: {
+            kind: "oauth",
+            accessToken: "expired-token-sentinel",
+            refreshToken: "unused-refresh-sentinel",
+            expiresAt: new Date(now - 1).toISOString(),
+            sessionId: "original-session",
+          },
+        });
       },
-      sleep: async () => { throw new Error("refresh-required status must not poll again"); },
+      sleep: async () => {
+        throw new Error("refresh-required status must not poll again");
+      },
     });
     expect(await adapter.act!(f.ctx, f.journal)).toMatchObject({
-      state: "waiting", reason: "personal_login_refresh_required",
+      state: "waiting",
+      reason: "personal_login_refresh_required",
     });
     expect(f.reads).toHaveLength(2);
-    expect(f.logs.join("\n")).not.toMatch(/expired-token-sentinel|unused-refresh-sentinel/);
+    expect(f.logs.join("\n")).not.toMatch(
+      /expired-token-sentinel|unused-refresh-sentinel/,
+    );
   });
 });
 
@@ -491,4 +504,16 @@ it("a personal approval with unreadable permissions reports the check failure im
  f.ctx.fetch = (async (input, init) => new URL(String(input)).pathname === f.statusPath && reads++ > 0 ? Response.json({ connected: true, permissions: { state: "unknown", grant: "linear-personal", reason: "grant-unreadable" } }) : fetch(input, init)) as typeof globalThis.fetch;
  const adapter = personalConsentAdapter({ ...f.options, sleep: async () => { throw new Error("permission failure must not poll"); } });
  expect(await adapter.act!(f.ctx, f.journal)).toEqual({ state: "waiting", reason: "personal_permissions_unverified" });
+});
+
+it("without an interactive wait seam, missing approval returns immediately without opening a browser", async () => {
+  const f = fixture();
+  const adapter = personalConsentAdapter({ ...f.options, wait: undefined });
+  const result = await adapter.act!(f.ctx, f.journal);
+  expect(result).toMatchObject({
+    state: "waiting",
+    reason: "personal_approval_required",
+  });
+  expect(f.opened).toEqual([]);
+  expect(f.reads).toHaveLength(1);
 });

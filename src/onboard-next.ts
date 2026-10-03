@@ -405,6 +405,24 @@ export function onboardReasonText(
   } = {},
 ): string {
   const reason = step.reason ?? "";
+  if (
+    [
+      "workspace_approval_required",
+      "personal_approval_required",
+      "github_installation_approval_required",
+    ].includes(reason)
+  ) {
+    const path =
+      reason === "workspace_approval_required"
+        ? "/settings/connections?connect=linear"
+        : reason === "github_installation_approval_required"
+          ? "/settings/connections?install=github"
+          : `/settings/connected-accounts?connect=${step.id === "github.personal" ? "github" : "linear"}`;
+    const where = context.baseUrl
+      ? `${normalizeBaseUrl(context.baseUrl)}${path}`
+      : "Catalyst settings";
+    return `Open ${where} and approve this connection, then run catalyst onboard.`;
+  }
   if (reason === "workflow_mapping_unverified")
     return `This team's workflow mapping is not verified yet. Run catalyst team adopt ${onboardTeamKey(context.journal) ?? "<TEAM KEY>"} to preview the adoption plan. Run it again with the --yes --plan-hash value it prints. Then run catalyst onboard.`;
   if (

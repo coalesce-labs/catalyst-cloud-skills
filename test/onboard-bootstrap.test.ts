@@ -955,3 +955,51 @@ describe("unregistered bootstrap dispatcher seam", () => {
     expect(existsSync(onboardLockPath(f.home))).toBe(false);
   });
 });
+
+test("staged approval closes its preview before asking permission to publish the connection", async () => {
+  const f = fixture(false);
+  f.stage();
+  f.ui.stagedSigninEnd = vi.fn((state) => {
+    f.events.push(`staged-${state}`);
+    expect(loadConfig(f.home)).toBeNull();
+    return true;
+  });
+  await f.run();
+  expect(f.ui.stagedSigninEnd).toHaveBeenCalledWith("done");
+  expect(f.events.indexOf("staged-done")).toBeLessThan(
+    f.events.indexOf("verified-person-plan"),
+  );
+  expect(f.events.indexOf("staged-done")).toBeLessThan(f.events.indexOf("Q1"));
+});
+
+test("staged sign-in refusal preserves the old connection and closes the preview with its cause", async () => {
+  const f = fixture(false);
+  f.deps.stageSignin = vi.fn(async () => {
+    throw new CliError("Approval timed out.", "signin-timeout", 11);
+  });
+  f.ui.stagedSigninEnd = vi.fn(() => true);
+  const messages = vi.spyOn(f.ui, "message");
+  expect(await f.run()).toBe(11);
+  expect(f.ui.stagedSigninEnd).toHaveBeenCalledWith(
+    "waiting",
+    "Approval timed out.",
+  );
+  expect(messages).not.toHaveBeenCalledWith("Approval timed out.");
+  expect(loadConfig(f.home)).toBeNull();
+  expect(existsSync(onboardStatePath(f.home))).toBe(false);
+  expect(f.childEntry).not.toHaveBeenCalled();
+});
+
+test("already reviewed setup does not promise a second install-plan review during signin", async () => {
+  const f = fixture(false);
+  f.deps.reviewedSetup = true;
+  f.stage();
+  const message = vi.spyOn(f.ui, "message");
+  await f.run();
+  expect(message).toHaveBeenCalledWith(
+    "Sign in in your browser to continue setup.",
+  );
+  expect(message.mock.calls.flat().join("\n")).not.toContain(
+    "Then review your person",
+  );
+});

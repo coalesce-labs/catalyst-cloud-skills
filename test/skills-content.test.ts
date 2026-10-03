@@ -794,9 +794,13 @@ describe("the package manifest", () => {
     // exists to avoid — the real parser costs one dependency with zero transitive dependencies of
     // its own. `test/smoke-publish.test.ts` packs and installs the real tarball, so this is exercised
     // end to end, not just asserted here.
+    // CTC-4625: fast-wrap-ansi is the wrapper @clack/prompts itself ships with (already in the
+    // tree); `catalyst setup` wraps with it directly, so it is declared at the same pinned version.
     expect(manifest.dependencies).toEqual({
       "@catalyst-cloud/sdk": expect.stringMatching(/^\^0\.13\./),
       "@clack/prompts": "1.8.1",
+      "fast-wrap-ansi": "0.2.2",
+      "fast-string-width": "3.0.2",
       yaml: expect.stringMatching(/^\^2\./),
       "smol-toml": expect.stringMatching(/^\^1\./),
     });
@@ -920,11 +924,10 @@ describe("CTC-2158: CI derives its Node matrix and exercises bun in both directi
     expect(md).toContain("--all");
   });
 
-  test("the version matches the CHANGELOG's top entry, which is 0.14.10", () => {
+  test("the version matches the CHANGELOG's top entry", () => {
     const changelog = readFileSync(join(pkgRoot, "CHANGELOG.md"), "utf8");
     expect(changelog).toContain(`## ${manifest.version}\n`);
-    expect(changelog.indexOf("## 0.14.10")).toBe(changelog.indexOf("## "));
-    expect(manifest.version).toBe("0.14.10");
+    expect(changelog.match(/^## (\d+\.\d+\.\d+)$/m)?.[1]).toBe(manifest.version);
   });
 
   test("every shipped skill stamps the package version on its provenance line", () => {

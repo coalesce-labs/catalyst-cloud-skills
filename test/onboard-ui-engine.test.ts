@@ -6,11 +6,12 @@ import {
   mkdirSync,
   writeFileSync,
 } from "node:fs";
+import { createSetupRenderer } from "../src/setup-render.js";
 import { EventEmitter } from "node:events";
 import { PassThrough } from "node:stream";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, expect, test } from "vitest";
+import { afterEach, expect, test, vi } from "vitest";
 import { main } from "../src/cli.js";
 import { parseArgs } from "../src/args.js";
 import { defaultCtx } from "../src/config.js";
@@ -21,6 +22,7 @@ import {
   onboardLockPath,
   type OnboardDeps,
   type OnboardStep,
+  type OnboardStepResult,
   type OnboardJournal,
 } from "../src/onboard.js";
 import {
@@ -218,7 +220,7 @@ test.each(["check", "act"] as const)(
             check: async (_ctx, _journal, signal) => {
               f.controller.abort();
               expect(signal?.aborted).toBe(true);
-              return { state: "done" };
+              return { state: "waiting", reason: "interrupted" };
             },
           }
         : {
@@ -226,7 +228,7 @@ test.each(["check", "act"] as const)(
             act: async (_ctx, _journal, signal) => {
               f.controller.abort();
               expect(signal?.aborted).toBe(true);
-              return { state: "done" };
+              return { state: "waiting", reason: "interrupted" };
             },
           };
     expect(
@@ -239,8 +241,15 @@ test.each(["check", "act"] as const)(
     expect(f.receipt()).toMatchObject({ exit: 11, complete: false });
     expect(
       f.receipt().steps.find((step: OnboardStep) => step.id === "legacy"),
-    ).toMatchObject({ state: "failed", reason: "interrupted" });
+    ).toMatchObject({ state: "waiting", reason: "interrupted" });
     expect(existsSync(onboardLockPath(f.ctx.home))).toBe(false);
+    expect(f.ended).toContainEqual(
+      expect.objectContaining({
+        id: "legacy",
+        state: "waiting",
+        reason: "interrupted",
+      }),
+    );
     expect(f.disposed()).toBe(true);
   },
 );
@@ -467,7 +476,7 @@ test("engine cancellation renders saved progress as paused rather than complete"
   adapters.legacy = {
     check: async () => {
       rendered.cancel();
-      return { state: "done" };
+      return { state: "waiting", reason: "interrupted" };
     },
   };
   expect(
@@ -480,8 +489,240 @@ test("engine cancellation renders saved progress as paused rather than complete"
   const outro = rendered.events.find((event) => event.kind === "outro")!.text;
   expect(outro).toMatch(/paused.*saved/is);
   expect(outro).not.toMatch(/complete/i);
+  expect(rendered.events.find((e) => e.kind === "warn")).toBeDefined();
   expect(
     f.receipt().steps.find((step: OnboardStep) => step.id === "legacy"),
-  ).toMatchObject({ state: "failed", reason: "interrupted" });
+  ).toMatchObject({ state: "waiting", reason: "interrupted" });
   expect(existsSync(onboardLockPath(f.ctx.home))).toBe(false);
+});
+
+test.each([false, true])(
+  "double Ctrl-C resolves the active shared setup step before the paused verdict (unicode=%s)",
+  async (unicode) => {
+    const f = fixture();
+    const output = new PassThrough();
+    let text = "";
+    output.on("data", (chunk) => (text += chunk));
+    if (unicode) Object.assign(output, { isTTY: true, columns: 100 });
+    const signals = new EventEmitter();
+    const quiet = () => {};
+    const ui = createClackOnboardUi(
+      {
+        intro: quiet,
+        outro: quiet,
+        log: { message: quiet, info: quiet, warn: quiet, error: quiet },
+        select: async () => "stop",
+        isCancel: () => false,
+      },
+      { input: new PassThrough(), output },
+      {
+        renderer: createSetupRenderer(
+          output,
+          unicode
+            ? { TERM: "xterm-256color", LANG: "C.UTF-8" }
+            : { NO_COLOR: "1" },
+        ),
+        signals,
+        consentGiven: true,
+        introduced: true,
+        interactive: true,
+        baseUrl: () => "https://cloud.test",
+      },
+    );
+    const adapters = complete();
+    adapters["github.install"] = {
+      check: async () => ({ state: "pending" }),
+      act: async (_ctx, _j, signal) =>
+        ui.wait(
+          "Waiting",
+          () =>
+            new Promise<OnboardStepResult>((resolve) =>
+              signal!.addEventListener(
+                "abort",
+                () => resolve({ state: "waiting", reason: "interrupted" }),
+                { once: true },
+              ),
+            ),
+        ),
+    };
+    const run = cmdOnboard(
+      parseArgs(["onboard", "--only", "github.install"]),
+      f.ctx,
+      { ui, adapters, bindSignals: false },
+    );
+    await vi.waitFor(() => expect(text).toContain("Ctrl-C skips this step."));
+    signals.emit("SIGINT");
+    await vi.waitFor(() =>
+      expect(text).toContain("Press Ctrl-C again to stop setup."),
+    );
+    signals.emit("SIGINT");
+    expect(await run).toBe(11);
+    expect(text).toMatch(
+      unicode
+        ? /▲.*11 Install Catalyst on GitHub\s+skipped for now/
+        : /\[!\].*11 Install Catalyst on GitHub\s+skipped for now/,
+    );
+    if (unicode) expect(text).toMatch(/\u001b\[\d+A\r\u001b\[J/);
+    expect(text.indexOf("skipped for now")).toBeLessThan(
+      text.indexOf("Setup paused"),
+    );
+    expect(
+      f.receipt().steps.find((s: OnboardStep) => s.id === "github.install"),
+    ).toMatchObject({ state: "waiting", reason: "interrupted" });
+    expect(existsSync(onboardLockPath(f.ctx.home))).toBe(false);
+  },
+);
+
+test("ordinary JSON treats the person-selected runner as required", async () => {
+  const f = fixture();
+  const adapters = complete();
+  adapters.runner = {
+    check: async () => ({
+      state: "skipped",
+      reason: "runner_docker_missing",
+      evidence: { selected: true },
+    }),
+  };
+  expect(
+    await cmdOnboard(
+      parseArgs(["onboard", "--runner", "--yes", "--json"]),
+      f.ctx,
+      { adapters, bindSignals: false },
+    ),
+  ).toBe(11);
+  const doc = JSON.parse(f.output[0]!);
+  expect(doc.verdict).toBe("not-ready");
+  expect(doc.actions.map((a: { step: string }) => a.step)).toContain("runner");
+});
+test.each(["done", "failed"] as const)(
+  "a late stop preserves a completed %s adapter result",
+  async (state) => {
+    const f = fixture();
+    const adapters = complete();
+    adapters.legacy = {
+      check: async () => {
+        f.controller.abort();
+        return {
+          state,
+          ...(state === "failed" ? { reason: "verification_failed" } : {}),
+        };
+      },
+    };
+    expect(
+      await cmdOnboard(parseArgs(["onboard", "--only", "legacy"]), f.ctx, {
+        ui: f.ui,
+        adapters,
+        bindSignals: false,
+      }),
+    ).toBe(11);
+    expect(
+      f.receipt().steps.find((s: OnboardStep) => s.id === "legacy").state,
+    ).toBe(state);
+  },
+);
+test("JSON pause uses the current run signal when stopped between steps", async () => {
+  const f = fixture();
+  const adapters = complete();
+  expect(
+    await cmdOnboard(parseArgs(["onboard", "--yes", "--json"]), f.ctx, {
+      adapters,
+      beforeStep: async (id) => {
+        if (id === "cli") process.emit("SIGHUP", "SIGHUP");
+      },
+    }),
+  ).toBe(11);
+  expect(JSON.parse(f.output[0]!).verdict).toBe("paused");
+  expect(
+    f.receipt().steps.find((s: OnboardStep) => s.id === "machine").state,
+  ).toBe("done");
+});
+
+test("a display-only UI does not admit browser sign-in", async () => {
+  const f = fixture();
+  const stageSignin = vi.fn(async () => {
+    throw new Error("unauthorized_signin");
+  });
+  expect(
+    await cmdOnboard(parseArgs(["onboard"]), f.ctx, {
+      ui: { ...f.ui, interactive: false },
+      stageSignin,
+      identity: async () => null,
+      isTty: () => false,
+      adapters: complete(),
+      bindSignals: false,
+    }),
+  ).toBe(11);
+  expect(stageSignin).not.toHaveBeenCalled();
+});
+test("a previous interrupted row does not label an ordinary scoped wait as paused", async () => {
+  const f = fixture();
+  const adapters = complete();
+  adapters.legacy = {
+    check: async () => ({ state: "waiting", reason: "interrupted" }),
+  };
+  expect(
+    await cmdOnboard(
+      parseArgs(["onboard", "--only", "legacy", "--yes"]),
+      f.ctx,
+      { adapters, bindSignals: false },
+    ),
+  ).toBe(11);
+  adapters.cli = {
+    check: async () => ({ state: "waiting", reason: "cli_install_unverified" }),
+  };
+  expect(
+    await cmdOnboard(
+      parseArgs(["onboard", "--only", "cli", "--yes", "--json"]),
+      f.ctx,
+      { adapters, bindSignals: false },
+    ),
+  ).toBe(11);
+  expect(JSON.parse(f.output.at(-1)!).verdict).toBe("not-ready");
+});
+
+test("a display-only UI cannot approve the plan on a noninteractive machine", async () => {
+  const f = fixture();
+  const adapters = complete();
+  const checked = vi.fn(async () => ({ state: "done" as const }));
+  adapters.machine = { check: checked };
+  expect(
+    await cmdOnboard(parseArgs(["onboard"]), f.ctx, {
+      ui: { ...f.ui, interactive: false },
+      isTty: () => false,
+      adapters,
+      bindSignals: false,
+    }),
+  ).toBe(11);
+  expect(checked).not.toHaveBeenCalled();
+  expect(f.prompts).toEqual([]);
+});
+
+
+test("display-only presentation cannot acquire team-creation prompts", () => {
+  const input = new PassThrough();
+  const output = new PassThrough();
+  const signals = new EventEmitter();
+  const select = vi.fn(async () => "create");
+  const text = vi.fn(async () => "TEAM");
+  const port: ClackOnboardPort = {
+    intro: () => {}, outro: () => {},
+    log: { message: () => {}, info: () => {}, warn: () => {}, error: () => {} },
+    select, text, isCancel: () => false,
+  };
+  const ui = createClackOnboardUi(port, { input, output }, {
+    interactive: false, signals,
+    progress: { start: () => {}, stop: () => {}, dispose: () => {} },
+  });
+  const interactive = createClackOnboardUi(port, { input, output }, {
+    signals,
+    progress: { start: () => {}, stop: () => {}, dispose: () => {} },
+  });
+  try {
+    expect(interactive.chooseTeam).toBeTypeOf("function");
+    expect(interactive.nameNewTeam).toBeTypeOf("function");
+    expect(ui.chooseTeam).toBeUndefined();
+    expect(ui.nameNewTeam).toBeUndefined();
+    expect(select).not.toHaveBeenCalled();
+    expect(text).not.toHaveBeenCalled();
+  } finally { ui.dispose(); interactive.dispose(); }
 });
