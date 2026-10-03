@@ -1,5 +1,9 @@
 # @catalyst-cloud/cli
 
+[![skills.sh](https://skills.sh/b/coalesce-labs/catalyst-cloud-skills)](https://skills.sh/coalesce-labs/catalyst-cloud-skills)
+
+## Install
+
 Set up Catalyst Cloud and manage your account from the command line.
 
 Check ticket progress and see which decisions need your attention.
@@ -7,10 +11,6 @@ Check ticket progress and see which decisions need your attention.
 Install: `npm install -g @catalyst-cloud/cli`
 
 [CLI documentation](https://github.com/coalesce-labs/catalyst-cloud-skills#readme)
-
-[![skills.sh](https://skills.sh/b/coalesce-labs/catalyst-cloud-skills)](https://skills.sh/coalesce-labs/catalyst-cloud-skills)
-
-## Install
 
 Run the installer, then run `catalyst onboard`:
 
