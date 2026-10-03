@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.15.3
+
+- Setup can finish once the steps needed to run work are ready. It lists optional next steps and keeps your first-ticket choice when you resume.
+- Setup shows one progress display with numbered steps and the reason a step needs attention.
+- When the Connect accounts page is available, setup uses it to finish account connections. Any usable AI account counts without a test request.
+- Setup offers API keys by default. Subscription account options appear only when your workspace enables them.
+
 ## 0.15.2
 
 - `catalyst setup` is the command to set up Catalyst. It runs the same steps as `catalyst onboard`, which still works.
