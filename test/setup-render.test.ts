@@ -132,7 +132,7 @@ describe("createSetupRenderer, plain", () => {
     const r = createSetupRenderer(out, { ...tty, FORCE_HYPERLINK: "1" });
     r.detail(`Open ${r.link("https://example.com/activate?code=ABCD")}`);
     expect(out.text()).toBe(
-      "           Open https://example.com/activate?code=ABCD\n",
+      "    Open https://example.com/activate?code=ABCD\n",
     );
   });
 
@@ -145,7 +145,7 @@ describe("createSetupRenderer, plain", () => {
     expect(lines.length).toBeGreaterThan(1);
     for (const line of lines) {
       expect(line.length).toBeLessThanOrEqual(80);
-      expect(line.startsWith("           word")).toBe(true);
+      expect(line.startsWith("    word")).toBe(true);
     }
     expect(lines.map((l) => l.trim()).join(" ")).toBe(words);
   });
@@ -190,7 +190,7 @@ describe("createSetupRenderer, plain", () => {
     const r = createSetupRenderer(out, tty);
     r.action("Approve this computer in your browser");
     expect(out.text()).toBe(
-      "           Approve this computer in your browser\n",
+      "    Approve this computer in your browser\n",
     );
   });
 });
@@ -355,7 +355,7 @@ test("resize leaves the old live block and uses the new width for the next step"
   const next = chunks.length;
   r.begin(11, "Install Catalyst on GitHub", "waiting for you");
   expect(visible(chunks.slice(next).join(""))).toContain(
-    "\n│     waiting for you",
+    "\n│   waiting for you",
   );
   r.dispose();
 });
@@ -434,7 +434,7 @@ test("a resize between steps uses current stream width", () => {
   r.step("done", 1, "Install Catalyst", "installed");
   columns = 60;
   r.step("done", 2, "Add the Catalyst skills", "ready");
-  expect(visible(chunks.at(-1)!)).toContain("\n│     ready");
+  expect(visible(chunks.at(-1)!)).toContain("\n│   ready");
   r.dispose();
 });
 

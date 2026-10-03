@@ -55,6 +55,16 @@ export const CONNECTION_REPAIR_REASONS: ReadonlySet<string> = new Set([
   "github_app_permissions_unverified", "github_app_repository_access_unverified",
   "linear_workspace_permissions_unverified", "personal_permissions_unverified",
 ]);
+/** CTC-4680: the signed-in browser route that goes straight to GitHub's install page. The settings
+ *  page it replaces opened Integrations and started nothing. */
+export const GITHUB_INSTALL_START = "/connect/github/start";
+/** CTC-4680 round 5: a browser wait that ran its whole window without the person finishing. */
+export const TIMED_OUT_REASONS: ReadonlySet<string> = new Set([
+  "consent_timeout",
+  "workspace_browser_unavailable",
+  "personal_browser_unavailable",
+  "github_installation_browser_unavailable",
+]);
 const clean = (s: string) =>
   s.replace(/[\u0000-\u001f\u007f]/g, "").slice(0, 300);
 function value(step: OnboardStep, key: string): string | undefined {
@@ -120,6 +130,9 @@ function unfinished(step: OnboardStep): string {
   if (step.reason === "automation_management_unavailable")
     return "could not read them; checked again before work starts";
   if (step.reason === "interrupted") return "skipped for now";
+  if (TIMED_OUT_REASONS.has(step.reason ?? "")) return "the link timed out";
+  if (step.reason === "github_installation_approval_pending")
+    return "waiting for an owner of your GitHub organization";
   if (step.state === "failed") return "could not finish this step";
   switch (step.id) {
     case "github.install":
@@ -153,6 +166,7 @@ export function setupStepView(
       : step.state === "failed"
         ? "fail"
         : step.reason === "prerequisite_not_ready" ||
+            step.reason === "github_install_pending" ||
             (step.state === "pending" && !step.reason)
           ? "later"
           : !required &&
@@ -172,6 +186,8 @@ export function setupStepView(
           .filter((n): n is number => n !== undefined),
       ),
     ];
+    if (step.reason === "github_install_pending")
+      numbers.splice(0, numbers.length, SETUP_NUMBERS["github.install"]!);
     outcome =
       step.state === "pending" && !step.reason
         ? "not checked yet"
@@ -203,7 +219,10 @@ function action(
   base?: string,
   journal?: OnboardJournal,
 ): string {
-  if (CONNECTION_REPAIR_REASONS.has(step.reason ?? ""))
+  if (
+    CONNECTION_REPAIR_REASONS.has(step.reason ?? "") ||
+    step.reason === "github_installation_approval_pending"
+  )
     return onboardReasonText(step, { baseUrl: base, journal });
   const link = (path: string, verb: string) => {
     const url = page(base, path);
@@ -220,8 +239,15 @@ function action(
         "connect your Linear account",
       );
     case "github.install":
+      // The start route answers 403 to anyone but an owner or admin, so a member gets the
+      // Integrations page and who to ask instead.
+      if (
+        step.reason === "github_installation_admin_required" ||
+        step.reason === "member_scope"
+      )
+        return onboardReasonText(step, { baseUrl: base, journal });
       return link(
-        "/settings/connections?install=github",
+        GITHUB_INSTALL_START,
         "install Catalyst on your GitHub organization",
       );
     case "github.personal":
@@ -368,7 +394,7 @@ export function setupBrowserInstruction(
       "Connect your Linear account",
     ],
     "github.install": [
-      "/settings/connections?install=github",
+      GITHUB_INSTALL_START,
       "install Catalyst on your GitHub organization",
       "Install Catalyst on your GitHub organization",
     ],
@@ -448,6 +474,8 @@ export function onboardJsonView(
     )?.evidence?.role;
     const admin =
       step.reason === "member_scope" ||
+      // CTC-4680: refused by the person's Catalyst role, not by GitHub, so a workspace admin acts.
+      step.reason === "github_installation_admin_required" ||
       step.reason?.endsWith("_identity_unverified") ||
       (action.id === "accounts" && role !== "owner" && role !== "admin");
     const url = action.text
