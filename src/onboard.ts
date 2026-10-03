@@ -476,6 +476,8 @@ function normalizeStep(value: unknown, fallbackAt: string): OnboardStep | null {
     "org",
     "url",
     "actor",
+    // CTC-4716: which AI accounts the workspace may add, so the step's text offers only those.
+    "aiAccountKinds",
   ] as const) {
     const item = evidence?.[key];
     if (
