@@ -93,14 +93,14 @@ describe("catalyst setup", () => {
     expect(await r.done).toBe(0);
     const text = r.out.text();
     expect(text).not.toContain("\u001b");
-    expect(text).toContain("Catalyst setup\n");
-    expect(text).toContain("System             Linux x86_64\n");
+    expect(text).toContain("  Catalyst setup\n");
+    expect(text).toContain("    System             Linux x86_64\n");
     expect(text).toContain(
-      "         1 Install the catalyst command    from npm\n\n         2 Add Catalyst skills             in ~/.agents/skills\n       for Claude Code and Codex\n",
+      "             1 Install the catalyst command    from npm\n\n             2 Add Catalyst skills             in ~/.agents/skills\n        for Claude Code and Codex\n",
     );
-    expect(text).toContain("\nThis computer\n");
+    expect(text).toContain("\n  Part 1 of 3: This computer\n");
     expect(text).toContain(
-      "[done]   1 Install the catalyst command    installed 0.15.0\n",
+      "    [done]   1 Install the catalyst command    installed 0.15.0\n",
     );
     expect(text).not.toContain("~/.npm-global/bin/catalyst");
   });
@@ -284,7 +284,7 @@ describe("catalyst setup", () => {
     const r = run(["--engine", e.path, "--engine-sha256", e.sha256]);
     expect(await r.done).toBe(0);
     expect(r.out.text()).toContain(
-      "\nThis computer is ready.\nNext: run catalyst onboard\n",
+      "\n  This computer is ready.\n  Next: run catalyst onboard\n",
     );
   });
 
@@ -582,6 +582,6 @@ exit ${code}`);
   if (code === 0) expect(r.out.text()).toContain("Next: move a ticket to Todo in Linear.");
   else {
     expect(r.out.text()).toContain("Full log: /tmp/catalyst-install.log");
-    expect(r.out.text().trim().split("\n").at(-1)).toBe("Next: run catalyst onboard");
+    expect(r.out.text().trim().split("\n").at(-1)).toBe("  Next: run catalyst onboard");
   }
 });

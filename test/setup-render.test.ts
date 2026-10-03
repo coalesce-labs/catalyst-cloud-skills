@@ -104,12 +104,7 @@ describe("createSetupRenderer, plain", () => {
   test("a step line carries the ASCII mark, number, title and outcome, with no ANSI", () => {
     const out = sink(false);
     const r = createSetupRenderer(out, tty);
-    r.step(
-      "done",
-      4,
-      "Sign in to Catalyst",
-      "signed in as ryan@example.com to Acme",
-    );
+    r.step("done", 4, "Sign in to Catalyst", "signed in to Acme");
     r.step("done", 2, "Skills", "already up to date");
     r.step("act", 5, "Background sync", "not confirmed");
     r.step("fail", 7, "Final check", "1 check did not pass");
@@ -118,11 +113,11 @@ describe("createSetupRenderer, plain", () => {
     expect(text).not.toMatch(ANSI);
     expect(text).not.toContain(ESC);
     expect(text.split("\n")).toEqual([
-      "[done]   4 Sign in to Catalyst             signed in as ryan@example.com to Acme",
-      "[done]   2 Skills                          already up to date",
-      "[!]      5 Background sync                 not confirmed",
-      "[fail]   7 Final check                     1 check did not pass",
-      "[skip]   6 Daily update                    this machine has no scheduler",
+      "    [done]   4 Sign in to Catalyst             signed in to Acme",
+      "    [done]   2 Skills                          already up to date",
+      "    [!]      5 Background sync                 not confirmed",
+      "    [fail]   7 Final check                     1 check did not pass",
+      "    [skip]   6 Daily update                    this machine has no scheduler",
       "",
     ]);
   });
@@ -132,7 +127,7 @@ describe("createSetupRenderer, plain", () => {
     const r = createSetupRenderer(out, { ...tty, FORCE_HYPERLINK: "1" });
     r.detail(`Open ${r.link("https://example.com/activate?code=ABCD")}`);
     expect(out.text()).toBe(
-      "    Open https://example.com/activate?code=ABCD\n",
+      "        Open https://example.com/activate?code=ABCD\n",
     );
   });
 
@@ -145,7 +140,7 @@ describe("createSetupRenderer, plain", () => {
     expect(lines.length).toBeGreaterThan(1);
     for (const line of lines) {
       expect(line.length).toBeLessThanOrEqual(80);
-      expect(line.startsWith("    word")).toBe(true);
+      expect(line.startsWith("        word")).toBe(true);
     }
     expect(lines.map((l) => l.trim()).join(" ")).toBe(words);
   });
@@ -182,7 +177,7 @@ describe("createSetupRenderer, plain", () => {
     const r = createSetupRenderer(out, tty);
     r.heading("Setting up");
     r.blank();
-    expect(out.text()).toBe("\nSetting up\n\n");
+    expect(out.text()).toBe("\n  Setting up\n\n");
   });
 
   test("the call to action prints as plain text first in a pipe", () => {
@@ -190,7 +185,7 @@ describe("createSetupRenderer, plain", () => {
     const r = createSetupRenderer(out, tty);
     r.action("Approve this computer in your browser");
     expect(out.text()).toBe(
-      "    Approve this computer in your browser\n",
+      "        Approve this computer in your browser\n",
     );
   });
 });
@@ -273,7 +268,7 @@ test("spec states distinguish action, later and optional results", () => {
   expect(visible(out.text())).toContain("–   5 Schedule the daily update");
 });
 
-test.each([60, 80, 120])("rail columns and wrapping at %i", (columns) => {
+test.each([60, 80, 120])("indent columns and wrapping at %i", (columns) => {
   const out = sink(true, columns);
   const r = createSetupRenderer(out, tty);
   r.intro("Catalyst setup");
@@ -285,15 +280,20 @@ test.each([60, 80, 120])("rail columns and wrapping at %i", (columns) => {
   r.detail(url);
   r.outro("Next: run catalyst onboard");
   const lines = visible(out.text()).trimEnd().split("\n");
-  expect(lines.every((l) => /^[│┌└├✓]/.test(l))).toBe(true);
+  // CTC-4680 round 2: headings and prose at 2, step rows at 4, details at 8. A URL too long for
+  // its column starts at 2, on its own line.
+  expect(lines.every((l) => l === "" || /^  \S/.test(l) || /^ {4}\S/.test(l) || /^ {8}\S/.test(l))).toBe(true);
   for (const l of lines)
     if (!l.includes(url))
       expect(l.length).toBeLessThanOrEqual(Math.min(columns, 100));
   expect(lines.find((l) => l.includes(url))!.trim()).toContain(url);
-  const step = lines.find((l) => l.startsWith("✓"))!;
-  expect(step.indexOf("Connect")).toBe(6);
-  if (columns >= 80) expect(step.indexOf("connected")).toBe(38);
-  expect(lines.at(-1)).toBe("└  Next: run catalyst onboard");
+  expect(lines.find((l) => l.includes("GitHub") && !l.includes("Connect"))).toBe("  GitHub");
+  const step = lines.find((l) => l.startsWith("    ✓"))!;
+  expect(step.indexOf("Connect")).toBe(10);
+  if (columns >= 80) expect(step.indexOf("connected")).toBe(42);
+  else expect(lines).toContain("        connected as samlee");
+  expect(lines.find((l) => l.includes("Open this link"))!.indexOf("Open")).toBe(8);
+  expect(lines.at(-1)).toBe("  Next: run catalyst onboard");
 });
 
 test("empty NO_COLOR is plain too", () => {
@@ -355,7 +355,7 @@ test("resize leaves the old live block and uses the new width for the next step"
   const next = chunks.length;
   r.begin(11, "Install Catalyst on GitHub", "waiting for you");
   expect(visible(chunks.slice(next).join(""))).toContain(
-    "\n│   waiting for you",
+    "\n        waiting for you",
   );
   r.dispose();
 });
@@ -412,7 +412,7 @@ test("ordinary output preserves a live region below it", () => {
   r.line("diagnostic");
   r.update("still waiting");
   expect(out.text().slice(before)).toMatch(
-    /\u001b\[1A\r\u001b\[J│  diagnostic\n/,
+    /\u001b\[1A\r\u001b\[J  diagnostic\n/,
   );
   r.dispose();
 });
@@ -434,7 +434,7 @@ test("a resize between steps uses current stream width", () => {
   r.step("done", 1, "Install Catalyst", "installed");
   columns = 60;
   r.step("done", 2, "Add the Catalyst skills", "ready");
-  expect(visible(chunks.at(-1)!)).toContain("\n│   ready");
+  expect(visible(chunks.at(-1)!)).toContain("\n        ready");
   r.dispose();
 });
 
@@ -442,7 +442,7 @@ test("line preserves explicit continuation indentation", () => {
   const out = sink(true, 80);
   const r = createSetupRenderer(out, tty);
   r.line("       continuation");
-  expect(visible(out.text())).toBe("│         continuation\n");
+  expect(visible(out.text())).toBe("         continuation\n");
   r.dispose();
 });
 
@@ -456,7 +456,7 @@ test("fast automatic steps only print their outcome", () => {
   r.begin(1, "Install the catalyst command");
   expect(out.text()).toBe("");
   r.resolve("done", "installed");
-  expect(visible(out.text())).toMatch(/^✓/);
+  expect(visible(out.text())).toMatch(/^ {4}✓/);
   expect(out.text()).not.toContain("checking");
   r.dispose();
 });

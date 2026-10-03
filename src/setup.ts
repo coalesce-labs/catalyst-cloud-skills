@@ -29,6 +29,7 @@ import {
   type SetupStream,
 } from "./setup-render.js";
 import type { SigninOutcome } from "./setup-signin.js";
+import { setupPartHeading } from "./setup-onboard-copy.js";
 
 export type SetupAsk = Extract<SetupEvent, { kind: "ask" }>;
 
@@ -170,7 +171,7 @@ function planRenderer(r: SetupRenderer) {
       r.plan(number >= 8 ? number - 2 : number === 6 ? 5 : number, title, text);
     },
     more(text: string) {
-      if (!hidden) r.line(`       ${text}`);
+      if (!hidden) r.line(`      ${text}`);
     },
     close() {
       open = false;
@@ -350,7 +351,11 @@ async function runEngine(
           !deps.onboard ||
           !["What’s left", "What\'s left"].includes(event.text)
         )
-          r.heading(event.text === "Setting up" ? "This computer" : event.text);
+          r.heading(
+            event.text === "Setting up"
+              ? setupPartHeading(1, r.traits.unicode)
+              : event.text,
+          );
         return;
       case "plan":
         plan.plan(event.number, event.title, event.text);
@@ -523,7 +528,7 @@ async function runEngine(
         return await deps.onboard(r, flags);
       } catch {
         errors.line(
-          "catalyst setup: onboarding could not finish. Run catalyst onboard to try again.",
+          "catalyst setup: onboarding could not finish. Run catalyst setup to try again.",
         );
         if (flags.json)
           deps.writeJson(

@@ -20,9 +20,9 @@ test("an unfinished parent is a later line, never a root action", () => {
   const child = j.steps.find((s) => s.id === "github.repos")!;
   Object.assign(child, { state: "waiting", reason: "prerequisite_not_ready" });
   expect(setupStepView(child, j)).toMatchObject({
-    number: 13,
+    number: 1,
     mark: "later",
-    outcome: "after step 11",
+    outcome: "after step 6 of part 2",
   });
   expect(
     setupFinalScreen(j, "https://staging.catalystcloud.dev").actions.map(
@@ -411,7 +411,7 @@ test("CTC-4680 round 5: a timed-out step says so, and the runner waits for GitHu
       steps: [{ id: "github.install", state: "waiting", reason: "consent_timeout" }],
     } as OnboardJournal,
   );
-  expect(runner).toMatchObject({ mark: "later", outcome: "after step 11" });
+  expect(runner).toMatchObject({ mark: "later", outcome: "after step 6 of part 2" });
 });
 
 test("CTC-4680: a pending GitHub install request still offers the install link", async () => {

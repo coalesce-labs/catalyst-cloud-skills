@@ -37,6 +37,7 @@ import {
   type OnboardJournal,
 } from "../src/onboard.js";
 import { parseArgs } from "../src/args.js";
+import { onboardJsonView, setupStepView } from "../src/setup-onboard-copy.js";
 
 const homes: string[] = [];
 function home(): string {
@@ -1429,7 +1430,7 @@ test("plain standalone --yes keeps the shared frame without approving extra ques
     { isTty: () => false },
   );
   expect(code).toBe(0);
-  expect(output.join("\n")).toContain("The plan");
+  expect(output.join("\n")).toContain("Part 1 of 3: This computer");
   expect(output.join("\n")).toContain("Step complete");
   expect(output.join("\n")).not.toContain("Ready for work");
   expect(output.join("\n")).not.toContain("\x1b");
@@ -1446,7 +1447,7 @@ test("plain standalone without --yes retains the explicit plan refusal", async (
   );
   expect(code).toBe(11);
   expect(errors.join("\n")).toContain("Pass --yes");
-  expect(output.join("\n")).toContain("The plan");
+  expect(output.join("\n")).toContain("Part 1 of 3: This computer");
   expect(readOnboardJournal(onboardStatePath(path))).toBeNull();
 });
 
@@ -1493,4 +1494,57 @@ test("a runner-selected dry-run discloses Docker before consent without starting
   );
   expect(output.join("\n")).not.toContain("check which runners can take work");
   expect(existsSync(onboardStatePath(path))).toBe(false);
+});
+
+test("the plain-text plan numbers each step the way JSON actions[].number does", async () => {
+  // CTC-4680: the plan an agent reads on --dry-run, --json stderr and --headless keeps the numbers
+  // `--json` reports, so an action can be matched to its plan row. Only the terminal restarts
+  // numbers in each part.
+  const path = home();
+  const output: string[] = [];
+  expect(
+    await cmdOnboard(
+      parseArgs(["onboard", "--dry-run"]),
+      context(path, output),
+      {},
+      "0.15.0",
+    ),
+  ).toBe(0);
+  const rows = new Map(
+    output
+      .map((line) => /^ {2}(\d+) (.+?) {2}/.exec(line))
+      .filter((m): m is RegExpExecArray => m !== null)
+      .map((m) => [m[2]!, Number(m[1])]),
+  );
+  expect(rows.size).toBeGreaterThan(10);
+  const journal: OnboardJournal = {
+    schema: 1,
+    runId: "numbers",
+    installer: null,
+    cli: "0.15.0",
+    tenant: null,
+    exit: 11,
+    complete: false,
+    changes: [],
+    steps: ONBOARD_STEPS.map((id) => ({
+      id,
+      state: "waiting" as const,
+      reason: "not_yet",
+    })),
+  };
+  for (const id of ["linear.workspace", "github.install", "first-ticket"] as const) {
+    const only = {
+      ...journal,
+      steps: journal.steps.map((s) =>
+        s.id === id ? s : { ...s, state: "done" as const, reason: undefined },
+      ),
+    };
+    const action = onboardJsonView(only).actions.find((a) => a.step === id)!;
+    const title = setupStepView({ id, state: "pending" }).title;
+    expect(rows.get(title)).toBe(action.number);
+  }
+  expect(rows.get("Install Catalyst on GitHub")).toBe(11);
+  const text = output.join("\n");
+  expect(text).toContain("In Linear and GitHub");
+  expect(text).not.toContain("Part 2 of 3");
 });
