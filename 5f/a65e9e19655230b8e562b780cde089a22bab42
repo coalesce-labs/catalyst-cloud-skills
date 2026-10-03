@@ -1,0 +1,6 @@
+Revision history for #272:
+
+rev 2 (content) 2026-10-03 19:50 UTC — record the final trigger run for the tightened description (22/22)
+rev 1 (initial) 2026-10-03 19:50 UTC
+
+<!-- mergify-revision-data: {"schema_version":1,"pull_number":272,"entries":[{"number":1,"change_type":"initial","old_sha":null,"new_sha":"e1d0c60b19c169439679b127a5496a1c47db4a8c","timestamp_iso":"2026-10-03T19:50:58Z","reason":"","replay_sha":null,"compare_url":null},{"number":2,"change_type":"content","old_sha":"e1d0c60b19c169439679b127a5496a1c47db4a8c","new_sha":"e749789e089a6e73ef231c0f9cf74b8e310aaa83","timestamp_iso":"2026-10-03T19:50:58Z","reason":"record the final trigger run for the tightened description (22/22)","replay_sha":null,"compare_url":"https://github.com/coalesce-labs/catalyst-cloud-skills/compare/e1d0c60b19c169439679b127a5496a1c47db4a8c...e749789e089a6e73ef231c0f9cf74b8e310aaa83"}]} -->
