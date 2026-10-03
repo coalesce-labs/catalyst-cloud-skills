@@ -83,7 +83,7 @@ export const SETUP_PART_OF: Record<OnboardStepId, SetupPart> = {
   ready: 3,
 };
 /** What a person reads: each part restarts at 1, in the order setup runs the steps. Steps that
- *  share a row (the computer checks, repositories and projects, runners, settings) share a number. */
+ *  share a row (the computer checks, repositories and projects, settings) share a number. */
 export const SETUP_PART_NUMBERS: Partial<Record<OnboardStepId, number>> = {
   machine: 1,
   cli: 1,
@@ -102,10 +102,10 @@ export const SETUP_PART_NUMBERS: Partial<Record<OnboardStepId, number>> = {
   projects: 1,
   accounts: 2,
   capacity: 3,
-  runner: 3,
-  settings: 4,
-  values: 4,
-  "first-ticket": 5,
+  runner: 4,
+  settings: 5,
+  values: 5,
+  "first-ticket": 6,
 };
 /** CTC-4680: people type `catalyst setup`; `catalyst onboard` stays its alias. What setup draws
  *  names setup. `--json` and headless output keep their own words. */

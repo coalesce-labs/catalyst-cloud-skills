@@ -165,7 +165,7 @@ describe("parts and part-local numbers", () => {
 
   test("a step's row carries its part-local number", () => {
     expect(setupStepView({ id: "linear.workspace", state: "done" }).number).toBe(1);
-    expect(setupStepView({ id: "first-ticket", state: "done" }).number).toBe(5);
+    expect(setupStepView({ id: "first-ticket", state: "done" }).number).toBe(6);
   });
 
   test("a step that waits on another part names that part", () => {
@@ -241,6 +241,7 @@ describe("parts and part-local numbers", () => {
       [3, 3],
       [3, 4],
       [3, 5],
+      [3, 6],
     ]);
     expect(rows[0]!.group).toBe("Part 1 of 3: This computer");
   });
@@ -286,7 +287,7 @@ describe("the three-part tracker", () => {
     const progress = setupPartProgress(j);
     expect(progress[1]).toMatchObject({ total: 3, done: 3, needs: 0 });
     expect(progress[2]).toMatchObject({ total: 7, done: 1, needs: 1 });
-    expect(progress[3]).toMatchObject({ total: 5, done: 0, needs: 0 });
+    expect(progress[3]).toMatchObject({ total: 6, done: 0, needs: 0 });
   });
 
   test("the first screen marks part 1 current and the others later, with times", () => {
@@ -438,7 +439,8 @@ describe("setup's orientation", () => {
     expect(boundary).toContain("Part 2 done. Linear and GitHub are connected.");
     expect(boundary).toMatch(/\[next\] +3 Ready for work/);
     expect(boundary).toContain("Part 3 of 3: Ready for work");
-    expect(boundary).toMatch(/ 5 Start a first ticket/);
+    expect(boundary).toMatch(/ 4 Run Catalyst's work on this machine/);
+    expect(boundary).toMatch(/ 6 Start a first ticket/);
     f.ui.dispose();
   });
 
@@ -474,7 +476,7 @@ describe("setup's orientation", () => {
     const end = f.text().slice(before);
     expect(end).toMatch(/\[done\] +1 This computer/);
     expect(end).toMatch(/\[!\] +2 Linear and GitHub +1 step needs someone/);
-    expect(end).toMatch(/\[later\] +3 Ready for work +0 of 5 steps done/);
+    expect(end).toMatch(/\[later\] +3 Ready for work +0 of 6 steps done/);
     // People type `catalyst setup`; `catalyst onboard` stays an alias that setup no longer names.
     expect(end).toContain("Next: run catalyst setup");
     expect(end).not.toContain("catalyst onboard");
