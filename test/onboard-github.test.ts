@@ -464,7 +464,9 @@ describe("native personal-bearer GitHub App installation", () => {
       state: "done",
     });
     const printed = f.logs.join("\n");
-    expect(printed).toContain(`${origin}/settings/connections`);
+    // CTC-4680: the printed link starts the install on GitHub; Integrations started nothing.
+    expect(printed).toContain(`${origin}/connect/github/start`);
+    expect(printed).not.toContain("/settings/connections");
     expect(printed).not.toContain("private-opener-value");
   });
   test("without a browser the deadline asks the person to finish on the web and resume", async () => {
@@ -877,4 +879,20 @@ test("without an interactive wait seam, missing approval returns immediately wit
   });
   expect(f.opened).toEqual([]);
   expect(f.reads).toHaveLength(1);
+});
+
+test("CTC-4680 round 5: an install request already waiting on GitHub is not requested again", async () => {
+  const f = fixture();
+  f.status({
+    connected: false,
+    installations: [],
+    pending: [{ githubOrg: "fixture", requestedAt: now - 60_000 }],
+  });
+  expect(await f.adapter().act!(f.ctx, f.journal)).toEqual({
+    state: "waiting",
+    reason: "github_installation_approval_pending",
+    evidence: { provider: "github", org: "fixture" },
+  });
+  expect(f.opened).toEqual([]);
+  expect(f.reads.map((r) => r.path)).not.toContain(`${path}/start`);
 });

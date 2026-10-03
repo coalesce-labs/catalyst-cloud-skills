@@ -137,7 +137,7 @@ test("JSON final facts preserve the journal and expose only reachable actions", 
       step: "github.install",
       number: 11,
       text: "Install Catalyst on your GitHub organization.",
-      url: "https://staging.catalystcloud.dev/settings/connections?install=github",
+      url: "https://staging.catalystcloud.dev/connect/github/start",
       who: "github-org-admin",
     },
   ]);
@@ -367,4 +367,59 @@ test("a project repository without an installation is never presented as a permi
  Object.assign(step,{state:"waiting",reason:"github_app_repository_not_installed",evidence:{repository:"acme/widget",org:"acme"}});
  expect(setupStepView(step,j).outcome).toBe("no installation reaches the project repository");
  expect(setupFinalScreen(j,"https://staging.catalystcloud.dev").actions[0]?.text).toContain("acme/widget");
+});
+
+test("CTC-4680 round 5: the GitHub install link starts the install, never the settings page", async () => {
+  const { setupBrowserInstruction } = await import("../src/setup-onboard-copy.js");
+  const base = "https://staging.catalystcloud.dev";
+  for (const opened of [false, true]) {
+    const copy = setupBrowserInstruction("github.install", base, opened)!;
+    expect(copy.url).toBe(`${base}/connect/github/start`);
+  }
+  const screen = setupFinalScreen(
+    {
+      schema: 1,
+      runId: "r5",
+      installer: null,
+      cli: "0.15.1",
+      tenant: null,
+      exit: 11,
+      changes: [],
+      steps: [
+        { id: "signin", state: "done" },
+        { id: "github.install", state: "waiting", reason: "github_installation_browser_unavailable" },
+      ],
+    } as OnboardJournal,
+    base,
+    true,
+  );
+  const text = screen.actions.map((a) => a.text).join("\n");
+  expect(text).toContain(`${base}/connect/github/start`);
+  expect(text).not.toContain("/settings/connections");
+});
+
+test("CTC-4680 round 5: a timed-out step says so, and the runner waits for GitHub", () => {
+  for (const reason of ["consent_timeout", "github_installation_browser_unavailable"]) {
+    const view = setupStepView({ id: "github.install", state: "waiting", reason });
+    expect(view.outcome).toBe("the link timed out");
+    expect(view.mark).toBe("act");
+  }
+  const runner = setupStepView(
+    { id: "runner", state: "waiting", reason: "github_install_pending" },
+    {
+      schema: 1, runId: "r5", installer: null, cli: "0.15.1", tenant: null, exit: null, changes: [],
+      steps: [{ id: "github.install", state: "waiting", reason: "consent_timeout" }],
+    } as OnboardJournal,
+  );
+  expect(runner).toMatchObject({ mark: "later", outcome: "after step 11" });
+});
+
+test("CTC-4680: a pending GitHub install request still offers the install link", async () => {
+  const { onboardReasonText } = await import("../src/onboard-next.js");
+  const text = onboardReasonText(
+    { id: "github.install", state: "waiting", reason: "github_installation_approval_pending" },
+    { baseUrl: "https://staging.catalystcloud.dev" },
+  );
+  expect(text).toContain("An install request is waiting on GitHub.");
+  expect(text).toContain("https://staging.catalystcloud.dev/connect/github/start");
 });

@@ -137,7 +137,7 @@ test("an optional browser interrupt skips its step, keeps the setup signal live,
       ),
   );
   expect(f.text()).toContain("waiting for you, up to 10 minutes");
-  expect(f.text()).toContain("/settings/connections?install=github");
+  expect(f.text()).toContain("/connect/github/start");
   f.signals.emit("SIGINT");
   expect(f.ui.signal.aborted).toBe(false);
   expect(f.ui.stepSignal!.aborted).toBe(true);

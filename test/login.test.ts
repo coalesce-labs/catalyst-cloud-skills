@@ -312,10 +312,11 @@ describe("main — login (and the deprecated join alias)", () => {
     const code = await main(["login", "--key", FIXTURE_USER_KEY, "--base-url", server.url], ctx());
     expect(code).toBe(0);
     expect(err).toEqual([]);
-    expect(out.join("\n")).toContain(`Connected to ${FIXTURE_ME_BODY.name} (${FIXTURE_ME_BODY.slug})`);
-    expect(out.join("\n")).toContain(FIXTURE_ME_BODY.account);
-    expect(out.join("\n")).toContain(`Connected as ${FIXTURE_ME_USER.label} (${FIXTURE_ME_USER.role})`);
-    expect(out.join("\n")).toContain("1.x");
+    expect(out.join("\n")).toContain(`Catalyst workspace: ${FIXTURE_ME_BODY.name} (${FIXTURE_ME_BODY.slug})`);
+    // CTC-4680: the internal account id and the word "tenant" never reach the person.
+    expect(out.join("\n")).not.toContain(FIXTURE_ME_BODY.account);
+    expect(out.join("\n")).not.toMatch(/tenant/i);
+    expect(out.join("\n")).toContain(`Signed in to Catalyst as ${FIXTURE_ME_USER.label} (${FIXTURE_ME_USER.role})`);
     const cfg = readConfig();
     expect(cfg).toMatchObject({
       account: "tenant-3",
@@ -336,7 +337,7 @@ describe("main — login (and the deprecated join alias)", () => {
   test("join is still accepted, dispatches to login, and is the same run", async () => {
     const code = await main(["join", "--key", "fixture-key", "--base-url", server.url], ctx());
     expect(code).toBe(0);
-    expect(out.join("\n")).toContain(`Connected to ${FIXTURE_ME_BODY.name}`);
+    expect(out.join("\n")).toContain(`Catalyst workspace: ${FIXTURE_ME_BODY.name}`);
     expect(readConfig().account).toBe("tenant-3");
   });
   test("⭐ no key: login runs the device flow, prints the code + URL, writes an oauth config (no key, 0600), and names the person", async () => {
@@ -350,7 +351,7 @@ describe("main — login (and the deprecated join alias)", () => {
     expect(code).toBe(0);
     expect(out.join("\n")).toContain("WXYZ-1234");
     expect(out.join("\n")).toContain(`${server.url}/activate`);
-    expect(out.join("\n")).toContain(`Connected as ${FIXTURE_ME_USER.label} (${FIXTURE_ME_USER.role})`);
+    expect(out.join("\n")).toContain(`Signed in to Catalyst as ${FIXTURE_ME_USER.label} (${FIXTURE_ME_USER.role})`);
     expect(opened, "no browser opened without a TTY").toEqual([]);
     const cfg = readConfig();
     expect(cfg.key, "an oauth config carries no key").toBeUndefined();
@@ -382,7 +383,7 @@ describe("main — login (and the deprecated join alias)", () => {
       const printed = out.join("\n");
       expect(printed).toContain("That code expired. Here is a new one (2 of 3):");
       expect(printed).toContain("WXYZ-1235");
-      expect(printed).toContain(`Connected as ${FIXTURE_ME_USER.label}`);
+      expect(printed).toContain(`Signed in to Catalyst as ${FIXTURE_ME_USER.label}`);
       expect(printed.match(/Config written to /g), "credentials written once").toHaveLength(1);
       expect(server.oauth.deviceAuthorizeCount - before).toBe(2);
       expect(readConfig().auth?.kind).toBe("oauth");
@@ -410,7 +411,7 @@ describe("main — login (and the deprecated join alias)", () => {
       const code = await main(["login", "--base-url", server.url], ctx(), { isTty: () => false, sleep: async () => {} });
       expect(code).toBe(0);
       // FIXTURE_ME_USER.role is "admin" from /me — the printed role must be that, not the token's "member"
-      expect(out.join("\n")).toContain(`Connected as ${FIXTURE_ME_USER.label} (admin)`);
+      expect(out.join("\n")).toContain(`Signed in to Catalyst as ${FIXTURE_ME_USER.label} (admin)`);
       expect(out.join("\n")).not.toContain("(member)");
       expect(readConfig().user?.role).toBe("admin");
     } finally {
@@ -486,7 +487,7 @@ describe("main — login (and the deprecated join alias)", () => {
     expect(existsSync(contractPathFor(home))).toBe(true);
     const cached = JSON.parse(readFileSync(contractPathFor(home), "utf8")) as { contractVersion: string };
     expect(cached.contractVersion).toBe("1.0.0");
-    expect(out.join("\n")).toContain("Tenant contract 1.0.0 cached at");
+    expect(out.join("\n")).toContain("Saved your workspace settings (version 1.0.0) to");
   });
 
   test("the tenant's account key still connects, but says it names no person and points at a personal key", async () => {
@@ -494,7 +495,7 @@ describe("main — login (and the deprecated join alias)", () => {
     expect(code).toBe(0);
     expect(readConfig().key).toBe("fixture-key");
     expect(readConfig().user).toBeUndefined();
-    expect(err.join("\n")).toMatch(/account key \(a host credential\)/);
+    expect(err.join("\n")).toMatch(/shared key \(a host credential\)/);
     expect(err.join("\n")).toMatch(/Settings → API keys/);
     expect(out.join("\n")).not.toContain("Connected as");
     // The contract is still cached: since CTC-2076 nothing a person reads is refused by class.
@@ -506,7 +507,7 @@ describe("main — login (and the deprecated join alias)", () => {
     try {
       const code = await main(["login", "--key", FIXTURE_USER_KEY, "--base-url", server.url], ctx());
       expect(code).toBe(0);
-      expect(out.join("\n")).toMatch(/Connected as Tony \(admin\) — your Linear identity is not matched yet/);
+      expect(out.join("\n")).toMatch(/Signed in to Catalyst as Tony \(admin\) — your Linear identity is not matched yet/);
       expect(readConfig().user?.linearUserId).toBeNull();
     } finally {
       server.meUser = undefined;

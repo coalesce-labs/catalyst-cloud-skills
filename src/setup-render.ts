@@ -158,7 +158,9 @@ export function createSetupRenderer(
       .replace(/\u001b\]8;;[^\u001b]*\u001b\\/g, "")
       .replace(/\u001b\[[0-9;]*m/g, "");
   const rail = traits.unicode ? "│" : "";
-  const titleCol = traits.unicode ? 6 : 11;
+  // CTC-4680: details sit 4 columns in (under the rail in Unicode), not under the step title at 6 or
+  // 11, so the eye doesn't travel across a small screen to read them.
+  const titleCol = 4;
   const outcomeCol = traits.unicode ? 38 : 43;
   const prefix = (col: number) => rail + " ".repeat(col - rail.length);
   const mark = (kind: StepMark) => {

@@ -269,6 +269,18 @@ function observation(body: unknown, now: number): OnboardStepResult {
   if (coverage === null) return waiting("github_installation_status_shape");
   if (unknown) return waiting("github_installation_status_unavailable");
   if (outdated) return outdated;
+  // CTC-4680 round 5: a request already waiting for an org owner on GitHub is not a new install.
+  if (row.installations.length === 0 && row.pending.length > 0) {
+    const org = object(row.pending[0])?.githubOrg;
+    return {
+      state: "waiting",
+      reason: "github_installation_approval_pending",
+      evidence: {
+        provider: "github",
+        ...(typeof org === "string" ? { org } : {}),
+      },
+    };
+  }
   if (!allConnected) return { state: "pending" };
   if (permissionsUnverified) return waiting("github_app_permissions_unverified");
   if (coverage) return coverage;
@@ -546,7 +558,7 @@ export function githubInstallationAdapter(
       } catch {
         if (signal?.aborted) return waiting("interrupted");
         browserUnavailable = true;
-        ctx.stderr(finishOnTheWeb(current.baseUrl, "connections", "install the GitHub App"));
+        ctx.stderr(finishOnTheWeb(current.baseUrl, "github-install", "install Catalyst on your GitHub organization"));
       }
       let latest: OnboardStepResult = waiting(
         "github_installation_status_unavailable",

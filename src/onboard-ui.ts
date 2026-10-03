@@ -89,6 +89,9 @@ export interface OnboardUi {
   ): Promise<string | null>;
   /** "Run Catalyst's work on this machine?", default no. Null when cancelled. */
   chooseRunner?(): Promise<boolean | null>;
+  /** CTC-4680 round 5: a browser link ran out of time. True gets a fresh link and another wait;
+   *  false (stop, or Ctrl-C at the question) pauses setup so no later step runs without it. */
+  retryTimedOut?(id: OnboardStepId): Promise<boolean>;
   /** Close a sign-in preview without recording an executed engine step. */
   stagedSigninEnd?(
     state: "done" | "waiting" | "failed",
@@ -711,6 +714,37 @@ export function createClackOnboardUi(
       }
       return answer === "yes";
     },
+    async retryTimedOut(id) {
+      if (abort.signal.aborted) return false;
+      if (renderer && active) {
+        // The wait frame is still live: its status and a last line say why it ended.
+        renderer.update("the link timed out");
+        renderer.detail("The link timed out.");
+      } else if (renderer) {
+        renderer.begin(SETUP_NUMBERS[id] ?? 0, title(id), "the link timed out");
+        renderer.detail("The link timed out.");
+        active = true;
+      } else {
+        stop();
+        prompts.log.message(`${title(id)}: the link timed out.`, {
+          output: streams.output,
+        });
+      }
+      const answer = await select({
+        ...options,
+        message: "Ready to try again?",
+        initialValue: "again",
+        options: [
+          { value: "again", label: "Yes, give me a new link" },
+          { value: "stop", label: "Stop here. Run catalyst setup later to carry on." },
+        ],
+      });
+      if (prompts.isCancel(answer) || answer !== "again") {
+        abort.abort();
+        return false;
+      }
+      return true;
+    },
     stagedSigninEnd(state, cause) {
       if (!renderer) return false;
       if (state === "done") stagedSigninApproved = true;
@@ -1102,6 +1136,7 @@ export function createClackOnboardUi(
     delete ui.chooseFirstRepository;
     delete ui.reviewSettings;
     delete ui.chooseRunner;
+    delete ui.retryTimedOut;
     delete ui.confirmWorkflowAdoption;
   }
   return ui;

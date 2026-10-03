@@ -113,8 +113,8 @@ test(
       },
     );
     expect(connected.status, `login failed:\n${connected.stdout}\n${connected.stderr}`).toBe(0);
-    expect(connected.stdout).toContain(`Connected to ${FIXTURE_ME_BODY.name} (${FIXTURE_ME_BODY.slug})`);
-    expect(connected.stdout).toContain("Tenant contract 1.0.0 cached at");
+    expect(connected.stdout).toContain(`Catalyst workspace: ${FIXTURE_ME_BODY.name} (${FIXTURE_ME_BODY.slug})`);
+    expect(connected.stdout).toContain("Saved your workspace settings (version 1.0.0) to");
 
     const configPath = join(fakeHome, ".config", "catalyst-cloud", "customer.json");
     expect(existsSync(configPath)).toBe(true);
