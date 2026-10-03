@@ -143,6 +143,7 @@ function fixture(
     env?: NodeJS.ProcessEnv;
     hostRoutes?: boolean;
     runnerCloud?: boolean;
+    capacityMapped?: boolean;
   } = {},
 ) {
   const home = mkdtempSync(join(realpathSync(tmpdir()), "onboard-runner-"));
@@ -209,6 +210,7 @@ function fixture(
   const state = {
     hosts: [] as Host[],
     admission: true,
+    capacityMapped: options.capacityMapped ?? true,
     // A host enrolls as soon as its supervisor starts with a minted token.
     enrollOnUp: true as boolean,
     minimumEnrollmentMint: 1,
@@ -310,7 +312,7 @@ function fixture(
         status: "ok",
         scope: "mapped-team-defaults",
         observedAtMs: now.getTime(),
-        buckets: [
+        buckets: state.capacityMapped ? [
           {
             repoId: "repo-a",
             effectiveLimit: 3,
@@ -328,7 +330,7 @@ function fixture(
               },
             ],
           },
-        ],
+        ] : [],
       });
     return new Response(null, { status: 404 });
   };
@@ -1273,4 +1275,104 @@ describe("approved cloud runner integration",()=>{
   const adapter=onboardRunnerAdapter({engine:f.engine,sleep:async()=>{},waitMs:20,pollMs:10});
   expect((await adapter.check(f.ctx,f.journal)).state).toBe("waiting");expect(f.state.admissionWrites).toHaveLength(writes);
  });
+});
+
+
+describe("runner admission without a repository capacity mapping", () => {
+  function withOrgKey(f: ReturnType<typeof fixture>) {
+    const file = join(f.home, "org-key");
+    writeFileSync(file, `${ORG_KEY}\n`, { mode: 0o600 });
+    f.ctx.env.CATALYST_RUNNER_ORG_KEY_FILE = file;
+  }
+
+  test("supported personal admission completes an unmapped team's runner check", async () => {
+    const f = fixture({ selected: true, runnerCloud: true, capacityMapped: false });
+    withOrgKey(f);
+    expect(await run(f)).toMatchObject({ state: "done", evidence: { hostId: "host-1", capacity: 2 } });
+    expect(f.requests).toContain("GET /api/v1/agent/runner-admission?account=account-a&team=team-a");
+    expect(f.requests.some((r) => r.includes("/api/v1/me/runner-capacity"))).toBe(false);
+    expect(f.engine.calls.filter((r) => r === "composeUp")).toHaveLength(1);
+    secretsNowhere(f);
+  });
+
+  test("supported personal admission initializes and reads back before starting an unmapped runner", async () => {
+    const f = fixture({ selected: true, runnerCloud: true, capacityMapped: false });
+    withOrgKey(f);
+    f.state.admission = false;
+    const composeUp = f.engine.composeUp;
+    f.engine.composeUp = async (dir, signal) => {
+      expect(f.state.admissionWrites).toEqual([{ admissionEnabled: true }]);
+      expect(f.requests.at(-1)).toBe("GET /api/v1/agent/runner-admission?account=account-a&team=team-a");
+      return composeUp(dir, signal);
+    };
+    expect(await run(f)).toMatchObject({ state: "done" });
+    expect(f.requests.some((r) => r.includes("/api/v1/me/runner-capacity"))).toBe(false);
+    secretsNowhere(f);
+  });
+
+  test("legacy clouds still require a mapped admission bucket", async () => {
+    const f = fixture({ selected: true, capacityMapped: false });
+    withOrgKey(f);
+    expect(await run(f)).toMatchObject({ state: "waiting", reason: "runner_admission_unverified" });
+    expect(f.requests).toContain("GET /api/v1/me/runner-capacity");
+    expect(f.state.admissionWrites).toEqual([]);
+  });
+
+  test("legacy mapped admission false still waits for the operator", async () => {
+    const f = fixture({ selected: true });
+    withOrgKey(f);
+    f.state.admission = false;
+    expect(await run(f)).toMatchObject({ state: "waiting", reason: "runner_admission_operator" });
+    expect(f.requests).toContain("GET /api/v1/me/runner-capacity");
+  });
+
+  test("supported policy refusal prevents Compose start even without a capacity mapping", async () => {
+    const f = fixture({ selected: true, runnerCloud: true, capacityMapped: false });
+    withOrgKey(f);
+    f.state.admission = false;
+    const fetch = f.ctx.fetch;
+    f.ctx.fetch = async (input, init) => {
+      if (String(input).includes("/runner-admission?") && init?.method === "PUT")
+        return Response.json({ error: "runner_placement_unsupported" }, { status: 409 });
+      return fetch(input, init);
+    };
+    expect(await run(f)).toMatchObject({ state: "waiting", reason: "runner_admission_operator" });
+    expect(f.engine.calls).not.toContain("composeUp");
+  });
+
+  test("a supported enable response without successful readback prevents Compose start", async () => {
+    const f = fixture({ selected: true, runnerCloud: true, capacityMapped: false });
+    withOrgKey(f);
+    f.state.admission = false;
+    const fetch = f.ctx.fetch;
+    f.ctx.fetch = async (input, init) => {
+      if (String(input).includes("/runner-admission?") && init?.method === "GET")
+        return Response.json({ account: "account-a", team: "team-a", admissionEnabled: false, revision: 1 });
+      return fetch(input, init);
+    };
+    expect(await run(f)).toMatchObject({ state: "waiting", reason: "runner_admission_unverified" });
+    expect(f.engine.calls).not.toContain("composeUp");
+  });
+
+  test("a missing org key still blocks the supported unmapped runner check", async () => {
+    const f = fixture({ selected: true, runnerCloud: true, capacityMapped: false });
+    withOrgKey(f);
+    f.ctx.env.CATALYST_RUNNER_ORG_KEY_FILE = undefined;
+    // Seed a healthy enrollment, then remove its key and only check, without act consent.
+    await run(f);
+    f.engine.files.delete("CATALYST_ORG_KEY_FILE");
+    const adapter = onboardRunnerAdapter({ selected: false, engine: f.engine });
+    // Use saved selection to allow read-only checking without permission to provision.
+    f.journal.steps.push({ id: "runner", state: "done", evidence: { selected: true } });
+    const readOnly = onboardRunnerAdapter({ engine: f.engine });
+    expect(await readOnly.check(f.ctx, f.journal)).toMatchObject({ state: "waiting", reason: "runner_org_key_missing" });
+    expect(await adapter.check(f.ctx, f.journal)).toMatchObject({ state: "skipped" });
+  });
+
+  test("non-live host capacity still blocks supported admission without a repo mapping", async () => {
+    const f = fixture({ selected: true, runnerCloud: true, capacityMapped: false });
+    withOrgKey(f);
+    f.state.capability!.runtimeLive = false;
+    expect(await run(f)).toMatchObject({ state: "waiting", reason: "runner_host_not_ready", evidence: { capacity: 0 } });
+  });
 });
