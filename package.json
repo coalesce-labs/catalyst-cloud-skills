@@ -1,6 +1,6 @@
 {
   "name": "@catalyst-cloud/cli",
-  "version": "0.14.10",
+  "version": "0.15.0",
   "description": "Customer skill bundle for Catalyst Cloud, named from the executive's seat \u2014 get set up, see what is happening, see what needs you, run a project, unstick what is stuck \u2014 plus the catalyst CLI that reads through the Catalyst Cloud SDK, writes through the agent proxy, and connects your machine to your cloud account with one command. The skills directory is the roster; this line never counts it.",
   "license": "MIT",
   "type": "module",
@@ -51,7 +51,7 @@
     "self-host:check": "node scripts/vendor-self-host.mjs --check"
   },
   "dependencies": {
-    "@catalyst-cloud/sdk": "^0.13.1",
+    "@catalyst-cloud/sdk": "0.14.1",
     "@clack/prompts": "1.8.1",
     "fast-string-width": "3.0.2",
     "fast-wrap-ansi": "0.2.2",
@@ -59,6 +59,7 @@
     "yaml": "^2.9.0"
   },
   "devDependencies": {
+    "@catalyst-cloud/schema": "0.13.1",
     "@types/node": "^26.3.0",
     "@vitest/coverage-v8": "^4.1.11",
     "typescript": "^7.0.2",
