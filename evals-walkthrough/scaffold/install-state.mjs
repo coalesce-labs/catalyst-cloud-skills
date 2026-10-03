@@ -43,8 +43,8 @@ if (!STATES.includes(state)) {
 const CLOUD = "https://cloud.example";
 const account = (slot, provider, extra = {}) => ({ accountSlot: slot, provider, status: "active", quarantined: false, quarantineReason: null, label: extra.label ?? `${provider} for the team`, ...extra });
 const CLAUDE = account("claude-1", "claude", { label: "Work laptop" });
-const QWEN = account("qwen-1", "qwen", { label: "Qwen coding plan" });
-const CANCELLED = account("claude-2", "claude", { label: "Old personal plan", status: "ended", quarantined: true, quarantineReason: "subscription ended", renewalStatus: "canceled" });
+const QWEN = account("qwen-1", "qwen", { label: "Qwen for the team" });
+const CANCELLED = account("claude-2", "claude", { label: "Old personal account", status: "ended", quarantined: true, quarantineReason: "account ended", renewalStatus: "canceled" });
 const enrolled = (n) => ({ state: "enrolled", activeCount: n, line: "At least one coding account is enrolled and active for this tenant.", enrolledBy: "owner_or_admin", enrolledByLine: "A tenant owner or admin, in Catalyst settings.", page: "/settings/coding-accounts" });
 const NONE = { state: "none_enrolled", activeCount: 0, line: "No coding account is enrolled for this tenant.", enrolledBy: "owner_or_admin", enrolledByLine: "A tenant owner or admin, in Catalyst settings.", page: "/settings/coding-accounts" };
 const team = (checks) => [{ key: "ENG", dispatchGate: { status: "open" }, readiness: { status: "degraded", checks } }];

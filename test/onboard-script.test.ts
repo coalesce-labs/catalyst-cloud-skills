@@ -881,29 +881,33 @@ describe("the onboarding guide walks a dead credential and the thoughts reposito
   const onboard = join(here, "..", "skills", "catalyst-onboard");
   const read = (rel: string) => readFileSync(join(onboard, rel), "utf8");
 
-  test("replacing-a-credential.md gives the Codex steps, the Claude field, and says never to enroll a second account", () => {
+  test("replacing-a-credential.md sends the person to the account's own page, says never to enroll a second account, and names no subscription", () => {
     const ref = read("references/replacing-a-credential.md");
     for (const text of [
-      "`codex login`",
-      "Sign in with ChatGPT",
-      "`~/.codex/auth.json`",
-      "`$CODEX_HOME/auth.json`",
-      "`pbcopy < ~/.codex/auth.json`",
       "Settings → AI accounts",
-      "Replacement auth.json contents",
       "Replace credential",
       "Do not enroll a second account.",
-      "single-use",
-      "sign in to Codex again, separately",
-      "Replacement setup token",
+      "billed per token",
       "`node scripts/where-am-i.mjs`",
     ]) {
       expect(ref, text).toContain(text);
     }
+    // CTC-4715: public text never teaches a subscription login.
+    expect(ref).not.toMatch(
+      /subscription|setup.token|auth\.json|ChatGPT|Pro or Max|5-hour|7-day/i,
+    );
     expect(ref).not.toContain("—");
     expect(read("SKILL.md")).toContain("references/replacing-a-credential.md");
     expect(read("references/what-a-phase-needs.md")).toContain(
       "references/replacing-a-credential.md",
+    );
+  });
+
+  test("what-a-phase-needs.md describes token-billed AI accounts and names no subscription (CTC-4715)", () => {
+    const ref = read("references/what-a-phase-needs.md");
+    expect(ref).toContain("billed per token");
+    expect(ref).not.toMatch(
+      /subscription|setup.token|auth\.json|ChatGPT|Pro or Max|5-hour|7-day|plain Anthropic/i,
     );
   });
 
