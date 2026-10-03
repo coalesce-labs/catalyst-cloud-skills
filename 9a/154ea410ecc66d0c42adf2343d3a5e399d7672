@@ -1,6 +1,1 @@
-Revision history for #286:
-
-rev 2 (content) 2026-10-03 22:40 UTC
-rev 1 (initial) 2026-10-03 22:40 UTC
-
-<!-- mergify-revision-data: {"schema_version":1,"pull_number":286,"entries":[{"number":1,"change_type":"initial","old_sha":null,"new_sha":"399ea8b33ab77f6151b52389f3829f8801f15a79","timestamp_iso":"2026-10-03T22:40:04Z","reason":"","replay_sha":null,"compare_url":null},{"number":2,"change_type":"content","old_sha":"399ea8b33ab77f6151b52389f3829f8801f15a79","new_sha":"5ad680bd56cf1cb0951a68526370cd1136746b4b","timestamp_iso":"2026-10-03T22:40:04Z","reason":"","replay_sha":null,"compare_url":"https://github.com/coalesce-labs/catalyst-cloud-skills/compare/399ea8b33ab77f6151b52389f3829f8801f15a79...5ad680bd56cf1cb0951a68526370cd1136746b4b"}]} -->
+rework: terminal art only, size D, square corners, four text lines, setup only, background/colour/skip rules, stderr, --no-color
