@@ -232,10 +232,10 @@ test("the standalone consent question owns a safe unnumbered prompt frame", asyn
 });
 
 for (const [id, row] of [
-  ["runner", "3 Check runners"],
-  ["values", "4 Review repository settings"],
+  ["runner", "4 Run Catalyst's work on this machine"],
+  ["values", "5 Review repository settings"],
 ] as const) {
-  test(`the scoped ${id} plan displays its folded public row`, () => {
+  test(`the scoped ${id} plan displays its own public row`, () => {
     const f = fixture();
     f.ui.plan(f.journal, undefined, { localSync: false, scope: [id] });
     expect(f.text()).toContain(row);

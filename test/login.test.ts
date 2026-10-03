@@ -360,6 +360,20 @@ describe("main — login (and the deprecated join alias)", () => {
     expect(cfg.auth?.sessionId).toBe("session_fixture");
     expect(statSync(configPathFor(home)).mode & 0o777).toBe(0o600);
   });
+  test("CTC-4680: the opened-browser line is plain words, with no em dash", async () => {
+    server.oauth.pendingPolls = 1;
+    const opened: string[] = [];
+    const code = await main(["login", "--base-url", server.url], ctx(), {
+      isTty: () => true,
+      openBrowser: (u) => opened.push(u),
+      sleep: async () => {},
+    });
+    expect(code).toBe(0);
+    expect(opened).toHaveLength(1);
+    const text = out.join("\n");
+    expect(text).toContain("Opened your browser to that page. Approve there, or use the code above.");
+    expect(text).not.toContain("\u2014");
+  });
   test("CTC-2136: keyless login whose codes ALL expire mints 3, then prints one plain resume line and exits 2", async () => {
     server.oauth.expired = true;
     const before = server.oauth.deviceAuthorizeCount;

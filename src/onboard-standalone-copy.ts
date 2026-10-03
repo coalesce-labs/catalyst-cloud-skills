@@ -58,6 +58,28 @@ export function standalonePlan(
         : "check the selected machine requirements",
     });
   for (const [group, id, detail] of PLAN) {
+    // The terminal gives this computer's runner its own row after "Check runners". The plain-text
+    // plan keeps it folded into that row, under the number JSON reports for both.
+    if (!json && id === "capacity") {
+      const row = (step: OnboardStepId, text: string) =>
+        rows.push({
+          group: setupPartHeading(3, false),
+          part: 3,
+          number: SETUP_PART_NUMBERS[step]!,
+          title: setupStepView({ id: step, state: "pending" }).title,
+          detail:
+            steps.get(step)?.state === "done" ? `check again; ${text}` : text,
+        });
+      if (includes("capacity")) row("capacity", detail);
+      if (includes("runner"))
+        row(
+          "runner",
+          runnerSelected
+            ? "start a Catalyst runner here with Docker"
+            : "optional; this computer takes work only if you choose it",
+        );
+      continue;
+    }
     if (
       !includes(id) &&
       !(id === "capacity" && includes("runner")) &&
@@ -83,8 +105,28 @@ export function standalonePlan(
   }
   return rows;
 }
-export function pendingContinuation(journal: OnboardJournal): string | null {
-  const unfinished = (...ids: OnboardStepId[]) =>
+/** What setup does next on its own, in the order it runs: steps not finished and not already listed
+ *  as something a person must do (`listed`). A step setup never reached because it paused is here. */
+const CONTINUES: ReadonlyArray<readonly [readonly OnboardStepId[], string]> = [
+  [["linear.workspace"], "connects your Linear workspace"],
+  [["linear.personal"], "connects your Linear account"],
+  [["linear.team"], "chooses a Linear team"],
+  [["linear.adopt"], "sets up the team's workflow"],
+  [["linear.automations"], "checks Linear's pull request automations"],
+  [["github.install"], "installs Catalyst on GitHub"],
+  [["github.personal"], "connects your GitHub account"],
+  [["github.repos", "projects"], "chooses repositories"],
+  [["accounts"], "checks a coding account"],
+  [["capacity", "runner"], "checks runners"],
+  [["settings", "values"], "reviews repository settings"],
+  [["first-ticket"], "starts a first ticket"],
+];
+export function pendingContinuation(
+  journal: OnboardJournal,
+  listed: ReadonlySet<OnboardStepId> = new Set(),
+): string | null {
+  const unfinished = (ids: readonly OnboardStepId[]) =>
+    !ids.some((id) => listed.has(id)) &&
     ids.some((id) => {
       const step = journal.steps.find((step) => step.id === id);
       return (
@@ -93,13 +135,9 @@ export function pendingContinuation(journal: OnboardJournal): string | null {
         setupStepView(step, journal).mark !== "skip"
       );
     });
-  const next: string[] = [];
-  if (unfinished("github.repos", "projects")) next.push("chooses repositories");
-  if (unfinished("accounts")) next.push("checks a coding account");
-  if (unfinished("capacity", "runner")) next.push("checks runners");
-  if (unfinished("settings", "values"))
-    next.push("reviews repository settings");
-  if (unfinished("first-ticket")) next.push("starts a first ticket");
+  const next = CONTINUES.filter(([ids]) => unfinished(ids)).map(
+    ([, words]) => words,
+  );
   if (!next.length) return null;
   const last = next.pop()!;
   return `Then setup ${next.length ? `${next.join(", ")} and ` : ""}${last}.`;

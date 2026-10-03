@@ -224,6 +224,7 @@ export function createClackOnboardUi(
   let journalSeen: OnboardJournal | undefined;
   let planned: { scope?: readonly OnboardStepId[]; runner?: boolean } = {};
   let rechecking = false;
+  let shownPlan: string | undefined;
   let browserOpened = true;
   let questionOpen = false;
   let signinShown = false;
@@ -322,6 +323,8 @@ export function createClackOnboardUi(
       }
     }
     if (hidden(currentStep)) return;
+    // The sign-in's own wait line: the frame already shows the countdown and how to stop.
+    if (renderer && /^Waiting for you to approve…/.test(text)) return;
     if (
       renderer &&
       currentStep === "linear.adopt" &&
@@ -372,7 +375,7 @@ export function createClackOnboardUi(
     ownFrame = false,
   ) => {
     if (!renderer) return prompts.select(opts);
-    const detached = ownFrame || !currentStep;
+    const detached = ownFrame || (!currentStep && !questionOpen);
     if (detached) {
       stop();
       renderer.begin(0, "Your choice", "", "ask");
@@ -433,10 +436,13 @@ export function createClackOnboardUi(
         `${screen.actions.length} ${screen.actions.length === 1 ? "thing needs" : "things need"} you:`,
       );
       screen.actions.forEach((action, i) =>
-        renderer.line(`${i + 1}. ${say(action.text)}`),
+        renderer.item(`${i + 1}. `, say(action.text)),
       );
       if (screen.more) renderer.line(`and ${screen.more} more after these`);
-      const continuation = pendingContinuation(journal);
+      const continuation = pendingContinuation(
+        journal,
+        new Set(screen.actions.map((action) => action.id)),
+      );
       if (continuation) renderer.line(continuation);
     } else if (screen.heading === "Setup complete")
       renderer.line("Catalyst is ready to work on your team's tickets.");
@@ -469,6 +475,15 @@ export function createClackOnboardUi(
         for (const line of onboardIdentityLines(identity))
           if (renderer) renderer.line(line);
           else message(line);
+      // After sign-in the plan is asked about again. When it is the plan already on screen, the
+      // person sees who they are now and the question, not the header, tracker and plan twice.
+      const planKey = JSON.stringify([
+        planned.scope,
+        planned.runner,
+        planOptions?.localSync ?? journal.localSync === true,
+      ]);
+      if (renderer && planKey === shownPlan) return;
+      shownPlan = planKey;
       if (renderer) {
         // CTC-4680: what setup does and the three parts first, then only the first part's steps.
         // Each later part lists its own steps when it starts.
@@ -752,14 +767,12 @@ export function createClackOnboardUi(
     },
     async retryTimedOut(id) {
       if (abort.signal.aborted) return false;
-      if (renderer && active) {
-        // The wait frame is still live: its status and a last line say why it ended.
-        renderer.update("the link timed out");
-        renderer.detail("The link timed out.");
-      } else if (renderer) {
-        renderer.begin(number(id), title(id), "the link timed out");
-        renderer.detail("The link timed out.");
+      if (renderer) {
+        // The question draws under this row, so the reason stays on screen while it is asked.
+        stop();
+        renderer.begin(number(id), title(id), "the link timed out", "ask");
         active = true;
+        questionOpen = true;
       } else {
         stop();
         prompts.log.message(`${title(id)}: the link timed out.`, {

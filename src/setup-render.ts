@@ -173,6 +173,8 @@ export interface SetupRenderer {
   heading(text: string): void;
   /** Prose at column 2, with the headings. */
   line(text: string): void;
+  /** A list item: `label` at column 2 and its text hanging after it when it wraps. */
+  item(label: string, text: string): void;
   blank(): void;
   /** A URL, clickable where the terminal renders OSC 8, always visible as text. */
   link(url: string): string;
@@ -465,6 +467,16 @@ export function createSetupRenderer(
     },
     line(text) {
       ordinary(rows(text, textCol));
+    },
+    item(label, text) {
+      const col = textCol + stringWidth(label);
+      const lines = rows(text, col);
+      const hang = prefix(col);
+      ordinary(
+        lines[0]!.startsWith(hang)
+          ? [prefix(textCol) + label + lines[0]!.slice(col), ...lines.slice(1)]
+          : [prefix(textCol) + label.trimEnd(), ...lines],
+      );
     },
     blank() {
       refresh();
