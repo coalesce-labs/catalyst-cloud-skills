@@ -279,7 +279,7 @@ export async function deviceFlowLogin(
           );
           browserOpened = true;
           ctx.stdout(
-            "Opened your browser to that page — approve there, or use the code above.",
+            "Opened your browser to that page. Approve there, or use the code above.",
           );
         } catch {
           // a browser that will not open is not a failure; the code and URL still work
