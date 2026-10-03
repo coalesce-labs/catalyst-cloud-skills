@@ -25,6 +25,8 @@ export interface FlagSpec {
   value: boolean;
   /** May be given more than once; collected into a string[]. */
   repeat?: boolean;
+  /** Boolean unless a following value is supplied (runner opt-in). */
+  optionalValue?: boolean;
   help: string;
 }
 
@@ -86,7 +88,8 @@ export const FLAG_TABLES: Record<string, FlagTable> = {
     },
     runner: {
       value: false,
-      help: "run Catalyst's work on this machine: start a runner with Docker and enroll it",
+      optionalValue: true,
+      help: "run Catalyst's work on this machine; with --headless, supply yes|no (or CATALYST_ONBOARD_RUNNER)",
     },
     "no-runner": {
       value: false,
@@ -101,6 +104,18 @@ export const FLAG_TABLES: Record<string, FlagTable> = {
     "dry-run": {
       value: false,
       help: "print the plan without taking the lock or changing files",
+    },
+    headless: {
+      value: false,
+      help: "never prompt or open a browser; every input by flag, env or file; exit 11 names what is missing (or CATALYST_ONBOARD_HEADLESS=1)",
+    },
+    "key-file": {
+      value: true,
+      help: "headless: read the personal key from this file (or CATALYST_CLOUD_TOKEN_FILE, or the key in CATALYST_CLOUD_TOKEN); never the key itself on the command line",
+    },
+    "coding-account": {
+      value: true,
+      help: "verify this coding-account slot (catalyst accounts lists them; or CATALYST_ONBOARD_CODING_ACCOUNT)",
     },
   },
   status: {},
@@ -479,7 +494,7 @@ export const VERB_USAGE: Record<string, string> = {
   login:
     "login [--base-url <url>] [--start-replica]   (keyless; or --key <personal-key> / CATALYST_CLOUD_TOKEN)",
   onboard:
-    "onboard [--team <ID|key>] [--repo <owner/name>]... [--resume-from <step>] [--only <step>] [--local-sync] [--runner|--no-runner] [--yes] [--dry-run] [--json]",
+    "onboard [--team <ID|key>] [--repo <owner/name>]... [--coding-account <slot>] [--resume-from <step>] [--only <step>] [--local-sync] [--runner|--no-runner] [--yes] [--dry-run] [--json] | onboard --headless [--key-file <path>] [--team ...] [--repo ...]... [--coding-account ...] [--runner yes|no] [--json]",
   install: "install [--skills-dir <dir>] [--force]",
   status: "status",
   notice: "notice",
@@ -568,7 +583,12 @@ export function parseArgs(argv: string[]): ParsedArgs {
             : `unknown option: --${name}`,
         );
       }
-      if (spec.value) {
+      if (spec.optionalValue) {
+        const next = argv[i + 1];
+        if (inlineValue !== undefined) out.flags[name] = inlineValue;
+        else if (next !== undefined && !next.startsWith("-")) out.flags[name] = argv[++i]!;
+        else out.flags[name] = true;
+      } else if (spec.value) {
         const v = inlineValue ?? requireValue(argv, ++i, `--${name}`);
         if (spec.repeat) {
           const prev = out.flags[name];

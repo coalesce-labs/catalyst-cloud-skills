@@ -11,6 +11,8 @@ const REASONS: Record<string, string> = {
     "Coding accounts could not be read. Run catalyst onboard again to retry.",
   account_inventory_unverified:
     "The server did not return a fresh supported coding-account list. Run catalyst onboard after the server update.",
+  coding_account_not_found:
+    "The coding account named by --coding-account is not enrolled in this workspace. Run catalyst accounts to list the slots, then run catalyst onboard with one of them.",
   account_validation_admin_required:
     "An administrator must check the workspace's coding-account access.",
   account_login_refresh_required:
@@ -67,7 +69,10 @@ const REASONS: Record<string, string> = {
     "Renew your login with catalyst login, then run catalyst onboard to resume.",
   github_installation_browser_unavailable:
     "This computer could not open a browser. Install the GitHub App from this workspace’s Integrations page in your browser, then run catalyst onboard to resume.",
-  step_not_available_in_this_release: "This setup step is not available yet.",
+  skills_install_unverified:
+    "The Catalyst skills are not in this user's skills folder. Run catalyst install, then run catalyst onboard.",
+  step_not_available_in_this_release:
+    "This setup step is not available yet.",
   prerequisite_not_ready: "Waiting for an earlier setup step.",
   local_sync_not_selected: "Using cloud reads. Local sync was not selected.",
   local_sync_capability_unavailable:

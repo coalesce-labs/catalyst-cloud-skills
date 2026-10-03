@@ -72,6 +72,8 @@ export type OnboardStepState =
 export interface OnboardStep {
   id: OnboardStepId;
   state: OnboardStepState;
+  /** A refusal is stored as failed for compatibility, with its distinct exit reason retained. */
+  refused?: true;
   at?: string;
   evidence?: Record<string, string | number | boolean | null>;
   reason?: string;
@@ -84,6 +86,8 @@ export interface OnboardJournal {
   cli: string;
   tenant: string | null;
   exit: number | null;
+  /** Present when onboarding stops on a named command error. */
+  errorCode?: string;
   scope?: "step" | "onboarding";
   mode?: "plan" | "run";
   complete?: boolean;
@@ -160,6 +164,8 @@ export interface OnboardDeps {
   bootstrap?: OnboardBootstrapPreview;
   ui?: OnboardUi;
   adapters?: Partial<Record<OnboardStepId, OnboardAdapter>>;
+  /** Explicitly requested headless steps must finish, even if normally optional. */
+  requiredSteps?: readonly OnboardStepId[];
   identity?: (journal?: OnboardJournal) => Promise<OnboardIdentity | null>;
   stageSignin?: (
     signal?: AbortSignal,
@@ -391,6 +397,7 @@ function normalizeStep(value: unknown, fallbackAt: string): OnboardStep | null {
   const state = typeof rawState === "string" ? states[rawState] : undefined;
   if (!state) return null;
   const step: OnboardStep = { id, state };
+  if (state === "failed" && row.refused === true) step.refused = true;
   if (typeof row.at === "string") step.at = row.at;
   else if (typeof row.updatedAt === "string") step.at = row.updatedAt;
   else step.at = fallbackAt;
@@ -878,6 +885,7 @@ function sanitizedResult(
       id,
       ...result,
       state: result.state === "refused" ? "failed" : result.state,
+      ...(result.state === "refused" ? { refused: true } : {}),
     },
     at,
   )!;
@@ -1193,6 +1201,7 @@ export async function cmdOnboard(
             ...journal,
             mode: "run",
             exit: code,
+            errorCode: error instanceof CliError ? error.code : undefined,
             complete: false,
           }),
         );
@@ -1371,7 +1380,7 @@ export async function cmdOnboard(
     ctx.stderr(error.message);
     if (args.json)
       ctx.stdout(
-        JSON.stringify({ ...planJournal(journal), exit: error.exitCode }),
+        JSON.stringify({ ...planJournal(journal), exit: error.exitCode, errorCode: error.code }),
       );
     return error.exitCode;
   }
@@ -1447,7 +1456,10 @@ export async function cmdOnboard(
     else if (deps.ui) deps.ui.finish(journal, only);
     else {
       if (journal.complete) ctx.stdout("Onboarding complete.");
-      else if (onboardReadyForWork(journal, only)) {
+      else if (
+        onboardReadyForWork(journal, only) &&
+        (deps.requiredSteps ?? []).every((id) => journalStep(journal, id)?.state === "done")
+      ) {
         ctx.stdout("Ready for work.");
         ctx.stdout("Next, when you want:");
         for (const line of onboardNextActions(
@@ -1461,7 +1473,8 @@ export async function cmdOnboard(
         );
       else {
         ctx.stdout(
-          `Setup still needs ${journal.steps.filter((step) => !stepSatisfied(step)).length} checks.`,
+          `Setup still needs ${journal.steps.filter((step) => !stepSatisfied(step) ||
+            (deps.requiredSteps?.includes(step.id) && step.state !== "done")).length} checks.`,
         );
         for (const line of onboardNextActions(
           journal,
@@ -1800,6 +1813,7 @@ export async function cmdOnboard(
           recordStep({
             id,
             state: renewLogin || stepSignal.aborted ? "waiting" : "failed",
+            ...(error instanceof CliError && error.exitCode === EXIT_REFUSED && !stepSignal.aborted ? { refused: true as const } : {}),
             reason,
             at: isoNow(ctx, deps),
           });
@@ -1832,27 +1846,23 @@ export async function cmdOnboard(
       }
       current = null;
       const scope = only ? [only] : [...ONBOARD_STEPS];
-      const code = refused
+      const requiredStepRefused = scope.some(
+        (id) => deps.requiredSteps?.includes(id) && journalStep(journal, id)?.reason === "member_scope",
+      );
+      const required = new Set(deps.requiredSteps ?? []);
+      if (args.flags.runner === true || journalStep(journal, "runner")?.evidence?.selected === true)
+        required.add("runner");
+      const code = refused || requiredStepRefused
         ? EXIT_REFUSED
-        : scope.some((id) => journalStep(journal, id)?.state === "failed")
+        : [...needed].some((id) => journalStep(journal, id)?.state === "failed")
           ? EXIT_FAILED
           : scope.every(
                 (id) =>
                   (stepSatisfied(journalStep(journal, id)) &&
-                    !(
-                      id === "runner" &&
-                      (args.flags.runner === true ||
-                        journalStep(journal, id)?.evidence?.selected ===
-                          true) &&
-                      journalStep(journal, id)?.state !== "done"
-                    )) ||
+                    !(required.has(id) && journalStep(journal, id)?.state !== "done")) ||
                   (!only &&
                     ONBOARD_DEFERRED_STEPS.has(id) &&
-                    !(
-                      id === "runner" &&
-                      (args.flags.runner === true ||
-                        journalStep(journal, id)?.evidence?.selected === true)
-                    )),
+                    !required.has(id)),
               )
             ? 0
             : EXIT_WAITING;
@@ -1890,7 +1900,7 @@ export async function cmdOnboard(
       ctx.stderr(error.message);
       if (args.json)
         ctx.stdout(
-          JSON.stringify({ ...planJournal(journal), exit: error.exitCode }),
+          JSON.stringify({ ...planJournal(journal), exit: error.exitCode, errorCode: error.code }),
         );
       return error.exitCode;
     }

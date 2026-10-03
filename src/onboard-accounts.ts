@@ -159,6 +159,8 @@ export function onboardAccountsAdapter(
     waitForAccount?: <T>(work: () => Promise<T>) => Promise<T>;
     accountWaitMs?: number;
     sleep?: (ms: number) => Promise<void>;
+    /** The slot named by --coding-account; without it the first usable Claude slot is checked. */
+    slot?: string;
   } = {},
 ): OnboardAdapter {
   let proof: Proof | null = null;
@@ -167,6 +169,7 @@ export function onboardAccountsAdapter(
     slots
       .filter(
         (row) =>
+          (input.slot === undefined || row.accountSlot === input.slot) &&
           row.provider === "claude" &&
           row.declaredState === "active" &&
           row.ownedByMe &&
@@ -216,6 +219,11 @@ export function onboardAccountsAdapter(
         ["owner", "admin"].includes(live.identity.role)
         ? { state: "pending" }
         : waiting("account_enrollment_required");
+    if (
+      input.slot !== undefined &&
+      !live.slots.some((row) => row.accountSlot === input.slot)
+    )
+      return waiting("coding_account_not_found");
     if (!selected)
       return waiting(
         live.slots.some((row) => row.provider === "codex")

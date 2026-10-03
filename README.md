@@ -126,6 +126,47 @@ catalyst ready --onboarding --json
 
 The dry run writes no files. `--only <step>` runs one step and reports its scope separately from full onboarding. Exit 10 means a failed step, 11 means waiting, and 12 means a guard refused the action. The private receipt is `install/last-run.json` under your machine's Catalyst state directory; credentials stay in the login config. A fake HOME reports old services and keeps them intact.
 
+### Headless setup (CI, image builds, agent VMs)
+
+`catalyst onboard --headless` (or `CATALYST_ONBOARD_HEADLESS=1`) is for a machine with no person at it. It assumes every browser approval already happened: the person's key exists, and Linear and GitHub are connected for the workspace and the person. It never prompts, never opens a browser and never starts the device sign-in. Every input comes from a flag, an environment variable or a file:
+
+| Input | Flag | Environment |
+|--|--|--|
+| Personal key (Settings → API keys) | `--key-file <path>` | `CATALYST_CLOUD_TOKEN`, or `CATALYST_CLOUD_TOKEN_FILE` |
+| Linear team | `--team <ID or key>` | `CATALYST_ONBOARD_TEAM` |
+| Repositories | `--repo <owner/name>`, repeatable | `CATALYST_ONBOARD_REPOS` (comma or space separated) |
+| Coding account | `--coding-account <slot>` (`catalyst accounts` lists them) | `CATALYST_ONBOARD_CODING_ACCOUNT` |
+| Runner opt-in | `--runner yes\|no` | `CATALYST_ONBOARD_RUNNER` |
+| Cloud | `--base-url <url>` | `CATALYST_CLOUD_BASE_URL` |
+
+A flag wins over its variable. A machine that already has a saved login needs no key. The key is never accepted on the command line: `--key` under `--headless` exits 12, because other processes can read argv. A key file must be a regular file, owned by this user or root, that other users cannot write. A key for another person than the machine's saved login or setup record exits 12 and leaves the saved login as it was. With `--dry-run`, nothing is saved and no network call is made. The steps run without the key in their environment. The key is saved in the login config (mode 0600), the same as `catalyst login --key`, and it never appears in the output, the log or the receipt. In an image build, run setup when the container starts, or remove `~/.config/catalyst-cloud/customer.json` in the same step, so the key does not stay in a layer.
+
+Before any network call, the run checks that every input is present. Each missing input is named with its flag and variable, and the run exits 11 at once. A browser approval that does not exist yet is never started. Its step waits with a named reason, and the item's `url` is the page that fixes it:
+
+| Step | Reason | Page |
+|--|--|--|
+| Linear for the workspace | `linear_workspace_grant_missing` | Settings → Connections |
+| GitHub App for the workspace | `github_app_grant_missing` | Settings → Connections |
+| The person's Linear | `linear_personal_grant_missing` | Settings → Connected accounts |
+| The person's GitHub | `github_personal_grant_missing` | Settings → Connected accounts |
+
+With `--runner yes`, setup starts the self-hosted runner and verifies enrollment, advertised capacity and team admission. This needs Docker with Compose, pinned host images and an organization key file (`CATALYST_RUNNER_ORG_KEY_FILE`). When images, a key or admission are missing, exit 11 names that gate. A failed setup step exits 10. Use `--runner no` to skip the machine's runner. Unlike the interactive optional runner step, an explicitly requested headless runner must finish before exit 0.
+
+With `--json`, stdout carries exactly one document: the onboarding receipt plus a `headless` block (`schema: "catalyst-onboard-headless/1"`). The block holds the resolved `inputs` (the key appears only as its source: `env`, `file` or `saved`), and lists of items under `missing`, `refused`, `failed`, `deferred` and `warnings`. Each item has `id`, `kind` (`input`, `grant` or `step`), `reason` and a one-line `text`, plus `flag`, `env` and `url` where they apply. Everything else goes to stderr.
+
+| Exit | Meaning |
+|--|--|
+| 0 | Ready for work. Optional steps can still be listed under `deferred`. A `--dry-run` exits 0 for a plan; its verdict stays `not-ready`. |
+| 10 | A step failed. See `failed`. |
+| 11 | Something is missing: an input, a browser approval or a step that waits. See `missing`. |
+| 12 | Refused: a key on the command line, a key file other users can write or own, a host key instead of a personal key, a key for another person than the saved login, a malformed runner choice or an unknown option. See `refused`. |
+
+```sh
+# CI or an agent VM: the key comes from the secret store as an environment variable.
+CATALYST_CLOUD_TOKEN="$CATALYST_KEY" catalyst onboard --headless --json \
+  --team ENG --repo acme/api --coding-account claude-one --runner no
+```
+
 Local sync is optional. Include it in the plan with `--local-sync` when you need local SQL or sustained local reads. A resume keeps that choice. Readiness distinguishes failed checks from missing evidence and reports observed project work separately from unfinished setup.
 
 ## Requirements
