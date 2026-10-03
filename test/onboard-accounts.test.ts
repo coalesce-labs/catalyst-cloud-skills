@@ -10,6 +10,7 @@ import {
   writeConfig,
   type Ctx,
 } from "../src/config.js";
+import { onboardAccountsAdapter } from "../src/onboard-accounts.js";
 import { createOnboardRuntime } from "../src/onboard-runtime.js";
 import type { OnboardJournal } from "../src/onboard.js";
 import type { OnboardUi } from "../src/onboard-ui.js";
@@ -604,4 +605,60 @@ describe("identity and cancellation guard the actual quota-consuming send", () =
     await Promise.resolve();
     expect(f.messages.join("\n")).not.toContain("provider access was verified");
   });
+});
+
+test("interactive empty coding accounts wait for an added account then check it once", async () => {
+  const f = fixture();
+  f.state.accounts = [];
+  let polls = 0;
+  const adapter = onboardAccountsAdapter({
+    waitForAccount: async (work) => {
+      expect(f.posts()).toHaveLength(0);
+      return work();
+    },
+    sleep: async () => {
+      polls++;
+      f.state.accounts = [slot()];
+    },
+  });
+  expect(await adapter.check(f.ctx, f.journal)).toMatchObject({
+    state: "pending",
+  });
+  expect(await adapter.act!(f.ctx, f.journal)).toMatchObject({ state: "done" });
+  expect(polls).toBe(1);
+  expect(f.posts()).toHaveLength(1);
+});
+test("an account-added wait has a hard deadline and preserves the immediate no-UI wait", async () => {
+  const f = fixture();
+  f.state.accounts = [];
+  expect(await f.adapter.check(f.ctx, f.journal)).toMatchObject({
+    state: "waiting",
+    reason: "account_enrollment_required",
+  });
+  const adapter = onboardAccountsAdapter({
+    waitForAccount: (work) => work(),
+    accountWaitMs: 20,
+    sleep: () => new Promise(() => {}),
+  });
+  expect(await adapter.act!(f.ctx, f.journal)).toMatchObject({
+    state: "waiting",
+    reason: "account_enrollment_required",
+  });
+  expect(f.posts()).toHaveLength(0);
+});
+test("interrupting account-added wait never sends a validation request", async () => {
+  const f = fixture();
+  f.state.accounts = [];
+  const stop = new AbortController();
+  const adapter = onboardAccountsAdapter({
+    waitForAccount: (work) => work(),
+    sleep: async () => {
+      stop.abort();
+    },
+  });
+  expect(await adapter.act!(f.ctx, f.journal, stop.signal)).toMatchObject({
+    state: "waiting",
+    reason: "interrupted",
+  });
+  expect(f.posts()).toHaveLength(0);
 });

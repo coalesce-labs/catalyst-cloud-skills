@@ -159,7 +159,7 @@ describe("onboarding native sign-in cumulative deadline", () => {
     const receipt = JSON.parse(readFileSync(onboardStatePath(f.home), "utf8"));
     expect(
       receipt.steps.find((step: { id: string }) => step.id === "signin"),
-    ).toMatchObject({ state: "failed", reason: "interrupted" });
+    ).toMatchObject({ state: "waiting", reason: "interrupted" });
     expect(existsSync(onboardLockPath(f.home))).toBe(false);
   });
 

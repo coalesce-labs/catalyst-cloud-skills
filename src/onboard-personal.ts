@@ -275,6 +275,7 @@ export function personalConsentAdapter(
         return { state: "refused", reason: "personal_login_required" };
       const before = await inspect(ctx, journal, signal);
       if (before.state !== "pending") return before;
+      if (!options.wait) return waiting("personal_approval_required");
       const start = await read(
         ctx,
         journal,
@@ -301,7 +302,6 @@ export function personalConsentAdapter(
       if (!same(cfg, loadConfig(ctx.home)))
         return { state: "refused", reason: "personal_identity_refused" };
       const name = options.provider === "linear" ? "Linear" : "GitHub";
-      ctx.stderr(`Approve your personal ${name} connection in the browser.`);
       // Signed continuation credentials belong only to the browser, never transcript or journal.
       let browserUnavailable = false;
       try {

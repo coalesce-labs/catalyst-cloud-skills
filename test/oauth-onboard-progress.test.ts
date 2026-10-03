@@ -132,3 +132,53 @@ test("cancellation clears the real default polling timer before it can fetch a t
   expect(server.oauth.deviceAuthorizeCount).toBe(1);
   expect(existsSync(configPathFor(home))).toBe(false);
 });
+
+test("CTC-4625: a presenter shows each code itself, before the wait starts, and the default lines stay out", async () => {
+  server.oauth.expireNextCodes = 1;
+  const p = progress();
+  const shown: unknown[] = [];
+  const auth = await deviceFlowLogin(ctx, server.url, {
+    isTty: () => true,
+    openBrowser: () => {},
+    sleep: async () => {},
+    waitForApproval: p.waitForApproval,
+    present: code => { shown.push(code); p.events.push(`present:${code.userCode}`); },
+    presentBrowser: opened => { p.events.push(`browser:${opened}`); },
+  });
+  expect(auth.kind).toBe("oauth");
+  expect(shown).toEqual([
+    { verificationUri: `${server.url}/activate`, userCode: "WXYZ-1234", completeUri: `${server.url}/activate?user_code=WXYZ-1234`, round: 1, rounds: 3 },
+    { verificationUri: `${server.url}/activate`, userCode: "WXYZ-1235", completeUri: `${server.url}/activate?user_code=WXYZ-1235`, round: 2, rounds: 3 },
+  ]);
+  expect(p.events.filter(e => /^(present|spinner|browser):/.test(e))).toEqual([
+    "present:WXYZ-1234", "browser:true", "spinner:start", "spinner:stop", "present:WXYZ-1235", "browser:true", "spinner:start", "spinner:stop",
+  ]);
+  expect(ctx.out.join("\n")).not.toContain("WXYZ");
+  expect(ctx.out.join("\n")).not.toContain("Waiting for you to approve");
+});
+
+test("CTC-4625: the code is presented before a slow browser opener finishes, and the presenter hears it failed", async () => {
+  server.oauth.omitVerificationUriComplete = true;
+  const order: string[] = [];
+  const shown: Array<{ completeUri?: string }> = [];
+  await deviceFlowLogin(ctx, server.url, {
+    isTty: () => true,
+    openBrowser: async () => { order.push("opener:start"); await new Promise(r => setTimeout(r, 50)); throw new Error("no browser"); },
+    sleep: async () => {},
+    present: code => { shown.push(code); order.push("present"); },
+    presentBrowser: opened => { order.push(`browser:${opened}`); },
+  });
+  expect(order).toEqual(["present", "opener:start", "browser:false"]);
+  expect(shown[0]!.completeUri).toBeUndefined();
+});
+
+test("CTC-4625: with no terminal the presenter is never told about a browser", async () => {
+  const order: string[] = [];
+  await deviceFlowLogin(ctx, server.url, {
+    isTty: () => false,
+    sleep: async () => {},
+    present: () => { order.push("present"); },
+    presentBrowser: opened => { order.push(`browser:${opened}`); },
+  });
+  expect(order).toEqual(["present"]);
+});

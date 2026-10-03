@@ -343,6 +343,7 @@ export function linearWorkspaceAdapter(
       const before = await inspect(ctx, journal, signal);
       if (before.result.state !== "pending") return before.result;
       if (before.unsupported) return waiting("cloud_capability_unavailable");
+      if (!options.wait) return waiting("workspace_approval_required");
       const start = await read(
         ctx,
         journal,
@@ -368,9 +369,6 @@ export function linearWorkspaceAdapter(
         return { state: "refused", reason: "workspace_identity_refused" };
       if (!["owner", "admin"].includes(current.user.role))
         return { state: "refused", reason: "workspace_admin_required" };
-      ctx.stderr(
-        "Approve the organization's Linear connection in your browser. Your personal approval follows.",
-      );
       // The signed URL is transient credential material: only the browser receives it.
       let browserUnavailable = false;
       try {

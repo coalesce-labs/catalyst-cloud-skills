@@ -20,6 +20,11 @@ import { machinePathsFile } from "../vendor/paths/node.js";
 import type { ParsedArgs } from "./args.js";
 import { configPathFor, type Ctx } from "./config.js";
 import type { OnboardUi } from "./onboard-ui.js";
+import { onboardJsonView } from "./setup-onboard-copy.js";
+import {
+  standalonePlan,
+  standalonePlanNotes,
+} from "./onboard-standalone-copy.js";
 import { CliError, UsageError } from "./errors.js";
 import { onboardFileSnapshot } from "./onboard-file-snapshot.js";
 import {
@@ -40,6 +45,8 @@ export const ONBOARD_STEPS = [
   "skills",
   "legacy",
   "signin",
+  "daemon",
+  "housekeeping",
   "linear.workspace",
   "linear.personal",
   "linear.team",
@@ -50,12 +57,10 @@ export const ONBOARD_STEPS = [
   "github.repos",
   "projects",
   "accounts",
-  "settings",
-  "values",
   "capacity",
   "runner",
-  "daemon",
-  "housekeeping",
+  "settings",
+  "values",
   "first-ticket",
   "ready",
 ] as const;
@@ -149,6 +154,8 @@ export interface OnboardAdapter {
 }
 
 export interface OnboardDeps {
+  /** Only the internal setup continuation retains its renderer after one consent. */
+  reviewedSetup?: boolean;
   /** Internal staged installer mode; absent for the normal installed CLI. */
   bootstrap?: OnboardBootstrapPreview;
   ui?: OnboardUi;
@@ -767,13 +774,16 @@ export function onboardErrorJournal(
   cliVersion: string,
   exit: number,
 ): OnboardJournal {
-  return {
-    ...freshJournal(ctx, cliVersion, {}),
-    scope: "onboarding",
-    mode: "run",
-    exit,
-    complete: false,
-  };
+  return onboardJsonView(
+    {
+      ...freshJournal(ctx, cliVersion, {}),
+      scope: "onboarding",
+      mode: "run",
+      exit,
+      complete: false,
+    },
+    savedOnboardBaseUrl(ctx.home),
+  );
 }
 
 function planJournal(journal: OnboardJournal): OnboardJournal {
@@ -796,23 +806,26 @@ function printPlan(
   ctx: Ctx,
   journal: OnboardJournal,
   identity?: OnboardIdentity | null,
+  options?: {
+    localSync: boolean;
+    scope: readonly OnboardStepId[];
+    runner?: boolean;
+  },
 ): void {
-  const value = planJournal(journal);
   ctx.stdout("Catalyst setup plan");
   if (identity !== undefined)
     for (const line of onboardIdentityLines(identity)) ctx.stdout(line);
-  for (const step of value.steps)
-    ctx.stdout(
-      `  ${step.state === "done" ? "✓" : "·"} ${ONBOARD_TITLES[step.id]}`,
-    );
+  let group: string | undefined;
+  for (const row of standalonePlan(journal, options?.scope, options?.runner)) {
+    if (row.group !== group) {
+      ctx.stdout("");
+      ctx.stdout(row.group);
+      group = row.group;
+    }
+    ctx.stdout(`  ${row.number} ${row.title}  ${row.detail}`);
+  }
   ctx.stdout(
-    "Use cloud reads by default. Local sync is optional for SQL or sustained local reads.",
-  );
-  ctx.stdout(
-    "Setup may check one stored Claude account using a one-token provider request. This may use Claude quota. It does not refresh Codex credentials.",
-  );
-  ctx.stdout(
-    `Next: ${value.steps.find((step) => step.state === "pending")?.id ?? "ready"}`,
+    standalonePlanNotes(options?.localSync ?? journal.localSync === true),
   );
 }
 
@@ -872,7 +885,7 @@ function sanitizedResult(
   return row;
 }
 
-function stepSatisfied(step: OnboardStep | undefined): boolean {
+export function stepSatisfied(step: OnboardStep | undefined): boolean {
   return (
     step?.state === "done" ||
     (step?.state === "skipped" &&
@@ -904,7 +917,8 @@ export function onboardRequiredStepsWaiting(
   return !!journal?.steps.some(
     (step) =>
       step.id !== "ready" &&
-      !ONBOARD_DEFERRED_STEPS.has(step.id) &&
+      (!ONBOARD_DEFERRED_STEPS.has(step.id) ||
+        (step.id === "runner" && step.evidence?.selected === true)) &&
       step.state !== "failed" &&
       !stepSatisfied(step),
   );
@@ -994,8 +1008,41 @@ export async function cmdOnboard(
 ): Promise<number> {
   if (args.subcommand !== null || args.rest.length > 0)
     throw new UsageError("onboard takes no positional arguments");
-  if (args.json || args.flags.yes === true || args.flags["dry-run"] === true)
+  if (
+    args.json ||
+    (args.flags.yes === true &&
+      !deps.reviewedSetup &&
+      deps.ui?.interactive !== false) ||
+    args.flags["dry-run"] === true
+  )
     deps = { ...deps, ui: undefined };
+  const interactiveUi = Boolean(deps.ui && deps.ui.interactive !== false);
+  let activeRunSignal: AbortSignal | undefined;
+  if (args.json) {
+    const output = ctx.stdout;
+    ctx = {
+      ...ctx,
+      stdout: (line: string) => {
+        const value = JSON.parse(line) as OnboardJournal;
+        const paused = Boolean(
+          activeRunSignal?.aborted ||
+          deps.signal?.aborted ||
+          deps.ui?.signal.aborted,
+        );
+        output(
+          JSON.stringify(
+            onboardJsonView(value, savedOnboardBaseUrl(ctx.home), paused, {
+              requiredSteps: args.flags.runner === true ? ["runner"] : [],
+              only:
+                typeof args.flags.only === "string"
+                  ? (args.flags.only as OnboardStepId)
+                  : undefined,
+            }),
+          ),
+        );
+      },
+    };
+  }
   const only =
     typeof args.flags.only === "string"
       ? (args.flags.only as OnboardStepId)
@@ -1014,6 +1061,20 @@ export async function cmdOnboard(
   for (const id of [only, resumeFrom])
     if (id && !(ONBOARD_STEPS as readonly string[]).includes(id))
       throw new UsageError(`unknown onboarding step: ${id}`);
+  const reviewedScope = new Set<OnboardStepId>();
+  const includeReviewed = (id: OnboardStepId): void => {
+    if (reviewedScope.has(id)) return;
+    reviewedScope.add(id);
+    for (const dependency of ONBOARD_DEPENDENCIES[id] ?? [])
+      includeReviewed(dependency);
+  };
+  if (only) includeReviewed(only);
+  else for (const id of ONBOARD_STEPS) reviewedScope.add(id);
+  const planOptions = (journal: OnboardJournal) => ({
+    runner: args.flags.runner === true,
+    localSync: args.flags["local-sync"] === true || journal.localSync === true,
+    scope: ONBOARD_STEPS.filter((id) => reviewedScope.has(id)),
+  });
   const bootstrap = deps.bootstrap;
   const bootstrapPlan = bootstrap
     ? parseBootstrapPlan(bootstrap.plan)
@@ -1099,8 +1160,10 @@ export async function cmdOnboard(
   );
   if (args.flags["dry-run"] === true) {
     if (args.json) ctx.stdout(JSON.stringify(planJournal(journal)));
-    else printPlan(ctx, journal);
+    else printPlan(ctx, journal, undefined, planOptions(journal));
     showBootstrap();
+    if (!args.json)
+      ctx.stdout(`Next: run catalyst onboard${only ? ` --only ${only}` : ""}`);
     return 0;
   }
   // Check tenant binding before even a local cleanup mutation. Never overwrite a mismatched receipt.
@@ -1115,7 +1178,7 @@ export async function cmdOnboard(
       error instanceof CliError &&
       error.code === "onboard-login-refresh-required" &&
       deps.stageSignin &&
-      (deps.ui || plainSigninAllowed);
+      (interactiveUi || plainSigninAllowed);
     if (!canRenew) {
       const code = error instanceof CliError ? error.exitCode : EXIT_FAILED;
       ctx.stderr(
@@ -1151,9 +1214,15 @@ export async function cmdOnboard(
       : null;
   let reviewedIdentity = identityTuple(identity);
   if (identity) requireBootstrapIdentity(identity);
-  if (deps.ui) deps.ui.plan(journal, identity);
-  else if (!args.json) printPlan(ctx, journal, identity);
-  else printPlan({ ...ctx, stdout: ctx.stderr }, journal, identity);
+  if (deps.ui) deps.ui.plan(journal, identity, planOptions(journal));
+  else if (!args.json) printPlan(ctx, journal, identity, planOptions(journal));
+  else
+    printPlan(
+      { ...ctx, stdout: ctx.stderr },
+      journal,
+      identity,
+      planOptions(journal),
+    );
   showBootstrap();
   let localSync =
     args.flags["local-sync"] === true || journal.localSync === true;
@@ -1164,7 +1233,7 @@ export async function cmdOnboard(
   if (
     !identity &&
     deps.stageSignin &&
-    !deps.ui &&
+    !interactiveUi &&
     personalScope &&
     !plainSigninAllowed
   ) {
@@ -1178,11 +1247,12 @@ export async function cmdOnboard(
     return EXIT_WAITING;
   }
   const stageFirst = Boolean(
-    deps.stageSignin && !identity && (deps.ui || plainSigninAllowed),
+    deps.stageSignin && !identity && (interactiveUi || plainSigninAllowed),
   );
   if (stageFirst) {
-    const message =
-      "Sign in in your browser first. Then review your person, workspace and setup plan. Your saved connection stays unchanged until you approve that plan.";
+    const message = deps.reviewedSetup
+      ? "Sign in in your browser to continue setup."
+      : "Sign in in your browser first. Then review your person, workspace and setup plan. Your saved connection stays unchanged until you approve that plan.";
     if (deps.ui) deps.ui.message(message);
     else ctx.stderr(message);
   }
@@ -1190,7 +1260,7 @@ export async function cmdOnboard(
     boolean | { proceed: boolean; localSync: boolean; signin?: boolean } =
     stageFirst
       ? { proceed: false, localSync, signin: true }
-      : deps.ui
+      : deps.ui && interactiveUi
         ? await deps.ui.confirmPlan(
             localSync,
             deps.stageSignin
@@ -1235,22 +1305,37 @@ export async function cmdOnboard(
       reviewedIdentity = identityTuple(identity);
       requireMatchingIdentity(journal, identity);
       requireBootstrapIdentity(identity);
-      if (deps.ui) deps.ui.plan(journal, identity);
-      else if (!args.json) printPlan(ctx, journal, identity);
-      else printPlan({ ...ctx, stdout: ctx.stderr }, journal, identity);
+      deps.ui?.stagedSigninEnd?.("done");
+      if (deps.ui) deps.ui.plan(journal, identity, planOptions(journal));
+      else if (!args.json)
+        printPlan(ctx, journal, identity, planOptions(journal));
+      else
+        printPlan(
+          { ...ctx, stdout: ctx.stderr },
+          journal,
+          identity,
+          planOptions(journal),
+        );
       showBootstrap();
-      consent = deps.ui
-        ? await deps.ui.confirmPlan(localSync, "unavailable")
-        : await confirmContinue(ctx, args, deps);
+      consent =
+        deps.ui && interactiveUi
+          ? await deps.ui.confirmPlan(localSync, "unavailable")
+          : await confirmContinue(ctx, args, deps);
     } catch (error) {
       const message =
         error instanceof CliError
           ? error.message
           : "Sign-in could not be verified. Your saved connection was not changed.";
-      if (deps.ui) deps.ui.message(message);
-      else ctx.stderr(message);
-      deps.ui?.dispose();
       const code = error instanceof CliError ? error.exitCode : EXIT_WAITING;
+      const rendered = deps.ui?.stagedSigninEnd?.(
+        code === EXIT_WAITING ? "waiting" : "failed",
+        message,
+      );
+      if (!rendered) {
+        if (deps.ui) deps.ui.message(message);
+        else ctx.stderr(message);
+      }
+      deps.ui?.dispose();
       if (args.json)
         ctx.stdout(JSON.stringify({ ...planJournal(journal), exit: code }));
       return code;
@@ -1259,7 +1344,7 @@ export async function cmdOnboard(
   if (typeof consent !== "boolean") localSync = consent.localSync;
   if (!(typeof consent === "boolean" ? consent : consent.proceed)) {
     const missingConsent =
-      !deps.ui &&
+      !interactiveUi &&
       args.flags.yes !== true &&
       (args.json ||
         !(
@@ -1296,6 +1381,7 @@ export async function cmdOnboard(
     ...(deps.signal ? [deps.signal] : []),
     ...(deps.ui ? [deps.ui.signal] : []),
   ]);
+  activeRunSignal = signal;
   const stepCtx = {
     ...ctx,
     stdout: deps.ui
@@ -1348,7 +1434,7 @@ export async function cmdOnboard(
     }
   };
   const signals = ["SIGINT", "SIGTERM", "SIGHUP"] as const;
-  if (deps.bindSignals !== false)
+  if (deps.bindSignals !== false && deps.ui?.handlesSignals !== true)
     for (const name of signals) process.on(name, interrupted);
   const finish = (code: number) => {
     journal.exit = code;
@@ -1546,7 +1632,6 @@ export async function cmdOnboard(
         identity = refreshed;
       }
     }
-    let refused = false;
     const needed = new Set<OnboardStepId>();
     const include = (id: OnboardStepId): void => {
       if (needed.has(id)) return;
@@ -1556,188 +1641,239 @@ export async function cmdOnboard(
     if (only) include(only);
     else for (const id of ONBOARD_STEPS) needed.add(id);
     const fromIndex = resumeFrom ? ONBOARD_STEPS.indexOf(resumeFrom) : 0;
-    for (const id of ONBOARD_STEPS.filter((id) => needed.has(id))) {
-      if (signal.aborted) return finish(EXIT_WAITING);
-      // No step is running while the session refreshes, so an interrupt here marks none of them.
-      current = null;
-      await deps.beforeStep?.(id);
-      if (signal.aborted) return finish(EXIT_WAITING);
-      current = id;
-      deps.ui?.stepStart(id);
-      // Member onboarding keeps administration outside its scope, with an explicit recorded reason.
-      if (identity?.role === "member" && memberScopeSkips(id)) {
-        recordStep({
-          id,
-          state: "skipped",
-          reason: "member_scope",
-          at: isoNow(ctx, deps),
-        });
-        deps.ui?.stepEnd(journalStep(journal, id)!, journal);
-        continue;
-      }
-      const missing = (ONBOARD_DEPENDENCIES[id] ?? []).find(
-        (parent) => !stepSatisfied(journalStep(journal, parent)),
-      );
-      if (missing) {
-        recordStep({
-          id,
-          state: "waiting",
-          reason: "prerequisite_not_ready",
-          at: isoNow(ctx, deps),
-        });
-        writeOnboardJournal(statePath, journal);
-        deps.ui?.stepEnd(journalStep(journal, id)!, journal);
-        continue;
-      }
-      let adapter = deps.adapters?.[id];
-      // Compatibility for the initial legacy adapter, which performs its own before/after checks.
-      if (!adapter && id === "legacy") {
-        let result: OnboardStepResult = deps.runStep
-          ? { state: "pending" }
-          : { state: "skipped", reason: "legacy_not_selected" };
-        adapter = {
-          check: async () => result,
-          act: deps.runStep
-            ? async () => (result = await deps.runStep!(id, stepCtx))
-            : undefined,
-        };
-      }
-      if (!adapter) {
-        recordStep({
-          id,
-          state: "waiting",
-          reason: "step_not_available_in_this_release",
-          at: isoNow(ctx, deps),
-        });
-        writeOnboardJournal(statePath, journal);
-        deps.ui?.stepEnd(journalStep(journal, id)!, journal);
-        continue;
-      }
-      try {
-        let result = await adapter.check(stepCtx, journal, signal);
-        if (
-          result.state === "pending" &&
-          adapter.act &&
-          (!only || id === only) &&
-          ONBOARD_STEPS.indexOf(id) >= fromIndex
-        ) {
-          if (deps.identity) {
-            identity = await deps.identity(journal);
-            requireMatchingIdentity(journal, identity);
-            if (identity?.role === "member" && memberScopeSkips(id)) {
-              recordStep({
-                id,
-                state: "skipped",
-                reason: "member_scope",
-                at: isoNow(ctx, deps),
-              });
-              writeOnboardJournal(statePath, journal);
-              deps.ui?.stepEnd(journalStep(journal, id)!, journal);
-              continue;
-            }
-          }
-          journal.operations[id] ??= `${journal.runId}:${id}`;
-          const prior = journalStep(journal, id);
-          const recoveringTeam =
-            id === "linear.team" &&
-            (prior?.reason === "team_create_unverified" ||
-              prior?.reason === "team_created_not_adopted");
+    let rerun: ReadonlySet<OnboardStepId> | null = null;
+    for (;;) {
+      let refused = false;
+      for (const id of ONBOARD_STEPS.filter(
+        (id) => needed.has(id) && (!rerun || rerun.has(id)),
+      )) {
+        if (signal.aborted) return finish(EXIT_WAITING);
+        // No step is running while the session refreshes, so an interrupt here marks none of them.
+        current = null;
+        await deps.beforeStep?.(id);
+        if (signal.aborted) return finish(EXIT_WAITING);
+        current = id;
+        deps.ui?.stepStart(id);
+        const stepSignal = deps.ui?.stepSignal
+          ? AbortSignal.any([signal, deps.ui.stepSignal])
+          : signal;
+        // Member onboarding keeps administration outside its scope, with an explicit recorded reason.
+        if (identity?.role === "member" && memberScopeSkips(id)) {
           recordStep({
-            ...(recoveringTeam ? prior : {}),
             id,
-            state: "running",
+            state: "skipped",
+            reason: "member_scope",
+            ...(id === "runner" && args.flags.runner === true
+              ? { evidence: { selected: true } }
+              : {}),
             at: isoNow(ctx, deps),
           });
-          journal.exit = null;
+          deps.ui?.stepEnd(journalStep(journal, id)!, journal);
+          continue;
+        }
+        const missing = (ONBOARD_DEPENDENCIES[id] ?? []).find(
+          (parent) => !stepSatisfied(journalStep(journal, parent)),
+        );
+        if (missing) {
+          recordStep({
+            id,
+            state: "waiting",
+            reason: "prerequisite_not_ready",
+            at: isoNow(ctx, deps),
+          });
           writeOnboardJournal(statePath, journal);
-          const action = await adapter.act(stepCtx, journal, signal);
-          if (action.state === "done") {
-            result = await adapter.check(stepCtx, journal, signal);
-            if (result.state === "pending")
-              result = { state: "waiting", reason: "verification_pending" };
-          } else result = action;
+          deps.ui?.stepEnd(journalStep(journal, id)!, journal);
+          continue;
+        }
+        let adapter = deps.adapters?.[id];
+        // Compatibility for the initial legacy adapter, which performs its own before/after checks.
+        if (!adapter && id === "legacy") {
+          let result: OnboardStepResult = deps.runStep
+            ? { state: "pending" }
+            : { state: "skipped", reason: "legacy_not_selected" };
+          adapter = {
+            check: async () => result,
+            act: deps.runStep
+              ? async () => (result = await deps.runStep!(id, stepCtx))
+              : undefined,
+          };
+        }
+        if (!adapter) {
+          recordStep({
+            id,
+            state: "waiting",
+            reason: "step_not_available_in_this_release",
+            at: isoNow(ctx, deps),
+          });
+          writeOnboardJournal(statePath, journal);
+          deps.ui?.stepEnd(journalStep(journal, id)!, journal);
+          continue;
+        }
+        try {
+          let result = await adapter.check(stepCtx, journal, stepSignal);
+          if (
+            result.state === "pending" &&
+            adapter.act &&
+            (!only || id === only) &&
+            ONBOARD_STEPS.indexOf(id) >= fromIndex
+          ) {
+            if (deps.identity) {
+              identity = await deps.identity(journal);
+              requireMatchingIdentity(journal, identity);
+              if (identity?.role === "member" && memberScopeSkips(id)) {
+                recordStep({
+                  id,
+                  state: "skipped",
+                  reason: "member_scope",
+                  at: isoNow(ctx, deps),
+                });
+                writeOnboardJournal(statePath, journal);
+                deps.ui?.stepEnd(journalStep(journal, id)!, journal);
+                continue;
+              }
+            }
+            journal.operations[id] ??= `${journal.runId}:${id}`;
+            const prior = journalStep(journal, id);
+            const recoveringTeam =
+              id === "linear.team" &&
+              (prior?.reason === "team_create_unverified" ||
+                prior?.reason === "team_created_not_adopted");
+            recordStep({
+              ...(recoveringTeam ? prior : {}),
+              id,
+              state: "running",
+              at: isoNow(ctx, deps),
+            });
+            journal.exit = null;
+            writeOnboardJournal(statePath, journal);
+            const action = await adapter.act(stepCtx, journal, stepSignal);
+            if (action.state === "done") {
+              result = await adapter.check(stepCtx, journal, stepSignal);
+              if (result.state === "pending")
+                result = { state: "waiting", reason: "verification_pending" };
+            } else result = action;
+            if (id === "signin" && result.state === "done" && deps.identity) {
+              identity = await deps.identity(journal);
+              requireMatchingIdentity(journal, identity);
+              if (identity?.role === "member" && memberScopeSkips(id)) {
+                recordStep({
+                  id,
+                  state: "skipped",
+                  reason: "member_scope",
+                  at: isoNow(ctx, deps),
+                });
+                writeOnboardJournal(statePath, journal);
+                deps.ui?.stepEnd(journalStep(journal, id)!, journal);
+                continue;
+              }
+            }
+          }
           if (id === "signin" && result.state === "done" && deps.identity) {
             identity = await deps.identity(journal);
             requireMatchingIdentity(journal, identity);
-            if (identity?.role === "member" && memberScopeSkips(id)) {
-              recordStep({
-                id,
-                state: "skipped",
-                reason: "member_scope",
-                at: isoNow(ctx, deps),
-              });
-              writeOnboardJournal(statePath, journal);
-              deps.ui?.stepEnd(journalStep(journal, id)!, journal);
-              continue;
-            }
+            if (!identity)
+              result = { state: "failed", reason: "membership_not_verified" };
+            else
+              for (const line of onboardIdentityLines(identity))
+                stepCtx.stdout(line);
           }
+          if (result.state === "refused") refused = true;
+          if (result.state === "pending")
+            result = {
+              ...result,
+              state: "waiting",
+              reason: result.reason ?? "action_required",
+            };
+          recordStep(sanitizedResult(id, result, isoNow(ctx, deps)));
+        } catch (error) {
+          if (error instanceof CliError && error.exitCode === EXIT_REFUSED)
+            refused = true;
+          const reason = stepSignal.aborted
+            ? "interrupted"
+            : error instanceof CliError &&
+                /^[a-z][a-z0-9_-]{1,63}$/.test(error.code)
+              ? error.code.replaceAll("-", "_")
+              : "step_failed";
+          const renewLogin =
+            error instanceof CliError &&
+            error.code === "onboard-login-refresh-required";
+          recordStep({
+            id,
+            state: renewLogin || stepSignal.aborted ? "waiting" : "failed",
+            reason,
+            at: isoNow(ctx, deps),
+          });
+          stepCtx.stderr(
+            renewLogin
+              ? "Renew your login with catalyst login, then run catalyst onboard to resume."
+              : `✗ ${ONBOARD_TITLES[id]}: ${reason}. The safe reason is saved; run the same command to resume.`,
+          );
         }
-        if (id === "signin" && result.state === "done" && deps.identity) {
-          identity = await deps.identity(journal);
-          requireMatchingIdentity(journal, identity);
-          if (!identity)
-            result = { state: "failed", reason: "membership_not_verified" };
-          else
-            for (const line of onboardIdentityLines(identity))
-              stepCtx.stdout(line);
+        if (signal.aborted) {
+          const settled = journalStep(journal, id);
+          if (settled?.state !== "done" && settled?.state !== "failed")
+            recordStep({
+              id,
+              state: "waiting",
+              reason: "interrupted",
+              at: isoNow(ctx, deps),
+            });
+          deps.ui?.stepEnd(journalStep(journal, id)!, journal);
+          return finish(EXIT_WAITING);
         }
-        if (result.state === "refused") refused = true;
-        if (result.state === "pending")
-          result = {
-            ...result,
-            state: "waiting",
-            reason: result.reason ?? "action_required",
-          };
-        recordStep(sanitizedResult(id, result, isoNow(ctx, deps)));
-      } catch (error) {
-        if (error instanceof CliError && error.exitCode === EXIT_REFUSED)
-          refused = true;
-        const reason = signal.aborted
-          ? "interrupted"
-          : error instanceof CliError &&
-              /^[a-z][a-z0-9_-]{1,63}$/.test(error.code)
-            ? error.code.replaceAll("-", "_")
-            : "step_failed";
-        const renewLogin =
-          error instanceof CliError &&
-          error.code === "onboard-login-refresh-required";
-        recordStep({
-          id,
-          state: renewLogin ? "waiting" : "failed",
-          reason,
-          at: isoNow(ctx, deps),
-        });
-        stepCtx.stderr(
-          renewLogin
-            ? "Renew your login with catalyst login, then run catalyst onboard to resume."
-            : `✗ ${ONBOARD_TITLES[id]}: ${reason}. The safe reason is saved; run the same command to resume.`,
-        );
+        deps.ui?.stepEnd(journalStep(journal, id)!, journal);
+        writeOnboardJournal(statePath, journal);
+        // Later steps share the same login; preserve the actionable cause instead of cascading failures.
+        if (
+          journalStep(journal, id)?.reason?.endsWith("_login_refresh_required")
+        )
+          return finish(EXIT_WAITING);
+        if (refused) break;
       }
-      if (signal.aborted) {
-        interruptStep(id);
-        return finish(EXIT_WAITING);
+      current = null;
+      const scope = only ? [only] : [...ONBOARD_STEPS];
+      const code = refused
+        ? EXIT_REFUSED
+        : scope.some((id) => journalStep(journal, id)?.state === "failed")
+          ? EXIT_FAILED
+          : scope.every(
+                (id) =>
+                  (stepSatisfied(journalStep(journal, id)) &&
+                    !(
+                      id === "runner" &&
+                      (args.flags.runner === true ||
+                        journalStep(journal, id)?.evidence?.selected ===
+                          true) &&
+                      journalStep(journal, id)?.state !== "done"
+                    )) ||
+                  (!only &&
+                    ONBOARD_DEFERRED_STEPS.has(id) &&
+                    !(
+                      id === "runner" &&
+                      (args.flags.runner === true ||
+                        journalStep(journal, id)?.evidence?.selected === true)
+                    )),
+              )
+            ? 0
+            : EXIT_WAITING;
+      journal.exit = code;
+      journal.complete =
+        !only &&
+        code === 0 &&
+        ONBOARD_STEPS.every((id) => stepSatisfied(journalStep(journal, id)));
+      const unfinished = journal.steps.filter((step) => !stepSatisfied(step));
+      if (
+        !only &&
+        !refused &&
+        unfinished.length &&
+        !signal.aborted &&
+        (await deps.ui?.checkAgain?.(journal))
+      ) {
+        rerun = new Set([...unfinished.map((step) => step.id), "ready"]);
+        continue;
       }
-      deps.ui?.stepEnd(journalStep(journal, id)!, journal);
-      writeOnboardJournal(statePath, journal);
-      // Later steps share the same login; preserve the actionable cause instead of cascading failures.
-      if (journalStep(journal, id)?.reason?.endsWith("_login_refresh_required"))
-        return finish(EXIT_WAITING);
-      if (refused) break;
+      return finish(signal.aborted ? EXIT_WAITING : code);
     }
-    current = null;
-    const scope = only ? [only] : [...ONBOARD_STEPS];
-    const code = refused
-      ? EXIT_REFUSED
-      : scope.some((id) => journalStep(journal, id)?.state === "failed")
-        ? EXIT_FAILED
-        : scope.every(
-              (id) =>
-                stepSatisfied(journalStep(journal, id)) ||
-                (!only && ONBOARD_DEFERRED_STEPS.has(id)),
-            )
-          ? 0
-          : EXIT_WAITING;
-    return finish(code);
   } catch (error) {
     if (candidate?.accepted && !mayRecordProgress) {
       ctx.stderr(
@@ -1760,7 +1896,7 @@ export async function cmdOnboard(
     }
     throw error;
   } finally {
-    if (deps.bindSignals !== false)
+    if (deps.bindSignals !== false && deps.ui?.handlesSignals !== true)
       for (const name of signals) process.off(name, interrupted);
     releaseLock(lock);
     deps.ui?.dispose();

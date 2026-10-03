@@ -94,6 +94,7 @@ function fixture(role: "owner" | "member" = "owner") {
       opened.push(url);
     },
     sleep: async () => {},
+    wait: async <T>(_message: string, run: () => Promise<T>) => run(),
     requestTimeoutMs: 30,
     consentTimeoutMs: 50,
   };
@@ -487,18 +488,30 @@ describe("native personal-bearer GitHub App installation", () => {
       ...f.options,
       openBrowser: () => {
         const config = loadConfig(f.home)!;
-        writeConfig(f.home, { ...config, key: undefined, auth: {
-          kind: "oauth", accessToken: "expired-token-sentinel", refreshToken: "unused-refresh-sentinel",
-          expiresAt: new Date(now - 1).toISOString(), sessionId: "original-session",
-        } });
+        writeConfig(f.home, {
+          ...config,
+          key: undefined,
+          auth: {
+            kind: "oauth",
+            accessToken: "expired-token-sentinel",
+            refreshToken: "unused-refresh-sentinel",
+            expiresAt: new Date(now - 1).toISOString(),
+            sessionId: "original-session",
+          },
+        });
       },
-      sleep: async () => { throw new Error("refresh-required status must not poll again"); },
+      sleep: async () => {
+        throw new Error("refresh-required status must not poll again");
+      },
     });
     expect(await adapter.act!(f.ctx, f.journal)).toMatchObject({
-      state: "waiting", reason: "github_installation_login_refresh_required",
+      state: "waiting",
+      reason: "github_installation_login_refresh_required",
     });
     expect(f.reads).toHaveLength(2);
-    expect(f.logs.join("\n")).not.toMatch(/expired-token-sentinel|unused-refresh-sentinel/);
+    expect(f.logs.join("\n")).not.toMatch(
+      /expired-token-sentinel|unused-refresh-sentinel/,
+    );
   });
 });
 
@@ -851,4 +864,17 @@ test.each(["permissions", "repositories"])("a GitHub approval with unreadable %s
  const f = fixture(); f.status(absent());
  const adapter = githubInstallationAdapter({ ...f.options, openBrowser: () => f.status({ ...done(), ...(kind === "permissions" ? { installations: [{ ...installation(), permissions: { state: "unknown", grant: "github-installation", reason: "grant-unreadable" } }] } : { repositories: { state: "unknown", reason: "listing-truncated" } }) }), sleep: async () => { throw new Error("permission failure must not poll"); } });
  expect(await adapter.act!(f.ctx, f.journal)).toEqual({ state: "waiting", reason: kind === "permissions" ? "github_app_permissions_unverified" : "github_app_repository_access_unverified" });
+});
+
+test("without an interactive wait seam, missing approval returns immediately without opening a browser", async () => {
+  const f = fixture();
+  f.status(absent());
+  const adapter = githubInstallationAdapter({ ...f.options, wait: undefined });
+  const result = await adapter.act!(f.ctx, f.journal);
+  expect(result).toMatchObject({
+    state: "waiting",
+    reason: "github_installation_approval_required",
+  });
+  expect(f.opened).toEqual([]);
+  expect(f.reads).toHaveLength(1);
 });

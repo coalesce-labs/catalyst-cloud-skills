@@ -474,6 +474,8 @@ export const FLAG_TABLES: Record<string, FlagTable> = {
 };
 
 export const VERB_USAGE: Record<string, string> = {
+  setup:
+    "setup --engine <file> --engine-sha256 <hex> [-- <install options>]   (run by install.sh; install.sh --help lists the options)",
   login:
     "login [--base-url <url>] [--start-replica]   (keyless; or --key <personal-key> / CATALYST_CLOUD_TOKEN)",
   onboard:

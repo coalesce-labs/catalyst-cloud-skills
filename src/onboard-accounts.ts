@@ -1,5 +1,6 @@
 import { loadConfig, normalizeBaseUrl, type Ctx } from "./config.js";
 import { readExistingOnboardJson } from "./onboard-existing.js";
+import { pollConsent } from "./onboard-consent.js";
 import { verifyOnboardRoutes } from "./onboard-capabilities.js";
 import type {
   OnboardAdapter,
@@ -153,7 +154,12 @@ async function inventory(
 /** Verify one existing Claude slot per run. A stored login, cached poll or Codex shape is not
  * fresh provider access. Enrollment and a phase's actual lease eligibility remain separate. */
 export function onboardAccountsAdapter(
-  input: { message?: (text: string) => void } = {},
+  input: {
+    message?: (text: string) => void;
+    waitForAccount?: <T>(work: () => Promise<T>) => Promise<T>;
+    accountWaitMs?: number;
+    sleep?: (ms: number) => Promise<void>;
+  } = {},
 ): OnboardAdapter {
   let proof: Proof | null = null;
   let attempted = false;
@@ -205,7 +211,11 @@ export function onboardAccountsAdapter(
         },
       };
     proof = null;
-    if (!live.slots.length) return waiting("account_enrollment_required");
+    if (!live.slots.length)
+      return input.waitForAccount &&
+        ["owner", "admin"].includes(live.identity.role)
+        ? { state: "pending" }
+        : waiting("account_enrollment_required");
     if (!selected)
       return waiting(
         live.slots.some((row) => row.provider === "codex")
@@ -222,8 +232,35 @@ export function onboardAccountsAdapter(
     check,
     act: async (ctx, journal, external) => {
       if (attempted) return waiting("account_provider_access_unverified");
-      const live = await inventory(ctx, journal, external);
-      if ("reason" in live) return waiting(live.reason);
+      const initial = await inventory(ctx, journal, external);
+      if ("reason" in initial) return waiting(initial.reason);
+      let live = initial;
+      if (
+        !live.slots.length &&
+        input.waitForAccount &&
+        ["owner", "admin"].includes(live.identity.role)
+      ) {
+        const result = await input.waitForAccount(() =>
+          pollConsent({
+            timeoutMs: input.accountWaitMs,
+            signal: external,
+            sleep: input.sleep,
+            readStatus: async (signal) => {
+              const current = await inventory(ctx, journal, signal);
+              if ("reason" in current)
+                return { outcome: "waiting", reason: current.reason };
+              live = current;
+              return { outcome: current.slots.length ? "connected" : "absent" };
+            },
+          }),
+        );
+        if (result.state !== "done")
+          return waiting(
+            result.reason === "consent_timeout"
+              ? "account_enrollment_required"
+              : (result.reason ?? "account_enrollment_required"),
+          );
+      }
       const selected = candidate(live.slots, ctx.now().getTime());
       if (!selected) return waiting("account_provider_access_unverified");
       const support = await verifyOnboardRoutes(

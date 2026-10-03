@@ -1,3 +1,4 @@
+import { expectJsonJournalMatches } from "./json-journal.js";
 import {
   existsSync,
   mkdirSync,
@@ -254,7 +255,12 @@ describe("plain engine staged sign-in", () => {
         localSync: false,
         exit: 0,
       });
-      if (json) expect(result(f.out)).toEqual(JSON.parse(receiptText));
+      if (json)
+        expectJsonJournalMatches(
+          result(f.out),
+          JSON.parse(receiptText),
+          "ready",
+        );
       expect(receiptText).not.toContain("next@example.com");
       expect(receiptText).not.toContain("Next Workspace");
     },
@@ -936,10 +942,13 @@ describe("CLI dispatch stages the real device candidate", () => {
           "Workspace: Device Workspace (device) · member",
         );
         expect(reviewed).toContain(
-          "Use cloud reads by default. Local sync is optional",
+          "Local sync stays off, so Catalyst reads from the cloud.",
         );
-        expect(reviewed).toContain("one-token provider request");
-        expect(reviewed).toContain("may use Claude quota");
+        expect(reviewed).toContain(
+          "one short request, which counts toward its usage",
+        );
+        expect(reviewed).toContain("Codex credentials are not refreshed");
+        expect(reviewed).not.toContain("quota");
       }
     });
     expect(
@@ -951,7 +960,7 @@ describe("CLI dispatch stages the real device candidate", () => {
     ).toBe(0);
     const printed = result(f.out);
     const receiptText = readFileSync(onboardStatePath(f.path), "utf8");
-    expect(printed).toEqual(JSON.parse(receiptText));
+    expectJsonJournalMatches(printed, JSON.parse(receiptText), "ready");
     expect(printed).toMatchObject({
       account: f.me.account,
       membershipId: f.me.user.id,
@@ -981,7 +990,9 @@ describe("CLI dispatch stages the real device candidate", () => {
       expect(f.out.join("\n")).toContain(
         "Signed in as Device Person (device@example.com)",
       );
-      expect(f.out.join("\n")).toContain("Use cloud reads by default");
+      expect(f.out.join("\n").replace(/\s+/g, " ")).toContain(
+        "Local sync stays off, so Catalyst reads from the cloud.",
+      );
       expect(existsSync(configPathFor(f.path))).toBe(false);
       expect(existsSync(onboardStatePath(f.path))).toBe(false);
     });
@@ -993,7 +1004,8 @@ describe("CLI dispatch stages the real device candidate", () => {
       ),
     ).toBe(0);
     expect(loadConfig(f.path)?.account).toBe(f.me.account);
-    expect(f.err.join("\n")).toContain("TEST-4321");
+    expect(f.out.join("\n")).toContain("TEST-4321");
+    expect(f.out.join("\n")).not.toContain("\x1b");
     expect(f.openBrowser).not.toHaveBeenCalled();
   });
 

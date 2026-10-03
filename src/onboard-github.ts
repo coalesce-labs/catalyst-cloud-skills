@@ -504,6 +504,7 @@ export function githubInstallationAdapter(
       const before = await inspect(ctx, journal, signal);
       if (before.result.state !== "pending") return before.result;
       if (before.unsupported) return waiting("cloud_capability_unavailable");
+      if (!options.wait) return waiting("github_installation_approval_required");
       const start = await read(
         ctx,
         journal,
@@ -538,9 +539,6 @@ export function githubInstallationAdapter(
           state: "refused",
           reason: "github_installation_admin_required",
         };
-      ctx.stderr(
-        "Approve the GitHub App installation in your browser. Your personal GitHub connection is checked separately.",
-      );
       // The signed URL is transient credential material: only the browser receives it.
       let browserUnavailable = false;
       try {
