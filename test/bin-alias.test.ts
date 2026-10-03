@@ -111,7 +111,7 @@ describe("catalyst-skills behaves as catalyst, plus one deprecation line", () =>
   test("a piped caller that reads the first stderr line still gets the real error", { timeout: 60_000 }, async () => {
     // where-am-i.mjs and its siblings do `(x.stderr || x.stdout).trim().split("\n")[0]` on failure.
     const r = await runPiped(join(pkgRoot, "bin", "catalyst-skills.js"), ["me"], tempHome());
-    expect(r.status).toBe(2);
+    expect(r.status, `launcher stderr:\n${r.stderr}\nstdout:\n${r.stdout}`).toBe(2);
     const first = r.stderr.trim().split("\n")[0];
     expect(first).toMatch(/not connected yet/);
     expect(lines(r.stderr)).toContain(DEPRECATED_NAME_LINE);
@@ -119,7 +119,7 @@ describe("catalyst-skills behaves as catalyst, plus one deprecation line", () =>
 
   test("catalyst --version prints the package version", { timeout: 60_000 }, async () => {
     const r = await runPiped(join(pkgRoot, "bin", "catalyst.js"), ["--version"], tempHome());
-    expect(r.status).toBe(0);
+    expect(r.status, `launcher stderr:\n${r.stderr}\nstdout:\n${r.stdout}`).toBe(0);
     expect(r.stdout).toContain(`@catalyst-cloud/cli ${manifest.version}`);
   });
 });
