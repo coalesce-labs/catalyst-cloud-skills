@@ -1,0 +1,1 @@
+rework: terminal art only, size D, square corners, four text lines, setup only, background/colour/skip rules, stderr, --no-color. Review fix: cut the words by grapheme and column width (CJK, emoji); hand back a lone Esc typed during an unanswered query.
