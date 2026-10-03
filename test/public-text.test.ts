@@ -30,6 +30,18 @@ const RULES: ReadonlyArray<{ id: string; pattern: RegExp; instead: string }> = [
   { id: "subscription-login", pattern: /auth\.json|\.credentials\.json|sign in with (?:chatgpt|claude)|claude\.ai\s+(?:account|login)|claude_code_oauth_token|\bcodex login\b(?!\s+--with-api-key)/i, instead: "the account's own page says what it takes" },
 ];
 
+/** The line as it renders: link targets dropped and emphasis removed, so `ChatGPT **Plus**` and
+ *  `Claude [Max](…)` read as the words a customer sees. Underscores inside identifiers stay. */
+const plainText = (line: string) =>
+  line
+    .replace(/\[([^\]]*)\]\([^)]*\)/g, "$1")
+    .replace(/\*+/g, "")
+    .replace(/(?<![A-Za-z0-9])_+|_+(?![A-Za-z0-9])/g, "")
+    .replace(/`/g, "");
+
+/** Every rule a line breaks, matched against the raw line and its rendered form. */
+const breaks = (line: string) => RULES.filter((r) => r.pattern.test(line) || r.pattern.test(plainText(line)));
+
 /** Files that must name a word, each with its reason. */
 const ALLOWED: Readonly<Record<string, string>> = {
   "evals-walkthrough/catalyst-onboard/cancelled-account/graders/does-not-say-the-wrong-thing.md": "a not_contains grader: it fails a reply that says setup-token",
@@ -62,7 +74,7 @@ function findings(): string[] {
       .split("\n")
       .forEach((line, i) => {
         if (CODE.test(file) && isComment(line)) return;
-        for (const r of RULES) if (r.pattern.test(line)) out.push(`${file}:${i + 1} [${r.id}] ${line.trim().slice(0, 140)}\n    instead: ${r.instead}`);
+        for (const r of breaks(line)) out.push(`${file}:${i + 1} [${r.id}] ${line.trim().slice(0, 140)}\n    instead: ${r.instead}`);
       });
   }
   return out;
@@ -80,10 +92,12 @@ describe("the public-text rules catch what they name", () => {
     ["subscription-login", "copy ~/.claude/.credentials.json"],
     ["plan-tier", "a Max 20x account"],
     ["usage-window", "the 5h window resets at noon"],
+    ["plan-tier", "Connect your ChatGPT **Plus** account"],
+    ["plan-tier", "works with Claude [Max](https://example.com/max)"],
   ];
   for (const [rule, line] of caught) {
     test(`${rule}: ${line}`, () => {
-      expect(RULES.filter((r) => r.pattern.test(line)).map((r) => r.id)).toContain(rule);
+      expect(breaks(line).map((r) => r.id)).toContain(rule);
     });
   }
   test("every rule has a positive control", () => {
@@ -97,8 +111,9 @@ describe("the public-text rules catch what they name", () => {
       "`node scripts/watch-scope.mjs --project <id>`: the live watch.",
       "provider, declared and observed state, usage limits, walls, quarantine",
       "The plan phase writes a plan.",
+      "Set `CLAUDE_MAX_TURNS` in the environment.",
     ]) {
-      expect(RULES.filter((r) => r.pattern.test(line)), line).toEqual([]);
+      expect(breaks(line), line).toEqual([]);
     }
   });
   test("a code comment is skipped and a string is not", () => {
