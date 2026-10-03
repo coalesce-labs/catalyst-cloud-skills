@@ -39,6 +39,7 @@ import type {
   OnboardStepId,
 } from "./onboard.js";
 import type { OnboardUi } from "./onboard-ui.js";
+import { TIMED_OUT_REASONS } from "./setup-onboard-copy.js";
 import { fetchMe } from "./transport.js";
 
 export interface OnboardRuntimeHooks {
@@ -58,6 +59,13 @@ export interface OnboardRuntimeHooks {
   runnerEngine?: RunnerEngine;
 }
 
+const HOLD_ON_TIMEOUT: readonly OnboardStepId[] = [
+  "linear.workspace",
+  "linear.personal",
+  "github.install",
+  "github.personal",
+  "accounts",
+];
 const waiting = (reason: string): OnboardStepResult => ({
   state: "waiting",
   reason,
@@ -232,13 +240,20 @@ export function createOnboardRuntime(
     !args.json &&
     args.flags.yes !== true &&
     args.flags.headless !== true;
+  // CTC-4680 round 5: whether the step now acting ran a browser wait, so a timed-out wait can be
+  // re-offered with a fresh link instead of moving on to steps that need it.
+  let waited = false;
+  const waitFor = <T>(message: string, run: () => Promise<T>): Promise<T> => {
+    waited = true;
+    return hooks.ui!.wait(message, run);
+  };
   const personalAdapter = (provider: "linear" | "github") =>
     personalConsentAdapter({
       provider,
       openBrowser: hooks.openBrowser ?? openConsentBrowser,
       sleep: hooks.sleep,
       wait: interactiveWait
-        ? (message, run) => hooks.ui!.wait(message, run)
+        ? (message, run) => waitFor(message, run)
         : undefined,
     });
   const linear = existingLinearAdapters(
@@ -336,14 +351,14 @@ export function createOnboardRuntime(
       fallback: linear["linear.workspace"],
       openBrowser: hooks.openBrowser ?? openConsentBrowser,
       wait: interactiveWait
-        ? (message, work) => hooks.ui!.wait(message, work)
+        ? (message, work) => waitFor(message, work)
         : undefined,
       sleep: hooks.sleep,
     }),
     "github.install": githubInstallationAdapter({
       openBrowser: hooks.openBrowser ?? openConsentBrowser,
       wait: interactiveWait
-        ? (message, work) => hooks.ui!.wait(message, work)
+        ? (message, work) => waitFor(message, work)
         : undefined,
       sleep: hooks.sleep,
     }),
@@ -375,7 +390,7 @@ export function createOnboardRuntime(
       args.flags.headless !== true
         ? {
             waitForAccount: <T>(work: () => Promise<T>) =>
-              hooks.ui!.wait("Waiting for a coding account", work),
+              waitFor("Waiting for a coding account", work),
             sleep: hooks.sleep,
           }
         : {}),
@@ -501,6 +516,50 @@ export function createOnboardRuntime(
         message: (text) =>
           hooks.ui ? hooks.ui.message(text) : ctx.stderr(text),
       });
+  }
+  // CTC-4680 round 5: a browser link that ran out of time holds the step. The person gets a fresh
+  // link on yes; on stop the UI pauses setup, so nothing that depends on the step runs.
+  const retry = interactiveWait ? hooks.ui?.retryTimedOut?.bind(hooks.ui) : undefined;
+  if (retry)
+    for (const step of HOLD_ON_TIMEOUT) {
+      const adapter = adapters[step];
+      if (!adapter?.act) continue;
+      const act = adapter.act;
+      adapters[step] = {
+        ...adapter,
+        act: async (stepCtx, journal, signal) => {
+          for (;;) {
+            waited = false;
+            const result = await act(stepCtx, journal, signal);
+            const timedOut =
+              result.state === "waiting" &&
+              (TIMED_OUT_REASONS.has(result.reason ?? "") ||
+                (step === "accounts" &&
+                  result.reason === "account_enrollment_required"));
+            if (!timedOut || !waited || signal?.aborted || hooks.ui?.signal.aborted)
+              return result;
+            if (!(await retry(step))) return result;
+          }
+        },
+      };
+    }
+  // Round 5: the runner question waits until Catalyst is on GitHub; asking it earlier left people
+  // answering later steps while nothing could work.
+  const runner = adapters.runner;
+  if (runner?.act && hooks.ui?.chooseRunner && args.flags.runner !== true && args.flags["no-runner"] !== true) {
+    const { check, act } = runner;
+    const githubPending = (journal: OnboardJournal): boolean => {
+      const github = journal.steps.find((step) => step.id === "github.install");
+      return Boolean(github && github.state !== "done" && github.state !== "skipped");
+    };
+    // Both: the engine runs check before act, and the runner's check is where the question is asked.
+    adapters.runner = {
+      ...runner,
+      check: async (stepCtx, journal, signal) =>
+        githubPending(journal) ? waiting("github_install_pending") : check(stepCtx, journal, signal),
+      act: async (stepCtx, journal, signal) =>
+        githubPending(journal) ? waiting("github_install_pending") : act(stepCtx, journal, signal),
+    };
   }
   // Public auth discovery and the existing /me sign-in bootstrap establish identity before the
   // tenant-bound step guards can run. Unsupported/local-only steps make no endpoint requests.

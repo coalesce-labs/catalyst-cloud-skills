@@ -464,7 +464,9 @@ function headlessRetryText(text: string, keys: string): string {
   return text
     .replace(/\b(?:Renew your login with|Sign in as one with|Sign in with|[Rr]un) catalyst login\b/g, key)
     .replace(/\bRenew your login with catalyst onboard\b/g, key)
-    .replace(/\bcatalyst onboard\b(?! --help\b)(?: --runner)?(?: again)?/g, "the same headless setup command");
+    // CTC-4680: `catalyst setup` is the same flow as `catalyst onboard`, and bare, it drops the
+    // headless flags and inputs just the same.
+    .replace(/\bcatalyst (?:onboard|setup)\b(?! --help\b)(?: --runner)?(?: again)?/g, "the same headless setup command");
 }
 
 /** The report's view of a finished journal: each unsatisfied step as one named item. */
@@ -635,7 +637,7 @@ export async function runOnboardHeadless(
         const loginGuidance = headlessLoginGuidance(journal.steps.find((step) => step.id === action.step)?.reason ?? "", keys);
         return { ...action, text: loginGuidance ?? headlessRetryText(action.text, keys), ...(loginGuidance ? { url: keys } : {}) };
       });
-      const next = headlessRetryText(view.next.replace(/(?:run )?catalyst onboard(?: --runner)?(?: again)?/g, "run the same headless setup command"), keys);
+      const next = headlessRetryText(view.next.replace(/(?:run )?catalyst (?:onboard|setup)(?: --runner)?(?: again)?/g, "run the same headless setup command"), keys);
       ctx.stdout(JSON.stringify({ ...view, actions, next, headless: report }));
     } else
       for (const [label, items] of [

@@ -36,7 +36,9 @@ const agent = (method: "GET" | "POST", name: string) => ({ method, path: `/api/v
  *  the person, the workspace, the project, the repository, then work. A new verb is a new row here
  *  in the same change, or `catalyst capabilities` lies to every guide that reads it. */
 export const CAPABILITIES: readonly Capability[] = [
-  { verb: "setup", does: "show install.sh's plan, progress and sign-in in this terminal, and ask its questions", needs: "member", routes: [], since: "0.15.0", engineProtocol: 1 },
+  // CTC-4680: plain `catalyst setup` runs the onboard flow, so install.sh may hand off to it. install.sh
+  // reads this flag rather than `setup --help`, which already exits 0 on 0.15.x.
+  { verb: "setup", does: "set up Catalyst step by step, or show install.sh's plan, progress and sign-in in this terminal", needs: "member", routes: [], since: "0.15.0", engineProtocol: 1, bootstrapHandoff: true },
   { verb: "onboard", does: "run and resume Catalyst setup with a saved step record", needs: "member", routes: [], since: "0.14.0", bootstrapHandoff: true, headless: true },
   { verb: "status", does: "say whether this machine is connected, as whom, and to which cloud", needs: "member", routes: [], since: "0.1.0" },
   { verb: "me", does: "read the person's seat, role and Linear identity", needs: "member", routes: [], since: "0.1.0" },

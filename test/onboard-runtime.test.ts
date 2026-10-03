@@ -1513,10 +1513,10 @@ describe("Q1 live identity preview", () => {
     expect(actions).toEqual([]);
     expect(next).toBe("catalyst onboard");
     expect(err.join("\n")).toContain(
-      `Signed in as ${user.label} (${user.email})`,
+      `Signed in to Catalyst as ${user.label} (${user.email})`,
     );
     expect(err.join("\n")).toContain(
-      `Workspace: ${me.name} (${me.slug}) · member`,
+      `Catalyst workspace: ${me.name} · member`,
     );
     for (const text of [out[0]!, receiptText]) {
       expect(text).not.toContain(user.email);
@@ -1549,7 +1549,7 @@ describe("Q1 live identity preview", () => {
     expect(recheckVerdict).toBe("ready");
     expect(recheckActions).toEqual([]);
     expect(recheckNext).toBe("catalyst onboard");
-    expect(err.filter((line) => line.startsWith("Signed in as "))).toHaveLength(
+    expect(err.filter((line) => line.startsWith("Signed in to Catalyst as "))).toHaveLength(
       2,
     );
   });
@@ -1658,4 +1658,124 @@ test("unexpected onboarding JSON failure still has one error journal", async () 
   expect(f.transcript.join("\n")).not.toContain(
     "private-implementation-detail",
   );
+});
+
+describe("CTC-4680 round 5: a timed-out browser step holds", () => {
+  const timedOut = { state: "waiting", reason: "consent_timeout", elapsedMs: 600_000 };
+  function personalLinear(f: ReturnType<typeof fixture>, grant: string) {
+    f.supportedFetch((async (input: Parameters<typeof fetch>[0]) => {
+      const path = new URL(String(input)).pathname;
+      if (path === "/api/v1/me/connections/linear/personal")
+        return Response.json({ connected: existsSync(grant) });
+      if (path === "/connect/linear/personal/start")
+        return Response.json({
+          authorizationUrl: `${baseUrl}/connect/linear/personal/start?handoff=fresh-${Math.random()}`,
+          expiresAt: f.ctx.now().getTime() + 60_000,
+        });
+      return Response.json({ error: "unexpected_route" }, { status: 404 });
+    }) as typeof fetch);
+  }
+  test("yes gives a fresh link and waits again", async () => {
+    const f = fixture();
+    f.seed();
+    const grant = join(f.home, "granted");
+    personalLinear(f, grant);
+    const opened: string[] = [];
+    const asked: string[] = [];
+    let waits = 0;
+    const ui: OnboardUi = {
+      ...consentUi(),
+      // The first wait runs out its window; the second one sees the grant.
+      wait: async <T,>(_text: string, run: () => Promise<T>) =>
+        ++waits === 1 ? (timedOut as T) : run(),
+      retryTimedOut: async (id) => {
+        asked.push(id);
+        return true;
+      },
+    };
+    const runtime = createOnboardRuntime(parseArgs(["onboard"]), f.ctx, {
+      ...f.hooks,
+      ui,
+      openBrowser: (url) => {
+        opened.push(url);
+        if (opened.length === 2) writeFileSync(grant, "connected");
+      },
+      sleep: async () => {},
+    });
+    const result = await runtime.adapters!["linear.personal"]!.act!(f.ctx, f.journal);
+    expect(result.state).toBe("done");
+    expect(asked).toEqual(["linear.personal"]);
+    expect(opened).toHaveLength(2);
+    expect(opened[0]).not.toBe(opened[1]);
+  });
+  test("stop leaves the step waiting and asks nothing more", async () => {
+    const f = fixture();
+    f.seed();
+    personalLinear(f, join(f.home, "never"));
+    let asked = 0;
+    const ui: OnboardUi = {
+      ...consentUi(),
+      wait: async <T,>() => timedOut as T,
+      retryTimedOut: async () => {
+        asked += 1;
+        return false;
+      },
+    };
+    const runtime = createOnboardRuntime(parseArgs(["onboard"]), f.ctx, {
+      ...f.hooks,
+      ui,
+      openBrowser: () => {},
+      sleep: async () => {},
+    });
+    expect(await runtime.adapters!["linear.personal"]!.act!(f.ctx, f.journal)).toMatchObject({
+      state: "waiting",
+      reason: "consent_timeout",
+    });
+    expect(asked).toBe(1);
+  });
+  test("an interrupted wait is skipped, not re-offered", async () => {
+    const f = fixture();
+    f.seed();
+    personalLinear(f, join(f.home, "never"));
+    let asked = 0;
+    const ui: OnboardUi = {
+      ...consentUi(),
+      wait: async <T,>() => ({ state: "waiting", reason: "interrupted", elapsedMs: 5 }) as T,
+      retryTimedOut: async () => {
+        asked += 1;
+        return true;
+      },
+    };
+    const runtime = createOnboardRuntime(parseArgs(["onboard"]), f.ctx, {
+      ...f.hooks,
+      ui,
+      openBrowser: () => {},
+      sleep: async () => {},
+    });
+    await runtime.adapters!["linear.personal"]!.act!(f.ctx, f.journal);
+    expect(asked).toBe(0);
+  });
+  test("the runner question waits until Catalyst is on GitHub", async () => {
+    const f = fixture();
+    f.seed();
+    let chosen = 0;
+    const runtime = createOnboardRuntime(parseArgs(["onboard"]), f.ctx, {
+      ...f.hooks,
+      ui: { ...consentUi(), chooseRunner: async () => (chosen++, false) },
+    });
+    const journal = {
+      ...f.journal,
+      steps: [{ id: "github.install" as const, state: "waiting" as const, reason: "consent_timeout" }],
+    };
+    // The engine runs check before act, and the runner's check is where the question is asked.
+    expect(await runtime.adapters!.runner!.check(f.ctx, journal)).toEqual({
+      state: "waiting",
+      reason: "github_install_pending",
+    });
+    expect(await runtime.adapters!.runner!.act!(f.ctx, journal)).toEqual({
+      state: "waiting",
+      reason: "github_install_pending",
+    });
+    expect(chosen).toBe(0);
+  });
 });

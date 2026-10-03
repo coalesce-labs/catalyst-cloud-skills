@@ -441,11 +441,11 @@ test.each(["live@example.com", null])(
     expect(await f.ui.confirmPlan(false)).toMatchObject({ proceed: false });
     const person = f.events.findIndex(
       (event) =>
-        event.text === `Signed in as Live Person${email ? ` (${email})` : ""}`,
+        event.text === `Signed in to Catalyst as Live Person${email ? ` (${email})` : ""}`,
     );
     const workspace = f.events.findIndex(
       (event) =>
-        event.text === "Workspace: Live Workspace (live-workspace) · admin",
+        event.text === "Catalyst workspace: Live Workspace · admin",
     );
     const prompt = f.events.findIndex((event) => event.kind === "select");
     expect(person).toBeGreaterThanOrEqual(0);
@@ -476,14 +476,14 @@ test("live display fields cannot insert terminal controls, new lines or unbounde
   };
   f.ui.plan(journal(), identity);
   const person = f.events.find((event) =>
-    event.text?.startsWith("Signed in as "),
+    event.text?.startsWith("Signed in to Catalyst as "),
   )?.text;
   const workspace = f.events.find((event) =>
-    event.text?.startsWith("Workspace: "),
+    event.text?.startsWith("Catalyst workspace: "),
   )?.text;
-  expect(person).toBe("Signed in as Live Person [31m (mail @example.com)");
+  expect(person).toBe("Signed in to Catalyst as Live Person [31m (mail @example.com)");
   expect(workspace).toBe(
-    `Workspace: Workspace name (${"x".repeat(180)}) · member`,
+    "Catalyst workspace: Workspace name · member",
   );
   expect(person).not.toMatch(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]/);
   expect(workspace).not.toMatch(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]/);
@@ -504,9 +504,9 @@ test("a first-run plan explains account or invitation prerequisites without inve
     f.events.findIndex((event) => event.kind === "select"),
   ).toBeGreaterThan(prerequisite);
   expect(
-    f.events.some((event) => event.text?.startsWith("Signed in as ")),
+    f.events.some((event) => event.text?.startsWith("Signed in to Catalyst as ")),
   ).toBe(false);
-  expect(f.events.some((event) => event.text?.startsWith("Workspace: "))).toBe(
+  expect(f.events.some((event) => event.text?.startsWith("Catalyst workspace: "))).toBe(
     false,
   );
   f.ui.dispose();
@@ -900,4 +900,21 @@ test.each([undefined, "../other", "bad/slug", "x\u001b[31m"])("automation action
   const line = ended({ id: "linear.automations", state: "skipped", reason: "automation_management_unavailable", evidence: { automations: "merge" } }, value);
   expect(line.text).toContain("Open your ENG team's workflow settings in Linear and set each pull request automation to No action.");
   expect(line.text).not.toContain("https://linear.app/");
+});
+
+test("CTC-4680 round 5: a timed-out link asks to try again, and stopping pauses setup", async () => {
+  const again = fixture("again");
+  expect(await again.ui.retryTimedOut!("github.install")).toBe(true);
+  expect(again.ui.signal.aborted).toBe(false);
+  expect(again.selections[0]!.initialValue).toBe("again");
+  expect(again.selections[0]!.options.map((o) => o.value)).toEqual(["again", "stop"]);
+  const said = again.events.map((e) => e.text ?? "").join("\n");
+  expect(said).toMatch(/the link timed out/i);
+  expect(said).not.toMatch(/tenant|consent_timeout|_browser_unavailable/);
+  const stop = fixture("stop");
+  expect(await stop.ui.retryTimedOut!("github.install")).toBe(false);
+  expect(stop.ui.signal.aborted).toBe(true);
+  const cancelled = fixture(Symbol("cancel"));
+  expect(await cancelled.ui.retryTimedOut!("linear.workspace")).toBe(false);
+  expect(cancelled.ui.signal.aborted).toBe(true);
 });

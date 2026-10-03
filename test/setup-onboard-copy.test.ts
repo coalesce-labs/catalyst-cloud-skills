@@ -137,7 +137,7 @@ test("JSON final facts preserve the journal and expose only reachable actions", 
       step: "github.install",
       number: 11,
       text: "Install Catalyst on your GitHub organization.",
-      url: "https://staging.catalystcloud.dev/settings/connections?install=github",
+      url: "https://staging.catalystcloud.dev/connect/github/start",
       who: "github-org-admin",
     },
   ]);
@@ -367,4 +367,131 @@ test("a project repository without an installation is never presented as a permi
  Object.assign(step,{state:"waiting",reason:"github_app_repository_not_installed",evidence:{repository:"acme/widget",org:"acme"}});
  expect(setupStepView(step,j).outcome).toBe("no installation reaches the project repository");
  expect(setupFinalScreen(j,"https://staging.catalystcloud.dev").actions[0]?.text).toContain("acme/widget");
+});
+
+test("CTC-4680 round 5: the GitHub install link starts the install, never the settings page", async () => {
+  const { setupBrowserInstruction } = await import("../src/setup-onboard-copy.js");
+  const base = "https://staging.catalystcloud.dev";
+  for (const opened of [false, true]) {
+    const copy = setupBrowserInstruction("github.install", base, opened)!;
+    expect(copy.url).toBe(`${base}/connect/github/start`);
+  }
+  const screen = setupFinalScreen(
+    {
+      schema: 1,
+      runId: "r5",
+      installer: null,
+      cli: "0.15.1",
+      tenant: null,
+      exit: 11,
+      changes: [],
+      steps: [
+        { id: "signin", state: "done" },
+        { id: "github.install", state: "waiting", reason: "github_installation_browser_unavailable" },
+      ],
+    } as OnboardJournal,
+    base,
+    true,
+  );
+  const text = screen.actions.map((a) => a.text).join("\n");
+  expect(text).toContain(`${base}/connect/github/start`);
+  expect(text).not.toContain("/settings/connections");
+});
+
+test("CTC-4680 round 5: a timed-out step says so, and the runner waits for GitHub", () => {
+  for (const reason of ["consent_timeout", "github_installation_browser_unavailable"]) {
+    const view = setupStepView({ id: "github.install", state: "waiting", reason });
+    expect(view.outcome).toBe("the link timed out");
+    expect(view.mark).toBe("act");
+  }
+  const runner = setupStepView(
+    { id: "runner", state: "waiting", reason: "github_install_pending" },
+    {
+      schema: 1, runId: "r5", installer: null, cli: "0.15.1", tenant: null, exit: null, changes: [],
+      steps: [{ id: "github.install", state: "waiting", reason: "consent_timeout" }],
+    } as OnboardJournal,
+  );
+  expect(runner).toMatchObject({ mark: "later", outcome: "after step 11" });
+});
+
+test("CTC-4680: a pending GitHub install request still offers the install link", async () => {
+  const { onboardReasonText } = await import("../src/onboard-next.js");
+  const text = onboardReasonText(
+    { id: "github.install", state: "waiting", reason: "github_installation_approval_pending" },
+    { baseUrl: "https://staging.catalystcloud.dev" },
+  );
+  expect(text).toContain("An install request is waiting on GitHub.");
+  expect(text).toContain("https://staging.catalystcloud.dev/connect/github/start");
+});
+
+test("CTC-4680: a member is sent to Integrations with an owner/admin explanation, never the admin-only start route", () => {
+  const base = "https://staging.catalystcloud.dev";
+  const asserted: string[] = [];
+  for (const step of [
+    { id: "github.install" as const, state: "refused" as const, reason: "github_installation_admin_required" },
+    { id: "github.install" as const, state: "skipped" as const, reason: "member_scope" },
+  ]) {
+    const screen = setupFinalScreen(
+      {
+        schema: 1,
+        runId: "member",
+        installer: null,
+        cli: "0.15.2",
+        tenant: null,
+        exit: 11,
+        changes: [],
+        steps: [{ id: "signin", state: "done" }, step],
+      } as OnboardJournal,
+      base,
+      true,
+    );
+    const text = screen.actions.map((a) => a.text).join("\n");
+    if (!text) continue; // a skipped member step may list no action at all
+    asserted.push(step.reason);
+    expect(text, step.reason).toContain(`${base}/settings/connections`);
+    expect(text, step.reason).toMatch(/owner or admin/);
+    expect(text, step.reason).not.toContain("/connect/github/start");
+  }
+  // The refused case always lists an action, so this test can never pass by skipping every case.
+  expect(asserted).toContain("github_installation_admin_required");
+});
+
+test("CTC-4680: a Catalyst-role refusal of the GitHub install routes to a workspace admin in JSON", () => {
+  const base = "https://staging.catalystcloud.dev";
+  const view = onboardJsonView(
+    {
+      schema: 1,
+      runId: "member-json",
+      installer: null,
+      cli: "0.15.2",
+      tenant: null,
+      exit: 11,
+      changes: [],
+      steps: [
+        { id: "signin", state: "done" },
+        // The shape a real journal stores for a refusal (onboard.ts records failed + refused).
+        { id: "github.install", state: "failed", refused: true, reason: "github_installation_admin_required" },
+      ],
+    } as OnboardJournal,
+    base,
+  );
+  const act = view.actions.find((a) => a.step === "github.install");
+  expect(act).toBeDefined();
+  expect(act!.who).toBe("admin");
+  expect(act!.url).toBe(`${base}/settings/connections`);
+});
+
+test("CTC-4680: the shared reason text for a member's GitHub step names the Integrations page", async () => {
+  const { onboardReasonText } = await import("../src/onboard-next.js");
+  const base = "https://staging.catalystcloud.dev";
+  for (const reason of ["github_installation_admin_required", "member_scope"]) {
+    const text = onboardReasonText({ id: "github.install", state: "waiting", reason }, { baseUrl: base });
+    expect(text, reason).toContain(`${base}/settings/connections`);
+    expect(text, reason).toMatch(/owner or admin/);
+    expect(text, reason).not.toContain("/connect/github/start");
+  }
+  // Other steps keep the generic member sentence.
+  expect(onboardReasonText({ id: "runner", state: "waiting", reason: "member_scope" }, { baseUrl: base })).toBe(
+    "Your workspace administrator handles this step.",
+  );
 });

@@ -20,7 +20,7 @@ import { machinePathsFile } from "../vendor/paths/node.js";
 import type { ParsedArgs } from "./args.js";
 import { configPathFor, type Ctx } from "./config.js";
 import type { OnboardUi } from "./onboard-ui.js";
-import { onboardJsonView } from "./setup-onboard-copy.js";
+import { onboardJsonView, TIMED_OUT_REASONS } from "./setup-onboard-copy.js";
 import {
   standalonePlan,
   standalonePlanNotes,
@@ -131,10 +131,11 @@ export function onboardIdentityLines(
   const person = label(display?.personLabel || identity.membershipId);
   const email = display?.email ? label(display.email) : "";
   const workspace = label(display?.workspaceName || identity.account);
-  const slug = display?.workspaceSlug ? label(display.workspaceSlug) : "";
+  // CTC-4680 (Ryan, round 2): "Signed in to Catalyst as …" and "Catalyst workspace: …", with no
+  // repeated email and no internal slug.
   return [
-    `Signed in as ${person}${email ? ` (${email})` : ""}`,
-    `Workspace: ${workspace}${slug ? ` (${slug})` : ""} · ${identity.role}`,
+    `Signed in to Catalyst as ${person}${email && email !== person ? ` (${email})` : ""}`,
+    `Catalyst workspace: ${workspace} · ${identity.role}`,
   ];
 }
 
@@ -1825,7 +1826,13 @@ export async function cmdOnboard(
         }
         if (signal.aborted) {
           const settled = journalStep(journal, id);
-          if (settled?.state !== "done" && settled?.state !== "failed")
+          // CTC-4680 round 5: a person who stopped at "Ready to try again?" stopped a step whose link
+          // timed out; keep that reason so the summary says so, not "skipped for now".
+          if (
+            settled?.state !== "done" &&
+            settled?.state !== "failed" &&
+            !TIMED_OUT_REASONS.has(settled?.reason ?? "")
+          )
             recordStep({
               id,
               state: "waiting",

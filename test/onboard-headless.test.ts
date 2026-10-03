@@ -702,6 +702,25 @@ describe("headless runner integration", () => {
     }
   });
 
+  test("CTC-4680: no headless item tells an agent to run bare catalyst setup", () => {
+    const cases = [
+      ["github.install", "github_installation_approval_pending"],
+      ["github.install", "github_installation_browser_unavailable"],
+      ["linear.workspace", "workspace_browser_unavailable"],
+      ["linear.personal", "personal_browser_unavailable"],
+      ["github.personal", "personal_browser_unavailable"],
+      ["accounts", "account_enrollment_required"],
+      ["runner", "github_install_pending"],
+      ["linear.workspace", "consent_timeout"],
+    ] as const;
+    for (const [id, reason] of cases) {
+      const items = headlessStepItems({ steps: [{ id, state: "waiting", reason }] }, "https://cloud.example.test");
+      for (const item of [...items.missing, ...items.deferred, ...items.failed]) {
+        expect(item.text, `${id} ${reason}`).not.toMatch(/catalyst (?:setup|onboard)\b(?! --help)/);
+      }
+    }
+  });
+
   test("a deferred step that stops the run is missing; ordinary optional waits remain deferred", () => {
     for (const id of ["settings", "values", "first-ticket", "housekeeping", "runner"] as const) {
       for (const reason of ["onboard_login_refresh_required", "interrupted"]) {
