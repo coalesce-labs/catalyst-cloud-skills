@@ -1,16 +1,25 @@
 # @catalyst-cloud/cli
 
+Set up Catalyst Cloud and manage your account from the command line.
+
+Check ticket progress and see which decisions need your attention.
+
+Install: `npm install -g @catalyst-cloud/cli`
+
+[CLI documentation](https://github.com/coalesce-labs/catalyst-cloud-skills#readme)
+
 [![skills.sh](https://skills.sh/b/coalesce-labs/catalyst-cloud-skills)](https://skills.sh/coalesce-labs/catalyst-cloud-skills)
 
 ## Install
 
-Run the installer, then type `/catalyst-onboard` in your coding agent:
+Run the installer, then run `catalyst onboard`:
 
 ```sh
 curl -fsSL https://staging.catalystcloud.dev/install.sh | sh
+catalyst onboard
 ```
 
-The installer puts the CLI and both skill packs on this machine and connects it with one browser approval. It ends by printing the next step. Then open a new session of your coding agent in any directory and type `/catalyst-onboard` (`$catalyst-onboard` in Codex). The onboarding skill reads where this machine stands and walks you through the rest one step at a time. It asks before it writes anything to your machine. Everything else on this page is the reference it follows.
+The installer puts the CLI and both skill packs on this machine and connects it with one browser approval. Run `catalyst onboard` to finish setup from the command line. You can also use the onboarding skill in your coding agent after that. Everything else on this page is the reference.
 
 This repository supplies skills for setting up and operating your Catalyst Cloud account. A coding workstation also uses [`coalesce-labs/catalyst-dev-skills`](https://github.com/coalesce-labs/catalyst-dev-skills) for research, planning, implementation, review, and shipping.
 
