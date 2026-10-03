@@ -824,7 +824,13 @@ function printPlan(
   if (identity !== undefined)
     for (const line of onboardIdentityLines(identity)) ctx.stdout(line);
   let group: string | undefined;
-  for (const row of standalonePlan(journal, options?.scope, options?.runner)) {
+  // Beside --json and headless output: the numbers JSON actions carry (CTC-4680).
+  for (const row of standalonePlan(
+    journal,
+    options?.scope,
+    options?.runner,
+    "json",
+  )) {
     if (row.group !== group) {
       ctx.stdout("");
       ctx.stdout(row.group);

@@ -45,23 +45,34 @@ function fixture(interactive = false, answer = "stop", fancy = false) {
   return { ui, journal, text: () => text };
 }
 
-test("standalone plan discloses rechecked steps with stable setup numbers", () => {
+test("standalone plan names the three parts, lists part 1, and discloses rechecked steps when their part starts", () => {
   const f = fixture();
   f.journal.steps.find((step) => step.id === "linear.workspace")!.state =
     "done";
   f.ui.plan(f.journal);
-  const text = f.text();
-  expect(text).toContain("On this computer");
-  expect(text).toContain("In Linear and GitHub");
-  expect(text).toContain("Work");
-  expect(text).not.toContain("(recheck)");
-  expect(text).toContain("6 Connect your Linear workspace");
-  expect(text).toContain("check again;");
-  expect(text).toContain("7 Connect your Linear account");
-  expect(text).toContain("17 Start a first ticket");
+  const plan = f.text();
+  expect(plan).toContain("1 This computer");
+  expect(plan).toContain("2 Linear and GitHub");
+  expect(plan).toContain("3 Ready for work");
+  expect(plan).toContain("Part 1 of 3: This computer");
+  expect(plan).toContain("2 Sign in to Catalyst");
+  expect(plan).toContain("3 Schedule the daily update");
+  expect(plan).not.toContain("(recheck)");
   expect("  0 Unknown").toMatch(/^\s*0 /m);
-  expect(text).not.toMatch(/^\s*0 /m);
-  expect(text).not.toContain("tenant");
+  expect(plan).not.toMatch(/^\s*0 /m);
+  expect(plan).not.toContain("tenant");
+  for (const id of ["machine", "cli", "skills", "legacy", "signin"] as const) {
+    const step = f.journal.steps.find((s) => s.id === id)!;
+    step.state = "done";
+    f.ui.stepStart(id);
+    f.ui.stepEnd(step, f.journal);
+  }
+  f.ui.stepStart("linear.workspace");
+  const part2 = f.text().slice(plan.length);
+  expect(part2).toContain("Part 2 of 3: Linear and GitHub");
+  expect(part2).toContain("1 Connect your Linear workspace");
+  expect(part2).toContain("check again;");
+  expect(part2).toContain("2 Connect your Linear account");
   f.ui.dispose();
 });
 
@@ -78,7 +89,7 @@ test("standalone machine checks produce one success and no step zero", () => {
   const done = f
     .text()
     .split("\n")
-    .filter((line) => line.startsWith("[done]"));
+    .filter((line) => line.startsWith("    [done]"));
   expect(done).toHaveLength(1);
   expect(done[0]).toContain("This computer");
   f.ui.dispose();
@@ -187,7 +198,7 @@ test("old member skips cannot hide a currently selected team", () => {
     { state: "skipped", reason: "member_scope" },
   );
   f.ui.plan(f.journal, undefined, { localSync: false, scope: ["linear.team"] });
-  expect(f.text()).toContain("8 Choose a Linear team");
+  expect(f.text()).toContain("3 Choose a Linear team");
   f.ui.dispose();
 });
 
@@ -221,8 +232,8 @@ test("the standalone consent question owns a safe unnumbered prompt frame", asyn
 });
 
 for (const [id, row] of [
-  ["runner", "15 Check runners"],
-  ["values", "16 Review repository settings"],
+  ["runner", "3 Check runners"],
+  ["values", "4 Review repository settings"],
 ] as const) {
   test(`the scoped ${id} plan displays its folded public row`, () => {
     const f = fixture();
@@ -240,7 +251,7 @@ test("a failed check gives one final next action without leaking a raw step ID",
   f.ui.stepEnd(step, f.journal);
   f.ui.finish(f.journal);
   expect(f.text()).not.toContain("--only linear.workspace");
-  expect(f.text()).toContain("Next: run catalyst onboard");
+  expect(f.text()).toContain("Next: run catalyst setup");
   f.ui.dispose();
 });
 
@@ -259,7 +270,7 @@ test("staged approval followed by the engine identity check prints one sign-in o
     .split("\n")
     .filter(
       (line) =>
-        line.startsWith("[done]") && line.includes("Sign in to Catalyst"),
+        line.startsWith("    [done]") && line.includes("Sign in to Catalyst"),
     );
   expect(outcomes).toHaveLength(1);
   f.ui.dispose();

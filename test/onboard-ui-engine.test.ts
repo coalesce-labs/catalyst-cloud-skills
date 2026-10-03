@@ -559,8 +559,8 @@ test.each([false, true])(
     expect(await run).toBe(11);
     expect(text).toMatch(
       unicode
-        ? /▲.*11 Install Catalyst on GitHub\s+skipped for now/
-        : /\[!\].*11 Install Catalyst on GitHub\s+skipped for now/,
+        ? /▲.*6 Install Catalyst on GitHub\s+skipped for now/
+        : /\[!\].*6 Install Catalyst on GitHub\s+skipped for now/,
     );
     if (unicode) expect(text).toMatch(/\u001b\[\d+A\r\u001b\[J/);
     expect(text.indexOf("skipped for now")).toBeLessThan(

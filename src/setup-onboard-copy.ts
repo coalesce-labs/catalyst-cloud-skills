@@ -7,7 +7,8 @@ import {
   type OnboardStepId,
 } from "./onboard.js";
 import { onboardReasonText } from "./onboard-next.js";
-import type { StepMark } from "./setup-render.js";
+import type { StepMark, TrackerRow } from "./setup-render.js";
+/** The step numbers `--json` reports. People read SETUP_PART_NUMBERS instead (CTC-4680). */
 export const SETUP_NUMBERS: Partial<Record<OnboardStepId, number>> = {
   machine: 1,
   cli: 1,
@@ -31,6 +32,90 @@ export const SETUP_NUMBERS: Partial<Record<OnboardStepId, number>> = {
   values: 16,
   "first-ticket": 17,
 };
+export type SetupPart = 1 | 2 | 3;
+/** CTC-4680: setup runs in three parts. The times are estimates until setup logs give medians. */
+export const SETUP_PARTS: Record<
+  SetupPart,
+  { title: string; estimate: string; summary: string; done: string }
+> = {
+  1: {
+    title: "This computer",
+    estimate: "about 2 min",
+    summary: "skills and sign-in",
+    done: "This computer is set up.",
+  },
+  2: {
+    title: "Linear and GitHub",
+    estimate: "about 10 min",
+    summary: "approvals in your browser",
+    done: "Linear and GitHub are connected.",
+  },
+  3: {
+    title: "Ready for work",
+    estimate: "about 5 min",
+    summary: "a first ticket",
+    done: "Catalyst is ready for work.",
+  },
+};
+export const SETUP_PART_OF: Record<OnboardStepId, SetupPart> = {
+  machine: 1,
+  cli: 1,
+  skills: 1,
+  legacy: 1,
+  signin: 1,
+  daemon: 1,
+  housekeeping: 1,
+  "linear.workspace": 2,
+  "linear.personal": 2,
+  "linear.team": 2,
+  "linear.adopt": 2,
+  "linear.automations": 2,
+  "github.install": 2,
+  "github.personal": 2,
+  "github.repos": 3,
+  projects: 3,
+  accounts: 3,
+  capacity: 3,
+  runner: 3,
+  settings: 3,
+  values: 3,
+  "first-ticket": 3,
+  ready: 3,
+};
+/** What a person reads: each part restarts at 1, in the order setup runs the steps. Steps that
+ *  share a row (the computer checks, repositories and projects, runners, settings) share a number. */
+export const SETUP_PART_NUMBERS: Partial<Record<OnboardStepId, number>> = {
+  machine: 1,
+  cli: 1,
+  skills: 1,
+  legacy: 1,
+  signin: 2,
+  housekeeping: 3,
+  "linear.workspace": 1,
+  "linear.personal": 2,
+  "linear.team": 3,
+  "linear.adopt": 4,
+  "linear.automations": 5,
+  "github.install": 6,
+  "github.personal": 7,
+  "github.repos": 1,
+  projects: 1,
+  accounts: 2,
+  capacity: 3,
+  runner: 3,
+  settings: 4,
+  values: 4,
+  "first-ticket": 5,
+};
+/** CTC-4680: people type `catalyst setup`; `catalyst onboard` stays its alias. What setup draws
+ *  names setup. `--json` and headless output keep their own words. */
+export function setupCommandWords(text: string): string {
+  return text.replace(/\bcatalyst onboard\b/g, "catalyst setup");
+}
+/** "Part 1 of 3 · This computer", with a colon where the output is plain. */
+export function setupPartHeading(part: SetupPart, unicode: boolean): string {
+  return `Part ${part} of 3${unicode ? " ·" : ":"} ${SETUP_PARTS[part].title}`;
+}
 const TITLES: Partial<Record<OnboardStepId, string>> = {
   "linear.adopt": "Set up the team's workflow",
   "linear.automations": "Check Linear's PR automations",
@@ -175,32 +260,130 @@ export function setupStepView(
             : "act";
   let outcome = step.state === "done" ? succeeded(step) : unfinished(step);
   if (mark === "later") {
-    const numbers = [
-      ...new Set(
-        (ONBOARD_DEPENDENCIES[step.id] ?? [])
-          .filter((id) => {
+    const waitsOn =
+      step.reason === "github_install_pending"
+        ? (["github.install"] as const)
+        : (ONBOARD_DEPENDENCIES[step.id] ?? []).filter((id) => {
             const s = journal?.steps.find((s) => s.id === id);
             return s?.state !== "done" && s?.state !== "skipped";
-          })
-          .map((id) => SETUP_NUMBERS[id])
-          .filter((n): n is number => n !== undefined),
-      ),
-    ];
-    if (step.reason === "github_install_pending")
-      numbers.splice(0, numbers.length, SETUP_NUMBERS["github.install"]!);
+          });
+    // Numbers restart in each part: this part's steps come bare, then each other part once.
+    const byPart = new Map<SetupPart, number[]>();
+    for (const id of waitsOn) {
+      const n = SETUP_PART_NUMBERS[id];
+      if (n === undefined) continue;
+      const p = SETUP_PART_OF[id];
+      const list = byPart.get(p) ?? [];
+      if (!list.includes(n)) byPart.set(p, [...list, n]);
+    }
+    const own = SETUP_PART_OF[step.id];
+    const steps = (ns: number[]) => {
+      const sorted = [...ns].sort((x, y) => x - y);
+      const last = sorted.pop()!;
+      return sorted.length
+        ? `steps ${sorted.join(", ")} and ${last}`
+        : `step ${last}`;
+    };
+    const groups = [...byPart]
+      .sort(([x], [y]) => (x === own ? -1 : y === own ? 1 : x - y))
+      .map(([p, ns]) => (p === own ? steps(ns) : `${steps(ns)} of part ${p}`));
     outcome =
       step.state === "pending" && !step.reason
         ? "not checked yet"
-        : numbers.length
-          ? `after ${numbers.length === 1 ? "step" : "steps"} ${numbers.join(" and ")}`
+        : groups.length
+          ? `after ${groups.length > 1 ? `${groups.slice(0, -1).join(", ")}, and ${groups.at(-1)}` : groups[0]}`
           : "after an earlier step";
   }
   return {
-    number: SETUP_NUMBERS[step.id] ?? 0,
+    number: SETUP_PART_NUMBERS[step.id] ?? 0,
     title: TITLES[step.id] ?? ONBOARD_TITLES[step.id],
     mark,
     outcome,
   };
+}
+export interface SetupPartProgress {
+  /** Numbered rows in the part, counting rows that share a number once. */
+  total: number;
+  done: number;
+  /** Rows a person must act on, failed ones included. */
+  needs: number;
+  failed: number;
+}
+/** How far each part has got, by its numbered rows. A row is done when every step in it is done
+ *  or skipped, and needs someone when any of its steps does. */
+export function setupPartProgress(
+  journal: OnboardJournal,
+  scope?: readonly OnboardStepId[],
+): Record<SetupPart, SetupPartProgress> {
+  const progress = {
+    1: { total: 0, done: 0, needs: 0, failed: 0 },
+    2: { total: 0, done: 0, needs: 0, failed: 0 },
+    3: { total: 0, done: 0, needs: 0, failed: 0 },
+  };
+  const rows = new Map<string, StepMark[]>();
+  for (const id of ONBOARD_STEPS) {
+    const number = SETUP_PART_NUMBERS[id];
+    if (number === undefined || (scope && !scope.includes(id))) continue;
+    const step = journal.steps.find((s) => s.id === id) ?? {
+      id,
+      state: "pending" as const,
+    };
+    const key = `${SETUP_PART_OF[id]}:${number}`;
+    rows.set(key, [...(rows.get(key) ?? []), setupStepView(step, journal).mark]);
+  }
+  for (const [key, marks] of rows) {
+    const part = progress[Number(key.split(":")[0]) as SetupPart];
+    part.total++;
+    if (marks.every((m) => m === "done" || m === "skip")) part.done++;
+    else if (marks.some((m) => m === "act" || m === "fail")) {
+      part.needs++;
+      if (marks.includes("fail")) part.failed++;
+    }
+  }
+  return progress;
+}
+/**
+ * The tracker's rows: on the first screen (`plan`, the part about to start), at a boundary
+ * (`next`, the part about to start), or at the end. A part with no rows in this run is left out.
+ */
+export function setupTrackerRows(
+  progress: Record<SetupPart, SetupPartProgress>,
+  moment: { plan: SetupPart } | { next: SetupPart } | "end",
+): TrackerRow[] {
+  const steps = (n: number) => `${n} ${n === 1 ? "step" : "steps"}`;
+  return ([1, 2, 3] as const)
+    .filter((p) => progress[p].total > 0)
+    .map((p): TrackerRow => {
+      const { title, estimate, summary } = SETUP_PARTS[p];
+      const got = progress[p];
+      const row = (mark: StepMark, note: string) => ({
+        mark,
+        number: p,
+        title,
+        note,
+      });
+      if (typeof moment === "object" && "plan" in moment)
+        return row(
+          p === moment.plan ? "now" : "later",
+          `${estimate} · ${summary}`,
+        );
+      const finished = got.done === got.total;
+      const needsMark = got.failed ? "fail" : "act";
+      if (typeof moment === "object") {
+        if (p === moment.next) return row("now", `next · ${estimate}`);
+        if (p > moment.next) return row("later", estimate);
+        return finished
+          ? row("done", "done")
+          : row(needsMark, `${steps(got.total - got.done)} not finished`);
+      }
+      if (finished) return row("done", "");
+      if (got.needs)
+        return row(
+          needsMark,
+          `${steps(got.needs)} ${got.needs === 1 ? "needs" : "need"} someone`,
+        );
+      return row("later", `${got.done} of ${steps(got.total)} done`);
+    });
 }
 function page(base: string | undefined, path: string): string | undefined {
   try {
