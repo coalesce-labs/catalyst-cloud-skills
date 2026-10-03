@@ -12,6 +12,8 @@ Installing from a git ref (`npm install -g github:coalesce-labs/catalyst-cloud-s
 
 The skills under `skills/` are the source of truth for the published package. The `files` field in `package.json` ships them verbatim, and the customer's own agent installs them: the Claude Code plugin reads them from `.claude-plugin/plugin.json`, and `npx skills add` copies them. The CLI's `install` verb copies the same directories as a repair path. Edit them here and nowhere else.
 
+They are product copy. Before you change a skill, the README or an eval case, read `.agents/rules/public-text.md`: published text describes AI accounts as token-billed and never names any other kind, and `test/public-text.test.ts` enforces it.
+
 ## Releases
 
 The CLI is one member of Catalyst's shared release train: every member shares one MAJOR.MINOR, so a MINOR moves only in a coordinated release with the SDK, the installer and the schema packages. Before you bump, load the `release-train` skill (`.agents/skills/release-train/SKILL.md`) and run its train-status script.

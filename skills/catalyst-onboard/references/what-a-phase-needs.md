@@ -8,7 +8,7 @@ One coding account is enough to start. A second gives the router somewhere to go
 
 ### The kinds, and enrolling
 
-A coding account is an AI account: an API key from a supported provider, billed per token by that provider. Do not promise a provider. Ask the person to open Settings → AI accounts and choose from the providers it lists; if the one they name is not there, say so and ask whether they have a key from one that is.
+Settings → AI accounts lists the providers this workspace can connect and what each one asks for; an API key is billed per token by its provider. Do not promise a provider. Ask the person to open Settings → AI accounts and choose from the providers it lists; if the one they name is not there, say so and ask whether they have a key from one that is.
 
 Enrolling is a browser step by construction: on Settings → AI accounts, an owner or admin picks the provider, labels the account, and pastes the key into a write-only field. If the page says Catalyst takes over a login, say so before the paste. Call an account by its label, else its email, else its slot (`displayName` in `catalyst accounts --json`).
 
