@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.15.2
+
+- Cloud requests and live-event connections report the installed CLI version so operators can identify the client release.
+
 ## 0.15.1
 
 - Runner setup accepts verified personal team admission before a repository has been mapped to that team. Older cloud servers keep their existing admission check.
