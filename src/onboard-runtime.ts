@@ -22,6 +22,8 @@ import { onboardRunnerAdapter, type RunnerEngine } from "./onboard-runner.js";
 import { onboardAutomationManagementAdapter } from "./onboard-automation-management.js";
 import { onboardWorkflowVerificationAdapter } from "./onboard-workflow.js";
 import { onboardAccountsAdapter } from "./onboard-accounts.js";
+import { onboardFirstTicketAdapter } from "./onboard-first-ticket.js";
+import { onboardValuesAdapter } from "./onboard-values.js";
 import { githubInstallationAdapter } from "./onboard-github.js";
 import {
   connectChecklistAdapter,
@@ -475,6 +477,19 @@ export function createOnboardRuntime(
             },
     },
     housekeeping: onboardHousekeepingAdapter(hooks.scheduler),
+    values: onboardValuesAdapter(),
+    // Only a person at a terminal picks a ticket; --yes, JSON and headless runs leave it waiting.
+    "first-ticket": onboardFirstTicketAdapter(
+      interactiveWait && hooks.ui?.chooseFirstTicket
+        ? {
+            choose: (tickets, where) =>
+              hooks.ui!.chooseFirstTicket!(
+                tickets.map((ticket) => ({ ...ticket })),
+                { ...where },
+              ),
+          }
+        : {},
+    ),
     ready: { check: hooks.ready },
   };
   const get = (path: string) => ({ method: "GET" as const, path });
@@ -533,6 +548,10 @@ export function createOnboardRuntime(
       },
       projects: {
         check: [get("/api/v1/repos"), get("/api/v1/agent/contract")],
+        fallback: "connections",
+      },
+      values: {
+        check: [get("/api/v1/agent/contract")],
         fallback: "connections",
       },
       ready: {

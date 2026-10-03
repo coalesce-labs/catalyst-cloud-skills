@@ -233,7 +233,7 @@ test("the standalone consent question owns a safe unnumbered prompt frame", asyn
 
 for (const [id, row] of [
   ["runner", "4 Run Catalyst's work on this machine"],
-  ["values", "5 Review repository settings"],
+  ["values", "6 Check repository values"],
 ] as const) {
   test(`the scoped ${id} plan displays its own public row`, () => {
     const f = fixture();

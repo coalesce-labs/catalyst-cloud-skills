@@ -187,13 +187,13 @@ test("explicit runner and scoped optional prerequisites remain actionable withou
   );
   Object.assign(
     j.steps.find((s) => s.id === "values")!,
-    { state: "waiting", reason: "prerequisite_not_ready" },
+    { state: "waiting", reason: "required_values_missing" },
   );
   expect(
     onboardJsonView(j, undefined, false, { only: "values" }).actions.map(
       (a) => a.step,
     ),
-  ).toEqual(["settings"]);
+  ).toEqual(["values"]);
 });
 test("continuation names only remaining downstream work", async () => {
   const { pendingContinuation } =
@@ -270,7 +270,7 @@ test("JSON next follows a completed first ticket and choices belong to you", asy
     url: "https://linear.app/example/issue/TEST-1",
   };
   expect(onboardJsonView(j).next).toBe(
-    "open https://linear.app/example/issue/TEST-1 and follow TEST-1.",
+    "Follow https://linear.app/example/issue/TEST-1 in Linear; Catalyst comments there as each phase finishes.",
   );
   j.exit = 11;
   j.complete = false;
