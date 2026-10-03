@@ -73,8 +73,8 @@ describe("runSetupSignin", () => {
       .trimEnd()
       .split("\n")
       .map((l) => l.trim());
-    expect(lines[0]).toBe(
-      "This connects this computer to your Catalyst account, so catalyst and your",
+    expect(lines[0]).toMatch(
+      /^This connects this computer to your Catalyst account, so catalyst and/,
     );
     const link = lines.indexOf(code.completeUri ?? "");
     const address = lines.findIndex((l) => l.startsWith("Or open"));

@@ -80,7 +80,9 @@ test("injected setup hides successful machine repeats and uses exact group/title
     j,
   );
   expect(f.text()).toContain("Linear");
-  expect(f.text()).toContain("9 Set up the team's workflow");
+  expect(f.text()).toContain("Part 1 done. This computer is set up.");
+  expect(f.text()).toContain("Part 2 of 3: Linear and GitHub");
+  expect(f.text()).toMatch(/\[done\] +4 Set up the team's workflow/);
   expect(f.text()).not.toContain("Connections");
   f.ui.dispose();
 });
@@ -97,9 +99,9 @@ test("project registration folds into one repository outcome", () => {
   const done = f
     .text()
     .split("\n")
-    .filter((l) => l.startsWith("[done]"));
+    .filter((l) => l.startsWith("    [done]"));
   expect(done).toHaveLength(1);
-  expect(done[0]).toContain("13 Choose repositories");
+  expect(done[0]).toContain("1 Choose repositories");
   f.ui.dispose();
 });
 test("final screen only lists root actions and one last Next line", () => {
@@ -119,7 +121,7 @@ test("final screen only lists root actions and one last Next line", () => {
   expect(f.text()).not.toContain("Choose repositories:");
   expect(f.text().match(/Next:/g)).toHaveLength(1);
   expect(f.text().trimEnd().split("\n").at(-1)).toBe(
-    "Next: run catalyst onboard after you finish 1.",
+    "  Next: run catalyst setup after you finish 1.",
   );
   f.ui.dispose();
 });
@@ -205,7 +207,7 @@ test("cancel after root actions keeps them once and puts full log before the que
 });
 
 test.each([false, true])(
-  "renewed sign-in inside combined setup shows its code before waiting and resolves step4 (unicode=%s)",
+  "renewed sign-in inside combined setup shows its code before waiting and resolves its step (unicode=%s)",
   async (unicode) => {
     const f = fixture(false, false, unicode);
     const j = journal();
@@ -227,7 +229,7 @@ test.each([false, true])(
       j,
     );
     expect(f.text()).toMatch(
-      unicode ? /✓.*4 Sign in to Catalyst/ : /\[done\]\s+4 Sign in to Catalyst/,
+      unicode ? /✓.*2 Sign in to Catalyst/ : /\[done\]\s+2 Sign in to Catalyst/,
     );
     f.ui.dispose();
   },
@@ -257,7 +259,7 @@ test("staged signin before an engine step remains inside the shared plain frame"
   f.ui.message("To connect this machine, visit: https://signin.test/device");
   f.ui.message("and enter the code: ABCD-1234");
   await f.ui.wait("Waiting for Catalyst approval", async () => {
-    expect(f.text()).toContain("4 Sign in to Catalyst");
+    expect(f.text()).toContain("2 Sign in to Catalyst");
     expect(f.text()).toContain("ABCD-1234");
     expect(f.text()).toContain("waiting for you");
   });
@@ -266,7 +268,7 @@ test("staged signin before an engine step remains inside the shared plain frame"
 });
 
 test.each([false, true])(
-  "staged approval closes step4 before the plan and hides the later checked repeat (unicode=%s)",
+  "staged approval closes its step before the plan and hides the later checked repeat (unicode=%s)",
   async (unicode) => {
     const f = fixture(false, false, unicode);
     f.ui.message("To connect this machine, visit: https://signin.test/device");
@@ -276,8 +278,8 @@ test.each([false, true])(
     const closed = f.text();
     expect(closed).toMatch(
       unicode
-        ? /✓.*4 Sign in to Catalyst.*approved/
-        : /\[done\]\s+4 Sign in to Catalyst.*approved/,
+        ? /✓.*2 Sign in to Catalyst.*approved/
+        : /\[done\]\s+2 Sign in to Catalyst.*approved/,
     );
     f.ui.stepStart("signin");
     f.ui.stepEnd({ id: "signin", state: "done" }, journal());
@@ -304,7 +306,7 @@ test.each([false, true])(
     expect(closing).toContain("Your saved connection was not changed.");
     expect(closing).not.toContain("Your progress is saved");
     expect(closing.trim().split("\n").at(-1)).toContain(
-      "Next: run catalyst onboard to sign in again.",
+      "Next: run catalyst setup to sign in again.",
     );
     expect(closing.indexOf("\u001b[J")).toBeLessThan(
       closing.indexOf("Approval timed out."),
@@ -318,7 +320,7 @@ test("ordinary staged signin has one approved outcome when the engine checks it 
   f.ui.stagedSigninEnd!("done");
   f.ui.stepStart("signin");
   f.ui.stepEnd({ id: "signin", state: "done" }, journal());
-  expect(f.text().match(/\[done\]\s+4 Sign in to Catalyst/g)).toHaveLength(1);
+  expect(f.text().match(/\[done\]\s+2 Sign in to Catalyst/g)).toHaveLength(1);
   f.ui.dispose();
 });
 test("staged signin failure before a code still ends with cause and next", () => {
@@ -330,7 +332,7 @@ test("staged signin failure before a code still ends with cause and next", () =>
   expect(f.text()).toContain("Authorization request failed.");
   expect(f.text()).toContain("Setup is not ready yet");
   expect(f.text().trim().split("\n").at(-1)).toContain("Next:");
-  expect(f.text()).not.toContain("4 Sign in to Catalyst");
+  expect(f.text()).not.toContain("Sign in to Catalyst");
 });
 test("post-approval identity refusal describes verification rather than denied approval", () => {
   const f = fixture();
@@ -354,7 +356,7 @@ test("final readiness failure stays visible without a numbered ready row", () =>
     "The server's setup capabilities could not be checked.",
   );
   expect(f.text().replace(/\s+/g, " ")).toContain(
-    "Run catalyst onboard to try again.",
+    "Run catalyst setup to try again.",
   );
   expect(f.text()).not.toMatch(/0 Check onboarding readiness/);
   f.ui.dispose();
@@ -388,7 +390,7 @@ test.each(["waiting", "failed"] as const)(
     expect(f.text()).not.toContain("Some required checks are still unverified");
     if (state === "failed")
       expect(f.text().replace(/\s+/g, " ")).toContain(
-        "A required check failed. Run catalyst onboard again to retry.",
+        "A required check failed. Run catalyst setup again to retry.",
       );
     expect(f.text().trim().split("\n").at(-1)).toContain("Next:");
     f.ui.dispose();

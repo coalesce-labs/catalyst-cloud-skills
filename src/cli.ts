@@ -487,6 +487,7 @@ export async function main(
                   renderer: createSetupRenderer(process.stdout, ctx.env),
                   disposeRenderer: true,
                   signinTimeoutMs: deps.onboardSigninTimeoutMs,
+                  version: manifest.version,
                 },
               );
             } catch (error) {
@@ -513,6 +514,7 @@ export async function main(
               renderer: createSetupRenderer(output, ctx.env),
               disposeRenderer: true,
               signinTimeoutMs: deps.onboardSigninTimeoutMs,
+              version: manifest.version,
               interactive: false,
               verbose: args.flags.verbose === true,
             },

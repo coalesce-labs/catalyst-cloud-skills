@@ -13,7 +13,14 @@ import {
   CONNECTION_REPAIR_REASONS,
   setupFinalScreen,
   setupBrowserInstruction,
-  SETUP_NUMBERS,
+  setupCommandWords as say,
+  setupPartHeading,
+  setupPartProgress,
+  setupTrackerRows,
+  SETUP_PART_NUMBERS,
+  SETUP_PART_OF,
+  SETUP_PARTS,
+  type SetupPart,
 } from "./setup-onboard-copy.js";
 import type { ParsedArgs } from "./args.js";
 import {
@@ -168,26 +175,6 @@ export interface OnboardSignalSource {
   off(event: Interrupt, listener: () => void): unknown;
 }
 
-export const STEP_NUMBERS: Partial<Record<OnboardStepId, number>> = {
-  signin: 4,
-  housekeeping: 5,
-  "linear.workspace": 6,
-  "linear.personal": 7,
-  "linear.team": 8,
-  "linear.adopt": 9,
-  "linear.automations": 10,
-  "github.install": 11,
-  "github.personal": 12,
-  "github.repos": 13,
-  projects: 13,
-  accounts: 14,
-  capacity: 15,
-  runner: 15,
-  settings: 16,
-  values: 16,
-  "first-ticket": 17,
-};
-
 export function createClackOnboardUi(
   prompts: ClackOnboardPort,
   streams: Streams,
@@ -204,6 +191,8 @@ export function createClackOnboardUi(
     /** Read when a line needs it: the saved login can change during setup. */
     baseUrl?: () => string | undefined;
     logPath?: () => string | undefined;
+    /** The CLI version the header names. */
+    version?: string;
   } = {},
 ): OnboardUi {
   const abort = new AbortController();
@@ -227,6 +216,14 @@ export function createClackOnboardUi(
   const renderer = deps.renderer;
   const interactive = deps.interactive !== false;
   let group: string | undefined;
+  // CTC-4680: the part whose steps are on screen, the journal and plan the tracker reads, and
+  // whether boundaries draw the tracker (not on a check-again pass).
+  let part: SetupPart | undefined;
+  // The part of the last step that ended in this run, shown or not: a boundary is a move past it.
+  let ranPart: SetupPart | undefined;
+  let journalSeen: OnboardJournal | undefined;
+  let planned: { scope?: readonly OnboardStepId[]; runner?: boolean } = {};
+  let rechecking = false;
   let browserOpened = true;
   let questionOpen = false;
   let signinShown = false;
@@ -259,6 +256,42 @@ export function createClackOnboardUi(
       !(id === "signin" && signinShown));
   const title = (id: OnboardStepId) =>
     setupStepView({ id, state: "running" }).title;
+  const number = (id: OnboardStepId) => SETUP_PART_NUMBERS[id] ?? 0;
+  /** A part's heading, then its plan rows, numbered from 1. */
+  const planPart = (r: SetupRenderer, p: SetupPart, journal: OnboardJournal) => {
+    r.heading(setupPartHeading(p, r.traits.unicode));
+    for (const row of standalonePlan(journal, planned.scope, planned.runner))
+      if (row.part === p) r.plan(row.number, row.title, row.detail);
+  };
+  /** Starting a step in another part: its heading, and when this run has moved past a part, the
+   *  tracker again with the new part's plan. After the install engine, part 1's checks run unshown,
+   *  so setup opens on the part 1 boundary. */
+  const enterPart = (id: OnboardStepId) => {
+    if (!renderer) return;
+    const next = SETUP_PART_OF[id];
+    if (next === part) return;
+    const previous = ranPart;
+    part = next;
+    if (
+      previous === undefined ||
+      next <= previous ||
+      rechecking ||
+      !journalSeen
+    ) {
+      renderer.heading(setupPartHeading(next, renderer.traits.unicode));
+      return;
+    }
+    const progress = setupPartProgress(journalSeen, planned.scope);
+    const left = progress[previous].total - progress[previous].done;
+    renderer.heading(
+      left
+        ? `Part ${previous} has ${left === 1 ? "1 step" : `${left} steps`} left. Setup carries on with part ${next}.`
+        : `Part ${previous} done. ${SETUP_PARTS[previous].done}`,
+    );
+    renderer.tracker(setupTrackerRows(progress, { next }));
+    planPart(renderer, next, journalSeen);
+    renderer.blank();
+  };
   const stop = () => {
     if (active) {
       if (renderer) renderer.suspendLive();
@@ -283,9 +316,8 @@ export function createClackOnboardUi(
       }
       signinShown = true;
       if (reveal) {
-        group = "This computer";
-        renderer.heading(group);
-        renderer.begin(4, title("signin"), "signing in…");
+        enterPart("signin");
+        renderer.begin(number("signin"), title("signin"), "signing in…");
         active = true;
       }
     }
@@ -306,7 +338,7 @@ export function createClackOnboardUi(
         return;
       }
       if (currentStep === "capacity") return;
-      renderer.detail(text);
+      renderer.detail(say(text));
       return;
     }
     stop();
@@ -318,11 +350,11 @@ export function createClackOnboardUi(
       if (hidden(currentStep)) return;
       if (renderer && currentStep)
         renderer.begin(
-          SETUP_NUMBERS[currentStep] ?? 0,
+          number(currentStep),
           title(currentStep),
           text === ONBOARD_TITLES[currentStep] ? "checking…" : text,
         );
-      else if (renderer) renderer.line(text);
+      else if (renderer) renderer.line(say(text));
       else spin.start(text);
       active = true;
     }
@@ -330,12 +362,7 @@ export function createClackOnboardUi(
   const question = () => {
     if (renderer && currentStep && !questionOpen) {
       stop();
-      renderer.begin(
-        SETUP_NUMBERS[currentStep] ?? 0,
-        title(currentStep),
-        "",
-        "ask",
-      );
+      renderer.begin(number(currentStep), title(currentStep), "", "ask");
       active = true;
       questionOpen = true;
     }
@@ -397,13 +424,16 @@ export function createClackOnboardUi(
     active = false;
     renderer.heading(screen.heading);
     if (screen.paused) renderer.line("Your progress is saved.");
-    if (screen.readinessCause) renderer.line(screen.readinessCause);
+    renderer.tracker(
+      setupTrackerRows(setupPartProgress(journal, planned.scope), "end"),
+    );
+    if (screen.readinessCause) renderer.line(say(screen.readinessCause));
     if (screen.actions.length) {
       renderer.line(
         `${screen.actions.length} ${screen.actions.length === 1 ? "thing needs" : "things need"} you:`,
       );
       screen.actions.forEach((action, i) =>
-        renderer.line(`${i + 1}. ${action.text}`),
+        renderer.line(`${i + 1}. ${say(action.text)}`),
       );
       if (screen.more) renderer.line(`and ${screen.more} more after these`);
       const continuation = pendingContinuation(journal);
@@ -421,6 +451,8 @@ export function createClackOnboardUi(
     interactive,
     handlesSignals: true,
     plan(journal, identity, planOptions) {
+      planned = { scope: planOptions?.scope, runner: planOptions?.runner };
+      journalSeen = journal;
       if (deps.consentGiven) return;
       machineScope = (planOptions?.scope ?? ONBOARD_STEPS).filter((id) =>
         COMPUTER_CHECKS.some((check) => check === id),
@@ -429,27 +461,31 @@ export function createClackOnboardUi(
       machineBlocked = false;
       stop();
       if (!introduced) {
-        if (renderer) renderer.intro("Catalyst setup");
+        if (renderer) renderer.brand("setup", deps.version);
         else prompts.intro("Catalyst setup", { output: streams.output });
         introduced = true;
       }
       if (identity !== undefined)
-        for (const line of onboardIdentityLines(identity)) message(line);
+        for (const line of onboardIdentityLines(identity))
+          if (renderer) renderer.line(line);
+          else message(line);
       if (renderer) {
-        renderer.heading("The plan");
-        let planGroup: string | undefined;
-        for (const row of standalonePlan(
-          journal,
-          planOptions?.scope,
-          planOptions?.runner,
-        )) {
-          if (row.group !== planGroup) {
-            renderer.blank();
-            renderer.line(renderer.bold(row.group));
-            planGroup = row.group;
-          }
-          renderer.plan(row.number, row.title, row.detail);
-        }
+        // CTC-4680: what setup does and the three parts first, then only the first part's steps.
+        // Each later part lists its own steps when it starts.
+        const first =
+          standalonePlan(journal, planned.scope, planned.runner)[0]?.part ?? 1;
+        renderer.blank();
+        renderer.line(
+          "Setup gets Catalyst working on your team's Linear tickets. It has three parts.",
+        );
+        renderer.tracker(
+          setupTrackerRows(setupPartProgress(journal, planned.scope), {
+            plan: first,
+          }),
+        );
+        planPart(renderer, first, journal);
+        // Its steps follow under this heading; the first one does not print it again.
+        part = first;
         renderer.line(
           standalonePlanNotes(
             planOptions?.localSync ?? journal.localSync === true,
@@ -721,7 +757,7 @@ export function createClackOnboardUi(
         renderer.update("the link timed out");
         renderer.detail("The link timed out.");
       } else if (renderer) {
-        renderer.begin(SETUP_NUMBERS[id] ?? 0, title(id), "the link timed out");
+        renderer.begin(number(id), title(id), "the link timed out");
         renderer.detail("The link timed out.");
         active = true;
       } else {
@@ -751,7 +787,7 @@ export function createClackOnboardUi(
       if (currentStep === "signin" && signinShown)
         renderer.step(
           state === "done" ? "done" : state === "failed" ? "fail" : "act",
-          4,
+          number("signin"),
           title("signin"),
           state === "done"
             ? "approved"
@@ -765,13 +801,13 @@ export function createClackOnboardUi(
       signinShown = false;
       if (state !== "done") {
         if (cause)
-          renderer.line(cause.charAt(0).toUpperCase() + cause.slice(1));
+          renderer.line(say(cause.charAt(0).toUpperCase() + cause.slice(1)));
         renderer.heading(
           abort.signal.aborted ? "Setup paused" : "Setup is not ready yet",
         );
         if (!cause?.includes("Your saved connection was not changed."))
           renderer.line("Your saved connection was not changed.");
-        renderer.outro("Next: run catalyst onboard to sign in again.");
+        renderer.outro("Next: run catalyst setup to sign in again.");
       }
       return true;
     },
@@ -788,28 +824,15 @@ export function createClackOnboardUi(
         if (standaloneComputer(id)) {
           if (!machineScope.length) return;
           if (machineChecks.size === 0 && !machineBlocked) {
-            renderer.heading("This computer");
-            group = "This computer";
-            renderer.begin(1, "This computer", "checking…");
+            enterPart(id);
+            renderer.begin(number(id), "This computer", "checking…");
             active = true;
           }
           return;
         }
         if (hidden(id)) return;
         if (id === "projects" || id === "values") return;
-        const next =
-          !deps.consentGiven &&
-          ["signin", "daemon", "housekeeping", "ready"].includes(id)
-            ? "This computer"
-            : id.startsWith("linear.")
-              ? "Linear"
-              : id.startsWith("github.")
-                ? "GitHub"
-                : "Work";
-        if (next !== group) {
-          renderer.heading(next);
-          group = next;
-        }
+        enterPart(id);
         start(ONBOARD_TITLES[id]);
         return;
       }
@@ -831,6 +854,8 @@ export function createClackOnboardUi(
       start(ONBOARD_TITLES[id]);
     },
     stepEnd(step, journal) {
+      if (journal) journalSeen = journal;
+      ranPart = SETUP_PART_OF[step.id];
       if (renderer) {
         if (standaloneComputer(step.id)) {
           machineChecks.set(step.id, step);
@@ -880,15 +905,14 @@ export function createClackOnboardUi(
         )
           return;
         const view = setupStepView(step, journal);
-        if (hidden(step.id)) {
-          renderer.heading("This computer");
-          group = "This computer";
-        }
+        if (hidden(step.id)) enterPart(step.id);
         renderer.step(view.mark, view.number, view.title, view.outcome);
         const granted = deps.verbose ? onboardStepDetail(step) : undefined;
         if (granted) renderer.detail(granted);
         if (deps.verbose && CONNECTION_REPAIR_REASONS.has(step.reason ?? ""))
-          renderer.detail(onboardReasonText(step, { baseUrl: deps.baseUrl?.(), journal }));
+          renderer.detail(
+            say(onboardReasonText(step, { baseUrl: deps.baseUrl?.(), journal })),
+          );
         if (view.mark === "fail")
           renderer.detail(
             deps.logPath?.()
@@ -952,7 +976,8 @@ export function createClackOnboardUi(
       );
       machineChecks.clear();
       machineBlocked = false;
-      group = undefined;
+      part = undefined;
+      rechecking = true;
       renderer.heading("Checking again");
       return true;
     },
@@ -976,8 +1001,8 @@ export function createClackOnboardUi(
             deps.baseUrl?.(),
             only,
           ))
-            renderer.line(action);
-        renderer.outro("Next: run catalyst onboard");
+            renderer.line(say(action));
+        renderer.outro("Next: run catalyst setup");
         return;
       }
       if (renderer) {
@@ -990,7 +1015,7 @@ export function createClackOnboardUi(
           renderer.line("Your progress is saved.");
         }
         summaryShown = false;
-        renderer.outro(screen.next);
+        renderer.outro(say(screen.next));
         return;
       }
       stop();
@@ -1040,7 +1065,7 @@ export function createClackOnboardUi(
       if (renderer && browser && currentStep) {
         stop();
         renderer.begin(
-          SETUP_NUMBERS[currentStep] ?? 0,
+          number(currentStep),
           title(currentStep),
           renderer.traits.unicode
             ? status()
