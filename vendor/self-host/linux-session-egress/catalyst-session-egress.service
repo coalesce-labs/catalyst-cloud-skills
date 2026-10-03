@@ -1,0 +1,19 @@
+[Unit]
+Description=Catalyst self-host session network and its egress chain (CTC-4415)
+After=docker.service network-online.target
+Requires=docker.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 /usr/lib/catalyst/session-egress.py converge
+RemainAfterExit=yes
+NoNewPrivileges=yes
+ProtectSystem=strict
+StateDirectory=catalyst/session-egress
+StateDirectoryMode=0755
+ProtectHome=yes
+PrivateTmp=yes
+
+[Install]
+WantedBy=multi-user.target

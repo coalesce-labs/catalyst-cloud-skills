@@ -8,26 +8,30 @@ import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const commit = "8861fa0c6d9063be62d003c95f71c8a5ccaf4d0d";
-const file = "deploy/self-host/compose.yaml";
+const commit = "3efb201e119fb9ce5a3f636c3212fcbed2d7efef";
+const files = ["deploy/self-host/compose.yaml", ...[
+  "session-egress.py", "catalyst-session-egress.service", "catalyst-session-egress-attest.service", "catalyst-session-egress-attest.timer",
+].map(name => "deploy/self-host/linux-session-egress/"+name)];
 const target = join(root, "vendor/self-host");
 const sha = (bytes) => createHash("sha256").update(bytes).digest("hex");
 const sourceRepo = process.env.CATALYST_SELF_HOST_SOURCE;
 if (!sourceRepo && process.argv.includes("--check")) {
   const manifest = JSON.parse(readFileSync(join(target, "provenance.json"), "utf8"));
   if (manifest.commit !== commit) throw new Error("Unexpected self-host source commit");
-  if (sha(readFileSync(join(target, "compose.yaml"))) !== manifest.sha256[file])
-    throw new Error("Vendored compose.yaml drifted from its recorded hash");
+  if(Object.keys(manifest.sha256).sort().join("\n")!==[...files].sort().join("\n"))throw new Error("Unexpected self-host artifacts");
+  for(const file of files) if (sha(readFileSync(join(target,file.replace("deploy/self-host/","")))) !== manifest.sha256[file])
+    throw new Error("Vendored self-host artifact drifted from its recorded hash: "+file);
   process.exit(0);
 }
 if (!sourceRepo) throw new Error("Set CATALYST_SELF_HOST_SOURCE to a catalyst-cloud checkout containing the pinned commit");
-const bytes = execFileSync("git", ["-C", sourceRepo, "show", `${commit}:${file}`]);
-const provenance = `${JSON.stringify({ repository: "coalesce-labs/catalyst-cloud", commit, sha256: { [file]: sha(bytes) } }, null, 2)}\n`;
-if (process.argv.includes("--check")) {
-  if (!bytes.equals(readFileSync(join(target, "compose.yaml")))) throw new Error("Vendored compose.yaml drift");
-  if (provenance !== readFileSync(join(target, "provenance.json"), "utf8")) throw new Error("Vendored provenance drift");
-} else {
-  mkdirSync(target, { recursive: true });
-  writeFileSync(join(target, "compose.yaml"), bytes);
-  writeFileSync(join(target, "provenance.json"), provenance);
+const contents=files.map(file=>[file,execFileSync("git",["-C",sourceRepo,"show",`${commit}:${file}`])]);
+const provenance=`${JSON.stringify({repository:"coalesce-labs/catalyst-cloud",commit,sha256:Object.fromEntries(contents.map(([file,bytes])=>[file,sha(bytes)]))},null,2)}\n`;
+for(const [file,bytes] of contents){
+ const destination=join(target,file.replace("deploy/self-host/",""));
+ if(process.argv.includes("--check")){
+  if(!bytes.equals(readFileSync(destination)))throw new Error("Vendored self-host artifact drift: "+file);
+ }else{mkdirSync(dirname(destination),{recursive:true});writeFileSync(destination,bytes);}
 }
+if(process.argv.includes("--check")){
+ if(provenance!==readFileSync(join(target,"provenance.json"),"utf8"))throw new Error("Vendored provenance drift");
+}else writeFileSync(join(target,"provenance.json"),provenance);

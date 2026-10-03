@@ -1,3 +1,4 @@
+import {nativeEgressInstallCommands} from "./onboard-runner-egress.js";
 import { loadConfig, normalizeBaseUrl } from "./config.js";
 import type { OnboardJournal, OnboardStep } from "./onboard.js";
 import { githubInstallationPage } from "./onboard-permissions.js";
@@ -199,6 +200,24 @@ const REASONS: Record<string, string> = {
     "Renew your login with catalyst login, then run catalyst onboard.",
   runner_join_token_unavailable:
     "Catalyst did not issue a join token for this machine. Run catalyst onboard again to retry.",
+  runner_session_network_unavailable:
+    "Docker could not inspect the runner session network. Check engine access and run the same setup command again. Setup has not created a replacement network.",
+  runner_capability_unavailable:
+    "Catalyst could not read runner setup support. Run the same setup command again.",
+  runner_capability_unverified:
+    "Catalyst returned runner setup information this CLI cannot verify. Ask Catalyst support to check the server contract, then run the same setup command.",
+  runner_org_key_journal_unavailable:
+    "Setup cannot safely use its saved runner credential request. Keep the request file and ask Catalyst support to inspect it.",
+  runner_org_key_recovery_required:
+    "The previous runner key request may already have issued a key. Ask your workspace administrator to revoke that saved request and explicitly restart it. Setup will not mint another key automatically.",
+  runner_org_key_reconciliation_pending:
+    "The previous runner key request is still uncertain. Run the same setup command to check its saved request again.",
+  runner_org_key_response_unverified:
+    "Setup could not verify the runner key's tenant and scopes. Ask your workspace administrator to inspect the saved request.",
+  runner_cloud_unavailable:
+    "Catalyst did not complete the runner setup request. Run the same setup command to check its saved request before continuing.",
+  runner_admission_disabled:
+    "The selected team does not admit runner work. Run the same setup command with runner selection to explicitly enable its restricted admission policy.",
   runner_org_key_file_invalid:
     "CATALYST_RUNNER_ORG_KEY_FILE must name a regular file that holds one organization key. Fix the file, then run catalyst onboard again.",
   runner_org_key_invalid:
@@ -439,6 +458,10 @@ export function onboardReasonText(
       ? `This setup step is not available on this server yet. Continue in the web app at ${page}, then run catalyst onboard.`
       : "This setup step is not available on this server yet. Run catalyst onboard after the server update.";
   }
+  if(reason === "runner_native_egress_setup_required"){
+    const commands=nativeEgressInstallCommands();
+    return "Native Linux needs a root-managed session egress producer before the runner can take work. Its elevated installation creates the isolated session network and private-range and host-isolation nftables rules. Review and authorize this separately; setup has not run it. It requires systemd, python3, Docker and nftables. " + (commands ? "Install the verified bundled artifacts, then run the same setup command:\n"+commands : "Setup could not verify its bundled artifacts. Reinstall the CLI before authorizing installation.");
+  }
   if (reason === "runner_images_unavailable") {
     const image = step.evidence?.image;
     const named =
@@ -446,7 +469,7 @@ export function onboardReasonText(
       /^[a-z0-9][a-z0-9._:/-]{0,255}@sha256:[0-9a-f]{64}$/.test(image)
         ? ` ${image}`
         : "";
-    return `This machine does not have the Catalyst image${named}, and setup never signs in to a registry to pull it. Ask Catalyst support to load it here, then run catalyst onboard again.`;
+    return `This machine does not have the Catalyst image${named}, and its pull did not complete. Check network access and run the same setup command to retry the anonymous pull.`;
   }
   if (reason === "runner_org_key_missing") {
     const where = context.baseUrl
@@ -463,7 +486,7 @@ export function onboardReasonText(
     return `The runner is enrolled but its readiness checks fail${checks}. Run docker compose -p catalyst-host logs supervisor for the remedy, then run catalyst onboard again.`;
   }
   if (reason === "runner_admission_operator")
-    return `This machine is enrolled and ready, but team ${onboardTeamKey(context.journal) ?? "<TEAM KEY>"} does not admit runner hosts yet, and only a Catalyst operator can turn that on today. Ask Catalyst support to enable host admission for the team with Cloudflare placement set to never. Then run catalyst onboard.`;
+    return `The admission policy for team ${onboardTeamKey(context.journal) ?? "<TEAM KEY>"} needs a Catalyst operator to check it. Setup changes only restricted admission and preserves existing policy fields. Ask Catalyst support to confirm a compatible policy, then run the same setup command.`;
   if (reason === "prerequisite_not_ready" && context.waitsFor)
     return `Runs after "${context.waitsFor}".`;
   const permission = permissionText(step, context.baseUrl);

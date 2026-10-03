@@ -1,0 +1,10 @@
+[Unit]
+Description=Re-prove the Catalyst session egress chain every 5 minutes (the supervisor accepts 15)
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=5min
+Unit=catalyst-session-egress-attest.service
+
+[Install]
+WantedBy=timers.target

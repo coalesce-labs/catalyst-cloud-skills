@@ -641,7 +641,7 @@ describe("plain finish names what is left (CTC-4477)", () => {
     expect(receipt.complete).toBe(false);
     expect(text).toContain("Ready for work.");
     expect(text).toContain(
-      "Run Catalyst's work on this machine: This machine is enrolled and ready, but team ENG does not admit runner hosts yet",
+      "Run Catalyst's work on this machine: The admission policy for team ENG needs a Catalyst operator to check it",
     );
   });
 
