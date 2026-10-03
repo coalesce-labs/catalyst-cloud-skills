@@ -72,7 +72,9 @@ export function selectedOnboardTeam(
   return typeof id === "string" && idPattern.test(id) ? id : undefined;
 }
 
-export type ExistingOnboardReadResult = { body: unknown } | { reason: string };
+export type ExistingOnboardReadResult =
+  | { body: unknown }
+  | { reason: string; status?: number };
 /** Read-only requests bound headers and body together; raw provider errors never reach receipts. */
 export async function readExistingOnboardJson(
   ctx: Ctx,
@@ -132,7 +134,7 @@ export async function readExistingOnboardJson(
             },
           );
           if (response.status !== 200)
-            return { reason: "team_read_unavailable" };
+            return { reason: "team_read_unavailable", status: response.status };
           const body: unknown = await response.json();
           const current = loadConfig(ctx.home);
           if (

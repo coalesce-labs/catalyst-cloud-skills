@@ -56,7 +56,7 @@ test("standalone plan names the three parts, lists part 1, and discloses recheck
   expect(plan).toContain("3 Ready for work");
   expect(plan).toContain("Part 1 of 3: This computer");
   expect(plan).toContain("2 Sign in to Catalyst");
-  expect(plan).toContain("3 Schedule the daily update");
+  expect(plan).toContain("3 Daily update");
   expect(plan).not.toContain("(recheck)");
   expect("  0 Unknown").toMatch(/^\s*0 /m);
   expect(plan).not.toMatch(/^\s*0 /m);
@@ -140,7 +140,7 @@ test("effective local sync is disclosed before the journal is updated", () => {
   expect(f.text()).toContain("Local sync is selected");
   expect(f.text()).not.toContain("Local sync stays off");
   expect(f.text().replace(/\s+/g, " ")).toContain(
-    "Codex credentials are not refreshed",
+    "Setup reads your AI accounts without sending them a request.",
   );
   f.ui.dispose();
 });
