@@ -386,7 +386,8 @@ export function createSetupRenderer(
     },
     outro(text) {
       abandon();
-      write(["", prefix(textCol) + text]);
+      // Wrapped by words like any prose, a link kept whole on its own line when it is too long.
+      write(["", ...rows(text, textCol)]);
     },
     plan(number, title, text) {
       ordinary(stepRows("run", number, title, text, true));

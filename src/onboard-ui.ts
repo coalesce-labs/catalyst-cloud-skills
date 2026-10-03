@@ -14,6 +14,8 @@ import {
   setupFinalScreen,
   setupBrowserInstruction,
   setupCommandWords as say,
+  setupWaitsOnAdmin,
+  TIMED_OUT_REASONS,
   setupPartHeading,
   setupPartProgress,
   setupTrackerRows,
@@ -58,6 +60,7 @@ import {
   type OnboardStepId,
 } from "./onboard.js";
 import { onboardStepDetail, onboardReasonText } from "./onboard-next.js";
+import { CONNECT_PAGE_PATH } from "./onboard-checklist.js";
 
 /** Rendering cannot approve a step: the receipt engine owns execution and evidence. */
 export interface OnboardUi {
@@ -244,6 +247,13 @@ export function createClackOnboardUi(
   let planned: { scope?: readonly OnboardStepId[]; runner?: boolean } = {};
   let rechecking = false;
   let shownPlan: string | undefined;
+  // CTC-4680: steps whose wait was on the Connect accounts page. That page does not expire, so a
+  // wait that ran out is setup giving up, and the way back is the same page.
+  const connectWaits = new Map<OnboardStepId, string>();
+  const onConnectPage = (step: OnboardStep) =>
+    connectWaits.has(step.id) && TIMED_OUT_REASONS.has(step.reason ?? "");
+  const outcome = (step: OnboardStep, view: { outcome: string }) =>
+    onConnectPage(step) ? "setup stopped waiting" : view.outcome;
   let browserOpened = true;
   let questionOpen = false;
   let signinShown = false;
@@ -301,12 +311,16 @@ export function createClackOnboardUi(
       renderer.heading(setupPartHeading(next, renderer.traits.unicode));
       return;
     }
-    const progress = setupPartProgress(journalSeen, planned.scope);
-    const left = progress[previous].total - progress[previous].done;
+    const progress = setupPartProgress(journalSeen, planned.scope, "run");
+    const got = progress[previous];
+    const left = got.total - got.done;
+    // Mid-run nothing yet says whether an owner or admin has done their part, so this is neutral.
     renderer.heading(
-      left
-        ? `Part ${previous} has ${left === 1 ? "1 step" : `${left} steps`} left. Setup carries on with part ${next}.`
-        : `Part ${previous} done. ${SETUP_PARTS[previous].done}`,
+      !left
+        ? `Part ${previous} done. ${SETUP_PARTS[previous].done}`
+        : left === got.admin + got.aside
+          ? `The rest of part ${previous} is for an owner or admin of your Catalyst workspace.`
+          : `Part ${previous} has ${left === 1 ? "1 step" : `${left} steps`} left. Setup carries on with part ${next}.`,
     );
     renderer.tracker(setupTrackerRows(progress, { next }));
     planPart(renderer, next, journalSeen);
@@ -435,13 +449,66 @@ export function createClackOnboardUi(
     return result.answer;
   };
   let summaryShown = false;
-  const summary = (journal: OnboardJournal) => {
+  /**
+   * The end screen's actions, split by who acts: the person's own, and an owner's or admin's
+   * (CTC-4680). A step paused with Ctrl-C is not an action: the last line says how to carry on.
+   */
+  const sortActions = (journal: OnboardJournal) => {
     const screen = setupFinalScreen(
       journal,
       deps.baseUrl?.(),
       abort.signal.aborted,
     );
-    if (!renderer) return screen;
+    const step = (id: OnboardStepId): OnboardStep =>
+      journal.steps.find((s) => s.id === id) ?? { id, state: "pending" };
+    const text = (action: { id: OnboardStepId; text: string }) => {
+      const row = step(action.id);
+      if (!onConnectPage(row)) return say(action.text);
+      const kinds = row.evidence?.aiAccountKinds;
+      // #277's rule: subscription wording only for a workspace the cloud enables for it.
+      const what =
+        action.id === "accounts"
+          ? typeof kinds === "string" && kinds.split(",").includes("subscription")
+            ? "add an API key or connect a subscription"
+            : "add an API key"
+          : action.id === "github.install"
+            ? "install Catalyst on GitHub"
+            : `finish "${title(action.id)}" there`;
+      return `Open ${connectWaits.get(action.id)} and ${what}.`;
+    };
+    const live = screen.actions.filter(
+      (action) => step(action.id).reason !== "interrupted",
+    );
+    const theirs = live.filter((action) =>
+      setupWaitsOnAdmin(step(action.id), journal),
+    );
+    const mine = live.filter((action) => !theirs.includes(action));
+    // Steps only an owner or admin can do, less any already listed as their task above.
+    const skipped = journal.steps.filter(
+      (s) =>
+        s.reason === "member_scope" &&
+        setupWaitsOnAdmin(s, journal) &&
+        SETUP_PART_NUMBERS[s.id] !== undefined &&
+        s.id !== "projects" &&
+        !theirs.some((action) => action.id === s.id),
+    );
+    const waiting = theirs.length > 0 || skipped.length > 0;
+    const own = mine.length;
+    const next =
+      screen.paused ||
+      !/^Next: run catalyst onboard after you finish/.test(screen.next)
+        ? say(screen.next)
+        : own
+          ? `Next: run catalyst setup after you finish ${own === 1 ? "1" : own === 2 ? "1 and 2" : `1 to ${own}`}.`
+          : waiting
+            ? "Next: run catalyst setup once they have."
+            : "Next: run catalyst setup to check again.";
+    return { screen, mine, theirs, skipped, waiting, next, text, live };
+  };
+  const summary = (journal: OnboardJournal) => {
+    const sorted = sortActions(journal);
+    const { screen, mine, theirs, skipped } = sorted;
+    if (!renderer) return sorted;
     renderer.suspendLive();
     active = false;
     renderer.heading(screen.heading);
@@ -450,23 +517,49 @@ export function createClackOnboardUi(
       setupTrackerRows(setupPartProgress(journal, planned.scope), "end"),
     );
     if (screen.readinessCause) renderer.line(say(screen.readinessCause));
-    if (screen.actions.length) {
+    if (mine.length) {
       renderer.line(
-        `${screen.actions.length} ${screen.actions.length === 1 ? "thing needs" : "things need"} you:`,
+        `${mine.length} ${mine.length === 1 ? "thing needs" : "things need"} you:`,
       );
-      screen.actions.forEach((action, i) =>
-        renderer.item(`${i + 1}. `, say(action.text)),
+      mine.forEach((action, i) =>
+        renderer.item(`${i + 1}. `, sorted.text(action)),
       );
       if (screen.more) renderer.line(`and ${screen.more} more after these`);
+    }
+    if (sorted.waiting) {
+      renderer.line("Waiting on an owner or admin of your Catalyst workspace:");
+      for (const action of theirs) renderer.item("· ", sorted.text(action));
+      if (skipped.length) {
+        renderer.item(
+          "· ",
+          `Steps only they can do: ${skipped.map((s) => title(s.id)).join(", ")}.`,
+        );
+        const base = deps.baseUrl?.();
+        const integrations = base
+          ? new URL("/settings/connections", base).href
+          : undefined;
+        if (integrations && !theirs.some((a) => a.text.includes(integrations)))
+          renderer.item(
+            "· ",
+            `They start at ${integrations}, the Integrations page.`,
+          );
+      }
+    }
+    // A step skipped with Ctrl-C is no action, but it is still to come: the line below names it.
+    if (screen.actions.length || skipped.length) {
       const continuation = pendingContinuation(
         journal,
-        new Set(screen.actions.map((action) => action.id)),
+        // A step paused with Ctrl-C is still to come, so it stays in this line.
+        new Set([
+          ...sorted.live.map((action) => action.id),
+          ...skipped.map((s) => s.id),
+        ]),
       );
       if (continuation) renderer.line(continuation);
     } else if (screen.heading === "Setup complete")
       renderer.line("Catalyst is ready to work on your team's tickets.");
     if (deps.logPath?.()) renderer.line(`Full log: ${deps.logPath()}`);
-    return screen;
+    return sorted;
   };
   const ui: OnboardUi = {
     signal: abort.signal,
@@ -815,24 +908,38 @@ export function createClackOnboardUi(
     },
     async retryTimedOut(id) {
       if (abort.signal.aborted) return false;
+      // The Connect accounts page does not expire: setup stopped waiting, and can wait again.
+      const page = connectWaits.has(id);
+      const why = page
+        ? "Setup stopped waiting for the Connect accounts page."
+        : "The link timed out.";
       if (renderer) {
         // The question draws under this row, so the reason stays on screen while it is asked.
         stop();
-        renderer.begin(number(id), title(id), "the link timed out", "ask");
+        renderer.begin(
+          number(id),
+          title(id),
+          page ? "setup stopped waiting" : "the link timed out",
+          "ask",
+        );
+        if (page) renderer.detail(why);
         active = true;
         questionOpen = true;
       } else {
         stop();
-        prompts.log.message(`${title(id)}: the link timed out.`, {
+        prompts.log.message(`${title(id)}: ${why}`, {
           output: streams.output,
         });
       }
       const answer = await select({
         ...options,
-        message: "Ready to try again?",
+        message: page ? "Keep waiting?" : "Ready to try again?",
         initialValue: "again",
         options: [
-          { value: "again", label: "Yes, give me a new link" },
+          {
+            value: "again",
+            label: page ? "Yes, keep waiting" : "Yes, give me a new link",
+          },
           { value: "stop", label: "Stop here. Run catalyst setup later to carry on." },
         ],
       });
@@ -953,7 +1060,7 @@ export function createClackOnboardUi(
         if (step.id === "ready" || (hidden(step.id) && step.state !== "failed"))
           return;
         if (
-          (step.id === "github.repos" || step.id === "settings") &&
+          step.id === "github.repos" &&
           step.state === "done"
         )
           return;
@@ -964,7 +1071,7 @@ export function createClackOnboardUi(
           return;
         const view = setupStepView(step, journal);
         if (hidden(step.id)) enterPart(step.id);
-        renderer.step(view.mark, view.number, view.title, view.outcome);
+        renderer.step(view.mark, view.number, view.title, outcome(step, view));
         const granted = deps.verbose ? onboardStepDetail(step) : undefined;
         if (granted) renderer.detail(granted);
         if (deps.verbose && CONNECTION_REPAIR_REASONS.has(step.reason ?? ""))
@@ -1013,7 +1120,7 @@ export function createClackOnboardUi(
         !renderer ||
         !interactive ||
         abort.signal.aborted ||
-        !setupFinalScreen(journal, deps.baseUrl?.()).actions.length
+        !sortActions(journal).mine.length
       )
         return false;
       active = false;
@@ -1073,15 +1180,14 @@ export function createClackOnboardUi(
       }
       if (renderer) {
         active = false;
-        const screen = summaryShown
-          ? setupFinalScreen(journal, deps.baseUrl?.(), abort.signal.aborted)
-          : summary(journal);
+        const sorted = summaryShown ? sortActions(journal) : summary(journal);
+        const { screen } = sorted;
         if (summaryShown && screen.paused) {
           renderer.heading(screen.heading);
           renderer.line("Your progress is saved.");
         }
         summaryShown = false;
-        renderer.outro(say(screen.next));
+        renderer.outro(sorted.next);
         return;
       }
       stop();
@@ -1106,6 +1212,16 @@ export function createClackOnboardUi(
       prompts.outro(text, { output: streams.output });
     },
     async wait(text, run, page) {
+      if (currentStep && page) {
+        let path = "";
+        try {
+          path = new URL(page.url).pathname;
+        } catch {
+          // Not a URL, so not the Connect accounts page.
+        }
+        if (path === CONNECT_PAGE_PATH) connectWaits.set(currentStep, page.url);
+        else connectWaits.delete(currentStep);
+      }
       const browser =
         currentStep && renderer && page
           ? page
