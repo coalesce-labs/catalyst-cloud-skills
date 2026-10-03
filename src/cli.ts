@@ -102,7 +102,6 @@ import { cmdConnections, type ConnectionsDeps } from "./connections.js";
 import {
   cmdOnboard,
   onboardErrorJournal,
-  onboardRequiredStepsWaiting,
   type OnboardDeps,
 } from "./onboard.js";
 import type { OnboardBootstrapPreview } from "./onboard-bootstrap.js";
@@ -123,6 +122,7 @@ import {
 import { savedOnboardBaseUrl } from "./onboard-next.js";
 import {
   onboardingReadyReport,
+  onboardReadyStep,
   observeCloudOnboarding,
 } from "./onboard-ready.js";
 import { selectedOnboardTeam } from "./onboard-existing.js";
@@ -602,28 +602,7 @@ export async function main(
                       journal?.localSync ?? args.flags["local-sync"] === true,
                     observe: observeCloudOnboarding,
                   });
-                  const failed =
-                    report.checks.some(
-                      (check) => check.required && check.state === "fail",
-                    ) && !onboardRequiredStepsWaiting(journal);
-                  return {
-                    state:
-                      report.state === "complete"
-                        ? "done"
-                        : failed
-                          ? "failed"
-                          : "waiting",
-                    reason:
-                      report.state === "complete"
-                        ? undefined
-                        : "onboarding_checks_pending",
-                    evidence: {
-                      checks: report.checks.length,
-                      passed: report.checks.filter(
-                        (check) => check.state === "pass",
-                      ).length,
-                    },
-                  };
+                  return onboardReadyStep(report, journal);
                 },
                 legacy: deps.legacy,
                 openBrowser: deps.openBrowser,

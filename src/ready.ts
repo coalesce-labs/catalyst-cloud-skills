@@ -24,9 +24,6 @@ import {
   type CustomerConfig,
 } from "./config.js";
 import { contractVersionInRange, readContractCache } from "./contract.js";
-import type {
-  ContractReadinessCheck,
-} from "./contract-types.js";
 import { CliError } from "./errors.js";
 import { latestPublishedVersion, type PublishedLookup } from "./published.js";
 import {
@@ -51,7 +48,7 @@ import {
   type OnboardingReadyDeps,
 } from "./onboard-ready.js";
 import { selectedOnboardTeam } from "./onboard-existing.js";
-import { dispatchGateCopy, teamCheckCopy, teamPage, whoFixes } from "./ready-copy.js";
+import { dispatchGateCopy, teamCheckCopy, teamPage, valuesFix, whoFixes } from "./ready-copy.js";
 import { onboardStatePath, readOnboardJournal } from "./onboard.js";
 
 export { semverOlder };
@@ -189,67 +186,6 @@ export interface ReadyDeps {
   fetchLatestRelease?: () => Promise<PublishedLookup>;
   /** Skip the published-release lookup entirely (--offline / CATALYST_SKILLS_OFFLINE=1). */
   offline?: boolean;
-}
-
-function nameList(v: unknown): string[] {
-  return Array.isArray(v)
-    ? v.filter((n): n is string => typeof n === "string" && n.length > 0)
-    : [];
-}
-
-/** Entries whose name and references are both present; anything malformed is dropped, not guessed. */
-function unresolvedList(v: unknown): { name: string; references: string[] }[] {
-  if (!Array.isArray(v)) return [];
-  return v.flatMap((u) => {
-    if (typeof u !== "object" || u === null) return [];
-    const { name, references } = u as { name?: unknown; references?: unknown };
-    const refs = nameList(references);
-    return typeof name === "string" && name.length > 0 && refs.length > 0
-      ? [{ name, references: refs }]
-      : [];
-  });
-}
-
-function unresolvedLine(u: { name: string; references: string[] }): string {
-  const which = u.references.length === 1 ? "which has" : "which have";
-  return `${u.name} refers to ${u.references.join(", ")}, ${which} no value, so Catalyst can't start work there`;
-}
-
-/** A team check's fix line. A check that carries `names` (CTC-3561: `required_values`, contract
- *  1.24.0) names them and where to set them. CTC-3606: it also names each `unresolved` variable and
- *  the reference with no value, and each other repository's missing names from `repos[]`. `unresolved`
- *  is a subset of `names` (the variable exists; its reference does not), so those are not told to be
- *  "set". Every field is optional so an older cloud still works. Everything printed is a declared
- *  identifier or a repository name, never a value, and nothing here reads a value. Any other check
- *  keeps the generic line. */
-function valuesFix(base: string, c: ContractReadinessCheck): string | null {
-  const unresolved = unresolvedList(c.unresolved);
-  const unresolvedNames = new Set(unresolved.map((u) => u.name));
-  const names = nameList(c.names).filter((n) => !unresolvedNames.has(n));
-  const parts: string[] = [];
-  if (names.length > 0) {
-    parts.push(
-      `set ${names.join(", ")} on the repository's Environment page: open ${base}/settings/projects, then the project, then the repository`,
-    );
-  }
-  for (const u of unresolved) parts.push(unresolvedLine(u));
-  for (const note of Array.isArray(c.repos) ? c.repos : []) {
-    if (
-      typeof note !== "object" ||
-      note === null ||
-      typeof note.repo !== "string" ||
-      note.repo.length === 0
-    )
-      continue;
-    const repoUnresolved = unresolvedList(note.unresolved);
-    const skip = new Set(repoUnresolved.map((u) => u.name));
-    const missing = nameList(note.names).filter((n) => !skip.has(n));
-    if (missing.length > 0)
-      parts.push(`${note.repo} is missing ${missing.join(", ")}`);
-    for (const u of repoUnresolved)
-      parts.push(`in ${note.repo}, ${unresolvedLine(u)}`);
-  }
-  return parts.length === 0 ? null : parts.join(". ");
 }
 
 export async function readyReport(

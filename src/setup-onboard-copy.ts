@@ -6,7 +6,7 @@ import {
   type OnboardStep,
   type OnboardStepId,
 } from "./onboard.js";
-import { onboardReasonText } from "./onboard-next.js";
+import { dispatchStageName, onboardReasonText } from "./onboard-next.js";
 import type { StepMark, TrackerRow } from "./setup-render.js";
 /** The step numbers `--json` reports. People read SETUP_PART_NUMBERS instead (CTC-4680). */
 export const SETUP_NUMBERS: Partial<Record<OnboardStepId, number>> = {
@@ -83,7 +83,7 @@ export const SETUP_PART_OF: Record<OnboardStepId, SetupPart> = {
   ready: 3,
 };
 /** What a person reads: each part restarts at 1, in the order setup runs the steps. Steps that
- *  share a row (the computer checks, repositories and projects, settings) share a number. */
+ *  share a row (the computer checks, repositories and projects) share a number. */
 export const SETUP_PART_NUMBERS: Partial<Record<OnboardStepId, number>> = {
   machine: 1,
   cli: 1,
@@ -104,8 +104,8 @@ export const SETUP_PART_NUMBERS: Partial<Record<OnboardStepId, number>> = {
   capacity: 3,
   runner: 4,
   settings: 5,
-  values: 5,
-  "first-ticket": 6,
+  values: 6,
+  "first-ticket": 7,
 };
 /** CTC-4680: people type `catalyst setup`; `catalyst onboard` stays its alias. What setup draws
  *  names setup. `--json` and headless output keep their own words. */
@@ -123,7 +123,7 @@ const TITLES: Partial<Record<OnboardStepId, string>> = {
   accounts: "Add an AI account",
   housekeeping: "Daily update",
   capacity: "Check runners",
-  values: "Review repository settings",
+  values: "Check repository values",
 };
 const OPTIONAL = new Set([
   "local_sync_not_selected",
@@ -186,12 +186,15 @@ function succeeded(step: OnboardStep): string {
         ? `${step.evidence.remainingUnits} runner slots available`
         : "runners can take work";
     case "settings":
-    case "values":
       return "settings reviewed";
-    case "first-ticket":
-      return value(step, "ticketKey")
-        ? `${value(step, "ticketKey")} started`
+    case "values":
+      return "values set";
+    case "first-ticket": {
+      const key = value(step, "ticket") ?? value(step, "ticketKey");
+      return key
+        ? `${key} moved to ${dispatchStageName(step.evidence?.stage)}. Catalyst picks it up next.`
         : "first ticket started";
+    }
     case "daemon":
       return "local sync is running";
     case "runner":
@@ -222,7 +225,8 @@ function unfinished(step: OnboardStep): string {
   if (step.reason === "member_scope") return "an admin handles this step";
   if (step.reason === "automation_management_unavailable")
     return "could not read them; checked again before work starts";
-  if (step.reason === "interrupted") return "skipped for now";
+  if (step.reason === "interrupted" || step.reason === "first_ticket_skipped")
+    return "skipped for now";
   if (TIMED_OUT_REASONS.has(step.reason ?? "")) return "the link timed out";
   if (step.reason === "github_installation_approval_pending")
     return "waiting for an owner of your GitHub organization";
@@ -241,8 +245,13 @@ function unfinished(step: OnboardStep): string {
     case "capacity":
       return "no runner can take work yet";
     case "settings":
-    case "values":
       return "optional; not reviewed yet";
+    case "values":
+      return step.reason === "required_values_missing"
+        ? "a value is missing"
+        : "not checked yet";
+    case "first-ticket":
+      return "no ticket chosen yet";
     default:
       return step.state === "skipped" ? "not chosen" : "not done yet";
   }
@@ -412,7 +421,8 @@ function action(
 ): string {
   if (
     CONNECTION_REPAIR_REASONS.has(step.reason ?? "") ||
-    step.reason === "github_installation_approval_pending"
+    step.reason === "github_installation_approval_pending" ||
+    step.reason === "member_scope"
   )
     return onboardReasonText(step, { baseUrl: base, journal });
   const link = (path: string, verb: string) => {
@@ -470,15 +480,22 @@ function action(
         ? onboardReasonText(step, { baseUrl: base, journal })
         : "Run catalyst onboard --runner to check whether this computer can take work.";
     case "settings":
-    case "values":
       return "Open your repository checkout and review its settings.";
+    case "values":
+      return onboardReasonText(
+        { ...step, reason: step.reason ?? "required_values_unverified" },
+        { baseUrl: base, journal },
+      );
     case "linear.team":
       return "Choose a Linear team when setup checks again.";
     case "github.repos":
     case "projects":
       return "Choose repositories when setup checks again.";
     case "first-ticket":
-      return "Choose a first ticket when setup checks again.";
+      return onboardReasonText(
+        { ...step, reason: step.reason ?? "first_ticket_choice_required" },
+        { baseUrl: base, journal },
+      );
     default:
       return "Try this step again when setup checks again.";
   }
@@ -489,11 +506,18 @@ export function setupFinalScreen(
   paused = false,
   required: ReadonlySet<OnboardStepId> = new Set(),
 ) {
+  // A member's run skips admin steps; readiness names the ones an admin has not finished yet.
+  const readyStep = journal.steps.find((step) => step.id === "ready");
+  const adminLeft = new Set(
+    readyStep?.reason === "admin_setup_pending" && typeof readyStep.evidence?.admin === "string"
+      ? readyStep.evidence.admin.split(",")
+      : [],
+  );
   const roots = journal.steps
     .filter((step) => {
       const m = setupStepView(step, journal, required.has(step.id)).mark;
       return (
-        (m === "act" || m === "fail") &&
+        (m === "act" || m === "fail" || adminLeft.has(step.id)) &&
         (ONBOARD_DEPENDENCIES[step.id] ?? []).every((id) => {
           const parent = journal.steps.find((s) => s.id === id);
           return parent?.state === "done" || parent?.state === "skipped";
@@ -503,7 +527,7 @@ export function setupFinalScreen(
     .filter((step) => step.id !== "ready")
     .sort((a, b) => ONBOARD_STEPS.indexOf(a.id) - ONBOARD_STEPS.indexOf(b.id));
   const folded = (id: OnboardStepId) =>
-    id === "projects" ? "github.repos" : id === "values" ? "settings" : id;
+    id === "projects" ? "github.repos" : id;
   const unique = roots.filter(
     (step, i) => roots.findIndex((s) => folded(s.id) === folded(step.id)) === i,
   );
@@ -536,19 +560,18 @@ export function setupFinalScreen(
         : journal.exit === 0
           ? "Ready for work"
           : "Not ready for work yet";
-  const ticket = journal.steps.find(
-    (s) => s.id === "first-ticket" && s.state === "done",
-  );
-  const key = ticket && value(ticket, "ticketKey");
+  const firstTicket = journal.steps.find((s) => s.id === "first-ticket");
+  const ticket = firstTicket?.state === "done" ? firstTicket : undefined;
+  const key = ticket && (value(ticket, "ticket") ?? value(ticket, "ticketKey"));
   const savedTicketUrl =
     ticket && (value(ticket, "url") ?? value(ticket, "ticketUrl"));
   const ticketUrl = savedTicketUrl && page(base, savedTicketUrl);
   const next = paused
     ? "Next: run catalyst onboard to continue."
-    : key && ticketUrl
-      ? `Next: open ${ticketUrl} and follow ${key}.`
+    : key
+      ? `Follow ${ticketUrl ?? key} in Linear; Catalyst comments there as each phase finishes.`
       : heading === "Setup complete"
-        ? "Next: move a ticket to Todo in Linear."
+        ? `Next: move a ticket to ${dispatchStageName(firstTicket?.evidence?.stage)} in Linear.`
         : journal.exit === 0 && actions[0]
           ? `Next: ${actions[0].text[0]!.toLowerCase() + actions[0].text.slice(1)}`
           : actions.length === 1
@@ -559,7 +582,9 @@ export function setupFinalScreen(
                 ? "Next: run catalyst onboard after you finish 1 to " +
                   actions.length +
                   "."
-                : "Next: run catalyst onboard to check again.";
+                : readyStep?.reason === "member_team_required"
+                  ? "Next: run catalyst onboard --team <KEY> to check again."
+                  : "Next: run catalyst onboard to check again.";
   return {
     heading,
     readinessCause,
@@ -666,7 +691,9 @@ export function onboardJsonView(
       // CTC-4680: refused by the person's Catalyst role, not by GitHub, so a workspace admin acts.
       step.reason === "github_installation_admin_required" ||
       step.reason?.endsWith("_identity_unverified") ||
-      (action.id === "accounts" && role !== "owner" && role !== "admin");
+      ((action.id === "accounts" || action.id === "values") &&
+        role !== "owner" &&
+        role !== "admin");
     const url = action.text
       .match(/https?:\/\/[^\s<>]+/)?.[0]
       ?.replace(/[.,;:!?]+$/, "");

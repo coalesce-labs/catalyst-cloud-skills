@@ -775,9 +775,9 @@ describe("headless runner integration", () => {
   });
 
   test.each([
-    { name: "completed work guidance", complete: true, ticket: false, scoped: false, next: "move a ticket to Todo in Linear." },
+    { name: "completed work guidance", complete: true, ticket: false, scoped: false, next: "move a ticket to the stage that starts Catalyst's work in Linear." },
     { name: "scoped resume guidance", complete: false, ticket: false, scoped: true, next: "run the same headless setup command" },
-    { name: "first ticket guidance", complete: true, ticket: true, scoped: false, next: "open https://cloud.example.test/tickets/ENG-123 and follow ENG-123." },
+    { name: "first ticket guidance", complete: true, ticket: true, scoped: false, next: "Follow https://cloud.example.test/tickets/ENG-123 in Linear; Catalyst comments there as each phase finishes." },
   ])("a successful headless run preserves $name", async ({ complete, ticket, scoped, next }) => {
     const f = runnerFixture("no");
     expect(await runOnboardHeadless(parseArgs(["onboard", "--headless", "--json", ...(scoped ? ["--only", "runner"] : [])]), f.ctx, {
@@ -854,18 +854,18 @@ describe("headless runner integration", () => {
     expect(saved?.steps.find((step) => step.id === "github.install")).toMatchObject({ state: "failed", refused: true });
   });
 
-  test("a waiting deferred dependency is missing when it blocks an explicit scoped step", async () => {
+  test("a waiting deferred step is missing when it is the explicit scoped step", async () => {
     const f = runnerFixture("no");
     const adapters: Partial<Record<OnboardStepId, OnboardAdapter>> = {};
     for (const id of ONBOARD_STEPS) adapters[id] = { check: async () => ({ state: "done" }), act: async () => ({ state: "done" }) };
-    adapters.settings = { check: async () => ({ state: "waiting", reason: "settings_needed" }) };
+    adapters.values = { check: async () => ({ state: "waiting", reason: "required_values_missing" }) };
     const code = await runOnboardHeadless(parseArgs(["onboard", "--headless", "--json", "--only", "values"]), f.ctx, {
       login: async () => { throw new Error("no supplied key"); },
       onboard: (args, ctx, tracker) => cmdOnboard(args, ctx, headlessOnboardDeps({ adapters, bindSignals: false,
         identity: async () => ({ account: "a", membershipId: "p", baseUrl: "https://cloud.example.test", role: "admin" }) }, tracker)),
     }, "test");
     expect(code).toBe(11);
-    expect(f.doc()).toMatchObject({ exit: 11, headless: { missing: [expect.objectContaining({ id: "settings", reason: "settings_needed" })], deferred: [] } });
+    expect(f.doc()).toMatchObject({ exit: 11, headless: { missing: [expect.objectContaining({ id: "values", reason: "required_values_missing" })], deferred: [] } });
     expect(readOnboardJournal(onboardStatePath(f.home))?.exit).toBe(11);
   });
 

@@ -170,7 +170,7 @@ describe("the daily update is optional: one row, never an action", () => {
     expect(screen).toMatchObject({
       heading: "Setup complete",
       actions: [],
-      next: "Next: move a ticket to Todo in Linear.",
+      next: "Next: move a ticket to the stage that starts Catalyst's work in Linear.",
     });
   });
   test("a scheduled one reads as done", () => {

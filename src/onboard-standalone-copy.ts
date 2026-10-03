@@ -23,6 +23,7 @@ const PLAN = [
   ["Work", "accounts", "check an AI account"],
   ["Work", "capacity", "check which runners can take work"],
   ["Work", "settings", "you review settings before saving them"],
+  ["Work", "values", "check every value the repositories need has one"],
   ["Work", "first-ticket", "you choose a ticket to start"],
 ] as const;
 /**
@@ -80,10 +81,13 @@ export function standalonePlan(
         );
       continue;
     }
+    // The terminal gives repository values their own row; the plain-text plan keeps them folded
+    // into the settings row, under the number JSON reports for both.
+    if (json && id === "values") continue;
     if (
       !includes(id) &&
       !(id === "capacity" && includes("runner")) &&
-      !(id === "settings" && includes("values"))
+      !(json && id === "settings" && includes("values"))
     )
       continue;
     const reviewedDetail =
@@ -118,7 +122,8 @@ const CONTINUES: ReadonlyArray<readonly [readonly OnboardStepId[], string]> = [
   [["github.repos", "projects"], "chooses repositories"],
   [["accounts"], "checks an AI account"],
   [["capacity", "runner"], "checks runners"],
-  [["settings", "values"], "reviews repository settings"],
+  [["settings"], "reviews repository settings"],
+  [["values"], "checks repository values"],
   [["first-ticket"], "starts a first ticket"],
 ];
 export function pendingContinuation(

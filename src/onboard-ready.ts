@@ -1,6 +1,13 @@
 import type { Ctx } from "./config.js";
 import { loadConfig } from "./config.js";
 import { loadContract } from "./contract.js";
+import {
+  ONBOARD_DEFERRED_STEPS,
+  onboardRequiredStepsWaiting,
+  type OnboardJournal,
+  type OnboardStepId,
+  type OnboardStepResult,
+} from "./onboard.js";
 
 export interface OnboardingReadyCheck {
   id: string;
@@ -53,6 +60,79 @@ export async function onboardingReadyReport(ctx: Ctx, deps: OnboardingReadyDeps)
   const state = required.some(check => check.state === "fail") || work.state === "not_observed" ? "incomplete"
     : required.length === 0 || required.some(check => check.state === "unknown") || work.state === "unknown" ? "unknown" : "complete";
   return { schema: 1, readMode: deps.localSync ? "local" : "cloud", state, checks, work };
+}
+
+/** Team check outcomes that do not hold setup's readiness, as `check:reason`: the cloud's four
+ * WAITING_PAIRS (nothing has happened yet before a first ticket: a webhook delivery, a write, a host
+ * attaching, a reviewer's first answer), plus two of setup's own. A missing value is the values
+ * step's action; a reference with no value is not here, because the checkout refuses it before any
+ * work starts. A team with no reviewer still runs. */
+const READY_EXEMPT = new Set([
+  "webhook_covers_team:delivery_window_empty",
+  "writes_land:no_write_observed",
+  "hosts_current:no_host_connected",
+  "reviewer_answering:reviewer_not_yet_answered",
+  "required_values:required_value_missing",
+  "reviewer_configured:no_reviewer_configured",
+]);
+
+/** Admin-owned steps a member's run skips, and the team checks that show an admin finished them. A
+ * member's skip is not a finished setup: readiness holds until these checks pass. */
+const ADMIN_OWNED: ReadonlyArray<readonly [OnboardStepId, readonly string[]]> = [
+  ["linear.workspace", ["oauth_scope", "token_live"]],
+  ["github.install", ["github_app_installed"]],
+  ["linear.adopt", ["mapping_total", "mapped_states_exist"]],
+];
+
+/** The setup step's verdict. Every required step must be satisfied, and every required check must
+ * pass or be one of the exempt outcomes above. A failing check fails; anything else unread (a stale
+ * or unverified team, a check the cloud could not read, the cloud itself) waits. Work nobody can
+ * observe yet does not hold it. */
+export function onboardReadyStep(
+  report: OnboardingReadyReport,
+  journal: Pick<OnboardJournal, "steps"> | undefined,
+): OnboardStepResult {
+  const evidence = {
+    checks: report.checks.length,
+    passed: report.checks.filter((check) => check.state === "pass").length,
+  };
+  const failedStep = (journal?.steps ?? []).some(
+    (step) =>
+      step.id !== "ready" &&
+      !ONBOARD_DEFERRED_STEPS.has(step.id) &&
+      step.state === "failed",
+  );
+  if (onboardRequiredStepsWaiting(journal) || failedStep)
+    return { state: "waiting", reason: "onboarding_checks_pending", evidence };
+  const skipped = (id: OnboardStepId) =>
+    journal?.steps.some((step) => step.id === id && step.state === "skipped" && step.reason === "member_scope");
+  // A member's plain run has no team, so nothing can show what an admin finished.
+  if (skipped("linear.team"))
+    return { state: "waiting", reason: "member_team_required", evidence };
+  // Only a check read from a fresh team (`team.<id>.<check>`) that fails counts. An absent, stale or
+  // unknown one (an outage, a workflow just adopted) says nothing about the admin step, so it falls
+  // through to the waits below.
+  const read = new Map(
+    report.checks
+      .filter((check) => /^team\.[^.]+\.[a-z0-9_]+$/.test(check.id))
+      .map((check) => [check.id.split(".")[2]!, check.state]),
+  );
+  const adminLeft = ADMIN_OWNED.filter(
+    ([id, checks]) =>
+      skipped(id) && checks.some((check) => read.get(check) === "fail"),
+  ).map(([id]) => id);
+  if (adminLeft.length)
+    return { state: "waiting", reason: "admin_setup_pending", evidence: { ...evidence, admin: adminLeft.join(",") } };
+  const open = report.checks.filter((check) => {
+    if (!check.required || check.state === "pass") return false;
+    // `team.<id>.<check>` is one team check; `team.<id>` alone is the team's whole check list.
+    const parts = check.id.split(".");
+    return !(parts[0] === "team" && parts.length === 3 && READY_EXEMPT.has(`${parts[2]}:${check.reason}`));
+  });
+  if (open.some((check) => check.state === "fail"))
+    return { state: "failed", reason: "onboarding_checks_pending", evidence };
+  if (open.length) return { state: "waiting", reason: "onboarding_checks_pending", evidence };
+  return { state: "done", evidence };
 }
 
 /** The current contract exposes checked project setup, but not fresh starter-ticket proof. */

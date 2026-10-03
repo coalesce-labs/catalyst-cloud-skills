@@ -708,7 +708,7 @@ const observedRun = (extra: OnboardJournal["steps"] = []) =>
         state: "waiting",
         reason: "settings_checkout_unverified",
       },
-      { id: "values", state: "waiting", reason: "prerequisite_not_ready" },
+      { id: "values", state: "waiting", reason: "required_values_unverified" },
       {
         id: "capacity",
         state: "waiting",
@@ -742,7 +742,7 @@ test("an incomplete finish lists each unfinished step with its next action", () 
   expect(text).toContain("https://cloud.example.dev/settings/coding-accounts");
   expect(text).toContain("Review repository settings: ");
   expect(text).toContain(
-    'Import selected local values: Runs after "Review repository settings".',
+    "Check the repository's values: Catalyst has not read the repository's settings yet.",
   );
   expect(text).toContain("Check runner capacity: No runner is allowed");
   expect(text).toContain("Schedule the daily update: ");
@@ -764,7 +764,7 @@ test("a finish with the work prerequisites done says a first ticket can start no
   );
   const text = outro(value);
   expect(text).toContain(
-    "Move a ticket in ENG to Todo; `catalyst explain <ticket>` says why it is or is not starting.",
+    "Move a ticket in ENG to the stage that starts Catalyst's work; `catalyst explain <ticket>` says why it is or is not starting.",
   );
   expect(text).not.toMatch(/onboarding complete/i);
 });
@@ -799,7 +799,7 @@ test("exit 0 with deferred steps waiting renders ready for work and the optional
   expect(text).toMatch(/^Ready for work\.\nNext, when you want:\n/);
   expect(text).toContain("Review repository settings: ");
   expect(text).toContain("Schedule the daily update: ");
-  expect(text).toContain("Move a ticket in ENG to Todo;");
+  expect(text).toContain("Move a ticket in ENG to the stage that starts Catalyst's work;");
   expect(text).not.toMatch(/onboarding complete|still needs|resume:/i);
 });
 
@@ -811,6 +811,35 @@ test("the runner question defaults to no, and only an explicit yes starts one", 
   expect(await fixture("yes").ui.chooseRunner!()).toBe(true);
   const cancelled = fixture(Symbol("cancel"));
   expect(await cancelled.ui.chooseRunner!()).toBeNull();
+  expect(cancelled.ui.signal.aborted).toBe(true);
+});
+
+test("the first-ticket question lists the offered tickets, then a sample and skip", async () => {
+  const pick = fixture("ENG-2");
+  expect(
+    await pick.ui.chooseFirstTicket!(
+      [
+        { identifier: "ENG-2", title: "Fix the login copy", estimate: 1 },
+        { identifier: "ENG-8", title: "Add a footer", estimate: null },
+      ],
+      { teamKey: "ENG", stage: "Ready for Catalyst" },
+    ),
+  ).toBe("ENG-2");
+  expect((pick.selections[0] as { message?: string }).message).toBe(
+    "Which ticket should Catalyst start first? It moves to Ready for Catalyst in ENG.",
+  );
+  expect(pick.selections[0]!.initialValue).toBe("ENG-2");
+  expect(pick.selections[0]!.options.map((o) => o.value)).toEqual([
+    "ENG-2",
+    "ENG-8",
+    "create-sample",
+    "skip",
+  ]);
+  const empty = fixture("create-sample");
+  expect(await empty.ui.chooseFirstTicket!([], { teamKey: "ENG", stage: "Todo" })).toBe("create-sample");
+  expect(empty.selections[0]!.initialValue).toBe("create-sample");
+  const cancelled = fixture(Symbol("cancel"));
+  expect(await cancelled.ui.chooseFirstTicket!([], { teamKey: "ENG", stage: "Todo" })).toBeNull();
   expect(cancelled.ui.signal.aborted).toBe(true);
 });
 

@@ -5,6 +5,8 @@
 // every fix is either a full URL or a step in Linear's own settings. `line` keeps its `team KEY: `
 // prefix because install.sh strips exactly that before printing a team row.
 
+import type { ContractReadinessCheck } from "./contract-types.js";
+
 /** Who fixes each check: the cloud's CHECK_FIXER (catalyst-cloud packages/types workflow-readiness.ts),
  *  copied as data so an older cloud that sends no fixer still gets a sentence. */
 type Fixer =
@@ -80,6 +82,110 @@ function slotList(slots: readonly string[]): string {
 function origin(baseUrl: string): string {
   return baseUrl.replace(/\/+$/, "");
 }
+
+const NAME = /^[A-Za-z_][A-Za-z0-9_]{0,127}$/;
+const REPOSITORY = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,99}\/[A-Za-z0-9][A-Za-z0-9_.-]{0,99}$/;
+
+type ValuesFacts = Pick<ContractReadinessCheck, "names" | "unresolved" | "repos">;
+const identifiers = (value: unknown): string[] =>
+  Array.isArray(value)
+    ? value.filter((name): name is string => typeof name === "string" && NAME.test(name))
+    : [];
+const unresolvedFacts = (value: unknown) =>
+  Array.isArray(value)
+    ? value.flatMap((row: { name?: unknown; references?: unknown } | null) =>
+        typeof row?.name === "string" && NAME.test(row.name) && identifiers(row.references).length
+          ? [{ name: row.name, references: identifiers(row.references) }]
+          : [],
+      )
+    : [];
+
+/** The declared names a failing check carries, kept in the receipt for the fix line: which variables
+ * need a value, which refer to a secret with no value, and the same for the team's other
+ * repositories. Identifiers and repository names only. */
+export function valuesFacts(value: unknown): ValuesFacts {
+  const row = (value ?? {}) as Record<string, unknown>;
+  return {
+    names: identifiers(row.names),
+    unresolved: unresolvedFacts(row.unresolved),
+    repos: Array.isArray(row.repos)
+      ? row.repos.flatMap((note: Record<string, unknown> | null) =>
+          typeof note?.repo === "string" && REPOSITORY.test(note.repo)
+            ? [{ repo: note.repo, names: identifiers(note.names), unresolved: unresolvedFacts(note.unresolved) }]
+            : [],
+        )
+      : [],
+  };
+}
+
+/** Where the named variables get their values. Names only: nothing here reads or prints a value. */
+function setValuesFix(baseUrl: string | undefined, names: readonly string[]): string {
+  return baseUrl
+    ? `set ${names.join(", ")} on the repository's Environment page: open ${origin(baseUrl)}/settings/projects, then the project, then the repository`
+    : `set ${names.join(", ")} on the repository's Environment page in Catalyst's project settings`;
+}
+
+function nameList(v: unknown): string[] {
+  return Array.isArray(v)
+    ? v.filter((n): n is string => typeof n === "string" && n.length > 0)
+    : [];
+}
+
+/** Entries whose name and references are both present; anything malformed is dropped, not guessed. */
+function unresolvedList(v: unknown): { name: string; references: string[] }[] {
+  if (!Array.isArray(v)) return [];
+  return v.flatMap((u) => {
+    if (typeof u !== "object" || u === null) return [];
+    const { name, references } = u as { name?: unknown; references?: unknown };
+    const refs = nameList(references);
+    return typeof name === "string" && name.length > 0 && refs.length > 0
+      ? [{ name, references: refs }]
+      : [];
+  });
+}
+
+function unresolvedLine(u: { name: string; references: string[] }): string {
+  const which = u.references.length === 1 ? "which has" : "which have";
+  return `${u.name} refers to ${u.references.join(", ")}, ${which} no value, so Catalyst can't start work there`;
+}
+
+/** A team check's fix line. A check that carries `names` (CTC-3561: `required_values`, contract
+ *  1.24.0) names them and where to set them. CTC-3606: it also names each `unresolved` variable and
+ *  the reference with no value, and each other repository's missing names from `repos[]`. `unresolved`
+ *  is a subset of `names` (the variable exists; its reference does not), so those are not told to be
+ *  "set". Every field is optional so an older cloud still works. Everything printed is a declared
+ *  identifier or a repository name, never a value, and nothing here reads a value. Any other check
+ *  keeps the generic line. Shared with setup's values step, which has no web address when the
+ *  saved login has none. */
+export function valuesFix(
+  base: string | undefined,
+  c: Pick<ContractReadinessCheck, "names" | "unresolved" | "repos">,
+): string | null {
+  const unresolved = unresolvedList(c.unresolved);
+  const unresolvedNames = new Set(unresolved.map((u) => u.name));
+  const names = nameList(c.names).filter((n) => !unresolvedNames.has(n));
+  const parts: string[] = [];
+  if (names.length > 0) parts.push(setValuesFix(base, names));
+  for (const u of unresolved) parts.push(unresolvedLine(u));
+  for (const note of Array.isArray(c.repos) ? c.repos : []) {
+    if (
+      typeof note !== "object" ||
+      note === null ||
+      typeof note.repo !== "string" ||
+      note.repo.length === 0
+    )
+      continue;
+    const repoUnresolved = unresolvedList(note.unresolved);
+    const skip = new Set(repoUnresolved.map((u) => u.name));
+    const missing = nameList(note.names).filter((n) => !skip.has(n));
+    if (missing.length > 0)
+      parts.push(`${note.repo} is missing ${missing.join(", ")}`);
+    for (const u of repoUnresolved)
+      parts.push(`in ${note.repo}, ${unresolvedLine(u)}`);
+  }
+  return parts.length === 0 ? null : parts.join(". ");
+}
+
 
 /** The team's own page in Catalyst settings, optionally one of its sub-pages (`map`, `adopt`). */
 export function teamPage(baseUrl: string, key: string, sub?: "map" | "adopt"): string {
