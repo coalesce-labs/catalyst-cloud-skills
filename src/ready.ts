@@ -12,6 +12,7 @@ import {
 import { basename, delimiter, dirname, join } from "node:path";
 import type { ParsedArgs } from "./args.js";
 import {
+  DEFAULT_BASE_URL,
   LEGACY_PACKAGE_NAME,
   PACKAGE_NAME,
   defaultSkillsDirFor,
@@ -25,7 +26,6 @@ import {
 import { contractVersionInRange, readContractCache } from "./contract.js";
 import type {
   ContractReadinessCheck,
-  TenantContract,
 } from "./contract-types.js";
 import { CliError } from "./errors.js";
 import { latestPublishedVersion, type PublishedLookup } from "./published.js";
@@ -51,6 +51,7 @@ import {
   type OnboardingReadyDeps,
 } from "./onboard-ready.js";
 import { selectedOnboardTeam } from "./onboard-existing.js";
+import { dispatchGateCopy, teamCheckCopy, teamPage, whoFixes } from "./ready-copy.js";
 import { onboardStatePath, readOnboardJournal } from "./onboard.js";
 
 export { semverOlder };
@@ -98,7 +99,7 @@ function readyReplicaLine(s: ReplicaStatus): string {
     case "not-configured":
       return "replica: not configured — run login first";
     case "absent":
-      return `replica: absent at ${s.dbPath} — optional, and off by default for large tenants while the snapshot path is being made safe; every read works through the API`;
+      return `replica: absent at ${s.dbPath} — optional, and off by default for large workspaces while the snapshot path is being made safe; every read works through the API`;
     case "fresh":
       return `replica: fresh at ${s.dbPath} (cursor ${s.cursor}, heartbeat ${s.heartbeatAgeMs}ms ago${s.lag !== undefined ? `, ${s.lag} behind head ${s.head}` : ""})`;
     case "stale":
@@ -211,7 +212,7 @@ function unresolvedList(v: unknown): { name: string; references: string[] }[] {
 
 function unresolvedLine(u: { name: string; references: string[] }): string {
   const which = u.references.length === 1 ? "which has" : "which have";
-  return `${u.name} references ${u.references.join(", ")}, ${which} no value; the checkout refuses it before work starts`;
+  return `${u.name} refers to ${u.references.join(", ")}, ${which} no value, so Catalyst can't start work there`;
 }
 
 /** A team check's fix line. A check that carries `names` (CTC-3561: `required_values`, contract
@@ -221,25 +222,14 @@ function unresolvedLine(u: { name: string; references: string[] }): string {
  *  "set". Every field is optional so an older cloud still works. Everything printed is a declared
  *  identifier or a repository name, never a value, and nothing here reads a value. Any other check
  *  keeps the generic line. */
-function teamCheckFix(label: string, c: ContractReadinessCheck): string {
-  const automationRules: Record<string, string> = {
-    linear_automation_pr_open: "On PR open",
-    linear_automation_pr_review: "On PR review request or activity",
-    linear_automation_pr_ready: "On PR ready for merge",
-    linear_automation_pr_merge: "On PR merge",
-  };
-  const rule = automationRules[c.id];
-  if (rule) {
-    return `in Linear, open Settings → Teams → ${label} → Workflow → Workflows & automations → Pull request and commit automations and set ${rule} to No action, including branch-specific overrides; then run catalyst team check ${label}`;
-  }
+function valuesFix(base: string, c: ContractReadinessCheck): string | null {
   const unresolved = unresolvedList(c.unresolved);
   const unresolvedNames = new Set(unresolved.map((u) => u.name));
   const names = nameList(c.names).filter((n) => !unresolvedNames.has(n));
   const parts: string[] = [];
   if (names.length > 0) {
     parts.push(
-      `set ${names.join(", ")} on the repository's Environment page under Settings → Your projects → the project → Repositories → the repository ` +
-        `(team ${label}; ${names.length === 1 ? "it has" : "they have"} no value at repository or account scope)`,
+      `set ${names.join(", ")} on the repository's Environment page: open ${base}/settings/projects, then the project, then the repository`,
     );
   }
   for (const u of unresolved) parts.push(unresolvedLine(u));
@@ -259,16 +249,7 @@ function teamCheckFix(label: string, c: ContractReadinessCheck): string {
     for (const u of repoUnresolved)
       parts.push(`in ${note.repo}, ${unresolvedLine(u)}`);
   }
-  if (parts.length === 0)
-    return `open settings for team ${label} and resolve ${c.id}`;
-  return parts.join(". ");
-}
-
-function whoCanAnswer(doc: TenantContract): string {
-  const roles = doc.humans.map((h) => `${h.role} ${h.linearUserId}`);
-  return roles.length
-    ? roles.join(", ")
-    : "a tenant owner or admin (none resolved on the contract)";
+  return parts.length === 0 ? null : parts.join(". ");
 }
 
 export async function readyReport(
@@ -355,7 +336,7 @@ export async function readyReport(
         id: "bundle",
         ok: false,
         note: true,
-        line: `bundle: ${installed} installed is older than the tenant's minimum ${minVersion} — upgrade: ${upgradeCommand()}`,
+        line: `bundle: ${installed} installed is older than your workspace's minimum ${minVersion} — upgrade: ${upgradeCommand()}`,
       });
     }
   }
@@ -499,7 +480,7 @@ export async function readyReport(
 
   if (cache) {
     const doc = cache.doc;
-    const who = whoCanAnswer(doc);
+    const base = (cfg?.baseUrl ?? DEFAULT_BASE_URL).replace(/\/+$/, "");
     for (const team of doc.teams) {
       const label = team.key ?? team.id;
       // The team's dispatch gate, straight off the cached contract: an older cloud omits it and this
@@ -509,22 +490,29 @@ export async function readyReport(
       // checked still reports its gate, which is exactly the team most likely to be unmapped.
       const dg = team.dispatchGate;
       if (dg && typeof dg.status === "string") {
-        const slots = (dg.missingSlots ?? []).join(", ");
+        // CTC-4680: the cloud's own remedy text names an API route and says "tenant", so the words
+        // come from ready-copy; the status and slots stay readable in the check id's JSON neighbours.
+        const copy = dispatchGateCopy(base, label, dg.status, dg.missingSlots ?? []);
         checks.push(
-          dg.status === "open"
+          dg.status === "stages_syncing"
+            ? {
+                id: `team:${label}:dispatchGate`,
+                ok: false,
+                note: true,
+                line: copy.line,
+              }
+            : dg.status === "open"
             ? {
                 id: `team:${label}:dispatchGate`,
                 ok: true,
-                line: `team ${label}: dispatch gate open`,
+                line: copy.line,
               }
             : {
                 id: `team:${label}:dispatchGate`,
                 ok: false,
-                line: `team ${label}: dispatch gate ${dg.status}${slots ? ` (${slots})` : ""}, blocking`,
-                fix:
-                  dg.remedy ??
-                  `open settings for team ${label} and map its stages`,
-                who,
+                line: copy.line,
+                ...(copy.fix ? { fix: copy.fix } : {}),
+                who: whoFixes("mapping_total"),
               },
         );
       }
@@ -533,7 +521,7 @@ export async function readyReport(
           id: `team:${label}`,
           ok: true,
           note: true,
-          line: `team ${label}: readiness not checked yet`,
+          line: `team ${label}: Catalyst hasn't checked this team yet`,
         });
         continue;
       }
@@ -549,13 +537,20 @@ export async function readyReport(
       for (const c of bad) {
         const meta = doc.readinessChecks.find((r) => r.id === c.id);
         const needsAnswer = meta?.needsAnswer ?? true;
+        const copy = teamCheckCopy(
+          base,
+          label,
+          c.id,
+          c.state === "fail" ? "fail" : "unknown",
+          valuesFix(base, c),
+        );
         checks.push({
           id: `team:${label}:${c.id}`,
           ok: !needsAnswer && c.state !== "fail",
           note: !needsAnswer,
-          line: `team ${label}: ${c.id} is ${c.state}${c.reason ? ` (${c.reason}${c.count !== undefined ? ` ×${c.count}` : ""})` : ""}${meta ? `, ${meta.severity}` : ""}`,
-          fix: teamCheckFix(label, c),
-          who: needsAnswer ? who : "nobody yet; it is informational",
+          line: copy.line,
+          ...(copy.fix ? { fix: copy.fix } : {}),
+          who: needsAnswer ? whoFixes(c.id) : "nobody yet; it is informational",
         });
       }
       if (bad.length === 0 && team.readiness.status !== "ready") {
@@ -563,9 +558,12 @@ export async function readyReport(
           id: `team:${label}`,
           ok: team.readiness.status !== "blocked",
           note: team.readiness.status === "degraded",
-          line: `team ${label}: ${team.readiness.status}`,
-          fix: `open settings for team ${label}`,
-          who,
+          line:
+            team.readiness.status === "degraded"
+              ? `team ${label}: works, with some optional settings still missing`
+              : `team ${label}: not ready for work yet`,
+          fix: `open ${teamPage(base, label)}`,
+          who: whoFixes("mapping_total"),
         });
       }
     }

@@ -218,9 +218,9 @@ describe("plain engine staged sign-in", () => {
       f.setAccept(async (_signal, beforePublish) => {
         const displayed = (json ? f.err : f.out).join("\n");
         expect(displayed).toContain(
-          "Signed in as Next Person (next@example.com)",
+          "Signed in to Catalyst as Next Person (next@example.com)",
         );
-        expect(displayed).toContain("Workspace: Next Workspace (next) · owner");
+        expect(displayed).toContain("Catalyst workspace: Next Workspace · owner");
         expect(existsSync(configPathFor(f.path))).toBe(false);
         expect(existsSync(contractPathFor(f.path))).toBe(false);
         expect(existsSync(f.statePath)).toBe(false);
@@ -454,7 +454,7 @@ describe("plain engine staged sign-in", () => {
     writeFileSync(contractPathFor(f.path), "stale-unbound-cache");
     f.deps.isTty = () => true;
     const confirm = vi.fn(async () => {
-      expect(f.out.join("\n")).toContain("Signed in as Next Person");
+      expect(f.out.join("\n")).toContain("Signed in to Catalyst as Next Person");
       expect(existsSync(configPathFor(f.path))).toBe(false);
       expect(readFileSync(f.statePath, "utf8")).toBe(receiptBytes);
       return false;
@@ -567,7 +567,7 @@ describe("plain engine staged sign-in", () => {
         ),
       ).toBe(12);
       expect(result(f.out)).toMatchObject({ exit: 12, complete: false });
-      expect(f.err.join("\n")).not.toContain("Signed in as Next Person");
+      expect(f.err.join("\n")).not.toContain("Signed in to Catalyst as Next Person");
       expect(f.counts()).toEqual({
         stageCalls: 1,
         acceptCalls: 0,
@@ -936,10 +936,10 @@ describe("CLI dispatch stages the real device candidate", () => {
         const reviewed = f.err.join("\n");
         expect(reviewed).toContain("TEST-4321");
         expect(reviewed).toContain(
-          "Signed in as Device Person (device@example.com)",
+          "Signed in to Catalyst as Device Person (device@example.com)",
         );
         expect(reviewed).toContain(
-          "Workspace: Device Workspace (device) · member",
+          "Catalyst workspace: Device Workspace · member",
         );
         expect(reviewed).toContain(
           "Local sync stays off, so Catalyst reads from the cloud.",
@@ -988,7 +988,7 @@ describe("CLI dispatch stages the real device candidate", () => {
     f.setBeforeMe((count) => {
       if (count !== 2) return;
       expect(f.out.join("\n")).toContain(
-        "Signed in as Device Person (device@example.com)",
+        "Signed in to Catalyst as Device Person (device@example.com)",
       );
       expect(f.out.join("\n").replace(/\s+/g, " ")).toContain(
         "Local sync stays off, so Catalyst reads from the cloud.",

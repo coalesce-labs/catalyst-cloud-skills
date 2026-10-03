@@ -140,7 +140,8 @@ const field = (name) => {
   const line = statusLines.find((l) => l.startsWith(`${name}:`));
   return line ? line.slice(name.length + 1).trim() : null;
 };
-const tenant = field("Tenant");
+// A newer CLI prints "Catalyst workspace:"; an older one prints "Tenant:".
+const tenant = field("Catalyst workspace") ?? field("Tenant");
 const api = field("API");
 const connected = tenant !== null && tryLoadConfig() !== null;
 // The app and the API share an origin; the base URL is whatever this machine was connected to, so

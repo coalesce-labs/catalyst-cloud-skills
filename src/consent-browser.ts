@@ -57,7 +57,9 @@ export function createConsentBrowserOpener(options: ConsentBrowserOptions = {}) 
 export const openConsentBrowser = createConsentBrowserOpener();
 
 /** The web page that finishes a consent step when no browser opens here. The signed link stays private. */
-export function finishOnTheWeb(baseUrl: string, page: "connections" | "connected-accounts", action: string): string {
+export function finishOnTheWeb(baseUrl: string, page: "connections" | "connected-accounts" | "github-install", action: string): string {
   const origin = baseUrl.replace(/\/+$/, "");
-  return `No browser opened on this computer. In a browser signed in to Catalyst, open ${origin}/settings/${page} and ${action}. Setup keeps waiting here.`;
+  // CTC-4680: the GitHub install has a route that goes straight to GitHub; Integrations starts nothing.
+  const path = page === "github-install" ? "/connect/github/start" : `/settings/${page}`;
+  return `No browser opened on this computer. In a browser signed in to Catalyst, open ${origin}${path} and ${action}. Setup keeps waiting here.`;
 }

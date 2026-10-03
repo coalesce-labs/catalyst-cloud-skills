@@ -188,7 +188,7 @@ const HUMAN_VERBS = new Set(["login", "install", "status", "notice"]);
 
 export function usageText(): string {
   return [
-    `${PACKAGE_NAME} — the Catalyst Cloud customer CLI: connect to your tenant, read through the SDK, write through the agent proxy`,
+    `${PACKAGE_NAME} — the Catalyst Cloud customer CLI: connect to your Catalyst workspace, read through the SDK, write through the agent proxy`,
     "",
     "Usage:",
     "  catalyst login [--base-url <url>] [--start-replica]   (keyless: logs you in as yourself)",
@@ -215,7 +215,7 @@ export function usageText(): string {
     "  catalyst var set <NAME> | var import <file> [--repo <owner/name>] [--names NAME[,NAME...]]   (plain environment variables)",
     "  catalyst team <list|check|map|adopt|migrate|checklist> ...",
     "  catalyst capabilities [--json]   (what this CLI can do, the role each verb needs, and whether this cloud serves it)",
-    "  catalyst project list [--json]   (all tenant projects, including those with no stage mapping)",
+    "  catalyst project list [--json]   (all workspace projects, including those with no stage mapping)",
     "  catalyst project wip-limit <get|set <n>|set default> [--team K]   (a project's new-start WIP limit; members read, owners and admins set)",
     "  catalyst repo <agents-block <path> [--write]|agent-setup <path> [--apply] [--with-check]>   (a checkout's AGENTS.md block and portable agent layout; working tree only)",
     "  catalyst legacy [--remove [--data] [--yes]]   (leftovers of the old local Catalyst runtime: list them; remove them only on a yes)",
@@ -229,8 +229,8 @@ export function usageText(): string {
     "--key (or set CATALYST_CLOUD_TOKEN) to use a personal or account key instead. The base URL defaults",
     `to CATALYST_CLOUD_BASE_URL or ${DEFAULT_BASE_URL}.`,
     "",
-    "login discovers your tenant from GET /api/v1/me, writes ~/.config/catalyst-cloud/customer.json",
-    "(0600) holding your login session (or key) and this CLI's path, and caches the tenant contract",
+    "login finds your Catalyst workspace, writes ~/.config/catalyst-cloud/customer.json",
+    "(0600) holding your login session (or key) and this CLI's path, and caches the workspace contract",
     "beside it. A keyless session's short-lived token refreshes silently on every request. login does",
     "not install skills: your agent's own install command does that, and `install` is only here to",
     "repair a copy this package made.",
@@ -369,8 +369,15 @@ export async function main(
   deps: MainDeps = {},
 ): Promise<number> {
   // CTC-4625: setup passes the install options through to its engine untouched, so they never meet
-  // this CLI's own flag tables.
-  if (argv[0] === "setup") return runSetup(argv.slice(1), ctx, deps);
+  // this CLI's own flag tables. CTC-4680: without --engine, `setup` is the name a person types for
+  // the onboard flow, so it runs exactly that.
+  if (argv[0] === "setup") {
+    const rest = argv.slice(1);
+    const own = rest.indexOf("--") === -1 ? rest : rest.slice(0, rest.indexOf("--"));
+    if (own.includes("--engine") || own.includes("--help") || own.includes("-h"))
+      return runSetup(rest, ctx, deps);
+    argv = ["onboard", ...rest];
+  }
   let args: ParsedArgs;
   try {
     args = parseArgs(
@@ -405,6 +412,7 @@ export async function main(
     );
   if (args.version) {
     ctx.stdout(
+      // Machine-read: install.sh and catalyst-cloud's onboarding harness match this exact line.
       `${PACKAGE_NAME} ${manifest.version} (tenant contract range: ${manifest.tenantContractRange})`,
     );
     return 0;
@@ -942,10 +950,10 @@ async function cmdLogin(
   };
   checkCancelled();
   const written = writeConfig(ctx.home, config);
-  ctx.stdout(`Connected to ${me.name} (${me.slug}) — account ${me.account}`);
+  ctx.stdout(`Catalyst workspace: ${me.name} (${me.slug})`);
   if (me.user) {
     ctx.stdout(
-      `Connected as ${me.user.label} (${me.user.role})${
+      `Signed in to Catalyst as ${me.user.label} (${me.user.role})${
         me.user.linearUserId
           ? ""
           : ' — your Linear identity is not matched yet, so "what needs me" will show everyone\'s asks until an admin matches it in Settings'
@@ -953,7 +961,7 @@ async function cmdLogin(
     );
   } else {
     ctx.stderr(
-      `[catalyst] this is the tenant's account key (a host credential), not your own — the skills work, but nothing your agent writes will carry your name and "what needs me" cannot mean you. Mint a personal key at Settings → API keys and log in with that.`,
+      `[catalyst] this is your Catalyst workspace's shared key (a host credential), not your own. The skills work, but nothing your agent writes will carry your name, and "what needs me" cannot mean you. Make a personal key at Settings → API keys and sign in with that.`,
     );
   }
   ctx.stdout(
@@ -963,7 +971,6 @@ async function cmdLogin(
         : ` — expected ${formatMode(CONFIG_MODE)}; chmod it by hand`
     }`,
   );
-  ctx.stdout(`Tenant contract range: ${manifest.tenantContractRange}`);
   try {
     const loaded = await loadContract(ctx, config, {
       refresh: true,
@@ -971,7 +978,7 @@ async function cmdLogin(
     });
     checkCancelled();
     ctx.stdout(
-      `Tenant contract ${loaded.doc.contractVersion} cached at ${loaded.path}`,
+      `Saved your workspace settings (version ${loaded.doc.contractVersion}) to ${loaded.path}`,
     );
   } catch (err) {
     checkCancelled();

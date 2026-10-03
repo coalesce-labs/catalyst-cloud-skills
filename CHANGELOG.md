@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.15.2
+
+- `catalyst setup` is the command to set up Catalyst. It runs the same steps as `catalyst onboard`, which still works.
+- When a browser link times out, setup says so and asks whether you are ready to try again. Yes gives a new link; stopping pauses setup without moving on to steps that depend on it.
+- The GitHub link opens GitHub's install page directly. An install request already waiting on an organization owner is not requested again, and setup still shows the link to install it yourself.
+- Setup asks whether to run work on this machine only after Catalyst is installed on GitHub.
+- Sign-in says which Catalyst workspace you joined, without internal account numbers. `catalyst ready` describes each team problem in plain words, with the page to fix it and who can fix it.
+
 ## 0.15.1
 
 - Runner setup accepts verified personal team admission before a repository has been mapped to that team. Older cloud servers keep their existing admission check.

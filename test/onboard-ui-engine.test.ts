@@ -726,3 +726,20 @@ test("display-only presentation cannot acquire team-creation prompts", () => {
     expect(text).not.toHaveBeenCalled();
   } finally { ui.dispose(); interactive.dispose(); }
 });
+
+test("CTC-4680: a step that timed out keeps that reason when the person stops at Ready to try again", async () => {
+  const f = fixture();
+  const args = parseArgs(["onboard"]);
+  const adapters = complete();
+  adapters["linear.workspace"] = {
+    check: async () => {
+      // The person answered "Stop here" at the retry question, which aborts the UI.
+      f.controller.abort();
+      return { state: "waiting" as const, reason: "consent_timeout" };
+    },
+  };
+  await cmdOnboard(args, f.ctx, { ui: f.ui, adapters, bindSignals: false });
+  expect(
+    f.receipt().steps.find((step: OnboardStep) => step.id === "linear.workspace"),
+  ).toMatchObject({ state: "waiting", reason: "consent_timeout" });
+});
