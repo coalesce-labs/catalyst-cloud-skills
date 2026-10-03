@@ -44,6 +44,8 @@ describe("the table itself", () => {
       }
     }
     expect(CAPABILITIES.find((c) => c.verb === "onboard")?.bootstrapHandoff).toBe(true);
+    // CTC-4633: the installer forwards --headless only to a CLI that says it takes it.
+    expect(CAPABILITIES.find((c) => c.verb === "onboard")?.headless).toBe(true);
   });
 
   test("every verb the table names is one the dispatcher knows (the first word), and the verb has usage and a flag table", () => {

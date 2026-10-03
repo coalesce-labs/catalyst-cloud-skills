@@ -662,3 +662,48 @@ test("interrupting account-added wait never sends a validation request", async (
   });
   expect(f.posts()).toHaveLength(0);
 });
+
+describe("--coding-account pins the slot setup checks (CTC-4633)", () => {
+  const pinned = (f: ReturnType<typeof fixture>, slotName: string) => {
+    const adapter = createOnboardRuntime(
+      parseArgs(["onboard", "--yes", "--coding-account", slotName]),
+      f.ctx,
+      {
+        login: async () => {
+          throw new Error("Unexpected login in accounts fixture");
+        },
+        ready: async () => ({ state: "waiting", reason: "fixture_unverified" }),
+      },
+    ).adapters?.accounts;
+    if (!adapter?.act) throw new Error("Real accounts runtime adapter missing");
+    return adapter;
+  };
+
+  test("a slot that is not enrolled waits with a named reason and probes nothing", async () => {
+    const f = fixture();
+    expect(await pinned(f, "claude-absent").check(f.ctx, f.journal)).toEqual({
+      state: "waiting",
+      reason: "coding_account_not_found",
+    });
+    expect(f.posts()).toEqual([]);
+  });
+
+  test("the named slot is the one checked, even when another slot sorts first", async () => {
+    const f = fixture();
+    f.state.accounts = [slot({ accountSlot: "claude-a-first" }), slot()];
+    const adapter = pinned(f, "claude-one");
+    expect((await adapter.check(f.ctx, f.journal)).state).toBe("pending");
+    await adapter.act!(f.ctx, f.journal);
+    expect(f.posts().map((call) => call.path)).toEqual([validatePath]);
+  });
+
+  test("an unusable named slot is not replaced by a usable one", async () => {
+    const f = fixture();
+    f.state.accounts = [slot(), slot({ accountSlot: "claude-two", walled: true })];
+    expect(await pinned(f, "claude-two").check(f.ctx, f.journal)).toEqual({
+      state: "waiting",
+      reason: "account_provider_access_unverified",
+    });
+    expect(f.posts()).toEqual([]);
+  });
+});

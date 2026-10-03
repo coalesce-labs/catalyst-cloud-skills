@@ -380,6 +380,9 @@ export function createOnboardRuntime(
           }
         : {}),
       message: (text) => (hooks.ui ? hooks.ui.message(text) : ctx.stderr(text)),
+      ...(typeof args.flags["coding-account"] === "string"
+        ? { slot: args.flags["coding-account"] }
+        : {}),
     }),
     capacity: onboardCapacityAdapter({
       message: (text) => (hooks.ui ? hooks.ui.message(text) : ctx.stderr(text)),

@@ -103,6 +103,7 @@ import {
   cmdOnboard,
   onboardErrorJournal,
   onboardRequiredStepsWaiting,
+  type OnboardDeps,
 } from "./onboard.js";
 import type { OnboardBootstrapPreview } from "./onboard-bootstrap.js";
 import {
@@ -111,6 +112,14 @@ import {
   type OnboardUi,
 } from "./onboard-ui.js";
 import { createOnboardRuntime } from "./onboard-runtime.js";
+import {
+  argvRequestsHeadless,
+  headlessOnboardDeps,
+  headlessUsageRefusal,
+  onboardHeadlessRequested,
+  runOnboardHeadless,
+  type HeadlessTracker,
+} from "./onboard-headless.js";
 import { savedOnboardBaseUrl } from "./onboard-next.js";
 import {
   onboardingReadyReport,
@@ -370,11 +379,30 @@ export async function main(
     if (args.command && VERB_ALIASES[args.command])
       args.command = VERB_ALIASES[args.command];
   } catch (err) {
+    if (argvRequestsHeadless(argv, ctx.env))
+      return headlessUsageRefusal(
+        ctx,
+        err instanceof Error ? err.message : String(err),
+        argv.includes("--json"),
+        readManifest().version,
+      );
     ctx.stderr(err instanceof Error ? err.message : String(err));
     ctx.stderr(usageText());
     return 1;
   }
   const manifest = readManifest();
+  if (
+    args.json &&
+    (args.help || args.version) &&
+    args.command === "onboard" &&
+    onboardHeadlessRequested(args, ctx.env)
+  )
+    return headlessUsageRefusal(
+      ctx,
+      "--help and --version print text, not the headless document; run them without --json",
+      true,
+      manifest.version,
+    );
   if (args.version) {
     ctx.stdout(
       `${PACKAGE_NAME} ${manifest.version} (tenant contract range: ${manifest.tenantContractRange})`,
@@ -406,11 +434,24 @@ export async function main(
       case "install":
         return cmdInstall(args, ctx);
       case "onboard": {
-        let ui: OnboardUi | undefined = deps.setupUi;
+        // Setup may already own signal handlers; release them before any headless early exit.
+        if (onboardHeadlessRequested(args, ctx.env)) deps.setupUi?.dispose();
+        for (const flag of ["key-file"])
+          if (args.flags[flag] !== undefined && !onboardHeadlessRequested(args, ctx.env))
+            throw new UsageError(`--${flag} needs --headless`);
+        if (typeof args.flags.runner === "string" && !onboardHeadlessRequested(args, ctx.env))
+          throw new UsageError("--runner yes|no needs --headless; use --runner or --no-runner interactively");
+        // Headless runs drop the terminal UI, browser sign-in and every browser action (CTC-4633).
+        const runOnboard = async (
+          args: ParsedArgs,
+          ctx: Ctx,
+          headless: HeadlessTracker | null,
+        ): Promise<number> => {
+        let ui: OnboardUi | undefined = headless ? undefined : deps.setupUi;
         let terminal: TerminalInput | undefined;
         let input: TerminalInput = process.stdin;
         const originalRaw = Boolean(input.isRaw);
-        if (!ui && shouldUseOnboardUi(args, Boolean(process.stdout.isTTY))) {
+        if (!headless && !ui && shouldUseOnboardUi(args, Boolean(process.stdout.isTTY))) {
           if (!input.isTTY) {
             try {
               const fd = openSync("/dev/tty", "r");
@@ -446,7 +487,7 @@ export async function main(
             }
           }
         }
-        if (!ui && !args.json && args.flags["dry-run"] !== true) {
+        if (!headless && !ui && !args.json && args.flags["dry-run"] !== true) {
           const output =
             process.stdout.isTTY === true
               ? process.stdout
@@ -487,7 +528,7 @@ export async function main(
           code = await cmdOnboard(
             args,
             onboardCtx,
-            {
+            ((value: OnboardDeps) => (headless ? headlessOnboardDeps(value, headless, args.flags.runner === true) : value))({
               ...(deps.setupApproved
                 ? { reviewedSetup: true, confirm: async () => true }
                 : {}),
@@ -584,7 +625,7 @@ export async function main(
                 : {}),
               ...(deps.isTty ? { isTty: deps.isTty } : {}),
               ...(deps.signal ? { signal: deps.signal } : {}),
-            },
+            }),
             readManifest().version,
           );
         } finally {
@@ -595,6 +636,25 @@ export async function main(
         }
         for (const line of jsonLines) ctx.stdout(line);
         return code;
+        };
+        if (!onboardHeadlessRequested(args, ctx.env))
+          return await runOnboard(args, ctx, null);
+        return await runOnboardHeadless(
+          args,
+          ctx,
+          {
+            login: (key, baseUrl, loginCtx) =>
+              cmdLogin(
+                { ...args, command: "login", key, baseUrl, flags: {}, json: false },
+                loginCtx,
+                { ...deps, isTty: () => false },
+                true,
+              ),
+            onboard: (onboardArgs, onboardCtx, tracker) =>
+              runOnboard(onboardArgs, onboardCtx, tracker),
+          },
+          readManifest().version,
+        );
       }
       case "notice":
         return 0;
