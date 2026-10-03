@@ -23,7 +23,7 @@ const SPEC = {
   },
   accounts: {
     value: false,
-    help: "also include the coding accounts: provider, state, usage windows, walls, quarantine (never a credential)",
+    help: "also include the coding accounts: provider, state, usage limits, walls, quarantine (never a credential)",
   },
   replica: {
     value: false,

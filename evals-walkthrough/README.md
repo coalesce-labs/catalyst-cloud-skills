@@ -10,7 +10,7 @@ This is its own eval directory, not `evals/`, because its cases need Bash and a 
 | -- | -- | -- |
 | nothing-connected | no credential | ask to connect this machine, and nothing else |
 | claude-only | one active Claude account ("Work laptop"), nothing else | say the coding account is done and hand over the Linear integration |
-| api-key-only | one active Qwen account ("Qwen coding plan") | the same, never asking for the key |
+| api-key-only | one active Qwen account ("Qwen for the team") | the same, never asking for the key |
 | cancelled-account | a cancelled Claude account beside a healthy one | say in one clause that the cancelled one is kept for reporting and not used, never retire or re-token it, and move to Linear |
 | no-project | Linear connected, no project mapped | hand over one project to map, one at a time |
 | project-unchecked | a mapped project never re-checked, an owner whose CLI has `team check` | run `team check ENG` itself and report what it found, never send them to the Re-check button |

@@ -15,7 +15,7 @@ You are the steward: the single-threaded owner of ONE project or ticket set unti
 Scripts are run, never read. Each prints `--help`, and exits 2 when this machine is not connected (`catalyst login`), 1 when its own check fails.
 
 1. `node scripts/scope-status.mjs --project <id>` (or `--team <key>`): tickets by stage, what is running and queued in scope, and stalls against the local policy. Run it to take the scope, and again after a resync.
-2. `node scripts/watch-scope.mjs --project <id>`: the subscription. In Claude Code, arm a monitor on it and react to each printed line in the same turn; elsewhere add `--exec <command>` so a reaction runs per frame.
+2. `node scripts/watch-scope.mjs --project <id>`: the live watch. In Claude Code, arm a monitor on it and react to each printed line in the same turn; elsewhere add `--exec <command>` so a reaction runs per frame.
 3. `node scripts/make-ready.mjs <ticket>` dispatches; `--park` stops; `--note <why>` records it.
 4. `catalyst explain <ticket>` whenever a ticket is not moving.
 

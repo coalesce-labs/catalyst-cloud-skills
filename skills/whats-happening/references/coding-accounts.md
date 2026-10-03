@@ -6,6 +6,6 @@ Slots identify credentials, not emails. Claude/GLM/Qwen use Claude CLI, Codex us
 
 Declared state is operator-set active/disabled. Observed health is healthy/degraded/unknown, polled every five minutes for active slots and daily for disabled ones. Credential conflicts/auth mismatches quarantine; Replace credential on the account's page clears it.
 
-Subscriptions have 5-hour and 7-day windows. Walls kill sessions; phase burn must fit headroom. Claude slots allow concurrent phases up to a cap; Codex permits one because refresh tokens are single-use. Vendor status does not reveal account windows.
+Providers can limit how much one account runs in a period. An account at its limit (walled) is left alone until it can run again. Hitting a limit mid-phase ends that phase's session. Where the provider reports an account's usage, a phase is offered only to an account with room to finish it. Some accounts take several phases at once up to a cap; others take one. A provider's status page does not show one account's limits.
 
 When idle, explain. routing_unavailable or no_eligible_account_slot points here. Read --accounts: empty means no enrolment; inspect walled, quarantined and reason. Silence proves nothing.
