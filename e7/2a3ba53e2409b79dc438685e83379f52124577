@@ -1,0 +1,1 @@
+Review fixes: admin waits come from readiness (admin_setup_pending), not every member skip; neutral mid-run boundary; team/values member skips are the member's own; identity_unverified role-gated to runner/workflow; values joins the role check; a lone Ctrl-C skip is named; keep waiting opens no second tab.
