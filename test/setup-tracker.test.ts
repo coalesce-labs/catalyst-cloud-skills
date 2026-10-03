@@ -1,5 +1,5 @@
-// setup-tracker.test.ts — CTC-4680: setup says what it is and where the person is. The Pixel
-// Nucleus header comes first, then the three parts with their times; each part restarts its step
+// setup-tracker.test.ts — CTC-4680: setup says where the person is. The Pixel Nucleus header
+// (setup-brand.test.ts) comes first, then the three parts with their times; each part restarts its step
 // numbers, and the tracker comes back at every part boundary and at the end.
 import { EventEmitter } from "node:events";
 import { PassThrough } from "node:stream";
@@ -22,7 +22,7 @@ import {
 import { standalonePlan } from "../src/onboard-standalone-copy.js";
 import {
   createSetupRenderer,
-  pixelNucleusLines,
+  type BannerOptions,
   type SetupStream,
 } from "../src/setup-render.js";
 
@@ -43,72 +43,6 @@ function sink(tty: boolean, columns = 80): SetupStream & { text(): string } {
 }
 
 const term = { TERM: "xterm-256color", LANG: "en_US.UTF-8" };
-
-describe("the Pixel Nucleus header", () => {
-  test("draws the mark in two lines of half blocks, eight columns wide", () => {
-    const [one, two] = pixelNucleusLines({ ...term, COLORTERM: "truecolor" });
-    expect(plain(one!)).toBe("▄▄▀▀▀▀▀▀");
-    expect(plain(two!)).toBe("▀▀▀▀▀▀▄▄");
-  });
-
-  test("the core is copper on a dark background and rust on a light one, in truecolor", () => {
-    const dark = pixelNucleusLines({ ...term, COLORTERM: "truecolor" }).join("");
-    expect(dark).toContain("48;2;210;142;99");
-    const light = pixelNucleusLines({
-      ...term,
-      COLORTERM: "truecolor",
-      COLORFGBG: "0;15",
-    }).join("");
-    expect(light).toContain("48;2;169;81;47");
-    expect(light).not.toContain("210;142;99");
-  });
-
-  test("the ring keeps the terminal's own foreground colour", () => {
-    const [one, two] = pixelNucleusLines({ ...term, COLORTERM: "truecolor" });
-    // No foreground colour is ever set: the ring cells print in whatever the terminal's text is.
-    expect(`${one}${two}`).not.toMatch(/\u001b\[(?:[0-9;]*;)?3[0-9][;m]/);
-    expect(one!.startsWith("▄▄")).toBe(true);
-    expect(two!.endsWith("▄▄")).toBe(true);
-  });
-
-  test("without truecolor it uses the nearest 256 colour, then the nearest of 16", () => {
-    expect(pixelNucleusLines(term).join("")).toContain("48;5;173");
-    expect(
-      pixelNucleusLines({ ...term, COLORFGBG: "0;7" }).join(""),
-    ).toContain("48;5;130");
-    expect(pixelNucleusLines({ ...term, TERM: "xterm" }).join("")).toContain(
-      "\u001b[43m",
-    );
-  });
-
-  test("prints the mark beside Catalyst Cloud, with the program and version under it", () => {
-    const out = sink(true);
-    const r = createSetupRenderer(out, { ...term, COLORTERM: "truecolor" });
-    r.brand("setup", "0.15.2");
-    const lines = plain(out.text()).split("\n");
-    expect(lines[0]).toBe("  ▄▄▀▀▀▀▀▀  Catalyst Cloud");
-    expect(lines[1]).toBe("  ▀▀▀▀▀▀▄▄  setup · 0.15.2");
-  });
-
-  test("prints once per program start", () => {
-    const out = sink(true);
-    const r = createSetupRenderer(out, term);
-    r.brand("setup", "0.15.2");
-    r.brand("setup", "0.15.2");
-    expect(plain(out.text()).match(/Catalyst Cloud/g)).toHaveLength(1);
-  });
-
-  test.each([
-    ["NO_COLOR", sink(true), { ...term, NO_COLOR: "1" }],
-    ["no terminal", sink(false), term],
-    ["a non-UTF-8 locale", sink(true), { ...term, LANG: "C" }],
-    ["fewer than 50 columns", sink(true, 49), term],
-  ])("with %s it prints one plain line", (_why, out, env) => {
-    const r = createSetupRenderer(out, env);
-    r.brand("setup", "0.15.2");
-    expect(out.text()).toBe("  Catalyst Cloud setup 0.15.2\n");
-  });
-});
 
 describe("parts and part-local numbers", () => {
   test("every step belongs to one of three parts, and numbers restart at 1 in each", () => {
@@ -325,7 +259,7 @@ describe("the three-part tracker", () => {
   });
 });
 
-function fixture(env: NodeJS.ProcessEnv, consentGiven = false) {
+function fixture(env: NodeJS.ProcessEnv, consentGiven = false, banner: BannerOptions = {}) {
   const output = new PassThrough();
   Object.assign(output, { isTTY: env.TERM !== undefined, columns: 80 });
   let text = "";
@@ -343,7 +277,7 @@ function fixture(env: NodeJS.ProcessEnv, consentGiven = false) {
     },
     { input: new PassThrough(), output },
     {
-      renderer: createSetupRenderer(output, env),
+      renderer: createSetupRenderer(output, env, banner),
       interactive: false,
       signals: new EventEmitter(),
       version: "0.15.2",
@@ -371,7 +305,7 @@ describe("setup's orientation", () => {
     const f = fixture({ NO_COLOR: "1" });
     f.ui.plan(f.journal);
     const text = f.text();
-    expect(text.startsWith("  Catalyst Cloud setup 0.15.2\n")).toBe(true);
+    expect(text.startsWith("  Catalyst Cloud\n  setup 0.15.2\n")).toBe(true);
     expect(text).toContain(
       "Setup gets Catalyst working on your team's Linear tickets.",
     );
@@ -395,9 +329,11 @@ describe("setup's orientation", () => {
   });
 
   test("the header shows the mark on a colour terminal", () => {
-    const f = fixture({ ...term, COLORTERM: "truecolor" });
+    const f = fixture({ ...term, COLORTERM: "truecolor" }, false, { mark: true });
     f.ui.plan(f.journal);
-    expect(f.text()).toContain("  ▄▄▀▀▀▀▀▀  Catalyst Cloud");
+    expect(f.text()).toContain("      ███ ███ ███\n");
+    expect(f.text()).toMatch(/^ {2}[█▀ ]{15} {4}Catalyst Cloud$/m);
+    expect(f.text()).toMatch(/^ {2}[█▀ ]{15} {4}setup · 0\.15\.2$/m);
     expect(f.text()).toContain("Part 1 of 3 · This computer");
     f.ui.dispose();
   });
@@ -492,7 +428,7 @@ describe("setup's orientation", () => {
     f.run("housekeeping", "done");
     f.run("linear.workspace", "done");
     const text = f.text();
-    expect(text).not.toContain("Catalyst Cloud setup");
+    expect(text).not.toContain("Catalyst Cloud\n");
     expect(text).toContain("Part 1 done. This computer is set up.");
     expect(text).toContain("Part 2 of 3: Linear and GitHub");
     expect(text).toMatch(/\[done\] +1 Connect your Linear workspace/);

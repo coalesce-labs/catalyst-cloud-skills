@@ -50,6 +50,7 @@ import {
   ONBOARD_STEPS,
   ONBOARD_TITLES,
   stepSatisfied,
+  onboardHeaderIdentity,
   onboardIdentityLines,
   onboardNextActions,
   onboardReadyForWork,
@@ -578,12 +579,19 @@ export function createClackOnboardUi(
       machineChecks.clear();
       machineBlocked = false;
       stop();
+      // Signed in already, the header carries who and where, so the lines below would repeat it.
+      let identityShown = false;
       if (!introduced) {
-        if (renderer) renderer.brand("setup", deps.version);
+        if (renderer)
+          identityShown = renderer.brand(
+            "setup",
+            deps.version,
+            identity ? onboardHeaderIdentity(identity) : undefined,
+          );
         else prompts.intro("Catalyst setup", { output: streams.output });
         introduced = true;
       }
-      if (identity !== undefined)
+      if (identity !== undefined && !identityShown)
         for (const line of onboardIdentityLines(identity))
           if (renderer) renderer.line(line);
           else message(line);

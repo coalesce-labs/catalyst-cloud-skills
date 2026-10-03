@@ -123,7 +123,7 @@ describe("setup polish", () => {
     } as unknown as OnboardIdentity;
     f.ui.plan(f.journal, identity);
     const text = f.text();
-    expect(text.match(/Catalyst Cloud setup/g)).toHaveLength(1);
+    expect(text.match(/ {2}Catalyst Cloud\n/g)).toHaveLength(1);
     expect(text.match(/It has three parts/g)).toHaveLength(1);
     expect(text.match(/Part 1 of 3: This computer/g)).toHaveLength(1);
     expect(text).toContain("Signed in to Catalyst as Ryan (ryan@example.com)");

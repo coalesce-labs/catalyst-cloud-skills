@@ -133,6 +133,8 @@ catalyst onboard
 catalyst ready --onboarding --json
 ```
 
+`catalyst setup` opens with the Catalyst Cloud mark in your terminal's colours. It asks the terminal whether its background is light or dark; set `CATALYST_THEME=light` or `CATALYST_THEME=dark` when it guesses wrong. `--no-color` or `NO_COLOR` prints plain text without the mark.
+
 The dry run writes no files. `--only <step>` runs one step and reports its scope separately from full onboarding. Exit 10 means a failed step, 11 means waiting, and 12 means a guard refused the action. The private receipt is `install/last-run.json` under your machine's Catalyst state directory; credentials stay in the login config. A fake HOME reports old services and keeps them intact.
 
 ### Headless setup (CI, image builds, agent VMs)

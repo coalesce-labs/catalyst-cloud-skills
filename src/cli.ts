@@ -1,6 +1,10 @@
 // cli.ts — the `catalyst` dispatcher (npm: @catalyst-cloud/cli). Verbs live in
 // their own modules; this file keeps every export the 0.1 tests and the bin import.
-import { createSetupRenderer } from "./setup-render.js";
+import {
+  createSetupRenderer,
+  setupBanner,
+  type SetupStream,
+} from "./setup-render.js";
 import { existsSync, openSync, closeSync } from "node:fs";
 import { ReadStream as TerminalInput } from "node:tty";
 import { Writable } from "node:stream";
@@ -371,6 +375,7 @@ export async function main(
   // CTC-4625: setup passes the install options through to its engine untouched, so they never meet
   // this CLI's own flag tables. CTC-4680: without --engine, `setup` is the name a person types for
   // the onboard flow, so it runs exactly that.
+  const viaSetup = drawsMark(argv);
   if (argv[0] === "setup") {
     const rest = argv.slice(1);
     const own = rest.indexOf("--") === -1 ? rest : rest.slice(0, rest.indexOf("--"));
@@ -456,6 +461,9 @@ export async function main(
           headless: HeadlessTracker | null,
         ): Promise<number> => {
         let ui: OnboardUi | undefined = headless ? undefined : deps.setupUi;
+        // --no-color reaches the renderer as NO_COLOR, so the banner and every step row go plain.
+        const noColor = args.flags["no-color"] === true;
+        const rendererEnv = noColor ? { ...ctx.env, NO_COLOR: "1" } : ctx.env;
         let terminal: TerminalInput | undefined;
         let input: TerminalInput = process.stdin;
         const originalRaw = Boolean(input.isRaw);
@@ -478,13 +486,21 @@ export async function main(
           }
           if (input.isTTY) {
             try {
+              const banner = await setupBanner({
+                setup: viaSetup,
+                env: rendererEnv,
+                input,
+                stdout: process.stdout,
+                stream: bannerStream(ctx),
+                noColor,
+              });
               ui = createClackOnboardUi(
                 await import("@clack/prompts"),
                 { input, output: process.stdout },
                 {
                   baseUrl: () => savedOnboardBaseUrl(ctx.home),
                   verbose: args.flags.verbose === true,
-                  renderer: createSetupRenderer(process.stdout, ctx.env),
+                  renderer: createSetupRenderer(process.stdout, rendererEnv, banner),
                   disposeRenderer: true,
                   signinTimeoutMs: deps.onboardSigninTimeoutMs,
                   version: manifest.version,
@@ -511,7 +527,18 @@ export async function main(
             { input: process.stdin, output },
             {
               baseUrl: () => savedOnboardBaseUrl(ctx.home),
-              renderer: createSetupRenderer(output, ctx.env),
+              renderer: createSetupRenderer(
+                output,
+                rendererEnv,
+                await setupBanner({
+                  setup: viaSetup,
+                  env: rendererEnv,
+                  input: process.stdin,
+                  stdout: process.stdout,
+                  stream: bannerStream(ctx),
+                  noColor,
+                }),
+              ),
               disposeRenderer: true,
               signinTimeoutMs: deps.onboardSigninTimeoutMs,
               version: manifest.version,
@@ -789,6 +816,23 @@ const VERB_HELP_KNOWN: Record<string, true> = Object.fromEntries(
     "onboard",
   ].map((v) => [v, true]),
 );
+
+/** CTC-4680: the Pixel Nucleus mark belongs to `catalyst setup` alone. `setup` runs the onboard
+ *  flow, so this is read from the verb typed, before setup becomes onboard. */
+export function drawsMark(argv: readonly string[]): boolean {
+  return argv[0] === "setup";
+}
+
+/** CTC-4680: the banner goes to stderr, through ctx when stderr is not a terminal. */
+function bannerStream(ctx: Ctx): SetupStream {
+  if (process.stderr.isTTY === true) return process.stderr;
+  return {
+    write(chunk: string) {
+      for (const line of chunk.replace(/\n$/, "").split("\n")) ctx.stderr(line);
+      return true;
+    },
+  };
+}
 
 /** CTC-4625: `catalyst setup`, wired to this terminal, @clack/prompts and the keyless login. */
 async function runSetup(
