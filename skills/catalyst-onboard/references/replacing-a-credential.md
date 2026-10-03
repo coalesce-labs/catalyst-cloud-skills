@@ -1,25 +1,19 @@
-# Replacing a coding account's credential
+# Replacing an AI account's credential
 
 When the script prints "<provider> account <slot> needs a new credential" (quarantined, expired, revoked, or three or more polls failed on the credential), replace that account's credential on its own page. Do not enroll a second account. It would be a duplicate beside the dead one. A workspace owner or admin does it in the browser, from the link the script prints; the person copies and pastes the credential, and you never read, print or paste it.
 
-## Codex
+## The steps
 
-The person runs these steps on their own machine:
+An AI account is an API key from a supported provider, billed per token by that provider.
 
-1. Run `codex login` and choose "Sign in with ChatGPT".
-2. The login writes `~/.codex/auth.json`, or `$CODEX_HOME/auth.json` when `CODEX_HOME` is set. On macOS, `pbcopy < ~/.codex/auth.json` copies it.
-3. In the browser, open Settings → AI accounts, then that Codex account.
-4. Paste the file into "Replacement auth.json contents", then press Replace credential.
+1. The person creates a new key in the provider's console, under the same provider account the AI account was made from.
+2. In the browser, they open Settings → AI accounts, then that account.
+3. They paste the new key into the replacement field and press Replace credential.
+4. Once the account reads healthy, they can revoke the old key in the provider's console if nothing else uses it.
 
-Say plainly that Catalyst takes over this login: its refresh token is single-use, so the local copy stops working once Catalyst uses it, and to use Codex locally they sign in to Codex again, separately, after the replacement.
+If the account's page asks for something other than a key, follow the steps the page shows. When the page names the login the account belongs to, the new credential must come from that same login: one from another login would put a live account onto the wrong record. If a tool on the person's machine mints the credential, have them confirm it is signed in to the login the page names before minting; such tools mint for whoever is signed in, not for the account. When the page says Catalyst takes over the login, say so before the paste, and that the person signs in again locally afterwards.
 
-## Claude
-
-The field is "Replacement setup token". `claude setup-token` mints a token for whichever account the terminal is logged into, not for the slot, so match them first: compare the slot's email on the AI accounts page with what `/status` in `claude` shows, and log in to the slot's account if they differ. Then run `claude setup-token`, paste the token, and press Replace credential.
-
-## Any other provider
-
-The same page, with the credential it asks for. A cancelled or ended account is not a credential problem, and no token revives it.
+A cancelled or ended account is not a credential problem, and no new credential revives it.
 
 ## Afterwards
 

@@ -27,7 +27,7 @@ Comments/relations: catalyst-linear. PRs: catalyst-github. Readiness: catalyst-o
 | request or decision? | references/routing-work.md |
 | phases or Done? | references/the-ladder.md |
 | columns or slots? | references/stages-and-mapping.md |
-| accounts, windows, quarantine or provider? | references/coding-accounts.md |
+| accounts, limits, quarantine or provider? | references/coding-accounts.md |
 | setting, screen, route or role? | references/settings-and-where-they-live.md |
 | which command answers it from the cloud? | references/reading-from-the-cloud.md |
 | local SQL? only if `catalyst replica status --json` says `configured: true` | references/local-replica.md |

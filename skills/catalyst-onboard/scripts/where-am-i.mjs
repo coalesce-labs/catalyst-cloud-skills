@@ -753,7 +753,7 @@ if (!connected) {
         retirable.length === 0
           ? []
           : [
-              `${retirable.length} account(s) cancelled or ended (${retirable.map((a) => `${who(a) ?? a.displayName ?? a.accountSlot ?? "?"} (${a.provider ?? "unknown provider"})`).join(", ")}): kept for reporting, not used, and not counted here. Never replace their credential; reactivate one on the AI accounts page only if its subscription is live again.`,
+              `${retirable.length} account(s) cancelled or ended (${retirable.map((a) => `${who(a) ?? a.displayName ?? a.accountSlot ?? "?"} (${a.provider ?? "unknown provider"})`).join(", ")}): kept for reporting, not used, and not counted here. Never replace their credential; reactivate one on the AI accounts page only if it can run again.`,
             ];
       retireNote = retireLine[0] ?? null;
       if (rows === null) {
