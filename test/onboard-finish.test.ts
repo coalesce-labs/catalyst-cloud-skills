@@ -4,6 +4,7 @@
 import { rmSync } from "node:fs";
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from "vitest";
 import { contractPathFor } from "../src/config.js";
+import type { ContractReadinessCheck } from "../src/contract-types.js";
 import { parseArgs } from "../src/args.js";
 import {
   cmdOnboard,
@@ -164,11 +165,11 @@ describe("values", () => {
 
 describe("CTC-4744 — the end of setup reads a fresh verdict and waits instead of handing a wait to the person", () => {
   const LATER = new Date(1_756_010_000_000); // past the fixture verdict's one-hour window
-  const freshen = (checks: Array<Record<string, unknown>>) => () => {
+  const freshen = (checks: ContractReadinessCheck[]) => () => {
     const readiness = server.contract.teams[0]!.readiness;
     readiness.checkedAt = LATER.getTime() - 1_000;
     readiness.expiresAt = LATER.getTime() + 300_000;
-    readiness.checks = checks as typeof readiness.checks;
+    readiness.checks = checks;
     server.contractEtagSuffix = `-${(Number(server.contractEtagSuffix?.slice(1)) || 0) + 1}`;
   };
 
