@@ -742,7 +742,7 @@ test("an incomplete finish lists each unfinished step with its next action", () 
   expect(text).toContain("https://cloud.example.dev/settings/coding-accounts");
   expect(text).toContain("Review repository settings: ");
   expect(text).toContain(
-    "Check the repository's values: Catalyst has not read the repository's settings yet.",
+    "Check the repository's values: Setup couldn't get a current readiness check for this team from Catalyst",
   );
   expect(text).toContain("Check runner capacity: No runner is allowed");
   expect(text).toContain("Schedule the daily update: ");
