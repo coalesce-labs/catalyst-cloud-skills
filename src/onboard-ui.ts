@@ -39,7 +39,7 @@ import {
   type NewTeamQuestion,
   type TeamCreateOffer,
 } from "./onboard-team-create.js";
-import type { ExistingOnboardRepository } from "./onboard-repositories.js";
+import type { OnboardRepositoryChoice } from "./onboard-repositories.js";
 import type { OnboardSettingsSummary } from "./onboard-settings.js";
 import {
   FIRST_TICKET_SAMPLE,
@@ -102,7 +102,7 @@ export interface OnboardUi {
     lines: readonly string[],
   ): Promise<boolean>;
   chooseRepositories?(
-    repositories: ExistingOnboardRepository[],
+    repositories: OnboardRepositoryChoice[],
   ): Promise<string[] | null>;
   reviewSettings?(
     summaries: readonly OnboardSettingsSummary[],
@@ -192,8 +192,9 @@ export interface ClackOnboardPort {
   multiselect?(
     options: PromptOptions & {
       message: string;
-      options: Array<{ value: string; label: string }>;
+      options: Array<{ value: string; label: string; hint?: string }>;
       required: boolean;
+      initialValues?: string[];
     },
   ): Promise<string[] | symbol>;
   isCancel(value: unknown): boolean;
@@ -806,16 +807,34 @@ export function createClackOnboardUi(
       : {}),
     ...(prompts.multiselect
       ? {
-          async chooseRepositories(repositories: ExistingOnboardRepository[]) {
+          async chooseRepositories(repositories: OnboardRepositoryChoice[]) {
+            const projectsPage = () => {
+              try {
+                const base = deps.baseUrl?.();
+                return base ? ` (${new URL("/settings/projects", base).href})` : "";
+              } catch {
+                return "";
+              }
+            };
             stop();
             if (!repositories.length || abort.signal.aborted) return null;
+            // CTC-4742: what the team already uses starts selected. Unselecting never removes one.
+            const selected = repositories
+              .filter((row) => row.registered === true)
+              .map((row) => `${row.owner}/${row.name}`);
             const answer = await multiselect({
               ...options,
-              message: "Which repositories should use this Linear team?",
+              message: selected.length
+                ? `Which repositories should use this Linear team? Leaving a repository unselected does not remove it from this team; an admin removes one in Settings → Projects${projectsPage()}.`
+                : "Which repositories should use this Linear team?",
               required: true,
+              ...(selected.length ? { initialValues: selected } : {}),
               options: repositories.map((row) => ({
                 value: `${row.owner}/${row.name}`,
                 label: `${row.owner}/${row.name}`,
+                ...(row.registered === false
+                  ? { hint: "not used by this team yet; selecting it adds it" }
+                  : {}),
               })),
             });
             if (prompts.isCancel(answer)) {
