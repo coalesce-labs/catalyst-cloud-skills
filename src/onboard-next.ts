@@ -284,7 +284,7 @@ const REASONS: Record<string, string> = {
   personal_permissions_unverified:
     "Your personal connection's granted scopes could not be checked. Run catalyst onboard to try again.",
   required_values_unverified:
-    "Catalyst has not read the repository's settings yet. Run catalyst setup again in a few minutes.",
+    "Setup couldn't get a current readiness check for this team from Catalyst, so it can't tell whether the repositories' values are set. Run catalyst ready to check.",
   first_ticket_team_unverified:
     "Setup could not confirm the selected Linear team. Run catalyst setup again.",
   first_ticket_dispatch_unmapped:
@@ -626,6 +626,12 @@ export function onboardReasonText(
   }
   if (reason === "runner_admission_operator")
     return `The admission policy for team ${onboardTeamKey(context.journal) ?? "<TEAM KEY>"} needs a Catalyst operator to check it. Setup changes only restricted admission and preserves existing policy fields. Ask Catalyst support to confirm a compatible policy, then run the same setup command.`;
+  // CTC-4744: the cloud has not read the settings yet. Setup already waited a minute; this is
+  // the cloud's work, not the person's.
+  if (reason === "required_values_unread") {
+    const which = typeof step.evidence?.repositories === "string" ? step.evidence.repositories : "this team's repositories";
+    return `Catalyst hasn't finished reading the settings of ${which}, so it can't check the values yet. You don't need to do anything: Catalyst does this on its own, and catalyst ready shows when it's done.`;
+  }
   if (reason === "required_values_missing") {
     let facts: unknown;
     try {

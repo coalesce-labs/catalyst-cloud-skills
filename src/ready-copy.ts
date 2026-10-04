@@ -359,8 +359,8 @@ export function teamCheckCopy(
     case "required_values":
       return unknown
         ? {
-            line: team(`Catalyst hasn't read the settings of ${key}'s repository yet.`),
-            fix: "catalyst setup reads them when you choose repositories. Run catalyst setup",
+            line: team(`Catalyst hasn't finished reading the settings of ${key}'s repositories yet.`),
+            fix: "nothing to do; Catalyst reads them on its own. Run catalyst ready again in a minute to see the result",
           }
         : {
             line: team(`A variable ${key}'s repository needs has no value, so Catalyst can't run its work.`),
