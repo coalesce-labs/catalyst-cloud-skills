@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.15.5
+
+Setup explains what running work on this computer means and lists every repository registered to your Linear team.
+
 ## 0.15.4
 
 - Setup shows a colour mark and clearer progress, with a plain display when your terminal needs it.
