@@ -167,6 +167,9 @@ function fixture(
               },
             }),
       });
+    // CTC-4742: these fixtures model a server without the per-person repository list.
+    if (url.pathname === "/api/v1/agent/repos")
+      return new Response(null, { status: 404 });
     if (url.pathname === "/api/v1/repos")
       return Response.json({ repos: state.inventory });
     if (url.pathname === "/api/v1/me/repositories/options")
@@ -792,6 +795,9 @@ describe("registered evidence remains bound throughout ACL and contract body rea
           });
           let value: unknown;
           let hold = false;
+          // CTC-4742: this server has no per-person repository list, so the registry answers.
+          if (url.pathname === "/api/v1/agent/repos")
+            return new Response(null, { status: 404 });
           if (url.pathname === "/api/v1/agent/contract") {
             contracts++;
             value = {
@@ -867,6 +873,7 @@ describe("registered evidence remains bound throughout ACL and contract body rea
       ]);
       expect(f.calls.map((call) => call.path)).toEqual([
         "/api/v1/agent/contract",
+        "/api/v1/agent/repos",
         "/api/v1/repos",
         "/api/v1/agent/contract",
       ]);

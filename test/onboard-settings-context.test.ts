@@ -101,6 +101,9 @@ function fixture() {
         teams: [{ teamId: "team-a", teamKey: "CTC", teamName: "Fixture" }],
         liveTeamRead: { error: null },
       });
+    // CTC-4742: this server has no per-person repository list, so the registry answers.
+    if (url.pathname === "/api/v1/agent/repos")
+      return new Response(null, { status: 404 });
     if (url.pathname === "/api/v1/repos")
       return Response.json({ repos: [repo] });
     if (url.pathname === "/api/v1/agent/contract")
@@ -157,6 +160,7 @@ describe("fresh onboarding settings context", () => {
       "/api/v1/agent/contract",
       "/api/v1/me",
       "/api/v1/agent/teams",
+      "/api/v1/agent/repos",
       "/api/v1/repos",
       "/api/v1/agent/contract",
     ]);

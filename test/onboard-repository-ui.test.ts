@@ -65,6 +65,25 @@ test("Q3 uses one multiple-choice question with accessible repository names and 
     f.ui.dispose();
   }
 });
+test("CTC-4742 — registered repositories start selected, and the question says unselecting never unregisters", async () => {
+  const f = fixture(["example/one"]);
+  try {
+    f.ui.stepStart("github.repos");
+    await f.ui.chooseRepositories!([
+      { ...repositories[0]!, registered: true },
+      { ...repositories[1]!, registered: true },
+      { teamId: "team-a", owner: "example", name: "three", repoId: null, registered: false },
+    ]);
+    const question = f.questions[0]! as { initialValues?: string[]; message: string; options: Array<{ value: string; label: string; hint?: string }> };
+    expect(question.initialValues).toEqual(["example/one", "example/two"]);
+    expect(question.options.map((o) => o.value)).toEqual(["example/one", "example/two", "example/three"]);
+    expect(question.options[2]!.hint).toBe("not used by this team yet; selecting it adds it");
+    expect(question.message).toContain("Leaving a repository unselected does not remove it from this team;");
+    expect(question.message).toContain("an admin removes one in Settings → Projects");
+  } finally {
+    f.ui.dispose();
+  }
+});
 test("Q3 cancellation returns no choices and releases signal listeners", async () => {
   const f = fixture(Symbol("cancel"));
   expect(await f.ui.chooseRepositories!(repositories)).toBeNull();
