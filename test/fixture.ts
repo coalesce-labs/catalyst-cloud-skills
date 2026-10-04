@@ -51,6 +51,11 @@ export interface FixtureServer {
   /** CTC-1953/CTC-1954 ship ahead of some tenants' mirror; `false` makes those two routes 404 the
    *  way an older cloud does, so the bundle's "needs a newer cloud" path meets a real 404. */
   routesDeployed: boolean;
+  /** CTC-4744 — when set, GET /api/v1/agent/tenant/readiness?team=<id> answers 200 and calls this,
+   *  the way the cloud's read-through recomputes an expired verdict. Unset, the route is a 404. */
+  readinessRead?: (teamId: string) => void;
+  /** CTC-4744 — the cloud's ETag hashes the whole contract, so a refreshed verdict changes it. */
+  contractEtagSuffix?: string;
   /** Simulate a cloud older than CTC-2076 that still refuses a personal key on the contract. */
   contractRefusesPersonalKey?: boolean;
   /** Override the person /me names for FIXTURE_USER_KEY; `null` sends no user block at all. */
@@ -995,11 +1000,16 @@ export async function startMeFixture(
     ) {
       return send(403, { error: "forbidden", reason: "not-machine-principal" });
     }
+    if (path === "/api/v1/agent/tenant/readiness" && state.readinessRead) {
+      const team = url.searchParams.get("team") ?? "";
+      state.readinessRead(team);
+      return send(200, { readiness: { teamId: team } });
+    }
     if (path === "/api/v1/agent/contract") {
       const etag = FIXTURE_ETAG.replace(
         "1",
         state.contractVersion === "1.0.0" ? "1" : "2",
-      );
+      ).replace(/"$/, `${state.contractEtagSuffix ?? ""}"`);
       if (req.headers["if-none-match"] === etag) {
         return send(304, undefined, {
           etag,

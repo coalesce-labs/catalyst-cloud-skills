@@ -1,6 +1,6 @@
 import type { Ctx } from "./config.js";
 import { loadConfig } from "./config.js";
-import { loadContract } from "./contract.js";
+import { loadFreshTeamContract } from "./onboard-readiness-fresh.js";
 import {
   ONBOARD_DEFERRED_STEPS,
   onboardRequiredStepsWaiting,
@@ -139,7 +139,8 @@ export function onboardReadyStep(
 export async function observeCloudOnboarding(ctx: Ctx, scope: { teamIds?: readonly string[] } = {}): Promise<OnboardingObservation> {
   const cfg = loadConfig(ctx.home);
   if (!cfg?.user) return { checks: [{ id: "signin", state: "fail", required: true, reason: "personal_login_required" }], work: { state: "unknown" } };
-  const { doc, source } = await loadContract(ctx, cfg, { refresh: true });
+  // CTC-4744: ask for each team's verdict fresh, the same read `catalyst setup`'s values step makes.
+  const { doc, source } = await loadFreshTeamContract(ctx, cfg, scope.teamIds ?? []);
   if (source === "cache") return { checks: [{ id: "cloud.setup", state: "unknown", required: true, reason: "cloud_observation_unavailable" }], work: { state: "unknown" } };
   const checks: OnboardingReadyCheck[] = [];
   if (doc.account.id !== cfg.account) return { checks: [{ id: "workspace", state: "fail", required: true, reason: "workspace_mismatch" }], work: { state: "unknown" } };

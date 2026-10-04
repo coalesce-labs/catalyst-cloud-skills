@@ -477,7 +477,12 @@ export function createOnboardRuntime(
             },
     },
     housekeeping: onboardHousekeepingAdapter(hooks.scheduler),
-    values: onboardValuesAdapter(),
+    // CTC-4744: a settings read the cloud has not finished is waited on here, on one line.
+    values: onboardValuesAdapter({
+      message: (text) =>
+        hooks.ui?.note ? hooks.ui.note(text) : hooks.ui ? hooks.ui.message(text) : ctx.stderr(text),
+      sleep: hooks.sleep ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms))),
+    }),
     // Only a person at a terminal picks a ticket; --yes, JSON and headless runs leave it waiting.
     "first-ticket": onboardFirstTicketAdapter(
       interactiveWait && hooks.ui?.chooseFirstTicket

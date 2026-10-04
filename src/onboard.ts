@@ -313,6 +313,8 @@ export const ONBOARD_DEPENDENCIES: Partial<
     "linear.automations",
     "accounts",
     "capacity",
+    // CTC-4744: no work is offered while the cloud is still reading the settings (dependencySettled).
+    "values",
   ],
 };
 
@@ -941,6 +943,21 @@ function sanitizedResult(
   )!;
   row.at = at;
   return row;
+}
+
+/** CTC-4744: whether a step a later one depends on has settled. Only the cloud actively reading
+ *  the settings (`required_values_unread`, after setup's own one-minute wait) holds a first
+ *  ticket. A finished check that found missing values has settled: the first phase needs no
+ *  values, and the missing ones are named. So has one that could not be checked at all (an older
+ *  cloud, a cached contract): holding work on it would hold it for good. */
+export function dependencySettled(step: OnboardStep | undefined): boolean {
+  return (
+    stepSatisfied(step) ||
+    (step?.id === "values" &&
+      step.state === "waiting" &&
+      step.reason !== "required_values_unread" &&
+      step.reason !== "interrupted")
+  );
 }
 
 export function stepSatisfied(step: OnboardStep | undefined): boolean {
@@ -1767,7 +1784,7 @@ export async function cmdOnboard(
           continue;
         }
         const missing = (ONBOARD_DEPENDENCIES[id] ?? []).find(
-          (parent) => !stepSatisfied(journalStep(journal, parent)),
+          (parent) => !dependencySettled(journalStep(journal, parent)),
         );
         if (missing) {
           recordStep({
