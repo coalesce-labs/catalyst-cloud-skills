@@ -12,6 +12,8 @@ import {
 } from "./config.js";
 import { CliError, UsageError } from "./errors.js";
 import { cmdLegacy, findLegacy, type LegacyDeps } from "./legacy.js";
+import { findLocalSyncData, localSyncInventory } from "./local-sync-data.js";
+import { replicaStatus } from "./replica.js";
 import { personalConsentAdapter } from "./onboard-personal.js";
 import { boundedOnboardSignin } from "./onboard-signin.js";
 import { existingLinearAdapters } from "./onboard-existing.js";
@@ -230,17 +232,19 @@ export function createOnboardRuntime(
   };
   const legacyDeps = (journal?: OnboardJournal): LegacyDeps => ({
     ...hooks.legacy,
-    preserveReplica: !(journal?.localSync ?? args.flags["local-sync"] === true),
+    preserveReplica: journal?.localSync ?? args.flags["local-sync"] === true,
   });
   const legacyCheck = async (
     stepCtx: Ctx,
     journal?: OnboardJournal,
   ): Promise<OnboardStepResult> => {
-    const found = findLegacy(
+    const services = findLegacy(
       stepCtx.home,
       hooks.legacy?.platform ?? process.platform,
       legacyDeps(journal),
-    ).filter((item) => !item.data).length;
+    ).filter((item) => !item.data);
+    const files = legacyDeps(journal).preserveReplica ? [] : await findLocalSyncData(stepCtx);
+    const found = services.length + files.length;
     if (
       !sameHome(stepCtx.home, (hooks.realHome ?? (() => userInfo().homedir))())
     )
@@ -342,6 +346,32 @@ export function createOnboardRuntime(
       act: async (stepCtx, journal) => {
         const before = await legacyCheck(stepCtx, journal);
         if (before.state !== "pending") return before;
+        const options = legacyDeps(journal);
+        const files = options.preserveReplica ? [] : await findLocalSyncData(stepCtx);
+        const writers = findLegacy(stepCtx.home, options.platform ?? process.platform, options)
+          .filter((item) => item.kind === "job" && item.localSync);
+        if (files.length || writers.length) {
+          const inventory = [
+            ...writers.map((writer) => `${writer.path} (${writer.size} bytes)`),
+            ...localSyncInventory(files),
+          ];
+          const show = (lines: readonly string[]) => {
+            if (hooks.ui?.showLocalSyncInventory) hooks.ui.showLocalSyncInventory(lines);
+            else for (const line of lines) hooks.ui ? hooks.ui.message(line) : stepCtx.stderr(line);
+          };
+          show(["Existing local sync files:", ...inventory]);
+          if (args.flags["remove-local-data"] !== true) {
+            if (!interactiveWait || (!options.prompt && !hooks.ui?.confirmLocalSyncRemoval)) {
+              const line = "Local data kept. Run catalyst setup --remove-local-data to stop the writer and remove the listed files.";
+              show([line]);
+              return { state: "waiting", reason: "local_sync_cleanup_confirmation_required", evidence: { files: inventory.join("\n"), requiredFlag: "--remove-local-data" } };
+            }
+            const accepted = options.prompt
+              ? /^(y|yes)$/i.test((await options.prompt("Stop the local writer and delete the listed local sync files, keeping login, contract and settings? [y/N] ")).trim())
+              : await hooks.ui!.confirmLocalSyncRemoval!();
+            if (!accepted) return waiting("local_sync_cleanup_declined");
+          }
+        }
         // Provider/process output is not trusted to be secret-free; keep it out of the receipt/log.
         const quiet = { ...stepCtx, stdout: () => {}, stderr: () => {} };
         const code = await cmdLegacy(
@@ -350,11 +380,11 @@ export function createOnboardRuntime(
             command: "legacy",
             subcommand: null,
             rest: [],
-            flags: { remove: true, yes: true },
+            flags: { remove: true, data: !options.preserveReplica, yes: true },
             json: false,
           },
           quiet,
-          legacyDeps(journal),
+          { ...options, localSyncFiles: files },
         );
         return code === 0
           ? legacyCheck(stepCtx, journal)
@@ -475,14 +505,14 @@ export function createOnboardRuntime(
     "linear.personal": personalAdapter("linear"),
     "github.personal": personalAdapter("github"),
     daemon: {
-      check: async (_stepCtx, journal) =>
-        (journal.localSync ?? args.flags["local-sync"] === true)
-          ? waiting("local_sync_capability_unavailable")
-          : {
-              state: "skipped",
-              reason: "local_sync_not_selected",
-              evidence: { provider: "cloud" },
-            },
+      check: async (stepCtx, journal) => {
+        if (!(journal.localSync ?? args.flags["local-sync"] === true))
+          return { state: "skipped", reason: "local_sync_not_selected", evidence: { provider: "cloud" } };
+        const status = replicaStatus(stepCtx, loadConfig(stepCtx.home));
+        return status.verdict === "fresh"
+          ? { state: "done", evidence: { provider: "existing_replica", path: status.dbPath, cursor: status.cursor } }
+          : waiting("local_sync_capability_unavailable");
+      },
     },
     housekeeping: onboardHousekeepingAdapter(hooks.scheduler),
     // CTC-4744: a settings read the cloud has not finished is waited on here, on one line.

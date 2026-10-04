@@ -3,9 +3,10 @@
 // HOME and a fake spawner that records the commands, so no real `claude`, `launchctl` or `systemctl`
 // is ever touched; current jobs, current plugins and other people's files are never matched.
 import { describe, expect, test, beforeEach } from "vitest";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { main } from "../src/cli";
+import { readManifest } from "../src/config";
 import {
   LEGACY_SOURCE_COMMIT,
   OLD_LAUNCHD_LABELS,
@@ -164,6 +165,138 @@ describe("a machine with nothing old", () => {
 });
 
 describe("current shared data on a fresh installation", () => {
+  test("--remove --data without a terminal keeps data and reports the complete retry command", async () => {
+    write(".config/catalyst-cloud/replica.db", "saved database");
+    expect(await main(["legacy", "--remove", "--data"], ctx, deps())).toBe(1);
+    expect(readFileSync(join(home, ".config/catalyst-cloud/replica.db"), "utf8")).toBe("saved database");
+    expect(ctx.out.join("\n")).toContain("catalyst legacy --remove --data --yes");
+    expect(calls).toEqual([]);
+  });
+
+  test("a replaced pidfile after confirmation is rejected before signaling any writer", async () => {
+    write(".config/catalyst-cloud/replica.db", "saved database");
+    write(".config/catalyst-cloud/replica.db.pid", "424242");
+    const stopped: number[] = [];
+    expect(await main(["legacy", "--remove", "--data"], ctx, deps({
+      isTty: () => true,
+      prompt: async () => {
+        const pidfile = join(home, ".config/catalyst-cloud/replica.db.pid");
+        const replacement = join(home, ".config/catalyst-cloud/replacement");
+        writeFileSync(replacement, "313131");
+        unlinkSync(pidfile);
+        // Keep the new inode distinct from the approved pidfile.
+        const { renameSync } = await import("node:fs");
+        renameSync(replacement, pidfile);
+        return "yes";
+      },
+      stopWriter: async (pid: number) => { stopped.push(pid); },
+    }))).toBe(1);
+    expect(stopped).toEqual([]);
+    expect(readFileSync(join(home, ".config/catalyst-cloud/replica.db"), "utf8")).toBe("saved database");
+  });
+
+  test("a service that removes its pidfile during shutdown still has its local data removed", async () => {
+    write("Library/LaunchAgents/ai.coalesce.catalyst-replica-sync.plist", "existing writer");
+    write(".config/catalyst-cloud/replica.db", "saved database");
+    write(".config/catalyst-cloud/replica.db.pid", "424242");
+    expect(await main(["legacy", "--remove", "--data", "--yes"], ctx, deps({
+      run: () => {
+        unlinkSync(join(home, ".config/catalyst-cloud/replica.db.pid"));
+        return { status: 0, stdout: "", stderr: "" };
+      },
+    }))).toBe(0);
+    expect(existsSync(join(home, ".config/catalyst-cloud/replica.db"))).toBe(false);
+  });
+
+  test("both the saved custom replica and the newly selected replica are inventoried and removed", async () => {
+    const old = join(home, "old", "custom.db");
+    const current = join(home, "new", "current.db");
+    write("old/custom.db", "old local data");
+    write("new/current.db", "new local data");
+    write(".config/catalyst-cloud/customer.json", JSON.stringify({ account: "tenant-a", baseUrl: "https://example.test", key: "fixture", replicaDb: old, lastSkillBundleVersion: readManifest().version }));
+    ctx.env.CATALYST_REPLICA_DB = current;
+    expect(await main(["legacy", "--remove", "--data"], ctx, deps({
+      isTty: () => true, prompt: async () => {
+        expect(ctx.out.join("\n")).toContain(old);
+        expect(ctx.out.join("\n")).toContain(current);
+        return "yes";
+      },
+    }))).toBe(0);
+    expect(existsSync(old)).toBe(false);
+    expect(existsSync(current)).toBe(false);
+  });
+
+  test.each(["customer.json", "contract.json", "settings.json"])("a misconfigured replica path cannot delete protected %s", async (name) => {
+    const login = JSON.stringify({ account: "tenant-a", baseUrl: "https://example.test", key: "fixture", lastSkillBundleVersion: readManifest().version });
+    write(".config/catalyst-cloud/customer.json", login);
+    if (name !== "customer.json") write(`.config/catalyst-cloud/${name}`, "protected bytes");
+    const path = join(home, ".config/catalyst-cloud", name);
+    const before = readFileSync(path, "utf8");
+    ctx.env.CATALYST_REPLICA_DB = path;
+    expect(await main(["legacy", "--remove", "--data", "--yes"], ctx, deps())).not.toBe(0);
+    expect(readFileSync(path, "utf8")).toBe(before);
+  });
+
+  test("failed writer shutdown keeps the replica DB and WAL", async () => {
+    write(".config/catalyst-cloud/replica.db", "saved database");
+    write(".config/catalyst-cloud/replica.db-wal", "saved WAL");
+    write(".config/catalyst-cloud/replica.db.pid", "424242");
+    expect(await main(["legacy", "--remove", "--data", "--yes"], ctx, deps({
+      stopWriter: async () => { throw new Error("writer is still running"); },
+    }))).toBe(1);
+    expect(readFileSync(join(home, ".config/catalyst-cloud/replica.db"), "utf8")).toBe("saved database");
+    expect(readFileSync(join(home, ".config/catalyst-cloud/replica.db-wal"), "utf8")).toBe("saved WAL");
+  });
+
+  test("--remove --data with a negative confirmation keeps every local sync file", async () => {
+    write(".config/catalyst-cloud/replica.db", "saved database");
+    write(".config/catalyst-cloud/replica.db-wal", "saved WAL");
+    expect(await main(["legacy", "--remove", "--data"], ctx, deps({
+      isTty: () => true, prompt: async () => "no",
+      stopWriter: async () => { throw new Error("must not stop without approval"); },
+    }))).toBe(1);
+    expect(calls).toEqual([]);
+    expect(readFileSync(join(home, ".config/catalyst-cloud/replica.db"), "utf8")).toBe("saved database");
+    expect(readFileSync(join(home, ".config/catalyst-cloud/replica.db-wal"), "utf8")).toBe("saved WAL");
+  });
+
+  test("--remove --data previews and removes only local sync files after one confirmation", async () => {
+    const login = JSON.stringify({ account: "tenant-a", baseUrl: "https://example.test", key: "fixture", lastSkillBundleVersion: readManifest().version });
+    write(".config/catalyst-cloud/customer.json", login);
+    write(".config/catalyst-cloud/contract.json", "saved contract");
+    write(".config/catalyst/settings.json", "saved settings");
+    const localFiles = [
+      ".config/catalyst-cloud/replica.db",
+      ".config/catalyst-cloud/replica.db-wal",
+      ".config/catalyst-cloud/replica.db.writer.lock",
+      ".config/catalyst-cloud/replica.db.writer.state",
+      ".local/state/catalyst/events/tenant-a/backbone/cursor.json",
+      ".local/state/catalyst/events/tenant-a/backbone/2026-10-04.jsonl",
+    ];
+    for (const file of localFiles) write(file, "local cache bytes");
+    write("Library/LaunchAgents/ai.coalesce.catalyst-replica-sync.plist", "old replica writer");
+    let confirmations = 0;
+    expect(await main(["legacy", "--remove", "--data"], ctx, deps({
+      isTty: () => true,
+      prompt: async () => {
+        confirmations++;
+        expect(calls).toEqual([]);
+        for (const file of localFiles) {
+          expect(existsSync(join(home, file))).toBe(true);
+          expect(ctx.out.join("\n")).toContain(join(home, file));
+        }
+        expect(ctx.out.join("\n")).toContain("17 bytes");
+        return "yes";
+      },
+    }))).toBe(0);
+    expect(confirmations).toBe(1);
+    expect(calls).toContain("launchctl bootout gui/501/ai.coalesce.catalyst-replica-sync");
+    for (const file of localFiles) expect(existsSync(join(home, file))).toBe(false);
+    expect(readFileSync(join(home, ".config/catalyst-cloud/customer.json"), "utf8")).toBe(login);
+    expect(readFileSync(join(home, ".config/catalyst-cloud/contract.json"), "utf8")).toBe("saved contract");
+    expect(readFileSync(join(home, ".config/catalyst/settings.json"), "utf8")).toBe("saved settings");
+  });
+
   test.each([
     { argv: ["legacy"] },
     { argv: ["legacy", "--remove"] },
