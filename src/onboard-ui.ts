@@ -65,7 +65,7 @@ import { CONNECT_PAGE_PATH } from "./onboard-checklist.js";
 
 /** What the runner question's answers mean, said before it is asked (CTC-4739). */
 const RUNNER_EXPLAINED = [
-  "Yes makes this computer pick up tickets and run agents in Docker with your workspace's AI accounts. It uses this computer's CPU and memory while it is on, and closing it pauses that work.",
+  "Yes makes this computer pick up tickets and run agents in Docker with your workspace's AI accounts. It uses this computer's CPU and memory while it is on, and turning it off or letting it sleep pauses that work.",
   "No is right for a personal workstation: your workspace's runner hosts do the work.",
   "Pass --no-runner or --runner to skip this question next time.",
 ] as const;

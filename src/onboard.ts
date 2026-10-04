@@ -859,6 +859,7 @@ function printPlan(
     localSync: boolean;
     scope: readonly OnboardStepId[];
     runner?: boolean;
+    runnerDeclinedBy?: string;
   },
 ): void {
   ctx.stdout("Catalyst setup plan");
@@ -871,6 +872,7 @@ function printPlan(
     options?.scope,
     options?.runner,
     "json",
+    options?.runnerDeclinedBy,
   )) {
     if (row.group !== group) {
       ctx.stdout("");
@@ -1155,6 +1157,11 @@ export async function cmdOnboard(
         : args.flags["no-runner"] === true
           ? false
           : undefined,
+    // Headless turns --runner no and CATALYST_ONBOARD_RUNNER=no into --no-runner; say which.
+    runnerDeclinedBy:
+      args.flags.headless === true
+        ? "the headless runner input is no"
+        : "--no-runner was passed",
     localSync: args.flags["local-sync"] === true || journal.localSync === true,
     scope: ONBOARD_STEPS.filter((id) => reviewedScope.has(id)),
   });
