@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.15.6
+
+Setup checks current readiness and waits up to one minute while Catalyst reads repository settings.
+
 ## 0.15.5
 
 Setup explains what running work on this computer means and lists every repository registered to your Linear team.
