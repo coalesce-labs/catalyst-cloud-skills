@@ -292,7 +292,7 @@ export function setupStepView(
         ? (["github.install"] as const)
         : (ONBOARD_DEPENDENCIES[step.id] ?? []).filter((id) => {
             const s = journal?.steps.find((s) => s.id === id);
-            return s?.state !== "done" && s?.state !== "skipped";
+            return s?.state !== "skipped" && !dependencySettled(s);
           });
     // Numbers restart in each part: this part's steps come bare, then each other part once.
     const byPart = new Map<SetupPart, number[]>();

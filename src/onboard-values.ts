@@ -91,9 +91,12 @@ export function onboardValuesAdapter(
         );
         // Bounded twice: by the clock, and by attempts (a test's clock may stand still).
         const deadline = Date.now() + VALUES_WAIT_MS;
+        let release = () => {};
         const stopped = new Promise<void>((resolve) => {
-          if (signal?.aborted) resolve();
-          else signal?.addEventListener("abort", () => resolve(), { once: true });
+          if (signal?.aborted) return resolve();
+          const onAbort = () => resolve();
+          signal?.addEventListener("abort", onAbort, { once: true });
+          release = () => signal?.removeEventListener("abort", onAbort);
         });
         for (
           let attempt = 0;
@@ -111,6 +114,7 @@ export function onboardValuesAdapter(
           if (signal?.aborted) break;
           reading = await read(WAIT_READ_TIMEOUT_MS);
         }
+        release();
       }
       if (signal?.aborted) return waiting("interrupted");
       if (reading.kind === "pass") return { state: "done", evidence: { team: teamId } };
