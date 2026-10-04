@@ -264,7 +264,8 @@ function journalIdentity(ctx: Ctx, journal: OnboardJournal, manager = false) {
 
 type ContractIds = { registered: Set<string>; ids: Map<string, string[]>; canRegister: boolean };
 const REGISTER_PATH = "/api/v1/agent/project-repositories";
-/** The fresh contract's repository IDs and the chosen team's key, or why they can't be trusted. */
+/** The fresh contract's repository IDs and the repositories registered to the chosen team (by its
+ *  id), or why they can't be trusted. */
 async function contractIds(
   ctx: Ctx,
   journal: OnboardJournal,
