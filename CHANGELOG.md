@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.15.4
+
+- Setup shows a colour mark and clearer progress, with a plain display when your terminal needs it.
+- Setup separates your next steps from tasks waiting on an owner or admin, and reports when it stops waiting for an account connection.
+- Setup wraps long text by words and keeps numbered steps in order.
+
 ## 0.15.3
 
 - Setup can finish once the steps needed to run work are ready. It lists optional next steps and keeps your first-ticket choice when you resume.
