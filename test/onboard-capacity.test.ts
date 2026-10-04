@@ -251,6 +251,7 @@ describe("mapped-team-defaults advisory capacity", () => {
       "/api/v1/agent/contract",
       "/api/v1/me",
       "/api/v1/agent/teams",
+      "/api/v1/agent/repos",
       "/api/v1/repos",
       "/api/v1/agent/contract",
       route,
