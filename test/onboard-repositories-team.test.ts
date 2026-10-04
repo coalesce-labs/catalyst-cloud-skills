@@ -38,7 +38,12 @@ const agentRepo = (name: string, projects: unknown[]) => ({
 });
 const ctcProject = { id: "account-a:catalyst-cloud", name: "Catalyst Cloud", teamKey: "CTC", status: "active" };
 
-function fixture(role: "owner" | "member" = "owner", choose?: ChooseExistingRepositories, argv: string[] = []) {
+function fixture(
+  role: "owner" | "member" = "owner",
+  choose?: ChooseExistingRepositories,
+  argv: string[] = [],
+  teamKey: string | null = "CTC",
+) {
   const home = mkdtempSync(join(tmpdir(), "onboard-repositories-team-"));
   homes.push(home);
   writeConfig(home, {
@@ -58,7 +63,11 @@ function fixture(role: "owner" | "member" = "owner", choose?: ChooseExistingRepo
   const contract = () => ({
     contractVersion: "2.26.0",
     account: { id: "account-a" },
-    teams: [{ id: TEAM, key: "CTC" }, { id: "team-ctl", key: "CTL" }],
+    // The team's repositories, keyed by its id. The key may be renamed or missing.
+    teams: [
+      { id: TEAM, key: teamKey, repositories: { registered: [...registered].map((name) => `coalesce-labs/${name}`) } },
+      { id: "team-ctl", key: "CTL", repositories: { registered: ["coalesce-labs/catalyst"] } },
+    ],
     routes: [{ method: "POST", path: "/api/v1/agent/project-repositories" }],
     merge: {
       repositories: agentRepos().map((row) => ({ repoId: row.id, owner: row.owner, name: row.name })),
@@ -101,7 +110,7 @@ function fixture(role: "owner" | "member" = "owner", choose?: ChooseExistingRepo
     steps: [{ id: "linear.team", state: "done", evidence: { team: TEAM } }],
   };
   const adapter = existingRepositoryAdapter(parseArgs(["onboard", ...argv]), choose);
-  return { ctx, journal, adapter, calls, posts };
+  return { home, ctx, journal, adapter, calls, posts };
 }
 
 test("every repository registered to the team is listed and pre-selected, other teams' and archived projects' are not", async () => {
@@ -163,4 +172,29 @@ test("an explicit --repo for a registered repository other than the team default
   const result = await f.adapter.check(f.ctx, f.journal);
   expect(result.state).toBe("done");
   expect(JSON.parse(String(result.evidence?.repository))[0].repoId).toBe("account-a:catalyst-cloud-sdk");
+});
+
+test("the team is matched by its id, so a renamed or missing team key still lists its repositories", async () => {
+  let offered: readonly OnboardRepositoryChoice[] = [];
+  const f = fixture("owner", async (rows) => {
+    offered = rows;
+    return ["coalesce-labs/catalyst-cloud"];
+  }, [], null);
+  expect((await f.adapter.act!(f.ctx, f.journal)).state).toBe("done");
+  expect(offered.filter((row) => row.registered !== false).map((row) => row.name)).toEqual(NAMES);
+});
+
+test("a login switched to another admin before registering registers nothing", async () => {
+  const f = fixture("owner", async () => {
+    writeConfig(f.home, {
+      account: "account-a", slug: "a", name: "A", permissions: null, principal: "session",
+      baseUrl: "https://fixture.invalid", key: "ctc_user_fixture",
+      user: { id: "person-b", role: "admin", label: "B", email: "b@example.invalid", linearUserId: null },
+      joinedAt: now.toISOString(), lastSkillBundleVersion: "0.15.4",
+    });
+    return ["coalesce-labs/catalyst-cloud", "coalesce-labs/catalyst-design-skills"];
+  });
+  const result = await f.adapter.act!(f.ctx, f.journal);
+  expect(result).toEqual({ state: "waiting", reason: "repository_identity_unverified" });
+  expect(f.posts).toEqual([]);
 });

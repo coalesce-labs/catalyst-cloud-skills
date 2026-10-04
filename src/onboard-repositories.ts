@@ -248,7 +248,21 @@ export async function readOnboardRepositoryInventory(
   return { repositories };
 }
 
-type ContractIds = { teamKey: string; ids: Map<string, string[]>; canRegister: boolean };
+/** The saved login is still the person, account and origin this run started with (and, when
+ *  `manager`, an owner or admin). Returns that config, or null. */
+function journalIdentity(ctx: Ctx, journal: OnboardJournal, manager = false) {
+  const cfg = loadConfig(ctx.home);
+  return cfg?.user &&
+    cfg.account === journal.account &&
+    cfg.user.id === journal.membershipId &&
+    !!journal.baseUrl &&
+    normalizeBaseUrl(cfg.baseUrl) === normalizeBaseUrl(journal.baseUrl) &&
+    (!manager || ["owner", "admin"].includes(cfg.user.role))
+    ? cfg
+    : null;
+}
+
+type ContractIds = { registered: Set<string>; ids: Map<string, string[]>; canRegister: boolean };
 const REGISTER_PATH = "/api/v1/agent/project-repositories";
 /** The fresh contract's repository IDs and the chosen team's key, or why they can't be trusted. */
 async function contractIds(
@@ -276,10 +290,17 @@ async function contractIds(
     doc.teams.length > 1_000
   )
     return { reason: "repository_contract_unverified" };
+  // The team's repositories, keyed by the team's id (a team key can be renamed or missing).
   const teams = doc.teams.filter((value) => object(value)?.id === teamId);
-  const teamKey = object(teams[0])?.key;
-  if (teams.length !== 1 || typeof teamKey !== "string" || !/^[A-Za-z0-9_-]{1,64}$/.test(teamKey))
+  const names = object(object(teams[0])?.repositories)?.registered;
+  if (
+    teams.length !== 1 ||
+    !Array.isArray(names) ||
+    names.length > 1_000 ||
+    !names.every((name) => typeof name === "string" && /^[A-Za-z0-9][A-Za-z0-9_.-]{0,99}\/[A-Za-z0-9][A-Za-z0-9_.-]{0,99}$/.test(name))
+  )
     return { reason: "team_selection_unverified" };
+  const registered = new Set(names.map((name) => (name as string).toLowerCase()));
   const ids = new Map<string, string[]>();
   const idNames = new Map<string, string>();
   for (const value of merge.repositories) {
@@ -306,7 +327,7 @@ async function contractIds(
       const route = object(value);
       return route?.method === "POST" && route.path === REGISTER_PATH;
     });
-  return { teamKey, ids, canRegister };
+  return { registered, ids, canRegister };
 }
 
 /** CTC-4742: every repository an active project of the chosen team uses, with its contract ID. */
@@ -333,17 +354,13 @@ async function teamRepositories(
       typeof row.owner !== "string" ||
       !part.test(row.owner) ||
       typeof row.name !== "string" ||
-      !part.test(row.name) ||
-      !Array.isArray(row.projects) ||
-      row.projects.length > 1_000
+      !part.test(row.name)
     )
       return { reason: "repository_inventory_shape" };
-    const usedByTeam = row.projects.some((project) => {
-      const p = object(project);
-      return p?.teamKey === contract.teamKey && p?.status === "active";
-    });
-    if (!usedByTeam) continue;
+    // The contract says which repositories the team uses; this person's list says which of them
+    // they can see (the server narrows it for a member).
     const name = key({ owner: row.owner, name: row.name });
+    if (!contract.registered.has(name)) continue;
     if (seen.has(name)) return { reason: "repository_binding_ambiguous" };
     seen.add(name);
     const ids = contract.ids.get(name);
@@ -358,14 +375,14 @@ async function teamRepositories(
  *  admin only (only they can register one). Any read problem means no offers, never a stopped step. */
 async function offeredRepositories(
   ctx: Ctx,
+  journal: OnboardJournal,
   teamId: string,
   registered: readonly ExistingOnboardRepository[],
   signal?: AbortSignal,
 ): Promise<OfferedOnboardRepository[]> {
-  const cfg = loadConfig(ctx.home);
-  if (!cfg?.user || !["owner", "admin"].includes(cfg.user.role)) return [];
+  if (!journalIdentity(ctx, journal, true)) return [];
   const read = await readExistingOnboardJson(ctx, "/api/v1/me/repositories/options", signal);
-  if ("reason" in read) return [];
+  if (!journalIdentity(ctx, journal, true) || "reason" in read) return [];
   const github = object(object(read.body)?.github);
   if (!github || github.connected !== true || !Array.isArray(github.repositories) || github.repositories.length > 10_000)
     return [];
@@ -391,17 +408,20 @@ async function registerToTeam(
   repository: string,
   signal?: AbortSignal,
 ): Promise<string | null> {
-  const cfg = loadConfig(ctx.home);
-  if (!cfg?.user || !["owner", "admin"].includes(cfg.user.role) || cfg.account !== journal.account)
-    return "repository_register_unverified";
+  // The person who answered the question is the one who registers: checked right before the write.
+  const cfg = journalIdentity(ctx, journal, true);
+  if (!cfg) return "repository_identity_unverified";
   const expiry = cfg.auth ? Date.parse(cfg.auth.expiresAt) - ctx.now().getTime() : 0;
   const bearer = cfg.key || (cfg.auth && Number.isFinite(expiry) && expiry > 30_000 ? cfg.auth.accessToken : undefined);
   if (!bearer) return "project_login_refresh_required";
+  // Bounded like every read here, so a server that never answers can't hold setup.
+  const deadline = AbortSignal.timeout(30_000);
+  const bounded = signal ? AbortSignal.any([signal, deadline]) : deadline;
   try {
     const response = await ctx.fetch(`${normalizeBaseUrl(cfg.baseUrl)}${REGISTER_PATH}`, {
       method: "POST",
       redirect: "error",
-      ...(signal ? { signal } : {}),
+      signal: bounded,
       headers: { authorization: `Bearer ${bearer}`, "content-type": "application/json", accept: "application/json" },
       body: JSON.stringify({ teamId, repository }),
     });
@@ -493,7 +513,7 @@ export function existingRepositoryAdapter(
       if (!choose) return waiting("repository_choice_required");
       const teamId = list.repositories[0]!.teamId;
       const offers = list.canRegister
-        ? await offeredRepositories(ctx, teamId, list.repositories, signal)
+        ? await offeredRepositories(ctx, journal, teamId, list.repositories, signal)
         : [];
       const choices: OnboardRepositoryChoice[] = [
         ...list.repositories.map((row) => ({ ...row })),

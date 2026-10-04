@@ -78,7 +78,8 @@ test("CTC-4742 — registered repositories start selected, and the question says
     expect(question.initialValues).toEqual(["example/one", "example/two"]);
     expect(question.options.map((o) => o.value)).toEqual(["example/one", "example/two", "example/three"]);
     expect(question.options[2]!.hint).toBe("not used by this team yet; selecting it adds it");
-    expect(question.message).toContain("Leaving a repository unselected does not remove it from this team.");
+    expect(question.message).toContain("Leaving a repository unselected does not remove it from this team;");
+    expect(question.message).toContain("an admin removes one in Settings → Projects");
   } finally {
     f.ui.dispose();
   }

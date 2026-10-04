@@ -808,6 +808,14 @@ export function createClackOnboardUi(
     ...(prompts.multiselect
       ? {
           async chooseRepositories(repositories: OnboardRepositoryChoice[]) {
+            const projectsPage = () => {
+              try {
+                const base = deps.baseUrl?.();
+                return base ? ` (${new URL("/settings/projects", base).href})` : "";
+              } catch {
+                return "";
+              }
+            };
             stop();
             if (!repositories.length || abort.signal.aborted) return null;
             // CTC-4742: what the team already uses starts selected. Unselecting never removes one.
@@ -817,7 +825,7 @@ export function createClackOnboardUi(
             const answer = await multiselect({
               ...options,
               message: selected.length
-                ? `Which repositories should use this Linear team? The ones it already uses are selected. Leaving a repository unselected does not remove it from this team. To remove one, open ${deps.baseUrl?.() ? `${deps.baseUrl()}/settings/projects` : "Settings → Projects"}.`
+                ? `Which repositories should use this Linear team? Leaving a repository unselected does not remove it from this team; an admin removes one in Settings → Projects${projectsPage()}.`
                 : "Which repositories should use this Linear team?",
               required: true,
               ...(selected.length ? { initialValues: selected } : {}),
