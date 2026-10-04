@@ -63,6 +63,13 @@ import {
 import { onboardStepDetail, onboardReasonText } from "./onboard-next.js";
 import { CONNECT_PAGE_PATH } from "./onboard-checklist.js";
 
+/** What the runner question's answers mean, said before it is asked (CTC-4739). */
+const RUNNER_EXPLAINED = [
+  "Yes makes this computer pick up tickets and run agents in Docker with your workspace's AI accounts. It uses this computer's CPU and memory while it is on, and turning it off or letting it sleep pauses that work.",
+  "No is right for a personal workstation: your workspace's runner hosts do the work.",
+  "Pass --no-runner or --runner to skip this question next time.",
+] as const;
+
 /** Rendering cannot approve a step: the receipt engine owns execution and evidence. */
 export interface OnboardUi {
   readonly signal: AbortSignal;
@@ -890,8 +897,18 @@ export function createClackOnboardUi(
       return typeof answer === "string" ? answer : null;
     },
     async chooseRunner() {
-      stop();
       if (abort.signal.aborted) return null;
+      // CTC-4739: say what each answer does to this computer before asking, and how to skip it.
+      stop();
+      if (renderer) {
+        renderer.begin(number("runner"), title("runner"), "", "ask");
+        for (const line of RUNNER_EXPLAINED) renderer.detail(line);
+        active = true;
+        questionOpen = true;
+      } else
+        prompts.log.message(RUNNER_EXPLAINED.join("\n"), {
+          output: streams.output,
+        });
       const answer = await select({
         ...options,
         message: "Run Catalyst's work on this machine?",
