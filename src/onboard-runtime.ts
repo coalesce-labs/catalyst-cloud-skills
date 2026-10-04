@@ -228,10 +228,18 @@ export function createOnboardRuntime(
       },
     };
   };
-  const legacyCheck = async (stepCtx: Ctx): Promise<OnboardStepResult> => {
+  const legacyDeps = (journal?: OnboardJournal): LegacyDeps => ({
+    ...hooks.legacy,
+    preserveReplica: !(journal?.localSync ?? args.flags["local-sync"] === true),
+  });
+  const legacyCheck = async (
+    stepCtx: Ctx,
+    journal?: OnboardJournal,
+  ): Promise<OnboardStepResult> => {
     const found = findLegacy(
       stepCtx.home,
       hooks.legacy?.platform ?? process.platform,
+      legacyDeps(journal),
     ).filter((item) => !item.data).length;
     if (
       !sameHome(stepCtx.home, (hooks.realHome ?? (() => userInfo().homedir))())
@@ -331,8 +339,8 @@ export function createOnboardRuntime(
     },
     legacy: {
       check: legacyCheck,
-      act: async (stepCtx) => {
-        const before = await legacyCheck(stepCtx);
+      act: async (stepCtx, journal) => {
+        const before = await legacyCheck(stepCtx, journal);
         if (before.state !== "pending") return before;
         // Provider/process output is not trusted to be secret-free; keep it out of the receipt/log.
         const quiet = { ...stepCtx, stdout: () => {}, stderr: () => {} };
@@ -346,10 +354,10 @@ export function createOnboardRuntime(
             json: false,
           },
           quiet,
-          hooks.legacy,
+          legacyDeps(journal),
         );
         return code === 0
-          ? legacyCheck(stepCtx)
+          ? legacyCheck(stepCtx, journal)
           : { state: "failed", reason: "legacy_cleanup_failed" };
       },
     },

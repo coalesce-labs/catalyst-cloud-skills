@@ -157,6 +157,51 @@ function consentUi(): OnboardUi {
 }
 
 describe("onboarding production runtime", () => {
+  test.each([
+    ["not selected", ["--yes", "--json"]],
+    ["declined in the plan", ["--local-sync"]],
+  ])("setup with local sync %s preserves the running old replica and its data while cleaning other legacy services", async (_selection, flags) => {
+    const f = fixture();
+    f.seed();
+    const jobs = join(f.home, "Library", "LaunchAgents");
+    mkdirSync(jobs, { recursive: true });
+    const replica = join(jobs, "ai.coalesce.catalyst-replica-sync.plist");
+    const other = join(jobs, "com.catalyst.agent.plist");
+    writeFileSync(replica, "existing replica service");
+    writeFileSync(other, "other legacy service");
+    const data = join(f.home, ".config", "catalyst", "replica.db");
+    mkdirSync(join(data, ".."), { recursive: true });
+    writeFileSync(data, "existing replica data");
+    writeFileSync(`${data}-wal`, "uncheckpointed replica data");
+    let replicaRunning = true;
+    const args = parseArgs(["onboard", "--only", "legacy", ...flags]);
+    const runtime = createOnboardRuntime(args, f.ctx, {
+      ...f.hooks,
+      ui: consentUi(),
+      realHome: () => f.home,
+      legacy: {
+        platform: "darwin",
+        uid: 501,
+        run: (command, argv) => {
+          if (
+            command === "launchctl" &&
+            argv.includes("gui/501/ai.coalesce.catalyst-replica-sync")
+          )
+            replicaRunning = false;
+          return { status: 0, stdout: "", stderr: "" };
+        },
+      },
+    });
+
+    expect(await cmdOnboard(args, f.ctx, runtime)).toBe(0);
+
+    expect(replicaRunning).toBe(true);
+    expect(readFileSync(replica, "utf8")).toBe("existing replica service");
+    expect(readFileSync(data, "utf8")).toBe("existing replica data");
+    expect(readFileSync(`${data}-wal`, "utf8")).toBe("uncheckpointed replica data");
+    expect(existsSync(other)).toBe(false);
+  });
+
   test("fake HOME reports a legacy service and never stops or removes it", async () => {
     const f = fixture();
     const plist = join(

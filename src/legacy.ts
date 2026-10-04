@@ -25,6 +25,7 @@ import { promptSecret, stdinIsTty } from "./prompt.js";
 export const LEGACY_SOURCE_COMMIT = "73bc0645252ce8be38f8c87be6b67b950b3f0b56";
 /** The old runtime's marketplace source, as Claude Code records it in known_marketplaces.json. */
 export const OLD_MARKETPLACE_REPO = "coalesce-labs/catalyst";
+const OLD_REPLICA_LABEL = "ai.coalesce.catalyst-replica-sync";
 /** launchd labels the old runtime installed under ~/Library/LaunchAgents (macOS). `com.catalyst.role.<name>`
  *  is the old role supervisor's per-role instance, matched by that exact prefix. Never `dev.catalystcloud.*`
  *  (the current housekeeping job and runner jobs) and never `dev.catalyst.*` (the sandbox credit guard). */
@@ -44,7 +45,7 @@ export const OLD_LAUNCHD_LABELS: readonly string[] = [
   "ai.coalesce.catalyst-usage-page",
   "ai.coalesce.catalyst-claude-update",
   "ai.coalesce.catalyst-updater",
-  "ai.coalesce.catalyst-replica-sync",
+  OLD_REPLICA_LABEL,
   "ai.coalesce.catalyst-channel-watcher",
   "ai.coalesce.catalyst-event-mirror",
   "ai.coalesce.catalyst-monitor",
@@ -88,6 +89,8 @@ export type LegacyRun = (
   args: string[],
 ) => { status: number; stdout: string; stderr: string };
 export interface LegacyDeps {
+  /** Setup without local sync leaves an existing replica service running. */
+  preserveReplica?: boolean;
   run?: LegacyRun;
   platform?: NodeJS.Platform;
   uid?: number;
@@ -207,12 +210,16 @@ function findFiles(home: string): LegacyItem[] {
 export function findLegacy(
   home: string,
   platform: NodeJS.Platform,
+  options: Pick<LegacyDeps, "preserveReplica"> = {},
 ): LegacyItem[] {
   return [
     ...findPlugins(home),
     ...findJobs(home, platform),
     ...findFiles(home),
-  ];
+  ].filter(
+    (item) =>
+      !(options.preserveReplica && item.kind === "job" && item.name === OLD_REPLICA_LABEL),
+  );
 }
 
 const defaultRun: LegacyRun = (cmd, args) => {
@@ -294,7 +301,7 @@ export async function cmdLegacy(
   const uid =
     deps.uid ?? (typeof process.getuid === "function" ? process.getuid() : 0);
   const run = deps.run ?? defaultRun;
-  const found = findLegacy(ctx.home, platform);
+  const found = findLegacy(ctx.home, platform, deps);
   const legacy = found.filter((item) => !item.data);
   const shared = found.filter((item) => item.data);
   const emit = (body: Record<string, unknown>, lines: string[]) => {
@@ -416,7 +423,7 @@ export async function cmdLegacy(
     }
   }
   // re-check from the same list, so the report says what the machine holds now, not what was attempted
-  const remaining = findLegacy(ctx.home, platform).filter((f) => !f.data);
+  const remaining = findLegacy(ctx.home, platform, deps).filter((f) => !f.data);
   const keptNote = kept.length > 0 ? "; all shared data folders were kept" : "";
   lines.push(
     remaining.length === 0
