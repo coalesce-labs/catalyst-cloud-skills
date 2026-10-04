@@ -7,6 +7,7 @@ import { contractPathFor } from "../src/config.js";
 import { parseArgs } from "../src/args.js";
 import {
   cmdOnboard,
+  ONBOARD_DEPENDENCIES,
   ONBOARD_STEPS,
   stepSatisfied,
   type OnboardAdapter,
@@ -21,7 +22,11 @@ import {
   onboardFirstTicketAdapter,
   type FirstTicketOption,
 } from "../src/onboard-first-ticket.js";
-import { onboardReadyStep, type OnboardingReadyReport } from "../src/onboard-ready.js";
+import {
+  observeCloudOnboarding,
+  onboardReadyStep,
+  type OnboardingReadyReport,
+} from "../src/onboard-ready.js";
 import { onboardReasonText } from "../src/onboard-next.js";
 import { setupFinalScreen, setupStepView } from "../src/setup-onboard-copy.js";
 import { buildFixtureContract, FIXTURE_ROUTE_PREFIX } from "./fixture-contract";
@@ -145,14 +150,136 @@ describe("values", () => {
     });
     server.contract.teams[0]!.readiness.checks.push({ id: "required_values", state: "unknown" });
     uncached();
+    // CTC-4744: a fresh verdict whose check is still unknown is the cloud's unread, named as such.
     expect(await onboardValuesAdapter().check(ctx, teamJournal())).toMatchObject({
       state: "waiting",
-      reason: "required_values_unverified",
+      reason: "required_values_unread",
     });
     const stale = makeCtx(home, { now: () => new Date(1_756_010_000_000) });
     server.contract.teams[0]!.readiness.checks = [{ id: "required_values", state: "pass" }];
     uncached();
     expect(await onboardValuesAdapter().check(stale, teamJournal())).toMatchObject({ state: "waiting" });
+  });
+});
+
+describe("CTC-4744 — the end of setup reads a fresh verdict and waits instead of handing a wait to the person", () => {
+  const LATER = new Date(1_756_010_000_000); // past the fixture verdict's one-hour window
+  const freshen = (checks: Array<Record<string, unknown>>) => () => {
+    const readiness = server.contract.teams[0]!.readiness;
+    readiness.checkedAt = LATER.getTime() - 1_000;
+    readiness.expiresAt = LATER.getTime() + 300_000;
+    readiness.checks = checks as typeof readiness.checks;
+    server.contractEtagSuffix = `-${(Number(server.contractEtagSuffix?.slice(1)) || 0) + 1}`;
+  };
+
+  test("a stale verdict is refreshed through the read-through route before values are judged", async () => {
+    server.contract.teams[0]!.readiness.checks.push({ id: "required_values", state: "pass" });
+    uncached();
+    server.readinessRead = freshen([{ id: "required_values", state: "pass" }]);
+    try {
+      const later = makeCtx(home, { now: () => LATER });
+      expect(await onboardValuesAdapter().check(later, teamJournal())).toMatchObject({ state: "done" });
+      expect(server.requests.some((r) => r.path.startsWith("/api/v1/agent/tenant/readiness?team=team-eng"))).toBe(true);
+    } finally {
+      server.readinessRead = undefined;
+      server.contractEtagSuffix = undefined;
+    }
+  });
+
+  test("a check the cloud has not read yet is waited on with one line, then names what is still unread", async () => {
+    server.readinessRead = freshen([{ id: "required_values", state: "unknown", reason: "required_values_unread" }]);
+    const lines: string[] = [];
+    const sleeps: number[] = [];
+    try {
+      const later = makeCtx(home, { now: () => LATER });
+      const result = await onboardValuesAdapter({
+        message: (text) => lines.push(text),
+        sleep: async (ms) => {
+          sleeps.push(ms);
+        },
+      }).check(later, teamJournal());
+      expect(result).toMatchObject({ state: "waiting", reason: "required_values_unread" });
+      expect(lines).toHaveLength(1);
+      expect(lines[0]).toMatch(/^Waiting for Catalyst to read the settings of .+ \(up to 1 minute\)…$/);
+      expect(sleeps.reduce((a, b) => a + b, 0)).toBeLessThanOrEqual(60_000);
+      expect(sleeps.length).toBeGreaterThan(0);
+    } finally {
+      server.readinessRead = undefined;
+      server.contractEtagSuffix = undefined;
+    }
+  });
+
+  test("a read that finishes while setup waits completes the step without asking anyone", async () => {
+    let reads = 0;
+    server.readinessRead = () => {
+      reads += 1;
+      freshen([
+        reads < 2
+          ? { id: "required_values", state: "unknown", reason: "required_values_unread" }
+          : { id: "required_values", state: "pass" },
+      ])();
+    };
+    const lines: string[] = [];
+    try {
+      const later = makeCtx(home, { now: () => LATER });
+      const result = await onboardValuesAdapter({ message: (t) => lines.push(t), sleep: async () => {} }).check(later, teamJournal());
+      expect(result.state).toBe("done");
+      expect(lines).toHaveLength(1);
+    } finally {
+      server.readinessRead = undefined;
+      server.contractEtagSuffix = undefined;
+    }
+  });
+
+  test("what an unread check tells the person is true and asks nothing of them", () => {
+    const text = onboardReasonText({ id: "values", state: "waiting", reason: "required_values_unread" }, { baseUrl: BASE });
+    expect(text).not.toMatch(/run catalyst setup again in a few minutes/i);
+    expect(text).toContain("You don't need to do anything");
+    expect(text).toContain("catalyst ready");
+  });
+
+  test("a first ticket waits for the values check", () => {
+    expect(ONBOARD_DEPENDENCIES["first-ticket"]).toContain("values");
+  });
+
+  test.each([
+    ["required_values_unread", false],
+    ["required_values_unverified", false],
+    ["required_values_missing", true],
+  ] as const)("with values %s, setup %s offers a first ticket", async (reason, offered) => {
+    const adapters: Partial<Record<OnboardStepId, OnboardAdapter>> = {};
+    for (const id of ONBOARD_STEPS) adapters[id] = { check: async () => ({ state: "done" }) };
+    adapters["linear.team"] = { check: async () => ({ state: "done", evidence: { team: "team-eng", teamKey: "ENG" } }) };
+    adapters.values = { check: async () => ({ state: "waiting", reason }) };
+    let asked = 0;
+    adapters["first-ticket"] = {
+      check: async () => {
+        asked += 1;
+        return { state: "skipped", reason: "first_ticket_skipped" };
+      },
+    };
+    await cmdOnboard(
+      parseArgs(["onboard", "--yes"]),
+      { ...ctx, stdout: () => {}, stderr: () => {} },
+      { adapters, bindSignals: false, identity: async () => ({ account: "a", membershipId: "p", baseUrl: BASE, role: "admin" }) },
+    );
+    expect(asked > 0).toBe(offered);
+  });
+
+  test("setup's readiness step refreshes the verdict too, so it agrees with catalyst ready", async () => {
+    await seedJoined(home, server, {
+      contract: false,
+      config: { user: { id: "person-a", role: "admin", label: "A", email: null, linearUserId: null } },
+    });
+    server.readinessRead = freshen([{ id: "token_live", state: "pass" }]);
+    try {
+      const later = makeCtx(home, { now: () => LATER });
+      const observed = await observeCloudOnboarding(later, { teamIds: ["team-eng"] });
+      expect(observed.checks.map((c) => c.state)).toEqual(["pass"]);
+    } finally {
+      server.readinessRead = undefined;
+      server.contractEtagSuffix = undefined;
+    }
   });
 });
 
@@ -597,7 +724,11 @@ describe("re-review fixes", () => {
     const adapters: Partial<Record<OnboardStepId, OnboardAdapter>> = {};
     for (const id of ONBOARD_STEPS) adapters[id] = { check: async () => ({ state: "done" }) };
     adapters["linear.team"] = { check: async () => ({ state: "done", evidence: { team: "team-eng", teamKey: "ENG" } }) };
-    adapters.values = { check: async () => ({ state: "waiting", reason: "required_values_unverified" }) };
+    // CTC-4744: a first ticket waits for the values check, so values are set here.
+    adapters.values = { check: async () => ({ state: "done" }) };
+    // Setup stays unfinished on a step that does not hold a first ticket, so the plain finish lists
+    // next actions (with every step done it prints the complete screen instead).
+    adapters.ready = { check: async () => ({ state: "waiting", reason: "team_check_pending" }) };
     adapters["first-ticket"] = {
       check: async () => ({ state: "done", evidence: { ticket: "ENG-5", teamKey: "ENG", stage: "Ready for Catalyst" } }),
     };
@@ -651,7 +782,11 @@ describe("second re-review fixes", () => {
     const adapters: Partial<Record<OnboardStepId, OnboardAdapter>> = {};
     for (const id of ONBOARD_STEPS) adapters[id] = { check: async () => ({ state: "done" }) };
     adapters["linear.team"] = { check: async () => ({ state: "done", evidence: { team: "team-eng", teamKey: "ENG" } }) };
-    adapters.values = { check: async () => ({ state: "waiting", reason: "required_values_unverified" }) };
+    // CTC-4744: the hint to start work comes only once values are known, so they are set here.
+    adapters.values = { check: async () => ({ state: "done" }) };
+    // Setup stays unfinished on a step that does not hold a first ticket, so the plain finish lists
+    // next actions (with every step done it prints the complete screen instead).
+    adapters.ready = { check: async () => ({ state: "waiting", reason: "team_check_pending" }) };
     adapters["first-ticket"] = {
       check: async () => ({ state: "skipped", reason: "first_ticket_skipped", evidence: { stage: "Ready for Catalyst" } }),
     };

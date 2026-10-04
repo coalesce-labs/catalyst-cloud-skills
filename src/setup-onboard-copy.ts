@@ -259,6 +259,9 @@ function unfinished(step: OnboardStep): string {
       return step.state === "skipped" ? "not chosen" : "not done yet";
   }
 }
+/** CTC-4744: reasons a step waits on the cloud's own work, never on the person or an admin. */
+export const CLOUD_WORK = new Set<string>(["required_values_unread"]);
+
 export function setupStepView(
   step: OnboardStep,
   journal?: OnboardJournal,
@@ -279,7 +282,10 @@ export function setupStepView(
             ? "skip"
             : "act";
   let outcome = step.state === "done" ? succeeded(step) : unfinished(step);
-  if (mark === "later") {
+  if (step.state !== "done" && CLOUD_WORK.has(step.reason ?? "")) {
+    mark = "later";
+    outcome = "still in progress; Catalyst is reading the settings";
+  } else if (mark === "later") {
     const waitsOn =
       step.reason === "github_install_pending"
         ? (["github.install"] as const)
@@ -381,6 +387,8 @@ export interface SetupPartProgress {
   done: number;
   /** Rows the person running setup must act on, failed ones included. */
   needs: number;
+  /** CTC-4744: rows only the cloud's own work holds up. */
+  working: number;
   failed: number;
   /** Rows that wait on an owner or admin of the Catalyst workspace. */
   admin: number;
@@ -398,12 +406,12 @@ export function setupPartProgress(
    *  At the end they count done only when readiness passed. */
   moment: "run" | "end" = "end",
 ): Record<SetupPart, SetupPartProgress> {
-  const empty = () => ({ total: 0, done: 0, needs: 0, failed: 0, admin: 0, aside: 0 });
+  const empty = () => ({ total: 0, done: 0, needs: 0, working: 0, failed: 0, admin: 0, aside: 0 });
   const progress = { 1: empty(), 2: empty(), 3: empty() };
   type Kind = "admin" | "aside" | "own";
   const readinessPassed =
     journal.steps.find((s) => s.id === "ready")?.state === "done";
-  const rows = new Map<string, Array<{ mark: StepMark; kind: Kind }>>();
+  const rows = new Map<string, Array<{ mark: StepMark; kind: Kind; working: boolean }>>();
   for (const id of ONBOARD_STEPS) {
     const number = SETUP_PART_NUMBERS[id];
     if (number === undefined || (scope && !scope.includes(id))) continue;
@@ -417,6 +425,7 @@ export function setupPartProgress(
       {
         // A member's own skip (no --team) is theirs to finish, so it is never counted done.
         mark: memberOwnSkip(step) ? "act" : setupStepView(step, journal).mark,
+        working: step.state !== "done" && CLOUD_WORK.has(step.reason ?? ""),
         kind: setupWaitsOnAdmin(step, journal)
           ? "admin"
           : step.reason === "member_scope" &&
@@ -436,7 +445,8 @@ export function setupPartProgress(
     else if (own.some((s) => s.mark === "act" || s.mark === "fail")) {
       part.needs++;
       if (own.some((s) => s.mark === "fail")) part.failed++;
-    } else if (steps.some((s) => s.kind === "admin")) part.admin++;
+    } else if (own.some((s) => s.working)) part.working++;
+    else if (steps.some((s) => s.kind === "admin")) part.admin++;
     else if (steps.some((s) => s.kind === "aside")) part.aside++;
   }
   return progress;
@@ -488,6 +498,8 @@ export function setupTrackerRows(
           needsMark,
           `${steps(got.needs)} ${got.needs === 1 ? "needs" : "need"} someone`,
         );
+      if (got.working)
+        return row("later", `${steps(got.working)} still in progress`);
       if (got.admin) return row("act", waiting(got.admin));
       if (got.aside)
         return row(
@@ -612,7 +624,10 @@ export function setupFinalScreen(
     .filter((step) => {
       const m = setupStepView(step, journal, required.has(step.id)).mark;
       return (
-        (m === "act" || m === "fail" || adminLeft.has(step.id)) &&
+        (m === "act" ||
+          m === "fail" ||
+          adminLeft.has(step.id) ||
+          (step.state !== "done" && CLOUD_WORK.has(step.reason ?? ""))) &&
         (ONBOARD_DEPENDENCIES[step.id] ?? []).every((id) => {
           const parent = journal.steps.find((s) => s.id === id);
           return parent?.state === "done" || parent?.state === "skipped";
@@ -629,6 +644,10 @@ export function setupFinalScreen(
   const actions = unique
     .slice(0, 5)
     .map((step) => ({ id: step.id, text: action(step, base, journal) }));
+  // CTC-4744: the Next line is about what the person does; the cloud's own work is listed apart.
+  const personal = actions.filter(
+    (row) => !CLOUD_WORK.has(journal.steps.find((s) => s.id === row.id)?.reason ?? ""),
+  );
   const readiness = journal.steps.find((step) => step.id === "ready");
   const readinessCause =
     !paused &&
@@ -667,16 +686,18 @@ export function setupFinalScreen(
       ? `Follow ${ticketUrl ?? key} in Linear; Catalyst comments there as each phase finishes.`
       : heading === "Setup complete"
         ? `Next: move a ticket to ${dispatchStageName(firstTicket?.evidence?.stage)} in Linear.`
-        : journal.exit === 0 && actions[0]
-          ? `Next: ${actions[0].text[0]!.toLowerCase() + actions[0].text.slice(1)}`
-          : actions.length === 1
+        : journal.exit === 0 && personal[0]
+          ? `Next: ${personal[0].text[0]!.toLowerCase() + personal[0].text.slice(1)}`
+          : personal.length === 1
             ? "Next: run catalyst onboard after you finish 1."
-            : actions.length === 2
+            : personal.length === 2
               ? "Next: run catalyst onboard after you finish 1 and 2."
-              : actions.length
+              : personal.length
                 ? "Next: run catalyst onboard after you finish 1 to " +
-                  actions.length +
+                  personal.length +
                   "."
+                : actions.length
+                  ? "Next: nothing for you to do. catalyst ready shows when Catalyst has read the settings."
                 : readyStep?.reason === "member_team_required"
                   ? "Next: run catalyst onboard --team <KEY> to check again."
                   : "Next: run catalyst onboard to check again.";

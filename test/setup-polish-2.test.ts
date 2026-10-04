@@ -370,7 +370,7 @@ describe("setup polish 2", () => {
     async (id, reason) => {
       const f = memberEnd({ [id]: { state: "waiting", reason } });
       expect(await f.ui.checkAgain!(f.journal)).toBe(true);
-      expect(f.asked.at(-1)?.message).toBe("Done with these?");
+      expect(f.asked.at(-1)?.message).toBe("Check again once that's done?");
       const text = f.text();
       expect(text).toContain("1 thing needs you:");
       expect(text).not.toContain("Waiting on an owner or admin");
@@ -412,3 +412,49 @@ describe("setup polish 2", () => {
   });
 });
 
+
+// CTC-4744: Ryan's end of setup asked "Done with these?" under "1 thing needs you" for a settings read
+// only the cloud could finish, while `catalyst ready` said READY.
+describe("CTC-4744 — the end of setup says who does what, and asks one clear question", () => {
+  function ownerEnd(rows: Partial<Record<OnboardStepId, Partial<Step>>>) {
+    const f = fixture();
+    for (const id of ONBOARD_STEPS)
+      Object.assign(f.journal.steps.find((s) => s.id === id)!, { state: "done" }, rows[id] ?? {});
+    Object.assign(f.journal.steps.find((s) => s.id === "signin")!, { evidence: { role: "owner" } });
+    return f;
+  }
+  const unread = {
+    values: {
+      state: "waiting" as const,
+      reason: "required_values_unread",
+      evidence: { repositories: "coalesce-labs/catalyst-cloud" },
+    },
+  };
+
+  test("a settings read the cloud has not finished is in progress, not the person's job", async () => {
+    const f = ownerEnd(unread);
+    expect(await f.ui.checkAgain!(f.journal)).toBe(true);
+    const text = plain(f.text()).replace(/\s+/g, " ");
+    expect(text).not.toMatch(/needs you|needs someone/);
+    expect(text).toContain("Still in progress, nothing for you to do:");
+    expect(text).toContain("coalesce-labs/catalyst-cloud");
+    expect(text).toContain("still in progress");
+    expect(f.asked.at(-1)).toEqual({
+      message: "Catalyst is still reading the repositories' settings. Wait for it?",
+      labels: ["Wait and check again (about 1 minute)", "Finish now; check later with catalyst ready"],
+    });
+    f.ui.dispose();
+  });
+
+  test("something the person must do is named, and the question says what checking again is for", async () => {
+    const f = ownerEnd({ values: { state: "waiting", reason: "required_values_missing" } });
+    expect(await f.ui.checkAgain!(f.journal)).toBe(true);
+    expect(plain(f.text())).toContain("1 thing needs you:");
+    expect(f.asked.at(-1)).toEqual({
+      message: "Check again once that's done?",
+      labels: ["Check again now", "Finish now; run catalyst setup later to check again"],
+    });
+    expect(f.asked.map((a) => a.message)).not.toContain("Done with these?");
+    f.ui.dispose();
+  });
+});

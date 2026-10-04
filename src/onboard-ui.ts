@@ -9,6 +9,7 @@ import type { SetupRenderer } from "./setup-render.js";
 import { trackedPrompt } from "./setup-prompt-frame.js";
 import { createOnboardInterrupts } from "./onboard-interrupts.js";
 import {
+  CLOUD_WORK,
   setupStepView,
   CONNECTION_REPAIR_REASONS,
   setupFinalScreen,
@@ -488,10 +489,18 @@ export function createClackOnboardUi(
     const live = screen.actions.filter(
       (action) => step(action.id).reason !== "interrupted",
     );
-    const theirs = live.filter((action) =>
-      setupWaitsOnAdmin(step(action.id), journal),
+    // CTC-4744: what only the cloud's own work holds up is neither the person's nor an admin's.
+    const working = live.filter((action) =>
+      CLOUD_WORK.has(step(action.id).reason ?? ""),
     );
-    const mine = live.filter((action) => !theirs.includes(action));
+    const theirs = live.filter(
+      (action) =>
+        !working.includes(action) &&
+        setupWaitsOnAdmin(step(action.id), journal),
+    );
+    const mine = live.filter(
+      (action) => !theirs.includes(action) && !working.includes(action),
+    );
     // Steps only an owner or admin can do, less any already listed as their task above.
     const skipped = journal.steps.filter(
       (s) =>
@@ -512,7 +521,7 @@ export function createClackOnboardUi(
           : waiting
             ? "Next: run catalyst setup once they have."
             : "Next: run catalyst setup to check again.";
-    return { screen, mine, theirs, skipped, waiting, next, text, live };
+    return { screen, mine, theirs, working, skipped, waiting, next, text, live };
   };
   const summary = (journal: OnboardJournal) => {
     const sorted = sortActions(journal);
@@ -534,6 +543,10 @@ export function createClackOnboardUi(
         renderer.item(`${i + 1}. `, sorted.text(action)),
       );
       if (screen.more) renderer.line(`and ${screen.more} more after these`);
+    }
+    if (sorted.working.length) {
+      renderer.line("Still in progress, nothing for you to do:");
+      for (const action of sorted.working) renderer.item("· ", sorted.text(action));
     }
     if (sorted.waiting) {
       renderer.line("Waiting on an owner or admin of your Catalyst workspace:");
@@ -1160,25 +1173,36 @@ export function createClackOnboardUi(
       }
     },
     async checkAgain(journal) {
+      const sorted = sortActions(journal);
       if (
         !renderer ||
         !interactive ||
         abort.signal.aborted ||
-        !sortActions(journal).mine.length
+        (!sorted.mine.length && !sorted.working.length)
       )
         return false;
       active = false;
       summary(journal);
       summaryShown = true;
+      // CTC-4744: one question, about one thing. When the person has something to do, checking
+      // again is for after they do it; when only the cloud is working, it is a wait.
+      const yours = sorted.mine.length > 0;
       const answer = await select(
         {
           ...options,
-          message: "Done with these?",
+          message: yours
+            ? `Check again once ${sorted.mine.length === 1 ? "that's" : "those are"} done?`
+            : "Catalyst is still reading the repositories' settings. Wait for it?",
           initialValue: "again",
-          options: [
-            { value: "again", label: "Check again now" },
-            { value: "stop", label: "Stop here" },
-          ],
+          options: yours
+            ? [
+                { value: "again", label: "Check again now" },
+                { value: "stop", label: "Finish now; run catalyst setup later to check again" },
+              ]
+            : [
+                { value: "again", label: "Wait and check again (about 1 minute)" },
+                { value: "stop", label: "Finish now; check later with catalyst ready" },
+              ],
         },
         true,
       );
