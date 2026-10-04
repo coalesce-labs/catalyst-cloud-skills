@@ -26,7 +26,7 @@ type Reading =
 
 /** The repositories a team's verdict covers, by name, for the one waiting line. */
 function teamRepositories(team: ContractTeam | undefined, check?: ContractReadinessCheck): string[] {
-  const fromCheck = check ? valuesFacts(check).repos.map((row) => row.repo) : [];
+  const fromCheck = check ? (valuesFacts(check).repos ?? []).map((row) => row.repo) : [];
   if (fromCheck.length) return fromCheck;
   const registered = (team as { repositories?: { registered?: unknown } } | undefined)?.repositories
     ?.registered;
