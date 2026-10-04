@@ -308,3 +308,33 @@ test("a selected runner is disclosed as a Docker start in the reviewed plan", ()
   expect(f.text()).not.toContain("check which runners can take work");
   f.ui.dispose();
 });
+
+// CTC-4739: the terminal draws the explanation under the runner row, then asks. The captures are
+// written beside the test output so a reviewer can see the frame a person sees.
+for (const fancy of [false, true]) {
+  test(`the runner question explains Yes and No under its row before asking (${fancy ? "terminal" : "plain"})`, async () => {
+    const f = fixture(true, "no", fancy);
+    f.ui.plan(f.journal, undefined, { localSync: false, scope: ["runner"] });
+    const before = f.text().length;
+    f.ui.stepStart("runner");
+    expect(await f.ui.chooseRunner!()).toBe(false);
+    const frame = f.text().slice(before);
+    // eslint-disable-next-line no-control-regex
+    const plain = frame.replace(/\x1b\[[0-9;?]*[A-Za-z]/g, "").replace(/\x1b\][^\x07\x1b]*(\x07|\x1b\\)/g, "");
+    const flat = plain.replace(/\s+/g, " ");
+    expect(flat).toContain("Run Catalyst's work on this machine");
+    expect(flat).toContain(
+      "Yes makes this computer pick up tickets and run agents in Docker with your workspace's AI accounts.",
+    );
+    expect(flat).toContain("No is right for a personal workstation: your workspace's runner hosts do the work.");
+    expect(flat).toContain("Pass --no-runner or --runner to skip this question next time.");
+    expect(flat).not.toMatch(/tenant/i);
+    const dir = process.env.CTC4739_CAPTURE_DIR;
+    if (dir) {
+      const { mkdirSync, writeFileSync } = await import("node:fs");
+      mkdirSync(dir, { recursive: true });
+      writeFileSync(`${dir}/runner-question-${fancy ? "terminal" : "plain"}.txt`, frame);
+    }
+    f.ui.dispose();
+  });
+}

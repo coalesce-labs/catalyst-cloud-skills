@@ -9,6 +9,8 @@ import {
 import type { OnboardJournal, OnboardStepId } from "./onboard.js";
 
 export const COMPUTER_CHECKS = ["machine", "cli", "skills", "legacy"] as const;
+/** The runner row when --no-runner was passed, so the plan says why no question comes (CTC-4739). */
+const RUNNER_DECLINED = "this computer will not take work, because --no-runner was passed";
 const PLAN = [
   ["On this computer", "signin", "you approve once in your browser"],
   ["On this computer", "housekeeping", "schedule the daily update"],
@@ -34,9 +36,12 @@ const PLAN = [
 export function standalonePlan(
   journal: OnboardJournal,
   scope?: readonly OnboardStepId[],
-  runnerSelected = false,
+  /** `true` for --runner, `false` for --no-runner, absent when setup will ask (CTC-4739). */
+  runner?: boolean,
   numbering: "parts" | "json" = "parts",
 ) {
+  const runnerSelected = runner === true;
+  const runnerDeclined = runner === false;
   const json = numbering === "json";
   const includes = (id: OnboardStepId) => !scope || scope.includes(id);
   const steps = new Map(journal.steps.map((step) => [step.id, step]));
@@ -77,7 +82,9 @@ export function standalonePlan(
           "runner",
           runnerSelected
             ? "start a Catalyst runner here with Docker"
-            : "optional; this computer takes work only if you choose it",
+            : runnerDeclined
+              ? RUNNER_DECLINED
+              : "optional; this computer takes work only if you choose it",
         );
       continue;
     }
@@ -93,9 +100,13 @@ export function standalonePlan(
     const reviewedDetail =
       id === "capacity" && includes("runner") && runnerSelected
         ? "start a Catalyst runner here with Docker"
-        : id === "capacity" && !includes("capacity")
-          ? "review the optional runner on this machine; start only if selected"
-          : detail;
+        : id === "capacity" && includes("runner") && runnerDeclined
+          ? includes("capacity")
+            ? `${detail}; ${RUNNER_DECLINED}`
+            : RUNNER_DECLINED
+          : id === "capacity" && !includes("capacity")
+            ? "review the optional runner on this machine; start only if selected"
+            : detail;
     rows.push({
       group: json ? group : setupPartHeading(SETUP_PART_OF[id], false),
       part: SETUP_PART_OF[id],

@@ -181,6 +181,23 @@ describe("parts and part-local numbers", () => {
     ]);
     expect(rows[0]!.group).toBe("Part 1 of 3: This computer");
   });
+
+  test("CTC-4739 — the terminal plan's runner row names --no-runner when it was passed", () => {
+    const journal = {
+      steps: ONBOARD_STEPS.map((id) => ({ id, state: "pending" as const })),
+    } as unknown as OnboardJournal;
+    const runnerRow = (runner: boolean | undefined) =>
+      standalonePlan(journal, undefined, runner).find(
+        (r) => r.title === "Run Catalyst's work on this machine",
+      )?.detail;
+    expect(runnerRow(false)).toBe(
+      "this computer will not take work, because --no-runner was passed",
+    );
+    expect(runnerRow(true)).toBe("start a Catalyst runner here with Docker");
+    expect(runnerRow(undefined)).toBe(
+      "optional; this computer takes work only if you choose it",
+    );
+  });
 });
 
 function journalWith(

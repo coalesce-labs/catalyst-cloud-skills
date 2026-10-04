@@ -1149,7 +1149,12 @@ export async function cmdOnboard(
   if (only) includeReviewed(only);
   else for (const id of ONBOARD_STEPS) reviewedScope.add(id);
   const planOptions = (journal: OnboardJournal) => ({
-    runner: args.flags.runner === true,
+    runner:
+      args.flags.runner === true
+        ? true
+        : args.flags["no-runner"] === true
+          ? false
+          : undefined,
     localSync: args.flags["local-sync"] === true || journal.localSync === true,
     scope: ONBOARD_STEPS.filter((id) => reviewedScope.has(id)),
   });

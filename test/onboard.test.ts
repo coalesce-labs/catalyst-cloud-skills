@@ -1506,6 +1506,39 @@ test("a runner-selected dry-run discloses Docker before consent without starting
   expect(existsSync(onboardStatePath(path))).toBe(false);
 });
 
+test("CTC-4739 — a --no-runner dry run says this computer will not take work, and why", async () => {
+  const path = home();
+  const output: string[] = [];
+  expect(
+    await cmdOnboard(
+      parseArgs(["onboard", "--no-runner", "--dry-run"]),
+      context(path, output),
+      {},
+      "0.15.0",
+    ),
+  ).toBe(0);
+  const text = output.join("\n");
+  expect(text).toContain(
+    "this computer will not take work, because --no-runner was passed",
+  );
+  expect(text).not.toContain("start a Catalyst runner here with Docker");
+  expect(existsSync(onboardStatePath(path))).toBe(false);
+});
+
+test("CTC-4739 — without a runner flag the dry-run plan names no flag", async () => {
+  const path = home();
+  const output: string[] = [];
+  expect(
+    await cmdOnboard(
+      parseArgs(["onboard", "--dry-run"]),
+      context(path, output),
+      {},
+      "0.15.0",
+    ),
+  ).toBe(0);
+  expect(output.join("\n")).not.toContain("--no-runner was passed");
+});
+
 test("the plain-text plan numbers each step the way JSON actions[].number does", async () => {
   // CTC-4680: the plan an agent reads on --dry-run, --json stderr and --headless keeps the numbers
   // `--json` reports, so an action can be matched to its plan row. Only the terminal restarts
