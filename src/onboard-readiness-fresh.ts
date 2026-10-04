@@ -14,6 +14,7 @@ export async function loadFreshTeamContract(
   cfg: CustomerConfig,
   teamIds: readonly string[],
   signal?: AbortSignal,
+  timeoutMs = READ_THROUGH_TIMEOUT_MS,
 ): Promise<LoadedContract> {
   const expiry = cfg.auth ? Date.parse(cfg.auth.expiresAt) - ctx.now().getTime() : 0;
   const bearer =
@@ -22,7 +23,7 @@ export async function loadFreshTeamContract(
   if (bearer)
     for (const id of new Set(teamIds)) {
       if (signal?.aborted) break;
-      const deadline = AbortSignal.timeout(READ_THROUGH_TIMEOUT_MS);
+      const deadline = AbortSignal.timeout(timeoutMs);
       try {
         const response = await ctx.fetch(
           `${normalizeBaseUrl(cfg.baseUrl)}/api/v1/agent/tenant/readiness?team=${encodeURIComponent(id)}`,

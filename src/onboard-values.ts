@@ -17,6 +17,8 @@ const waiting = (
 /** How long setup waits for the cloud to read a repository's settings, and how often it looks. */
 export const VALUES_WAIT_MS = 60_000;
 const VALUES_POLL_MS = 10_000;
+/** While waiting, one slow read-through can't stretch "up to 1 minute". */
+const WAIT_READ_TIMEOUT_MS = 10_000;
 
 type Reading =
   | { kind: "pass" }
@@ -59,10 +61,10 @@ export function onboardValuesAdapter(
       const cfg = loadConfig(ctx.home);
       const teamId = selectedOnboardTeam(journal);
       if (!cfg || !teamId) return waiting("required_values_unverified");
-      const read = async (): Promise<Reading> => {
+      const read = async (timeoutMs?: number): Promise<Reading> => {
         let loaded: Awaited<ReturnType<typeof loadFreshTeamContract>>;
         try {
-          loaded = await loadFreshTeamContract(ctx, cfg, [teamId], signal);
+          loaded = await loadFreshTeamContract(ctx, cfg, [teamId], signal, timeoutMs);
         } catch {
           return { kind: "unverified" };
         }
@@ -87,14 +89,27 @@ export function onboardValuesAdapter(
         deps.message?.(
           `Waiting for Catalyst to read the settings of ${named(reading.repositories)} (up to 1 minute)…`,
         );
+        // Bounded twice: by the clock, and by attempts (a test's clock may stand still).
+        const deadline = Date.now() + VALUES_WAIT_MS;
+        const stopped = new Promise<void>((resolve) => {
+          if (signal?.aborted) resolve();
+          else signal?.addEventListener("abort", () => resolve(), { once: true });
+        });
         for (
-          let waited = 0;
-          reading.kind === "unread" && waited < VALUES_WAIT_MS && !signal?.aborted;
-          waited += VALUES_POLL_MS
+          let attempt = 0;
+          reading.kind === "unread" &&
+          attempt < VALUES_WAIT_MS / VALUES_POLL_MS &&
+          Date.now() < deadline &&
+          !signal?.aborted;
+          attempt++
         ) {
-          await deps.sleep(VALUES_POLL_MS);
+          // Ctrl-C ends the pause at once, not at the next poll.
+          await Promise.race([
+            deps.sleep(Math.min(VALUES_POLL_MS, Math.max(0, deadline - Date.now()))),
+            stopped,
+          ]);
           if (signal?.aborted) break;
-          reading = await read();
+          reading = await read(WAIT_READ_TIMEOUT_MS);
         }
       }
       if (signal?.aborted) return waiting("interrupted");

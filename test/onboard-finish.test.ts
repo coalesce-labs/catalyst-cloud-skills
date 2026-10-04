@@ -244,7 +244,7 @@ describe("CTC-4744 — the end of setup reads a fresh verdict and waits instead 
 
   test.each([
     ["required_values_unread", false],
-    ["required_values_unverified", false],
+    ["required_values_unverified", true],
     ["required_values_missing", true],
   ] as const)("with values %s, setup %s offers a first ticket", async (reason, offered) => {
     const adapters: Partial<Record<OnboardStepId, OnboardAdapter>> = {};

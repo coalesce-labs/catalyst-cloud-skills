@@ -446,6 +446,16 @@ describe("CTC-4744 — the end of setup says who does what, and asks one clear q
     f.ui.dispose();
   });
 
+  test("the --json view says the cloud's own work is Catalyst's, for an owner and a member alike", () => {
+    for (const role of ["owner", "member"]) {
+      const j = journalWith({ values: unread.values });
+      for (const step of j.steps) if (step.id !== "values") step.state = "done";
+      Object.assign(j.steps.find((s) => s.id === "signin")!, { evidence: { role } });
+      const action = onboardJsonView(j).actions.find((a) => a.step === "values");
+      expect(action?.who).toBe("catalyst");
+    }
+  });
+
   test("something the person must do is named, and the question says what checking again is for", async () => {
     const f = ownerEnd({ values: { state: "waiting", reason: "required_values_missing" } });
     expect(await f.ui.checkAgain!(f.journal)).toBe(true);

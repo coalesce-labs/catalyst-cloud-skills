@@ -313,7 +313,7 @@ export const ONBOARD_DEPENDENCIES: Partial<
     "linear.automations",
     "accounts",
     "capacity",
-    // CTC-4744: work is offered only once the values check has finished (dependencySettled).
+    // CTC-4744: no work is offered while the cloud is still reading the settings (dependencySettled).
     "values",
   ],
 };
@@ -945,15 +945,18 @@ function sanitizedResult(
   return row;
 }
 
-/** CTC-4744: whether a step a later one depends on has settled. A values check that finished and
- *  found missing values has settled: the first phase needs no values, and the missing ones are
- *  named for the person. One that has not finished has not. */
+/** CTC-4744: whether a step a later one depends on has settled. Only the cloud actively reading
+ *  the settings (`required_values_unread`, after setup's own one-minute wait) holds a first
+ *  ticket. A finished check that found missing values has settled: the first phase needs no
+ *  values, and the missing ones are named. So has one that could not be checked at all (an older
+ *  cloud, a cached contract): holding work on it would hold it for good. */
 export function dependencySettled(step: OnboardStep | undefined): boolean {
   return (
     stepSatisfied(step) ||
     (step?.id === "values" &&
       step.state === "waiting" &&
-      step.reason === "required_values_missing")
+      step.reason !== "required_values_unread" &&
+      step.reason !== "interrupted")
   );
 }
 

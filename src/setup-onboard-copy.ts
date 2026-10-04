@@ -1,4 +1,5 @@
 import {
+  dependencySettled,
   ONBOARD_DEPENDENCIES,
   ONBOARD_STEPS,
   ONBOARD_TITLES,
@@ -630,7 +631,7 @@ export function setupFinalScreen(
           (step.state !== "done" && CLOUD_WORK.has(step.reason ?? ""))) &&
         (ONBOARD_DEPENDENCIES[step.id] ?? []).every((id) => {
           const parent = journal.steps.find((s) => s.id === id);
-          return parent?.state === "done" || parent?.state === "skipped";
+          return parent?.state === "skipped" || dependencySettled(parent);
         })
       );
     })
@@ -821,7 +822,10 @@ export function onboardJsonView(
       number: SETUP_NUMBERS[action.id] ?? 0,
       text: text.charAt(0).toUpperCase() + text.slice(1),
       ...(url ? { url } : {}),
-      who: admin
+      // CTC-4744: the cloud's own work is nobody's to do.
+      who: CLOUD_WORK.has(step.reason ?? "")
+        ? "catalyst"
+        : admin
         ? "admin"
         : action.id === "github.install"
           ? "github-org-admin"
