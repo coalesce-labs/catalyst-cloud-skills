@@ -814,6 +814,27 @@ test("the runner question defaults to no, and only an explicit yes starts one", 
   expect(cancelled.ui.signal.aborted).toBe(true);
 });
 
+test("CTC-4739 — the runner question says what Yes and No mean, and the flags that skip it, before it asks", async () => {
+  const { ui, events } = fixture("no");
+  expect(await ui.chooseRunner!()).toBe(false);
+  const ask = events.findIndex((e) => e.kind === "select");
+  const said = events
+    .slice(0, ask)
+    .map((e) => e.text ?? "")
+    .join("\n");
+  expect(ask).toBeGreaterThan(0);
+  expect(said).toContain(
+    "Yes makes this computer pick up tickets and run agents in Docker with your workspace's AI accounts",
+  );
+  expect(said).toContain("uses this computer's CPU and memory while it is on");
+  expect(said).toContain(
+    "No is right for a personal workstation: your workspace's runner hosts do the work.",
+  );
+  expect(said).toContain("--no-runner");
+  expect(said).toContain("--runner");
+  expect(said).not.toMatch(/tenant/i);
+});
+
 test("the first-ticket question lists the offered tickets, then a sample and skip", async () => {
   const pick = fixture("ENG-2");
   expect(

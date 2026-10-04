@@ -502,6 +502,27 @@ describe("headless runner integration", () => {
     expect(info).toHaveBeenCalledTimes(choice === "yes" ? 1 : 0);
   });
 
+  test.each([
+    ["--headless", ["onboard", "--headless", "--json"]],
+    ["CATALYST_ONBOARD_HEADLESS=1", ["onboard", "--json"]],
+  ] as const)("CTC-4739 — a headless runner no (%s) is named as the headless input, never as a --no-runner nobody typed", async (how, given) => {
+    const f = runnerFixture("no");
+    if (how !== "--headless") f.ctx.env.CATALYST_ONBOARD_HEADLESS = "1";
+    const argv = [...given];
+    const planned = planOnboardHeadless(parseArgs(argv), f.ctx);
+    expect(planned.args.flags.headless).toBe(true);
+    const adapters: Partial<Record<OnboardStepId, OnboardAdapter>> = {};
+    for (const id of ONBOARD_STEPS) adapters[id] = { check: async () => ({ state: "done" }), act: async () => ({ state: "done" }) };
+    await runOnboardHeadless(parseArgs(argv), f.ctx, {
+      login: async () => { throw new Error("no supplied key"); },
+      onboard: (args, ctx, tracker) => cmdOnboard(args, ctx, headlessOnboardDeps({ adapters, bindSignals: false,
+        identity: async () => ({ account: "a", membershipId: "p", baseUrl: "https://cloud.example.test", role: "admin" }) }, tracker, false)),
+    }, "test");
+    const said = f.everything();
+    expect(said).toContain("this computer will not take work, because the headless runner input is no");
+    expect(said).not.toContain("--no-runner was passed");
+  });
+
   test.each([["no", false], ["no", true], ["yes", false], ["yes", true]] as const)("actual runtime runner %s preserves JSON actions and probes (scoped=%s)", async (choice, scoped) => {
     const f = runnerFixture(choice);
     const argv = ["onboard", "--headless", "--json", ...(scoped ? ["--only", "runner"] : [])];

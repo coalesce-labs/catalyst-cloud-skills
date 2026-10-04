@@ -376,6 +376,9 @@ export function planOnboardHeadless(args: ParsedArgs, ctx: Ctx): HeadlessPlan {
   delete flags["key-file"];
   delete flags.runner;
   delete flags["no-runner"];
+  // CATALYST_ONBOARD_HEADLESS=1 alone leaves the flag unset; the plan names the headless input
+  // rather than a --no-runner nobody typed (CTC-4739).
+  flags.headless = true;
   if (runner === "yes") flags.runner = true;
   if (runner === "no") flags["no-runner"] = true;
   return {
