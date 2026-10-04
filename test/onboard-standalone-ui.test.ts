@@ -338,3 +338,38 @@ for (const fancy of [false, true]) {
     f.ui.dispose();
   });
 }
+
+// CTC-4744: the new end of setup, drawn by the real renderer. With CTC4744_CAPTURE_DIR set, each
+// frame is written out for the pull request.
+for (const [name, values, answer] of [
+  ["cloud-reading", { state: "waiting", reason: "required_values_unread", evidence: { repositories: "coalesce-labs/catalyst-cloud" } }, "again"],
+  ["needs-you", { state: "waiting", reason: "required_values_missing", evidence: { requiredValues: JSON.stringify({ names: ["STRIPE_KEY"], unresolved: [], repos: [] }) } }, "stop"],
+] as const) {
+  for (const fancy of [false, true]) {
+    test(`CTC-4744 end of setup, ${name} (${fancy ? "terminal" : "plain"})`, async () => {
+      const f = fixture(true, answer, fancy);
+      for (const step of f.journal.steps) step.state = "done";
+      Object.assign(f.journal.steps.find((s) => s.id === "values")!, values);
+      Object.assign(f.journal.steps.find((s) => s.id === "first-ticket")!, { state: "skipped", reason: "first_ticket_skipped" });
+      Object.assign(f.journal.steps.find((s) => s.id === "signin")!, { evidence: { role: "owner" } });
+      f.journal.exit = 0;
+      f.ui.plan(f.journal);
+      const before = f.text().length;
+      await f.ui.checkAgain!(f.journal);
+      const frame = f.text().slice(before);
+      const flat = frame.replace(/\x1b\[[0-9;?]*[A-Za-z]/g, "").replace(/\s+/g, " ");
+      expect(flat).not.toMatch(/Done with these|tenant/i);
+      if (name === "cloud-reading") {
+        expect(flat).toContain("Still in progress, nothing for you to do:");
+        expect(flat).not.toMatch(/needs (you|someone)/);
+      } else expect(flat).toContain("1 thing needs you:");
+      const dir = process.env.CTC4744_CAPTURE_DIR;
+      if (dir) {
+        const { mkdirSync, writeFileSync } = await import("node:fs");
+        mkdirSync(dir, { recursive: true });
+        writeFileSync(`${dir}/end-${name}-${fancy ? "terminal" : "plain"}.txt`, frame);
+      }
+      f.ui.dispose();
+    });
+  }
+}

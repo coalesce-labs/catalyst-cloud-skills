@@ -630,7 +630,7 @@ export function onboardReasonText(
   // the cloud's work, not the person's.
   if (reason === "required_values_unread") {
     const which = typeof step.evidence?.repositories === "string" ? step.evidence.repositories : "this team's repositories";
-    return `Catalyst hasn't read the settings of ${which} yet, so their values aren't checked. You don't need to do anything: Catalyst reads them on its own, and catalyst ready shows when it has.`;
+    return `Catalyst hasn't finished reading the settings of ${which}, so it can't check the values yet. You don't need to do anything: Catalyst does this on its own, and catalyst ready shows when it's done.`;
   }
   if (reason === "required_values_missing") {
     let facts: unknown;
