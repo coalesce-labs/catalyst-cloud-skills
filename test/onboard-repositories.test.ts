@@ -49,7 +49,9 @@ describe("explicit repository selection", () => {
     const result = await f.adapter.check(f.ctx, f.journal);
     expect(result.state).toBe("done");
     expect(JSON.parse(String(result.evidence?.repository))).toEqual([{ ...repository, teamId: "team-a" }]);
-    expect(f.reads).toEqual(["GET /api/v1/repos", "GET /api/v1/agent/contract"]);
+    // CTC-4742: the per-person repository list is read first; this server has none (404), so the
+    // one-per-team registry answers, as before.
+    expect(f.reads).toEqual(["GET /api/v1/agent/repos", "GET /api/v1/repos", "GET /api/v1/agent/contract"]);
     expect(readFileSync(configPathFor(f.home), "utf8")).toBe(before);
     expect(JSON.stringify(result)).not.toContain("wrong-project-id");
   });
