@@ -1,4 +1,5 @@
 import {nativeEgressInstallCommands} from "./onboard-runner-egress.js";
+import { GITHUB_CONFIRM_ACCESS } from "./onboard-github-copy.js";
 import { INSTALL_COMMAND, loadConfig, normalizeBaseUrl } from "./config.js";
 import type { OnboardJournal, OnboardStep } from "./onboard.js";
 import { githubInstallationPage } from "./onboard-permissions.js";
@@ -266,7 +267,7 @@ const REASONS: Record<string, string> = {
   runner_admission_unverified:
     "Setup could not read whether the team's pool admits runner hosts. Run catalyst onboard again to retry.",
   github_app_permissions_outdated:
-    "GitHub App needs updated permissions. An organization owner on GitHub accepts the pending request on the App's installation page, then run catalyst onboard.",
+    `The existing GitHub App installation needs updated permissions accepted. ${GITHUB_CONFIRM_ACCESS} An organization owner on GitHub opens the App's installation page, chooses Review permissions, then Accept new permissions. Run catalyst onboard afterward.`,
   github_app_repository_missing:
     "The GitHub App installation cannot reach a repository a project registers. An organization owner on GitHub adds it under the installation's Repository access, then run catalyst onboard.",
   github_app_repository_not_installed:
@@ -406,7 +407,7 @@ function permissionText(
   switch (step.reason) {
     case "github_app_permissions_outdated":
       if (!url) return undefined;
-      return `GitHub App needs updated permissions${org ? ` on ${org}` : ""}${missing ? `: ${missing}` : ""}. ${github} reviews and accepts the request at ${url}, then run catalyst onboard.`;
+      return `The existing GitHub App installation${org ? ` on ${org}` : ""} needs updated permissions accepted${missing ? `: ${missing}` : ""}. ${GITHUB_CONFIRM_ACCESS} ${github} chooses Review permissions, then Accept new permissions at ${url}. Run catalyst onboard afterward.`;
     case "github_app_repository_missing":
       if (!url || !repository) return undefined;
       return `The GitHub App installation${org ? ` on ${org}` : ""} cannot reach ${repository}, which a project registers. ${github} adds it under Repository access at ${url}, then run catalyst onboard.`;

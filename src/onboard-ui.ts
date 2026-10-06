@@ -371,7 +371,7 @@ export function createClackOnboardUi(
     if (
       renderer &&
       currentStep === "linear.adopt" &&
-      text.endsWith("already has every state and label")
+      text.endsWith("has every required state and label")
     )
       return;
     if (renderer) {
