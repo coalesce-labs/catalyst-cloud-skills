@@ -1,0 +1,1 @@
+Address independent review: preserve workflow_dispatch dry-run rehearsal, including npm prepublishOnly dry-run configuration; actual publication still requires the approved matching tag. Shared guard also checks both SDK replica direct pins.
