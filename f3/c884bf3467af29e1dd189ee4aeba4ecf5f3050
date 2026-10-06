@@ -1,0 +1,1 @@
+Correct the private-repository canonical fetch: publication compares the local declaration with reviewed cloud deployment metadata and still refuses stale, unreadable or undeployed plans.
