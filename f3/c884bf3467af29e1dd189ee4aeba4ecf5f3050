@@ -1,1 +1,6 @@
-Correct the private-repository canonical fetch: publication compares the local declaration with reviewed cloud deployment metadata and still refuses stale, unreadable or undeployed plans.
+Revision history for #307:
+
+rev 2 (content) 2026-10-06 21:00 UTC — Correct the private-repository canonical fetch: publication compares the local declaration with reviewed cloud deployment metadata and still refuses stale, unreadable or undeployed plans.
+rev 1 (initial) 2026-10-06 21:00 UTC
+
+<!-- mergify-revision-data: {"schema_version":1,"pull_number":307,"entries":[{"number":1,"change_type":"initial","old_sha":null,"new_sha":"c6df666ccb66fb4e1f1861cf0b00cbc98838025b","timestamp_iso":"2026-10-06T21:00:44Z","reason":"","replay_sha":null,"compare_url":null},{"number":2,"change_type":"content","old_sha":"c6df666ccb66fb4e1f1861cf0b00cbc98838025b","new_sha":"f3c884bf3467af29e1dd189ee4aeba4ecf5f3050","timestamp_iso":"2026-10-06T21:00:44Z","reason":"Correct the private-repository canonical fetch: publication compares the local declaration with reviewed cloud deployment metadata and still refuses stale, unreadable or undeployed plans.","replay_sha":null,"compare_url":"https://github.com/coalesce-labs/catalyst-cloud-skills/compare/c6df666ccb66fb4e1f1861cf0b00cbc98838025b...f3c884bf3467af29e1dd189ee4aeba4ecf5f3050"}]} -->
