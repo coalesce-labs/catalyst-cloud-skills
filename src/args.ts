@@ -311,6 +311,25 @@ export const FLAG_TABLES: Record<string, FlagTable> = {
       value: false,
       help: "raise: declare that nothing is blocked",
     },
+    "gates-pr": {
+      value: true,
+      repeat: true,
+      help: "raise: a PR whose hold the answer releases (repeatable; needs --released-by)",
+    },
+    "gates-label": {
+      value: true,
+      repeat: true,
+      help: "raise: the hold label the answer removes: hold or hold:preview (repeatable; default hold)",
+    },
+    "released-by": {
+      value: true,
+      repeat: true,
+      help: "raise: an option letter whose answer releases the hold (repeatable)",
+    },
+    "gates-repo": {
+      value: true,
+      help: "raise: the --gates-pr repository as owner/name (default: the account's only repository)",
+    },
     anyone: {
       value: false,
       help: "list: every open ask in the tenant, not only the ones assigned to you",
@@ -519,7 +538,7 @@ export const VERB_USAGE: Record<string, string> = {
     "watch [--team K] [--ticket T]... [--project P] [--exec CMD] [--cursor-file <path>] [--from cursor|head]",
   write:
     "write <comment <ticket> --body|--stdin [--parent] [--bookkeeping] [--as-user] | state <ticket> --slot|--state-id|--state-type | label <ticket> --add... --remove... | create --team --title [--description|--stdin] [--label] [--priority] | reaction <ticket>|--comment <id> --emoji <e> | attachment <ticket> --title --url | session <ticket> [--title] [--plan-file] [--activity]>",
-  ask: "ask <raise --team --title [--context] [--option]... [--default] --blocks <ticket>...|--nothing-to-block [--ask-key] | accept <askTicket> --answer <commentId> --role <role> | list [--anyone] [--json]>",
+  ask: "ask <raise --team --title [--context] [--option]... [--default] --blocks <ticket>...|--nothing-to-block [--ask-key] [--gates-pr <n>... --released-by <letter>... [--gates-label hold|hold:preview]... [--gates-repo <owner/name>]] | accept <askTicket> --answer <commentId> --role <role> | list [--anyone] [--json]>",
   ready: "ready [--onboarding] [--local-sync] [--json] [--offline]",
   accounts: "accounts [--json]",
   mcp: "mcp <add <name> --url URL <--auth none|--bearer SECRET_NAME|--header NAME=SECRET_NAME...>|list|remove <name>> [--json]",
