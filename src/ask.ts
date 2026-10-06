@@ -40,6 +40,7 @@ async function raise(args: ParsedArgs, ctx: Ctx, doc: TenantContract, api: ApiCl
   if (options.length > doc.askTemplate.maxLetteredOptions) {
     throw new UsageError(`ask raise takes at most ${doc.askTemplate.maxLetteredOptions} options`);
   }
+  const gates = askGates(args, options, doc);
   const blocks: string[] = [];
   for (const t of flagList(args, "blocks")) blocks.push((await resolveIssue(api, t)).id);
   const body: Record<string, unknown> = { title, teamId: team.id };
@@ -49,9 +50,63 @@ async function raise(args: ParsedArgs, ctx: Ctx, doc: TenantContract, api: ApiCl
   if (blocks.length) body.blocks = blocks;
   if (flagBool(args, "nothing-to-block")) body.nothingToBlock = true;
   if (flagString(args, "ask-key")) body.askKey = flagString(args, "ask-key");
+  if (gates) body.gates = gates;
   const result = await postAgent<Record<string, unknown>>(api, doc, "ask", body);
   ctx.stdout(args.json ? JSON.stringify(result) : `ask raised: ${String(result.identifier ?? result.id ?? "ok")}${blocks.length ? ` (blocks ${blocks.length})` : ""}`);
   return 0;
+}
+
+/** The hold labels an answered ask may lift; the cloud's ask route refuses any other with a 400. */
+const GATE_LABELS = ["hold", "hold:preview"] as const;
+const OWNER_NAME = /^[^/\s]+\/[^/\s]+$/;
+
+export interface AskGates {
+  repo: string;
+  pr: number | number[];
+  labels: (typeof GATE_LABELS)[number][];
+  releasedBy: string[];
+}
+
+/** CTC-5044 — the PR hold an answer releases. Absent unless --gates-pr is given, so an ask without it
+ *  posts exactly the body it always did. Everything the route would refuse (a label outside
+ *  {@link GATE_LABELS}, a letter that is not one of this ask's options) is refused here first, before
+ *  any ticket is resolved or anything is posted. Options are lettered A, B, C in the order given. */
+function askGates(args: ParsedArgs, options: string[], doc: TenantContract): AskGates | undefined {
+  const prs = flagList(args, "gates-pr");
+  if (prs.length === 0) {
+    for (const f of ["released-by", "gates-label", "gates-repo"]) {
+      if (flagList(args, f).length || flagString(args, f)) throw new UsageError(`ask raise takes --${f} only with --gates-pr <n>`);
+    }
+    return undefined;
+  }
+  const pr = [...new Set(prs.map((n) => {
+    if (!/^[1-9]\d*$/.test(n)) throw new UsageError(`--gates-pr must be a PR number (got "${n}")`);
+    return Number(n);
+  }))];
+  const labels = [...new Set(flagList(args, "gates-label"))];
+  for (const l of labels) {
+    if (!(GATE_LABELS as readonly string[]).includes(l)) throw new UsageError(`--gates-label ${l} is not a hold an answer can release; use one of: ${GATE_LABELS.join(", ")}`);
+  }
+  const released = [...new Set(flagList(args, "released-by").map((l) => l.trim().toUpperCase()))];
+  if (released.length === 0) throw new UsageError("--gates-pr needs --released-by <letter>: the option whose answer releases the hold");
+  const letters = options.map((_, i) => String.fromCharCode(65 + i));
+  for (const l of released) {
+    if (!letters.includes(l)) throw new UsageError(`--released-by ${l} is not one of this ask's options (${letters.length ? letters.join(", ") : "it has none; add --option"})`);
+  }
+  const registered = doc.merge.repositories.map((r) => `${r.owner}/${r.name}`);
+  const named = flagString(args, "gates-repo");
+  let repo: string;
+  if (named !== undefined) {
+    if (!OWNER_NAME.test(named)) throw new UsageError(`--gates-repo must be owner/name (got "${named}")`);
+    const match = registered.find((r) => r.toLowerCase() === named.toLowerCase());
+    if (registered.length && !match) throw new UsageError(`--gates-repo ${named} is not a repository this account registers (${registered.join(", ")})`);
+    repo = match ?? named;
+  } else if (registered.length === 1) {
+    repo = registered[0]!;
+  } else {
+    throw new UsageError(`--gates-pr needs --gates-repo <owner/name>: this account registers ${registered.length ? registered.join(", ") : "no repository"}`);
+  }
+  return { repo, pr: pr.length === 1 ? pr[0]! : pr, labels: labels.length ? (labels as AskGates["labels"]) : ["hold"], releasedBy: released };
 }
 
 async function accept(args: ParsedArgs, ctx: Ctx, doc: TenantContract, api: ApiClient, rest: string[]): Promise<number> {

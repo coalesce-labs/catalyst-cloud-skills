@@ -18,6 +18,17 @@ Brainstorming, design back-and-forth, a question the human asked first, a retry-
 
 `--ask-key` is an idempotency key: a re-run with the same key does not file a second ask.
 
+## When the answer releases a PR hold
+
+When the decision is whether a held PR may merge, name the PR so the answer lifts the hold itself:
+
+- `--gates-pr <n>` (repeated): each PR the answer releases.
+- `--released-by <letter>` (repeated, required with `--gates-pr`): the option letters that release it. Options are lettered A, B, C in the order you gave them, and a letter outside that range is refused.
+- `--gates-label hold|hold:preview` (repeated, default `hold`): the labels the answer removes. No other label is accepted.
+- `--gates-repo <owner/name>`: the PR's repository. It defaults to the account's repository when the account registers exactly one, and must be one the account registers.
+
+An answer with any other letter leaves the labels in place.
+
 ## One ask per decision
 
 Run `node scripts/inbox.mjs` first. When the same decision is already open, attach the new held tickets to it (the `catalyst-linear` skill adds the relation or a comment) rather than filing a twin that splits its urgency.
