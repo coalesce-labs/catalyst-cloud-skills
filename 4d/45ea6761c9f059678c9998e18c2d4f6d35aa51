@@ -1,0 +1,6 @@
+Revision history for #310:
+
+rev 2 (content) 2026-10-06 23:27 UTC — Address independent review: required ask-shape label impact and repair, optional follow-up refusal is no-action-needed
+rev 1 (initial) 2026-10-06 23:27 UTC
+
+<!-- mergify-revision-data: {"schema_version":1,"pull_number":310,"entries":[{"number":1,"change_type":"initial","old_sha":null,"new_sha":"858e1d35c42c2c3aa99a9f2c2f3da8913f03d49d","timestamp_iso":"2026-10-06T23:27:56Z","reason":"","replay_sha":null,"compare_url":null},{"number":2,"change_type":"content","old_sha":"858e1d35c42c2c3aa99a9f2c2f3da8913f03d49d","new_sha":"cf821356c134ea314a610a492fb6f4e2bfba5fbe","timestamp_iso":"2026-10-06T23:27:56Z","reason":"Address independent review: required ask-shape label impact and repair, optional follow-up refusal is no-action-needed","replay_sha":null,"compare_url":"https://github.com/coalesce-labs/catalyst-cloud-skills/compare/858e1d35c42c2c3aa99a9f2c2f3da8913f03d49d...cf821356c134ea314a610a492fb6f4e2bfba5fbe"}]} -->
