@@ -55,6 +55,15 @@ function fixture(
   );
   return { ui, signals, text: () => text };
 }
+test("the install-engine continuation shows local sync inventory even while legacy repeats are hidden", () => {
+  const f = fixture(true);
+  f.ui.stepStart("legacy");
+  f.ui.showLocalSyncInventory!(["/tmp/replica.db (17 bytes)", "/tmp/cursor.json (5 bytes)"]);
+  expect(f.text()).toContain("/tmp/replica.db (17 bytes)");
+  expect(f.text()).toContain("/tmp/cursor.json (5 bytes)");
+  f.ui.dispose();
+});
+
 test("injected setup hides successful machine repeats and uses exact group/title", () => {
   const f = fixture();
   const j = journal();
