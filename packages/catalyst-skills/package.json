@@ -29,5 +29,8 @@
   ],
   "dependencies": {
     "@catalyst-cloud/cli": "0.15.6"
+  },
+  "scripts": {
+    "prepublishOnly": "node ../../scripts/release-train-check.mjs --publish cli"
   }
 }
