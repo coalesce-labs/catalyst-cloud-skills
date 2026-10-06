@@ -543,7 +543,7 @@ describe("actual installed HTTP SDK onboarding verifier", () => {
   test("config changes during final verified display refuse before publishing done evidence", async () => {
     const f = fixture();
     f.state.message = (text) => {
-      if (text.includes("already has every state and label")) {
+      if (text.includes("has every required state and label")) {
         const cfg = loadConfig(f.home)!;
         cfg.user!.id = "foreign-person";
         saveConfig(f.home, cfg);
@@ -821,7 +821,7 @@ describe("inline workflow adoption", () => {
       "Applied the Catalyst workflow to ENG: created 2 stages and 1 label.",
     );
     expect(await f.run()).toMatchObject({ state: "done" });
-    expect(f.messages.at(-1)).toBe("ENG already has every state and label");
+    expect(f.messages.at(-1)).toBe("ENG has every required state and label");
     const adoptCalls = f.calls.filter((c) => c.url.pathname.endsWith("/adopt"));
     expect(adoptCalls.every((c) => c.method === "POST")).toBe(true);
     expect(
@@ -841,6 +841,56 @@ describe("inline workflow adoption", () => {
       reason: "workflow_adoption_declined",
     });
     expect(f.state.adoptBodies).toEqual([{ team, mode: "preview" }]);
+  });
+
+  test.each(["fail", "unknown", "pass"])(
+    "fresh required-label check %s controls completion after apply, not optional exclusions",
+    async (labelState) => {
+      const f = adopting({ yes: true });
+      f.state.adoptReplies.push(() => Response.json(plan("abc-2")));
+      f.state.adoptReplies.push(() => {
+        f.state.workflow = wire(f.state.now);
+        f.state.workflow.readiness.checks = f.state.workflow.readiness.checks.map((check) =>
+          check.id === "labels_present" ? { ...check, state: labelState } : check,
+        );
+        return Response.json({
+          ...plan("abc-2", true),
+          labels: [{ name: labelState === "pass" ? "review-followup" : "catalyst-not-an-ask", outcome: "refused", reason: "Insufficient permission to create labels" }],
+          labelsNotCreated: [{ name: "parked-by-human", reason: "Optional for this cloud workflow; no action needed." }],
+        });
+      });
+      expect(await f.adapter.act!(f.ctx, f.journal, f.stop.signal)).toMatchObject({ state: "done" });
+      expect(await f.run()).toMatchObject(
+        labelState === "pass" ? { state: "done" } : { state: "waiting", reason: "workflow_mapping_unverified" },
+      );
+      expect(f.messages.join("\n")).toContain(`Linear refused label: ${labelState === "pass" ? "review-followup" : "catalyst-not-an-ask"}. Insufficient permission to create labels`);
+      if (labelState === "pass") {
+        expect(f.messages.join("\n")).toContain("Optional for the cloud workflow; no action is needed to finish setup.");
+        expect(f.messages.join("\n")).not.toContain("Ask a Linear workspace administrator");
+        expect(f.messages.at(-1)).toBe("ENG has every required state and label");
+      } else {
+        expect(f.messages.join("\n")).toContain("Required for the cloud workflow. Without this label, work held by the ask-shape check cannot be released.");
+        expect(f.messages.join("\n")).toContain("Ask a Linear workspace administrator to resolve the reported refusal and make this label available to the team");
+      }
+      if (labelState !== "pass") {
+        f.state.workflow = wire(f.state.now);
+        expect(await f.run()).toMatchObject({ state: "done" });
+        expect(f.state.adoptBodies).toHaveLength(2);
+      }
+    },
+  );
+
+  test("excluded names and reasons cannot inject terminal controls or lose long reasons", () => {
+    const reason = "No\u001b control\u202e characters\u200b. " + "Reason text. ".repeat(20);
+    const lines = adoptPlanLines({ stages: [], labels: [], labelsNotCreated: [{ name: "parked\n-by-human", reason }] });
+    expect(lines).toEqual([`Label not added: parked-by-human. No control characters. ${"Reason text. ".repeat(20).trim()}`]);
+  });
+
+  test("a malformed excluded entry is shown as incomplete evidence instead of crashing or hiding it in a count", () => {
+    expect(adoptPlanLines({ stages: [], labels: [], labelsNotCreated: [null, { name: "parked-by-human", reason: 17 }] })).toEqual([
+      "Label not added: Unnamed label. The server did not supply a reason; run catalyst onboard again to retry.",
+      "Label not added: parked-by-human. The server did not supply a reason; run catalyst onboard again to retry.",
+    ]);
   });
 
   test("--yes displays the exact plan before applying without a question", async () => {
@@ -1030,6 +1080,19 @@ describe("inline workflow adoption", () => {
       state: "waiting",
       reason: "workflow_login_refresh_required",
     });
+  });
+
+  test("names every excluded label with its reason, without a bare count or truncated omissions", () => {
+    const labelsNotCreated = Array.from({ length: 12 }, (_, n) => ({
+      name: `optional-label-${n}`,
+      reason: `Unsupported label ${n}: no action is needed for the cloud workflow.`,
+    }));
+    const value = { ...plan("abc-2"), labelsNotCreated };
+    const lines = adoptPlanLines(value);
+    for (const row of value.labelsNotCreated) {
+      expect(lines).toContain(`Label not added: ${row.name}. ${row.reason}`);
+    }
+    expect(lines.join("\n")).not.toMatch(/Labels that cannot be added: \d|and \d+ more/);
   });
 
   test("plan lines drop terminal controls from Linear names and bound long lists", () => {
