@@ -15,7 +15,7 @@ An ask is one decision only the human can make, filed as a ticket in their own L
 Scripts are run, never read. Each prints `--help`; exit 2 means this machine is not connected (the `catalyst-onboard` skill connects it), exit 1 means the check itself failed or an argument was missing.
 
 - `node scripts/inbox.mjs --help`: the open asks assigned to the connected person, most open tickets held first, then the oldest; `--anyone` for everyone's; `--json` for `{scope, asks}`.
-- `node scripts/raise.mjs --help`: file one decision: `--team`, `--title`, `--option` (repeated), `--default`, and `--blocks` (repeated) or `--nothing-to-block`.
+- `node scripts/raise.mjs --help`: file one decision: `--team`, `--title`, `--option` (repeated), `--default`, and `--blocks` (repeated) or `--nothing-to-block`. When the ask decides whether a held PR may merge, `--gates-pr` (repeated) with `--released-by <letter>` makes the answer lift that PR's hold label.
 - `node scripts/settle.mjs --help`: record the answering comment on an ask and post a release note on every ticket it held; `--close` moves the ask to the done slot.
 
 ## Load on demand

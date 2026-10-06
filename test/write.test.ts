@@ -1,12 +1,12 @@
 // write.test.ts — every write reads the route table (the fixture's unusual prefix proves it),
 // --bookkeeping prefixes the contract's marker, state moves resolve by slot and by state type, labels
 // resolve by name, a 429 names hostDailyWriteBudget, and the ask verbs post what the route expects.
-import { afterAll, beforeAll, beforeEach, describe, expect, test } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from "vitest";
 import { writeFileSync } from "node:fs";
 import { main } from "../src/cli";
 import { rankAsks } from "../src/ask";
 import { firstStateOfType } from "../src/write";
-import { FIXTURE_ROUTE_PREFIX } from "./fixture-contract";
+import { buildFixtureContract, FIXTURE_ROUTE_PREFIX } from "./fixture-contract";
 import { fixtureIssues, startMeFixture, type FixtureServer } from "./fixture";
 import { makeCtx, seedJoined, tempHome, type TestCtx } from "./helpers";
 
@@ -281,5 +281,67 @@ describe("more ask branches", () => {
     ];
     const ranked = rankAsks(issues, server.contract, () => true);
     expect(ranked).toEqual([{ identifier: "ENG-5", title: "q", state: "Todo", blocks: ["ENG-1", "ENG-2"], score: 2, assigneeId: null }]);
+  });
+});
+
+// CTC-5044 — an ask can name the PR hold its answer releases. The cloud removes the named labels when
+// the ask is answered with a releasing letter, so the CLI refuses what the route would refuse (an
+// unknown label, a letter that is not one of the options) before anything is posted.
+describe("ask raise --gates-pr (CTC-5044)", () => {
+  const base = ["ask", "raise", "--team", "ENG", "--title", "Ship it?", "--context", "c", "--option", "Release the hold", "--option", "Keep it held", "--default", "B", "--blocks", "ENG-1"];
+  const oneRepo = async () => {
+    const doc = buildFixtureContract();
+    doc.merge.repositories = [doc.merge.repositories[0]!];
+    server.contract = doc;
+    home = tempHome();
+    ctx = makeCtx(home);
+    await seedJoined(home, server);
+  };
+  afterEach(() => {
+    server.contract = buildFixtureContract();
+  });
+
+  test("the flags parse into gates: repo, every PR, every label, every releasing letter", async () => {
+    const code = await main([...base, "--gates-repo", "hagale/web", "--gates-pr", "5412", "--gates-pr", "5413", "--gates-label", "hold", "--gates-label", "hold:preview", "--released-by", "A"], ctx);
+    expect(code).toBe(0);
+    expect(server.writes[0]!.body).toMatchObject({ gates: { repo: "hagale/web", pr: [5412, 5413], labels: ["hold", "hold:preview"], releasedBy: ["A"] } });
+  });
+  test("one PR is a number, the label defaults to hold, a lowercase letter is uppercased, and the repo defaults to the account's only one", async () => {
+    await oneRepo();
+    expect(await main([...base, "--gates-pr", "5412", "--released-by", "a"], ctx)).toBe(0);
+    expect((server.writes[0]!.body as Record<string, unknown>).gates).toEqual({ repo: "hagale/api", pr: 5412, labels: ["hold"], releasedBy: ["A"] });
+  });
+  test("without --gates-pr the body carries no gates and is the same as before", async () => {
+    expect(await main(base, ctx)).toBe(0);
+    expect(server.writes[0]!.body).toEqual({ title: "Ship it?", teamId: "team-eng", context: "c", options: ["Release the hold", "Keep it held"], defaultIfSilent: "B", blocks: ["lin-eng-1"] });
+  });
+  test("a releasing letter that is not one of the options is refused and posts nothing", async () => {
+    expect(await main([...base, "--gates-repo", "hagale/web", "--gates-pr", "5412", "--released-by", "C"], ctx)).toBe(1);
+    expect(ctx.err.join("\n")).toMatch(/--released-by C is not one of this ask's options \(A, B\)/);
+    expect(server.writes).toHaveLength(0);
+  });
+  test("an unknown label is refused by name and posts nothing", async () => {
+    expect(await main([...base, "--gates-repo", "hagale/web", "--gates-pr", "5412", "--gates-label", "hold:hand-steps", "--released-by", "A"], ctx)).toBe(1);
+    expect(ctx.err.join("\n")).toMatch(/--gates-label hold:hand-steps .*hold, hold:preview/);
+    expect(server.writes).toHaveLength(0);
+  });
+  test("--gates-pr needs --released-by; gates flags without --gates-pr are refused; a PR must be a positive integer", async () => {
+    expect(await main([...base, "--gates-repo", "hagale/web", "--gates-pr", "5412"], ctx)).toBe(1);
+    expect(ctx.err.join("\n")).toMatch(/--released-by/);
+    const c2 = makeCtx(home);
+    expect(await main([...base, "--released-by", "A"], c2)).toBe(1);
+    expect(c2.err.join("\n")).toMatch(/only with --gates-pr/);
+    const c3 = makeCtx(home);
+    expect(await main([...base, "--gates-repo", "hagale/web", "--gates-pr", "#12", "--released-by", "A"], c3)).toBe(1);
+    expect(c3.err.join("\n")).toMatch(/--gates-pr must be a PR number/);
+    expect(server.writes).toHaveLength(0);
+  });
+  test("the repo must be named when the account has several, and must be one the account registers", async () => {
+    expect(await main([...base, "--gates-pr", "5412", "--released-by", "A"], ctx)).toBe(1);
+    expect(ctx.err.join("\n")).toMatch(/--gates-repo <owner\/name>.*hagale\/api, hagale\/web/);
+    const c2 = makeCtx(home);
+    expect(await main([...base, "--gates-repo", "hagale/nope", "--gates-pr", "5412", "--released-by", "A"], c2)).toBe(1);
+    expect(c2.err.join("\n")).toMatch(/hagale\/nope is not a repository this account registers/);
+    expect(server.writes).toHaveLength(0);
   });
 });
