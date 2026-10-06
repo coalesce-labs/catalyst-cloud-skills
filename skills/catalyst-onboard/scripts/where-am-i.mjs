@@ -1050,7 +1050,7 @@ const DECL_REASONS = {
     page: null,
   },
   declaration_awaiting_approval: {
-    text: "the declaration is proposed and waits for approval: Settings → Your projects → the project → Repositories → the repository → Environment → Setup declaration → Approve this revision",
+    text: "the declaration is proposed and waits for approval, because no review approved it (a non-author approval of the merged head, or a merge by an owner or admin): approve it at Settings → Your projects → the project → Repositories → the repository → Environment → Setup declaration → Approve this revision",
     who: "a workspace owner or admin",
     page: "/settings/projects",
   },
@@ -1058,7 +1058,7 @@ const DECL_REASONS = {
 const DECL_DO =
   "write .catalyst/catalyst.toml with references/declaring-a-repository.md, then open a pull request";
 let declNext =
-  "commit .catalyst/catalyst.toml to the repository and have an owner or admin approve it";
+  "merge .catalyst/catalyst.toml through a pull request that someone other than the author approves; that review approves it";
 if (!connected) {
   add(
     "repository declarations",
