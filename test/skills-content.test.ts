@@ -797,7 +797,8 @@ describe("the package manifest", () => {
     // CTC-4625: fast-wrap-ansi is the wrapper @clack/prompts itself ships with (already in the
     // tree); `catalyst setup` wraps with it directly, so it is declared at the same pinned version.
     expect(manifest.dependencies).toEqual({
-      "@catalyst-cloud/sdk": "0.14.1",
+      "@catalyst-cloud/sdk": "0.16.0",
+      "@catalyst-cloud/sdk-replica-node": "0.16.0",
       "@clack/prompts": "1.8.1",
       "fast-wrap-ansi": "0.2.2",
       "fast-string-width": "3.0.2",
@@ -2001,7 +2002,7 @@ describe("no customer-facing prose states a readiness check count", () => {
   // id, so that the next check added to the engine reddens this bundle instead of shipping an
   // incomplete page. That import does not exist from here yet, measured both ways:
   //   • `@catalyst-cloud/types` is not published — `npm view @catalyst-cloud/types version` → E404.
-  //   • `@catalyst-cloud/sdk`, our only `@catalyst-cloud` dependency, carries no check id at all:
+  //   • `@catalyst-cloud/sdk`, our transport SDK dependency, carries no check id at all:
   //     a search of node_modules/@catalyst-cloud/sdk for `oauth_scope|READINESS_CHECK_IDS|
   //     reviewer_configured` returns nothing, while the same search for `TenantContract` hits four
   //     files including dist/tenant-contract.d.ts — so the instrument reaches the tree.
