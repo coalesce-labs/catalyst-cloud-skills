@@ -1,4 +1,5 @@
 import type { Readable, Writable } from "node:stream";
+import { GITHUB_CONFIRM_ACCESS } from "./onboard-github-copy.js";
 import {
   COMPUTER_CHECKS,
   standalonePlan,
@@ -379,6 +380,8 @@ export function createClackOnboardUi(
         currentStep &&
         setupBrowserInstruction(currentStep, deps.baseUrl?.())
       ) {
+        if (currentStep === "github.install" && text === GITHUB_CONFIRM_ACCESS)
+          renderer.detail(text);
         if (/no browser opened|could not open a browser/i.test(text))
           browserOpened = false;
         return;
@@ -1324,6 +1327,8 @@ export function createClackOnboardUi(
             : "waiting for you, up to 10 minutes",
         );
         renderer.action(browser.instruction);
+        if (currentStep === "github.install")
+          renderer.detail(GITHUB_CONFIRM_ACCESS);
         if (browser.url) renderer.detail(renderer.link(browser.url));
         renderer.detail(
           renderer.dim(
