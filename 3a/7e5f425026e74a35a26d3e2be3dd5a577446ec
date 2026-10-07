@@ -1,1 +1,6 @@
-Address independent Standards review: retain GitHub account confirmation guidance in the replacement wait frame, with failing-then-passing ASCII and Unicode visible-frame regressions.
+Revision history for #312:
+
+rev 2 (content) 2026-10-07 00:03 UTC — Address independent Standards review: retain GitHub account confirmation guidance in the replacement wait frame, with failing-then-passing ASCII and Unicode visible-frame regressions.
+rev 1 (initial) 2026-10-07 00:03 UTC
+
+<!-- mergify-revision-data: {"schema_version":1,"pull_number":312,"entries":[{"number":1,"change_type":"initial","old_sha":null,"new_sha":"559c516d2414232d5ff33853dc7b31daceccc532","timestamp_iso":"2026-10-07T00:03:12Z","reason":"","replay_sha":null,"compare_url":null},{"number":2,"change_type":"content","old_sha":"559c516d2414232d5ff33853dc7b31daceccc532","new_sha":"3a7e5f425026e74a35a26d3e2be3dd5a577446ec","timestamp_iso":"2026-10-07T00:03:12Z","reason":"Address independent Standards review: retain GitHub account confirmation guidance in the replacement wait frame, with failing-then-passing ASCII and Unicode visible-frame regressions.","replay_sha":null,"compare_url":"https://github.com/coalesce-labs/catalyst-cloud-skills/compare/559c516d2414232d5ff33853dc7b31daceccc532...3a7e5f425026e74a35a26d3e2be3dd5a577446ec"}]} -->
