@@ -4,6 +4,7 @@ import { expect, test, vi } from "vitest";
 import { createClackOnboardUi } from "../src/onboard-ui.js";
 import { createSetupRenderer } from "../src/setup-render.js";
 import { ONBOARD_STEPS, type OnboardJournal } from "../src/onboard.js";
+import { GITHUB_CONFIRM_ACCESS } from "../src/onboard-github-copy.js";
 const journal = (): OnboardJournal => ({
   schema: 1,
   runId: "test",
@@ -55,6 +56,25 @@ function fixture(
   );
   return { ui, signals, text: () => text };
 }
+
+test.each([false, true])("GitHub confirmation reaches the terminal before a direct handoff and remains while waiting (unicode=%s)", async (unicode) => {
+  const f = fixture(false, false, unicode);
+  try {
+    f.ui.stepStart("github.install");
+    f.ui.message("private adapter log: https://github.com/install?state=private-handoff");
+    f.ui.message(GITHUB_CONFIRM_ACCESS);
+    expect(f.text().replace(/\s+/g, " ")).toContain(GITHUB_CONFIRM_ACCESS);
+    expect(f.text()).not.toContain("private-handoff");
+    const beforeWait = f.text().length;
+    await f.ui.wait("Waiting for GitHub approval", async () => {
+      const waiting = f.text().slice(beforeWait).split("\u001b[J").at(-1) ?? "";
+      expect(waiting.replace(/\s+/g, " ")).toContain(GITHUB_CONFIRM_ACCESS);
+      expect(waiting).not.toContain("private-handoff");
+    });
+  } finally {
+    f.ui.dispose();
+  }
+});
 test("injected setup hides successful machine repeats and uses exact group/title", () => {
   const f = fixture();
   const j = journal();
