@@ -267,7 +267,31 @@ export function manyIssues(n: number): Record<string, unknown>[] {
   );
 }
 
-function issueDetail(row: Record<string, unknown>): Record<string, unknown> {
+function fixtureBlockers(row: Record<string, unknown>, issues: Record<string, unknown>[]) {
+  return issues.filter((candidate) => {
+    const terminal = candidate.state_type != null
+      ? ["completed", "canceled", "duplicate"].includes(String(candidate.state_type))
+      : ["done", "canceled", "cancelled", "duplicate"].includes(String(candidate.state).toLowerCase());
+    return !terminal && Array.isArray(candidate.relations) && candidate.relations.some(
+      (relation) => relation?.type === "blocks" && relation.related_identifier === row.identifier,
+    );
+  }).map((candidate) => {
+    const names = Array.isArray(candidate.labels) ? candidate.labels.map((label) => label.name) : [];
+    return {
+      identifier: candidate.identifier,
+      title: candidate.title,
+      state: candidate.state,
+      is_ask: names.some((name) => name === "catalyst-ask" || String(name).startsWith("ask/")),
+      is_approval: names.includes("ask/approval"),
+      is_decided: false,
+      unresolved: false,
+      assignee_id: candidate.assignee_id ?? null,
+      assignee_name: candidate.assignee_name ?? candidate.assignee ?? null,
+    };
+  });
+}
+
+function issueDetail(row: Record<string, unknown>, issues: Record<string, unknown>[]): Record<string, unknown> {
   return {
     ...row,
     description: `Description of ${row.identifier}`,
@@ -315,7 +339,7 @@ function issueDetail(row: Record<string, unknown>): Record<string, unknown> {
         ? [{ repo_id: "repo-api", number: 41, node_id: "PR_kwDOfixture41" }]
         : [],
     agent_sessions: [],
-    blocked_by: [],
+    blocked_by: fixtureBlockers(row, issues),
   };
 }
 
@@ -1114,7 +1138,7 @@ export async function startMeFixture(
         (r) => r.identifier === ref || r.id === ref,
       );
       return row
-        ? send(200, issueDetail(row))
+        ? send(200, issueDetail(row, state.issues))
         : send(404, { error: "not found" });
     }
     if (path === "/api/v1/pulls") {
