@@ -182,6 +182,7 @@ function issue(over: Record<string, unknown>): Record<string, unknown> {
     title: `Title of ${over.identifier}`,
     state: "Todo",
     state_id: null,
+    state_type: null,
     assignee: null,
     assignee_id: null,
     assignee_name: null,
@@ -314,6 +315,7 @@ function issueDetail(row: Record<string, unknown>): Record<string, unknown> {
         ? [{ repo_id: "repo-api", number: 41, node_id: "PR_kwDOfixture41" }]
         : [],
     agent_sessions: [],
+    blocked_by: [],
   };
 }
 
