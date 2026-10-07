@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.16.0
+
+The CLI, skills and plugin now share the 0.16 release line with the SDK and installer. The CLI installs the matching Node replica module for local cache commands. Update the CLI to get the matching skills and plugin.
+
 ## 0.15.6
 
 Setup checks current readiness and waits up to one minute while Catalyst reads repository settings.
