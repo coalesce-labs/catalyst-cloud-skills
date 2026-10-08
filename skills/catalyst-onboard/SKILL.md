@@ -36,7 +36,7 @@ Default invited-member setup handles personal accounts and leaves workspace admi
 
 1. Run `node scripts/where-am-i.mjs --next` and read its one line; trust it over your memory of the last turn. A `note:` after it is worth one clause.
 2. Say what the step is for.
-3. Ask one question or do one thing. Run a `do:` command a key can run and show its output; hand over a browser step as `references/what-the-browser-owns.md` says.
+3. Ask one question or do one thing. Offer to run every step a command can do, run it on a yes and show its output; hand over a browser step only as `references/what-the-browser-owns.md` says.
 4. Wait for the answer. Two or three short sentences a turn; the full report is for you, not to paste.
 5. Re-run the script and read back the part that should have changed. Still unchanged after one `catalyst contract --refresh`: report both what the page said and what the instrument says.
 
@@ -55,7 +55,7 @@ Scripts are run, never read; each prints `--help`.
 | logging in, a refused or expired login, which account this is, the Linear identity | `references/connecting-this-machine.md` |
 | anything reports not ready, a check id, or who fixes something | `references/reading-ready.md` |
 | the coding account or the `host` part, or before saying work can run | `references/what-a-phase-needs.md`; a credential to replace, `references/replacing-a-credential.md` |
-| a browser step, or confirming a page that said it worked | `references/what-the-browser-owns.md` |
+| which steps a command does and which need a browser, or confirming a page that said it worked | `references/what-the-browser-owns.md` |
 | the repository's `.catalyst/catalyst.toml` and its approval; its AGENTS.md block and agent layout | `references/declaring-a-repository.md`; `references/repository-agent-setup.md` |
 | the replica or event cache | `references/local-sync.md` |
 | local SQL, only when `catalyst replica status --json` reports `configured: true` | `references/local-replica.md` |

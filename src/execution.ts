@@ -54,7 +54,7 @@ export const EXCLUSION_REASONS: Record<string, string> = {
 export const UNKNOWN_REASONS: Record<string, string> = {
   ordering_never_published: "the dispatch order has never been published for this team — usually because the team has no saved stage mapping, which does not clear by itself",
   ordering_stale: "the dispatch order is stale",
-  workflow_mapping_unknown: "the team has no saved stage mapping for dispatch, pr, done and canceled (or a mapped stage was deleted); it does not clear by itself — a workspace owner or admin maps the team on its Linear workflow page (Settings → Your projects → the project → Linear workflow for <team>), or runs catalyst team map <KEY>",
+  workflow_mapping_unknown: "the team has no saved stage mapping for dispatch, pr, done and canceled (or a mapped stage was deleted); it does not clear by itself; a workspace owner or admin runs catalyst team map <KEY>, or catalyst team adopt <KEY> to create Catalyst's stages",
   ticket_unknown: "the ticket is not in the mirror",
   dependency_snapshot_unknown: "the dependency snapshot has never completed",
   blocker_unknown: "a blocking relation could not be resolved",
@@ -440,7 +440,7 @@ export async function cmdAccounts(args: ParsedArgs, ctx: Ctx): Promise<number> {
     return 0;
   }
   if (accounts.length === 0) {
-    ctx.stdout(`No coding accounts are enrolled on this tenant — enrol one at ${normalizeBaseUrl(cfg.baseUrl)}/settings/coding-accounts`);
+    ctx.stdout(`No coding accounts are enrolled in this workspace. A workspace owner or admin adds one at ${normalizeBaseUrl(cfg.baseUrl)}/settings/coding-accounts; there is no command for that yet.`);
     return 0;
   }
   for (const a of accounts) ctx.stdout(renderAccount(a));

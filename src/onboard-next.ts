@@ -136,7 +136,7 @@ const REASONS: Record<string, string> = {
   team_create_unverified:
     "Setup could not confirm whether the Linear team was created. Check Linear for it before creating it again.",
   team_create_grant_required:
-    "Your own Linear connection is missing or has lapsed. Reconnect it in Settings → Connected accounts, then run catalyst onboard. Nothing was created.",
+    "Your own Linear connection is missing or has lapsed. Reconnect it with catalyst connections personal linear start and approve the link it prints, then run catalyst onboard. Nothing was created.",
   team_create_identity_unverified:
     "Your login changed while setup was creating a team. Resume with the original workspace and person.",
   team_choice_required:
@@ -514,13 +514,10 @@ export function onboardReasonText(
   // A member is told which admin action is left and where an admin takes it.
   if (reason === "member_scope") {
     const key = onboardTeamKey(context.journal);
+    if (step.id === "linear.adopt")
+      return `Only a Catalyst owner or admin can set up the team's Catalyst workflow. Ask one to run catalyst team adopt ${key ?? "<TEAM KEY>"}.`;
     const adminOnly: Partial<Record<OnboardStep["id"], [string, string, string]>> = {
       "linear.workspace": ["connect Linear", "/settings/connections", " and connect it there"],
-      "linear.adopt": [
-        "set up the team's Catalyst workflow",
-        key ? `/settings/linear-teams/${encodeURIComponent(key)}/adopt` : "/settings/projects",
-        "",
-      ],
     };
     const admin = adminOnly[step.id];
     if (admin) {
@@ -555,7 +552,7 @@ export function onboardReasonText(
     const where = context.baseUrl
       ? `at ${normalizeBaseUrl(context.baseUrl)}/settings/coding-accounts`
       : "in the web app on the Settings → AI accounts page";
-    return `No AI account in this workspace can take work yet. A workspace owner or administrator checks them ${where}: one may need its key replaced, or may have reached its usage limit. Then run catalyst onboard.`;
+    return `No AI account in this workspace can take work yet. Run catalyst accounts to see which one needs work. A workspace owner or administrator fixes it ${where}, since no command does that yet: one may need its key replaced, or may have reached its usage limit. Then run catalyst onboard.`;
   }
   if (reason === "account_enrollment_required") {
     const where = context.baseUrl
@@ -615,7 +612,7 @@ export function onboardReasonText(
     const where = context.baseUrl
       ? `at ${normalizeBaseUrl(context.baseUrl)}/settings/account-keys`
       : "on the web app's Account API keys page";
-    return `The runner is enrolled, but it takes no work without an organization key. A workspace owner or administrator creates one with the mirror:read, mirror:write and mirror:feed scopes ${where} and saves it in a file only they can read. Then run catalyst onboard --runner with CATALYST_RUNNER_ORG_KEY_FILE set to that file.`;
+    return `The runner is enrolled, but it takes no work without an organization key. A workspace owner or administrator runs catalyst onboard --runner on this machine; it mints the key and stores it for the runner. If their cloud cannot mint one yet, they create one with the mirror:read, mirror:write and mirror:feed scopes ${where}, save it in a file only they can read, and run catalyst onboard --runner with CATALYST_RUNNER_ORG_KEY_FILE set to that file.`;
   }
   if (reason === "runner_host_not_ready") {
     const failing = step.evidence?.failing;

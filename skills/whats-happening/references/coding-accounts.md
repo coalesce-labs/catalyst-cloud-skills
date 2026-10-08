@@ -1,6 +1,6 @@
 # Coding accounts
 
-snapshot.mjs --accounts omits credentials/emails. An owner/admin enrols, pauses, removes or replaces credentials at `<their cloud>/settings/coding-accounts`.
+snapshot.mjs --accounts omits credentials/emails. An owner/admin enrols, pauses, removes or replaces credentials at `<their cloud>/settings/coding-accounts`; no command does these yet. `catalyst accounts` reads them.
 
 Slots identify credentials, not emails. Claude/GLM/Qwen use Claude CLI, Codex uses Codex; GLM/Qwen also use OpenCode. Routing names the model.
 

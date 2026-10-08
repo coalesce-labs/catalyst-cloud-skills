@@ -71,7 +71,7 @@ const IMPORT_REASONS: Record<string, string> = {
   name_taken_by_env_var: "already a plain environment variable; a name is a secret or a variable, never both",
   invalid_name: "not an env-style name (A-Z, 0-9 and _, starting with a letter)",
   invalid_value: "the value is empty",
-  config_rotation_unconfirmed: "the existing entry is a readable config value; change it in the app",
+  config_rotation_unconfirmed: "the existing entry is a plain variable; change it with catalyst var set",
   probe_refused: "the value failed this kind's check",
 };
 
@@ -108,7 +108,7 @@ function refusalLine(status: number, body: { error?: string; message?: string },
   if (status === 401) {
     return "refused (401): the cloud did not accept your credential here. If `catalyst me` works, this cloud predates secret writes from the CLI and needs a newer release; otherwise log in again.";
   }
-  if (status === 404) return `refused (404): ${repo} is not a repository of this tenant (register it in the app first)`;
+  if (status === 404) return `refused (404): ${repo} is not a repository of this workspace. Register it first with catalyst onboard --team <KEY> --repo ${repo}`;
   if (status === 409 && body.error === "registry_not_migrated") {
     return "refused (409): the cloud's secret audit is not set up yet, so nothing was stored. Tell your Catalyst operator.";
   }
