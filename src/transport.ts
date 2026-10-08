@@ -134,6 +134,26 @@ export class ApiClient {
     return { status: res.status, body: await this.parseBody<T>(res, `PUT ${path}`), headers: res.headers };
   }
 
+  async deleteJson(
+    path: string,
+    opts: { accept?: number[] } = {},
+  ): Promise<JsonResponse> {
+    const res = await this.send(this.url(path), {
+      method: "DELETE",
+      headers: {
+        authorization: `Bearer ${await this.credential()}`,
+        accept: "application/json",
+      },
+    });
+    if (!opts.accept?.includes(res.status))
+      await this.refuseIfNotOk(res, `DELETE ${path}`);
+    return {
+      status: res.status,
+      body: await this.parseBody<unknown>(res, `DELETE ${path}`),
+      headers: res.headers,
+    };
+  }
+
   private async send(url: string, init: RequestInit): Promise<Response> {
     try {
       return await this.fetchImpl(url, { ...init, signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) });

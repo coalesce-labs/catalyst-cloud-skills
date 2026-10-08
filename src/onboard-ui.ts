@@ -120,6 +120,7 @@ export interface OnboardUi {
   ): Promise<string | null>;
   /** "Run Catalyst's work on this machine?", default no. Null when cancelled. */
   chooseRunner?(): Promise<boolean | null>;
+  nameMachine?(defaultName: string): Promise<string | null>;
   /** CTC-4680 round 5: a browser link ran out of time. True gets a fresh link and another wait;
    *  false (stop, or Ctrl-C at the question) pauses setup so no later step runs without it. */
   retryTimedOut?(id: OnboardStepId): Promise<boolean>;
@@ -931,6 +932,23 @@ export function createClackOnboardUi(
       }
       return typeof answer === "string" ? answer : null;
     },
+    async nameMachine(defaultName) {
+      if (abort.signal.aborted) return null;
+      const answer = await text({
+        ...options,
+        message: "Name for this machine",
+        initialValue: defaultName,
+        validate: (value) =>
+          /^[A-Za-z0-9][A-Za-z0-9._-]{0,62}$/.test(value ?? "")
+            ? undefined
+            : "Use 1 to 63 letters, digits, dots, underscores or hyphens, starting with a letter or digit.",
+      });
+      if (typeof answer !== "string") {
+        abort.abort();
+        return null;
+      }
+      return answer;
+    },
     async chooseRunner() {
       if (abort.signal.aborted) return null;
       // CTC-4739: say what each answer does to this computer before asking, and how to skip it.
@@ -1417,6 +1435,7 @@ export function createClackOnboardUi(
     delete ui.chooseFirstRepository;
     delete ui.reviewSettings;
     delete ui.chooseRunner;
+    delete ui.nameMachine;
     delete ui.chooseFirstTicket;
     delete ui.retryTimedOut;
     delete ui.confirmWorkflowAdoption;

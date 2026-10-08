@@ -1,3 +1,4 @@
+import { cmdHosts, type HostsDeps } from "./hosts.js";
 // cli.ts — the `catalyst` dispatcher (npm: @catalyst-cloud/cli). Verbs live in
 // their own modules; this file keeps every export the 0.1 tests and the bin import.
 import {
@@ -202,6 +203,7 @@ export function usageText(): string {
     "  catalyst onboard [--resume-from <step>] [--only <step>] [--runner|--no-runner] [--yes] [--dry-run] [--json]",
     `  catalyst ${SETUP_USAGE}`,
     "  catalyst status | notice | me | ready | accounts",
+    "  catalyst hosts [list] | hosts remove <name-or-id> [--yes] | hosts rename <name-or-id> <new-name>",
     "  catalyst mcp add|list|remove (vault references only)",
     "  catalyst contract [--refresh] [--path <a.b.c>]",
     "  catalyst query <issues|issue <id>|pulls|pull <id>|projects|cycles|search <terms>|changes --since <cursor|head>>",
@@ -260,6 +262,7 @@ export interface MainDeps {
   secret?: SecretDeps;
   var?: VarDeps;
   connections?: ConnectionsDeps;
+  hosts?: HostsDeps;
   identity?: IdentityDeps;
   team?: TeamDeps;
   legacy?: LegacyDeps;
@@ -736,6 +739,8 @@ export async function main(
         return await cmdLegacy(args, ctx, deps.legacy ?? {});
       case "identity":
         return await cmdIdentity(args, ctx, deps.identity ?? {});
+      case "hosts":
+        return await cmdHosts(args, ctx, deps.hosts);
       case "connections":
         return await cmdConnections(args, ctx, deps.connections ?? {});
       default:
