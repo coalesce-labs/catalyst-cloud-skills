@@ -936,6 +936,20 @@ describe("bringing the host up", () => {
     expect(f.engine.calls.filter(c => c === "composeUp")).toHaveLength(before);
     expect(f.state.mints).toHaveLength(1);
   });
+  test("moving on reuses only the verified existing machine's project without selecting another team", async () => {
+    const f = fixture({ selected: true });
+    withOrgKey(f);
+    await run(f);
+    f.engine.installation = async () => ({ dir: f.dir, hostName: "catalyst-laptop", baseUrl: "https://cloud.example.test" });
+    f.journal.steps = [{ id: "linear.team", state: "skipped", reason: "returning_workspace_move_on" }];
+    expect(await f.adapter.check(f.ctx, f.journal)).toMatchObject({ state: "done", evidence: { hostId: "host-1" } });
+    expect(f.journal.steps[0]!.state).toBe("skipped");
+    expect(f.state.mints).toHaveLength(1);
+    f.engine.installation = async () => "missing";
+    expect(await f.adapter.check(f.ctx, f.journal)).toMatchObject({ state: "waiting", reason: "runner_context_unverified" });
+    expect(f.state.mints).toHaveLength(1);
+  });
+
   test("an existing installation for another project keeps its config before an attempted repair", async () => {
     const f = fixture({ selected: true });
     withOrgKey(f);

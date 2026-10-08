@@ -969,3 +969,11 @@ test("CTC-4680 round 5: a timed-out link asks to try again, and stopping pauses 
   expect(await cancelled.ui.retryTimedOut!("linear.workspace")).toBe(false);
   expect(cancelled.ui.signal.aborted).toBe(true);
 });
+
+ test("returning workspace choice defaults to moving on instead of the first project", async () => {
+   const f = fixture("move-on");
+   expect(await f.ui.reviewProjects!([{ id: "team-cloud", key: "CTC", name: "Cloud", status: "Ready" }, { id: "team-sdk", key: "SDK", name: "SDK", status: "Merge queue needs attention" }])).toBe("move-on");
+   expect(f.selections[0]!.initialValue).toBe("move-on");
+   expect(f.selections[0]!.options.map(o => o.value)).toEqual(["move-on", "repair:team-cloud", "repair:team-sdk", "new"]);
+   f.ui.dispose();
+ });

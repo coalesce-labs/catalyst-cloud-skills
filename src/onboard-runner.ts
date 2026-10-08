@@ -20,6 +20,7 @@ import { verifyOnboardRoutes } from "./onboard-capabilities.js";
 import { liveTeamKey, onboardTeamAdmission } from "./onboard-capacity.js";
 import {
   readExistingOnboardJson,
+  readOnboardTeamInventory,
   selectedOnboardTeam,
 } from "./onboard-existing.js";
 import {
@@ -658,31 +659,38 @@ export function onboardRunnerAdapter(input: OnboardRunnerInput = {},
       signal,
     );
     if ("reason" in support) return waiting(support.reason, selected);
-    const teamId = selectedOnboardTeam(journal);
-    const teamKey = teamId ? await liveTeamKey(ctx, teamId, signal ?? new AbortController().signal) : null;
-    if (!teamId || !teamKey) return waiting("runner_context_unverified", selected);
-    const runnerSupport=await verifyRunnerRoutes(ctx,journal,[{method:"GET",path:"/api/v1/agent/runner-admission"}],signal);
-    if("reason" in runnerSupport && runnerSupport.reason!=="cloud_capability_unavailable") return waiting(runnerSupport.reason,selected);
-    const cloud=!("reason" in runnerSupport);
     let state: string;
-    try {
-      state = onboardStateRoot(ctx.home, ctx.env);
-    } catch {
-      return waiting("runner_directory_unavailable", selected);
-    }
+    try { state = onboardStateRoot(ctx.home, ctx.env); }
+    catch { return waiting("runner_directory_unavailable", selected); }
     let dir = join(state, "runner");
     const installation = await engine.installation?.(ctx.home, ctx.env.CATALYST_SUPERVISOR_IMAGE ?? RUNNER_HOST_IMAGES.supervisor, signal);
     if (installation === "unverified") return waiting("runner_installation_unverified", selected);
+    let credential: RunnerEnrollment | RunnerUnenrolled | null = null;
     if (installation && installation !== "missing") {
       if (installation.baseUrl !== normalizeBaseUrl(cfg.baseUrl)) return waiting("runner_identity_unverified", selected);
       dir = installation.dir;
-      const credential = await engine.enrollment(dir, signal);
+      credential = await engine.enrollment(dir, signal);
       if (!credential) return waiting("runner_credential_unverified", selected);
-      if (!isUnenrolled(credential)) {
-        if (credential.tenant !== account || credential.enrollmentKind !== "self_hosted") return waiting("runner_identity_unverified", selected);
-        if (credential.team !== teamKey) return waiting("runner_enrolled_for_other_team", selected);
+      if (!isUnenrolled(credential) && (credential.tenant !== account || credential.enrollmentKind !== "self_hosted"))
+        return waiting("runner_identity_unverified", selected);
+    }
+    let teamId = selectedOnboardTeam(journal);
+    if (!teamId && credential && !isUnenrolled(credential)) {
+      // Moving on retains the verified installation's project scope. Never choose the first team.
+      const teams = await readOnboardTeamInventory(ctx, signal);
+      if (!("reason" in teams)) {
+        const installedTeam = credential.team;
+        const matching = teams.teams.filter(team => team.key === installedTeam);
+        if (matching.length === 1) teamId = matching[0]!.id;
       }
     }
+    const teamKey = teamId ? await liveTeamKey(ctx, teamId, signal ?? new AbortController().signal) : null;
+    if (!teamId || !teamKey) return waiting("runner_context_unverified", selected);
+    if (credential && !isUnenrolled(credential) && credential.team !== teamKey)
+      return waiting("runner_enrolled_for_other_team", selected);
+    const runnerSupport=await verifyRunnerRoutes(ctx,journal,[{method:"GET",path:"/api/v1/agent/runner-admission"}],signal);
+    if("reason" in runnerSupport && runnerSupport.reason!=="cloud_capability_unavailable") return waiting(runnerSupport.reason,selected);
+    const cloud=!("reason" in runnerSupport);
     const saved = readEnvFile(join(dir, ".env"));
     const images = {
       supervisor: ctx.env.CATALYST_SUPERVISOR_IMAGE ?? RUNNER_HOST_IMAGES.supervisor,

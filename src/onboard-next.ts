@@ -101,6 +101,8 @@ const REASONS: Record<string, string> = {
   local_sync_capability_unavailable:
     "Local sync was selected but could not be verified.",
   member_scope: "Your workspace administrator handles this step.",
+  returning_workspace_move_on: "Existing projects were left in place while this computer was set up. Run catalyst ready to review their checks, or catalyst setup --team <TEAM KEY> to repair one.",
+  returning_inventory_unverified: "Setup could not verify this workspace's existing projects. Run catalyst ready to check the workspace, then run catalyst setup again. Its projects have been kept in place.",
   member_team_required:
     "Setup needs your Linear team to check what Catalyst can work on. Run catalyst setup again with --team <KEY>, using your team's key from Linear.",
   onboarding_checks_pending: "Some required checks are still unverified.",
@@ -209,7 +211,7 @@ const REASONS: Record<string, string> = {
   runner_identity_unverified:
     "A workspace owner or administrator enrolls a runner. Sign in as one with catalyst login, then run catalyst onboard --runner.",
   runner_context_unverified:
-    "Setup could not confirm the selected Linear team. Run catalyst onboard again.",
+    "Setup could not confirm a project for this machine. Keep its existing installation and credentials. Run catalyst setup --runner --team <TEAM KEY> for the project this machine should serve.",
   runner_directory_unavailable:
     "Setup could not prepare the runner folder in Catalyst's state directory. Check its permissions, then run catalyst onboard again.",
   runner_image_unpinned:
