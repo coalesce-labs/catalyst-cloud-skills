@@ -1,7 +1,7 @@
 ---
 name: whats-happening
 description: >-
-  Use for "what's happening?", "where are we?", "why is that stuck?", "what closed?", "what's next?", "how does this work?", "why did it do that?", "how does it prioritise?" and "what does this setting do, where is it set?" in Catalyst Cloud, or asks for something to be done rather than known. Reads the contract via catalyst CLI. Read-only: route work/decisions, never answer as the human.
+  Use for "what's happening?", "what machines do we have?", "how much capacity do we have?", "where are we?", "why is that stuck?", "what closed?", "what's next?", "how does this work?", "why did it do that?", "how does it prioritise?" and "what does this setting do, where is it set?" in Catalyst Cloud, or asks for something to be done rather than known. Reads the contract via catalyst CLI. Read-only: route work/decisions, never answer as the human.
 allowed-tools: Bash(catalyst:*) Bash(npx -p @catalyst-cloud/cli catalyst:*)
 ---
 <!-- vendored-from: @catalyst-cloud/catalyst-skills@0.16.0 — written in this repository for customer accounts -->
@@ -20,6 +20,7 @@ Comments/relations: catalyst-linear. PRs: catalyst-github. Readiness: catalyst-o
 
 | question | reference |
 | -- | -- |
+| machines or machine capacity? | references/machines.md |
 | status or stuck? | references/status-reply.md; schema assets/status-reply.json |
 | eligibility reason? | references/why-is-it-stuck.md |
 | order, capacity, WIP or routing? | references/what-runs-next.md |
