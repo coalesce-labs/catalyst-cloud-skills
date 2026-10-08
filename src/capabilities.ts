@@ -3,7 +3,8 @@
 // stops sending the person to a page for it, and when a verb is missing the guide says "update the
 // CLI" rather than inventing a command. Each capability names the role the cloud requires for it
 // and the contract routes it rides; availability is judged against the CACHED contract only, so
-// this verb never reaches the network and never blocks.
+// this verb never reaches the network and never blocks. Every new setup route gets a row here and a
+// guide line that offers it; a page link for a step with a row is a bug.
 import type { ParsedArgs } from "./args.js";
 import { readManifest, type Ctx } from "./config.js";
 import { readContractCache } from "./contract.js";

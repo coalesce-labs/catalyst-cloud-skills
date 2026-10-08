@@ -163,7 +163,7 @@ export class ApiClient {
     }
     if (res.status === 401) {
       throw new CliError(
-        `${what} failed (401): credential not accepted — mint a personal key at Settings → API keys and log in again`,
+        `${what} failed (401): credential not accepted. Run catalyst login to sign in again; an unattended machine needs a new personal key from Settings → API keys`,
         "unauthorized",
         2,
         401,
@@ -224,7 +224,7 @@ export async function fetchMe(
     }
     const detail =
       res.status === 401
-        ? "credential not accepted — mint a personal key at Settings → API keys and log in again"
+        ? "credential not accepted. Run catalyst login to sign in again; an unattended machine needs a new personal key from Settings → API keys"
         : reason || `HTTP ${res.status}`;
     throw new MeError(`GET /me failed (${res.status}): ${detail}`, "http", res.status);
   }

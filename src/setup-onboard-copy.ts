@@ -573,12 +573,7 @@ function action(
         (row) => row.id === "linear.team" && row.state === "done",
       );
       const key = team && value(team, "teamKey");
-      return link(
-        key
-          ? `/settings/linear-teams/${encodeURIComponent(key)}/adopt`
-          : "/settings/projects",
-        "set up the team's Catalyst workflow",
-      );
+      return `Run catalyst team adopt ${key || "<TEAM KEY>"} to preview the team's Catalyst workflow, then run it again with the --yes --plan-hash value it prints.`;
     }
     case "linear.automations":
       return "Open your Linear team settings and set each pull request automation to No action.";
