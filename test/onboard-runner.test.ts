@@ -936,6 +936,38 @@ describe("bringing the host up", () => {
     expect(f.engine.calls.filter(c => c === "composeUp")).toHaveLength(before);
     expect(f.state.mints).toHaveLength(1);
   });
+
+  test("the naming prompt chooses a new machine but preserves a verified installation name", async () => {
+    const f = fixture({ selected: true });
+    withOrgKey(f);
+    let questions = 0;
+    const adapter = onboardRunnerAdapter({
+      selected: true,
+      engine: f.engine,
+      hostName: () => "default-machine",
+      chooseName: async () => { questions++; return "studio-mac"; },
+      sleep: async () => {},
+    });
+    expect((await adapter.check(f.ctx, f.journal)).state).toBe("pending");
+    expect((await adapter.act!(f.ctx, f.journal)).state).toBe("done");
+    expect(await adapter.check(f.ctx, f.journal)).toMatchObject({ state: "done", evidence: { hostName: "studio-mac" } });
+    expect(questions).toBe(1);
+    f.engine.installation = async () => ({ dir: f.dir, hostName: "studio-mac", baseUrl: "https://cloud.example.test" });
+    const envFile = join(f.dir, ".env");
+    writeFileSync(envFile, readFileSync(envFile, "utf8").replace(/^CATALYST_HOST_NAME=.*\n/m, ""));
+    const resumed = onboardRunnerAdapter({
+      selected: true,
+      engine: f.engine,
+      chooseName: async () => { questions++; return "replacement-name"; },
+      sleep: async () => {},
+    });
+    expect((await resumed.check(f.ctx, f.journal)).state).toBe("pending");
+    expect((await resumed.act!(f.ctx, f.journal)).state).toBe("done");
+    expect(await resumed.check(f.ctx, f.journal)).toMatchObject({ state: "done", evidence: { hostName: "studio-mac" } });
+    expect(questions).toBe(1);
+    expect(readFileSync(envFile, "utf8")).toContain("CATALYST_HOST_NAME=studio-mac");
+    expect(f.state.mints).toHaveLength(1);
+  });
   test("moving on reuses only the verified existing machine's project without selecting another team", async () => {
     const f = fixture({ selected: true });
     withOrgKey(f);
