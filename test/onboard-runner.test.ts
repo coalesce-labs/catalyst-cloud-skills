@@ -923,13 +923,32 @@ describe("bringing the host up", () => {
     });
   });
 
+  test("a healthy exact enrollment is recognized after its machine is renamed", async () => {
+    const f = fixture({ selected: true });
+    withOrgKey(f);
+    await run(f);
+    f.state.hosts[0]!.hostName = "My renamed machine";
+    expect(await f.adapter.check(f.ctx, f.journal)).toMatchObject({
+      state: "done", evidence: { hostId: "host-1", hostName: "My renamed machine" },
+    });
+    expect(f.state.mints).toHaveLength(1);
+  });
+  test("a missing exact enrollment is unverified, never evidence of revocation", async () => {
+    const f = fixture({ selected: true });
+    withOrgKey(f);
+    await run(f);
+    f.state.hosts = [];
+    f.state.enrollOnUp = false;
+    expect((await f.adapter.check(f.ctx, f.journal)).reason).toBe("runner_enrollment_unverified");
+    expect(f.state.mints).toHaveLength(1);
+  });
+
   test("a host whose old enrollment was revoked is not silently re-enrolled over its stale credential", async () => {
     const f = fixture({ selected: true });
     withOrgKey(f);
     await run(f);
     f.state.hosts[0]!.revokedAtMs = now.getTime();
-    f.engine.files.set("CATALYST_HOST_CREDENTIAL_FILE", "stale");
-    expect((await run(f)).reason).toBe("runner_enrollment_stale");
+    expect((await run(f)).reason).toBe("runner_enrollment_revoked");
     expect(f.state.mints).toHaveLength(1);
   });
 });

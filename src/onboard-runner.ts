@@ -803,12 +803,11 @@ export function onboardRunnerAdapter(input: OnboardRunnerInput = {},
           return waiting("runner_identity_unverified", hostEvidence);
         if (enrolled && enrolled.team !== p.teamKey)
           return waiting("runner_enrolled_for_other_team", hostEvidence);
-        if (enrolled &&
-          !hosts.some(
-            (host) => host.hostId === enrolled!.hostId && !host.revoked,
-          )
-        )
-          return waiting("runner_enrollment_stale", hostEvidence);
+        if (enrolled) {
+          const exact = hosts.find((host) => host.hostId === enrolled!.hostId);
+          if (exact?.revoked) return waiting("runner_enrollment_revoked", { ...hostEvidence, hostId: enrolled.hostId });
+          if (!exact || exact.team !== p.teamKey) return waiting("runner_enrollment_unverified", hostEvidence);
+        }
         const host = live(hosts);
         if (host && host.capacity !== null) break;
         if (!host && !afterAct) return pending();
@@ -817,7 +816,7 @@ export function onboardRunnerAdapter(input: OnboardRunnerInput = {},
         await sleep(pollMs);
       }
       const host = live(hosts)!;
-      const evidence = { ...hostEvidence, hostId: host.hostId, capacity: host.capacity! };
+      const evidence = { ...hostEvidence, hostName: host.hostName, hostId: host.hostId, capacity: host.capacity! };
       const orgKey = orgKeyFromFile(ctx);
       if (orgKey === null) return waiting("runner_org_key_file_invalid", evidence);
       const keyStatus = await engine.orgKeyStatus(p.dir, p.account, p.baseUrl, orgKey, signal);
@@ -926,9 +925,12 @@ export function onboardRunnerAdapter(input: OnboardRunnerInput = {},
         return waiting("runner_identity_unverified", { ...selected, hostName: name });
       if (enrolled && enrolled.team !== p.teamKey)
         return waiting("runner_enrolled_for_other_team", { ...selected, hostName: name });
-      if (hasCredential && !isUnenrolled(credential) && (!enrolled || !hosts.some((host) => host.hostId === enrolled.hostId && host.team === p.teamKey && !host.revoked,
-          )))
-        return waiting("runner_enrollment_stale", { ...selected, hostName: name });
+      if (hasCredential && !isUnenrolled(credential)) {
+        if (!enrolled) return waiting("runner_credential_unverified", { ...selected, hostName: name });
+        const exact = hosts.find((host) => host.hostId === enrolled.hostId);
+        if (exact?.revoked) return waiting("runner_enrollment_revoked", { ...selected, hostName: name, hostId: enrolled.hostId });
+        if (!exact || exact.team !== p.teamKey) return waiting("runner_enrollment_unverified", { ...selected, hostName: name });
+      }
       // A lost volume also lost the secret that redeemed the old token. Mint a new token and match
       // the new host id from the supervisor's credential, never an old advertisement with this name.
       // A lost reply must retry the same token and retained secret: a new token would be
