@@ -70,7 +70,7 @@ Each failing line prints its own fix.
 
 A team receives work once its stages are saved. Saving one team changes no other team's stages or tickets; only the labels Adopt creates are shared. Once saved, tickets in its dispatch stage start, so pilot on a low-stakes team and first move anything there that should wait back to Backlog. Nothing reads `gitAutomation` in the contract.
 
-Each action exists in the terminal and on `<their cloud>/settings/linear-teams`:
+Each action exists in the terminal and on the team's workflow page, `<their cloud>/settings/linear-teams/$teamKey` (Settings → Your projects → the project → Linear workflow for <team>):
 
 - **Check** (`catalyst team check <KEY>`, Re-check) saves the team's verdict, changing no ticket or mapping, and files one setup ticket for an admin if something is missing.
 - **Map** (`catalyst team map <KEY>`, Map my stages) saves a mapping from the team's existing stages and creates nothing in Linear.

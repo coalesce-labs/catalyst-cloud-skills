@@ -314,7 +314,7 @@ test.each([undefined, "ADV", "TEAM / A"])(
     );
     const path = teamKey
       ? `/settings/linear-teams/${encodeURIComponent(teamKey)}/adopt`
-      : "/settings/linear-teams";
+      : "/settings/projects";
     expect(onboardJsonView(j, "https://cloud.test").actions[0]!.url).toBe(
       `https://cloud.test${path}`,
     );

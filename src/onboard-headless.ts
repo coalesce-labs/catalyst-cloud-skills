@@ -91,8 +91,8 @@ const pages = (baseUrl: string) => {
     keys: `${web}/settings/api-keys`,
     connections: `${web}/a/account/connections`,
     personal: `${web}/settings/connected-accounts`,
-    teams: `${web}/settings/linear-teams`,
-    repos: `${web}/settings/repositories`,
+    teams: `${web}/settings/projects`,
+    repos: `${web}/settings/projects`,
     codingAccounts: `${web}/settings/coding-accounts`,
   };
 };
