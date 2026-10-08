@@ -4,7 +4,7 @@ The body, headings, option format and option cap come from the contract's `askTe
 
 ## When to file one
 
-File an ask when active work is gated on a product call, a priority call between two things that cannot both go first, an approval, or an action only the human can take (a click in settings, a credential, a payment). File it **before** proceeding on the default. A TODO line, board row, handoff note or chat question may point at the ask's identifier, never replace it.
+File an ask when active work is gated on a product call, a priority call between two things that cannot both go first, an approval, or an action only the human can take (a sign-in or consent, a credential, a payment). A settings change a command can make is yours to offer, not an ask. File it **before** proceeding on the default. A TODO line, board row, handoff note or chat question may point at the ask's identifier, never replace it.
 
 Brainstorming, design back-and-forth, a question the human asked first, a retry-or-abandon call a project owner can make, and a system-level failure (one status line; the tickets retry on their own) are not asks.
 

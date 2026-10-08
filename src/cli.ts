@@ -986,7 +986,7 @@ async function cmdLogin(
     );
   } else {
     ctx.stderr(
-      `[catalyst] this is your Catalyst workspace's shared key (a host credential), not your own. The skills work, but nothing your agent writes will carry your name, and "what needs me" cannot mean you. Make a personal key at Settings → API keys and sign in with that.`,
+      `[catalyst] this is your Catalyst workspace's shared key (a host credential), not your own. The skills work, but nothing your agent writes will carry your name, and "what needs me" cannot mean you. Run catalyst login to sign in as yourself; for an unattended machine, make a personal key at Settings → API keys and sign in with that.`,
     );
   }
   ctx.stdout(

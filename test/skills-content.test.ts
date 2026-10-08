@@ -112,9 +112,10 @@ const TEAM_CHECK_IDS = [
 // ("Settings → Members", "Settings → API keys"), the bundle's existing convention for a page with
 // no ticket-mandated literal-route rule, and an unused entry would fail the reverse-direction gate
 // below on day one. Add either the day a rule needs its literal route written down.
+// `/settings/linear-teams/$teamKey` left the roster when the guides switched to `catalyst team
+// check|map|adopt <KEY>`: no page names that route any more, so the reverse gate would fail on it.
 const SETTINGS_ROUTES = [
   "/settings/connections",
-  "/settings/linear-teams/$teamKey",
   "/settings/projects",
   "/settings/projects/$projectId/repositories/$repoId/environment/declaration",
   "/settings/projects/$projectId/repositories/$repoId/merging",
@@ -1030,7 +1031,9 @@ describe("the dispatch gate is the stage mapping, not git automation", () => {
     const text = read("catalyst-onboard/references/reading-ready.md");
     expect(text).toMatch(/one team/i);
     expect(text).toMatch(/no other team/i);
-    expect(text).toContain("Map my stages");
+    // Headless first: the guide names the command, never the page's button.
+    expect(text).toContain("catalyst team map <KEY>");
+    expect(text).not.toContain("Map my stages");
   });
 });
 
