@@ -10,10 +10,15 @@ import {
   checkRelease,
 } from "./release-train-check.mjs";
 
-const plan = JSON.parse(await readFile(new URL("../release-train.json", import.meta.url), "utf8"));
+const declaration = JSON.parse(await readFile(new URL("../release-train.json", import.meta.url), "utf8"));
+// Keep transition coverage independent of the deployed train's current state.
+const plan = structuredClone(declaration);
+plan.state = "coordinated";
+for (const id of ["sdk", "sdk-replica-node", "sdk-replica-browser"])
+  plan.members[id].version = "0.16.0";
 
 test("the approved complete cohort is readable, but a missing member cannot authorize a release", () => {
-  assert.equal(validateDeclaration(plan).releaseLine, "0.16");
+  assert.equal(validateDeclaration(declaration).releaseLine, "0.16");
   const missing = structuredClone(plan);
   delete missing.members.forwarder;
   assert.throws(() => validateDeclaration(missing), /every member/);
@@ -27,6 +32,16 @@ test("a coordinated transition allows its source and target, but only the exact 
   assert.throws(() => validateVersion(plan, "design", "0.16.4", true), /No publication approved/);
   validateVersion(plan, "design", "0.16.5");
   assert.throws(() => validateVersion(plan, "design", "0.16.3"), /exact approved/);
+});
+
+test("an aligned train allows patches on its line while refusing a split or private publication", () => {
+  const aligned = structuredClone(declaration);
+  aligned.state = "aligned";
+  validateVersion(aligned, "cli", "0.16.1", true);
+  validateVersion(aligned, "sdk", "0.16.1", true);
+  assert.throws(() => validateVersion(aligned, "cli", "0.15.6", true), /off release line/);
+  assert.throws(() => validateVersion(aligned, "cli", "0.17.0", true), /off release line/);
+  assert.throws(() => validateVersion(aligned, "design", "0.16.6", true), /No publication approved/);
 });
 
 test("source identities, tag prefixes and answered approvals fail closed", () => {
@@ -73,6 +88,13 @@ test("publication requires a readable matching cloud declaration before a pack i
         ? new Response("", { headers: { "x-catalyst-install-script-revision": "0.16.0" } })
         : new Response(JSON.stringify(plan));
     assert.equal((await checkRelease({ ...options, fetcher })).publishing.length, 3);
+    const manifestPath = join(root, "package.json");
+    const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
+    manifest.dependencies["@catalyst-cloud/sdk"] = "0.15.6";
+    await writeFile(manifestPath, JSON.stringify(manifest));
+    await assert.rejects(checkRelease({ ...options, fetcher }), /must pin the approved SDK exactly/);
+    manifest.dependencies["@catalyst-cloud/sdk"] = plan.members.sdk.version;
+    await writeFile(manifestPath, JSON.stringify(manifest));
     await assert.rejects(checkRelease({ ...options, tag: "v0.16.0", fetcher }), /does not match/);
     await assert.rejects(checkRelease({ ...options, tag: "main", fetcher }), /does not match/);
     assert.equal(
