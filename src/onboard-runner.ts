@@ -5,13 +5,14 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  realpathSync,
   renameSync,
   rmSync,
   statSync,
   writeFileSync,
 } from "node:fs";
 import { hostname, tmpdir } from "node:os";
-import { join } from "node:path";
+import { isAbsolute, join, relative } from "node:path";
 import { loadConfig, normalizeBaseUrl, packageRoot, type Ctx } from "./config.js";
 import { nativeEgressReady, NATIVE_EGRESS_DIR } from "./onboard-runner-egress.js";
 import { runnerAdmission, issueRunnerOrgKey, verifyRunnerRoutes } from "./onboard-runner-cloud.js";
@@ -19,6 +20,7 @@ import { verifyOnboardRoutes } from "./onboard-capabilities.js";
 import { liveTeamKey, onboardTeamAdmission } from "./onboard-capacity.js";
 import {
   readExistingOnboardJson,
+  readOnboardTeamInventory,
   selectedOnboardTeam,
 } from "./onboard-existing.js";
 import {
@@ -82,6 +84,10 @@ function isUnenrolled(value: RunnerEnrollment | RunnerUnenrolled | null): value 
 export interface RunnerEngine {
   /** Null when there is no docker command, no reachable Linux engine, or no Compose plugin. */
   info(signal?: AbortSignal): Promise<RunnerEngineInfo | null>;
+  /** Existing Compose ownership and public identity, before setup chooses new files or a name. */
+  installation?(home: string, supervisorImage: string, signal?: AbortSignal): Promise<
+    { dir: string; hostName: string; baseUrl: string } | "missing" | "unverified"
+  >;
   /** The architecture of a local image, or null when the engine does not have it. */
   imageArch(ref: string, signal?: AbortSignal): Promise<string | null>;
   pull(ref: string, signal?: AbortSignal): Promise<boolean>;
@@ -224,6 +230,40 @@ export function dockerRunnerEngine(
       nativeLocal = platform === "linux" && !vm && host === "unix:///var/run/docker.sock";
       const supportedVm = platform === "darwin" && vm && host?.startsWith("unix:///");
       return { arch, vm, ...(!nativeLocal && !supportedVm ? { unsupported: true as const } : {}) };
+    },
+    async installation(home, supervisorImage, signal) {
+      const listed = await docker(["ps", "--all", "--filter", `label=com.docker.compose.project=${RUNNER_PROJECT}`,
+        "--filter", "label=com.docker.compose.service=supervisor", "--format", "{{.ID}}"], { signal });
+      if (listed.code !== 0) return "unverified";
+      const ids = listed.stdout.trim().split(/\s+/).filter(Boolean);
+      if (ids.length === 0) return "missing";
+      if (ids.length !== 1 || !/^[0-9a-f]{12,64}$/.test(ids[0]!)) return "unverified";
+      const read = await docker(["inspect", ids[0]!], { signal });
+      if (read.code !== 0) return "unverified";
+      try {
+        const rows = JSON.parse(read.stdout);
+        if (!Array.isArray(rows) || rows.length !== 1) return "unverified";
+        const config = rows[0]?.Config;
+        const labels = config?.Labels;
+        const dir = labels?.["com.docker.compose.project.working_dir"];
+        if (config?.Image !== supervisorImage || labels?.["com.docker.compose.project"] !== RUNNER_PROJECT ||
+          labels?.["com.docker.compose.service"] !== "supervisor" || typeof dir !== "string" || !isAbsolute(dir) ||
+          labels?.["com.docker.compose.project.config_files"] !== join(dir, "compose.yaml")) return "unverified";
+        const inHome = relative(realpathSync(home), realpathSync(dir));
+        if (inHome === ".." || inHome.startsWith("../") || isAbsolute(inHome) || !lstatSync(dir).isDirectory()) return "unverified";
+        for (const path of [join(dir, "compose.yaml"), join(dir, ".env")]) {
+          const stat = lstatSync(path);
+          if (!stat.isFile() || stat.uid !== process.getuid?.() || (stat.mode & 0o022) !== 0) return "unverified";
+        }
+        if (!Array.isArray(config.Env) || !config.Env.every((entry: unknown) => typeof entry === "string")) return "unverified";
+        const names = config.Env.filter((entry: string) => entry.startsWith("CATALYST_HOST_NAME="));
+        const origins = config.Env.filter((entry: string) => entry.startsWith("CATALYST_MIRROR_URL="));
+        if (names.length !== 1 || origins.length !== 1) return "unverified";
+        const hostName = names[0].slice("CATALYST_HOST_NAME=".length);
+        const baseUrl = origins[0].slice("CATALYST_MIRROR_URL=".length);
+        if (!HOST_NAME.test(hostName)) return "unverified";
+        return { dir, hostName, baseUrl: normalizeBaseUrl(baseUrl) };
+      } catch { return "unverified"; }
     },
     async imageArch(ref, signal) {
       const read = await docker(
@@ -536,6 +576,7 @@ export interface OnboardRunnerInput {
 }
 
 interface Prepared {
+  installedName?: string;
   account: string;
   baseUrl: string;
   teamKey: string;
@@ -618,19 +659,38 @@ export function onboardRunnerAdapter(input: OnboardRunnerInput = {},
       signal,
     );
     if ("reason" in support) return waiting(support.reason, selected);
-    const teamId = selectedOnboardTeam(journal);
+    let state: string;
+    try { state = onboardStateRoot(ctx.home, ctx.env); }
+    catch { return waiting("runner_directory_unavailable", selected); }
+    let dir = join(state, "runner");
+    const installation = await engine.installation?.(ctx.home, ctx.env.CATALYST_SUPERVISOR_IMAGE ?? RUNNER_HOST_IMAGES.supervisor, signal);
+    if (installation === "unverified") return waiting("runner_installation_unverified", selected);
+    let credential: RunnerEnrollment | RunnerUnenrolled | null = null;
+    if (installation && installation !== "missing") {
+      if (installation.baseUrl !== normalizeBaseUrl(cfg.baseUrl)) return waiting("runner_identity_unverified", selected);
+      dir = installation.dir;
+      credential = await engine.enrollment(dir, signal);
+      if (!credential) return waiting("runner_credential_unverified", selected);
+      if (!isUnenrolled(credential) && (credential.tenant !== account || credential.enrollmentKind !== "self_hosted"))
+        return waiting("runner_identity_unverified", selected);
+    }
+    let teamId = selectedOnboardTeam(journal);
+    if (!teamId && credential && !isUnenrolled(credential)) {
+      // Moving on retains the verified installation's project scope. Never choose the first team.
+      const teams = await readOnboardTeamInventory(ctx, signal);
+      if (!("reason" in teams)) {
+        const installedTeam = credential.team;
+        const matching = teams.teams.filter(team => team.key === installedTeam);
+        if (matching.length === 1) teamId = matching[0]!.id;
+      }
+    }
     const teamKey = teamId ? await liveTeamKey(ctx, teamId, signal ?? new AbortController().signal) : null;
     if (!teamId || !teamKey) return waiting("runner_context_unverified", selected);
+    if (credential && !isUnenrolled(credential) && credential.team !== teamKey)
+      return waiting("runner_enrolled_for_other_team", selected);
     const runnerSupport=await verifyRunnerRoutes(ctx,journal,[{method:"GET",path:"/api/v1/agent/runner-admission"}],signal);
     if("reason" in runnerSupport && runnerSupport.reason!=="cloud_capability_unavailable") return waiting(runnerSupport.reason,selected);
     const cloud=!("reason" in runnerSupport);
-    let state: string;
-    try {
-      state = onboardStateRoot(ctx.home, ctx.env);
-    } catch {
-      return waiting("runner_directory_unavailable", selected);
-    }
-    const dir = join(state, "runner");
     const saved = readEnvFile(join(dir, ".env"));
     const images = {
       supervisor: ctx.env.CATALYST_SUPERVISOR_IMAGE ?? RUNNER_HOST_IMAGES.supervisor,
@@ -640,7 +700,8 @@ export function onboardRunnerAdapter(input: OnboardRunnerInput = {},
     if (!Object.values(images).every((ref) => IMAGE_REF.test(ref)))
       return waiting("runner_image_unpinned", selected);
     if(!info.vm && !(await engine.nativeEgressStatus?.(ctx.now().getTime(),signal)))return waiting("runner_native_egress_setup_required",selected);
-    return { account, baseUrl: normalizeBaseUrl(cfg.baseUrl), teamKey, teamId, cloud, dir, info, images };
+    return { account, baseUrl: normalizeBaseUrl(cfg.baseUrl), teamKey, teamId, cloud, dir, info, images,
+      ...(installation && installation !== "missing" ? { installedName: installation.hostName } : {}) };
   }
 
   async function desiredEnv(
@@ -648,9 +709,7 @@ export function onboardRunnerAdapter(input: OnboardRunnerInput = {},
     joinToken?: string,
   ): Promise<Record<string, string> | null> {
     const saved = readEnvFile(join(p.dir, ".env")) ?? {};
-    const name =
-      saved.CATALYST_HOST_NAME ||
-      chosenName || (input.hostName ?? runnerDefaultHostName)();
+    const name = p.installedName || saved.CATALYST_HOST_NAME || chosenName || (input.hostName ?? runnerDefaultHostName)();
     const gid = p.info.vm ? 0 : await engine.socketGid();
     if (!HOST_NAME.test(name) || gid === null) return null;
     return {
@@ -803,12 +862,11 @@ export function onboardRunnerAdapter(input: OnboardRunnerInput = {},
           return waiting("runner_identity_unverified", hostEvidence);
         if (enrolled && enrolled.team !== p.teamKey)
           return waiting("runner_enrolled_for_other_team", hostEvidence);
-        if (enrolled &&
-          !hosts.some(
-            (host) => host.hostId === enrolled!.hostId && !host.revoked,
-          )
-        )
-          return waiting("runner_enrollment_stale", hostEvidence);
+        if (enrolled) {
+          const exact = hosts.find((host) => host.hostId === enrolled!.hostId);
+          if (exact?.revoked) return waiting("runner_enrollment_revoked", { ...hostEvidence, hostId: enrolled.hostId });
+          if (!exact || exact.team !== p.teamKey) return waiting("runner_enrollment_unverified", hostEvidence);
+        }
         const host = live(hosts);
         if (host && host.capacity !== null) break;
         if (!host && !afterAct) return pending();
@@ -817,7 +875,7 @@ export function onboardRunnerAdapter(input: OnboardRunnerInput = {},
         await sleep(pollMs);
       }
       const host = live(hosts)!;
-      const evidence = { ...hostEvidence, hostId: host.hostId, capacity: host.capacity! };
+      const evidence = { ...hostEvidence, hostName: host.hostName, hostId: host.hostId, capacity: host.capacity! };
       const orgKey = orgKeyFromFile(ctx);
       if (orgKey === null) return waiting("runner_org_key_file_invalid", evidence);
       const keyStatus = await engine.orgKeyStatus(p.dir, p.account, p.baseUrl, orgKey, signal);
@@ -871,6 +929,7 @@ export function onboardRunnerAdapter(input: OnboardRunnerInput = {},
         return { state: "failed", reason: "runner_directory_unavailable", evidence: selected };
       }
       if (
+        !p.installedName &&
         !readEnvFile(join(p.dir, ".env"))?.CATALYST_HOST_NAME &&
         chosenName === undefined
       ) {
@@ -926,9 +985,12 @@ export function onboardRunnerAdapter(input: OnboardRunnerInput = {},
         return waiting("runner_identity_unverified", { ...selected, hostName: name });
       if (enrolled && enrolled.team !== p.teamKey)
         return waiting("runner_enrolled_for_other_team", { ...selected, hostName: name });
-      if (hasCredential && !isUnenrolled(credential) && (!enrolled || !hosts.some((host) => host.hostId === enrolled.hostId && host.team === p.teamKey && !host.revoked,
-          )))
-        return waiting("runner_enrollment_stale", { ...selected, hostName: name });
+      if (hasCredential && !isUnenrolled(credential)) {
+        if (!enrolled) return waiting("runner_credential_unverified", { ...selected, hostName: name });
+        const exact = hosts.find((host) => host.hostId === enrolled.hostId);
+        if (exact?.revoked) return waiting("runner_enrollment_revoked", { ...selected, hostName: name, hostId: enrolled.hostId });
+        if (!exact || exact.team !== p.teamKey) return waiting("runner_enrollment_unverified", { ...selected, hostName: name });
+      }
       // A lost volume also lost the secret that redeemed the old token. Mint a new token and match
       // the new host id from the supervisor's credential, never an old advertisement with this name.
       // A lost reply must retry the same token and retained secret: a new token would be

@@ -32,6 +32,7 @@ import {
   type OnboardProgress,
 } from "./onboard-progress.js";
 import type { ExistingOnboardTeam } from "./onboard-existing.js";
+import type { ReturningProject, ReturningChoice } from "./onboard-returning.js";
 import {
   CREATE_TEAM_CHOICE,
   suggestTeamKey,
@@ -97,6 +98,8 @@ export interface OnboardUi {
     teams: ExistingOnboardTeam[],
     create?: TeamCreateOffer,
   ): Promise<string | null>;
+  reviewProjects?(projects: readonly ReturningProject[]): Promise<ReturningChoice | null>;
+  confirmProjectCleanup?(project: ReturningProject, lines: readonly string[]): Promise<boolean>;
   /** The new team's name and key, confirmed; null to go back to the picker (or when cancelled). */
   nameNewTeam?(question: NewTeamQuestion): Promise<NewTeamAnswer | null>;
   confirmWorkflowAdoption?(
@@ -710,6 +713,38 @@ export function createClackOnboardUi(
         localSync: answer === "local",
         ...(answer === "signin" ? { signin: true } : {}),
       };
+    },
+    async reviewProjects(projects) {
+      stop();
+      if (abort.signal.aborted) return null;
+      const answer = await select({
+        ...options,
+        message: "What should setup do with this workspace's projects?",
+        initialValue: "move-on",
+        options: [
+          { value: "move-on", label: "Move on and finish this computer's setup", hint: "default" },
+          ...projects.map(p => ({ value: `repair:${p.id}`, label: `Review or repair ${p.name} (${p.key})` })),
+          ...projects.map(p => ({ value: `cleanup:${p.id}`, label: `Preview archiving ${p.name} (${p.key})` })),
+          { value: "new", label: "Create a new Catalyst project" },
+        ],
+      });
+      if (prompts.isCancel(answer)) { abort.abort(); return null; }
+      if (answer === "move-on" || answer === "new") return answer;
+      if (typeof answer === "string" && answer.startsWith("cleanup:")) return { cleanup: answer.slice(8) };
+      return typeof answer === "string" && answer.startsWith("repair:") ? { repair: answer.slice(7) } : null;
+    },
+    async confirmProjectCleanup(project, lines) {
+      stop();
+      for (const line of lines) message(line);
+      if (abort.signal.aborted) return false;
+      const answer = await select({ ...options,
+        message: `Archive ${project.name} after reviewing these changes?`,
+        initialValue: "keep",
+        options: [{ value: "keep", label: "Keep the project and finish this computer's setup" },
+          { value: "archive", label: "Archive this project" }],
+      });
+      if (prompts.isCancel(answer)) { abort.abort(); return false; }
+      return answer === "archive";
     },
     async chooseTeam(teams, create) {
       stop();

@@ -456,6 +456,7 @@ function normalizeStep(value: unknown, fallbackAt: string): OnboardStep | null {
     "membershipId",
     "checkedAt",
     "project",
+    "projectCount",
     "repository",
     "installation",
     "ticket",
@@ -968,6 +969,7 @@ export function stepSatisfied(step: OnboardStep | undefined): boolean {
         // Optional: a computer without the daily update still runs work.
         step.id === "housekeeping" ||
         step.reason === "member_scope" ||
+        step.reason === "returning_workspace_move_on" ||
         (step.id === "daemon" && step.reason === "local_sync_not_selected") ||
         (step.id === "runner" && step.reason === "runner_not_selected") ||
         (step.id === "first-ticket" && step.reason === "first_ticket_skipped") ||
@@ -1022,7 +1024,8 @@ export function onboardReadyForWork(
   journal: OnboardJournal,
   only?: OnboardStepId,
 ): boolean {
-  return !only && journal.exit === 0 && !journal.complete;
+  return !only && journal.exit === 0 && !journal.complete &&
+    !journal.steps.some(step => step.reason === "returning_workspace_move_on");
 }
 
 /** A recorded step's next action; a prerequisite wait names the first unfinished step it needs. */
@@ -1554,7 +1557,10 @@ export async function cmdOnboard(
     if (args.json) ctx.stdout(JSON.stringify(journal));
     else if (deps.ui) deps.ui.finish(journal, only);
     else {
-      if (journal.complete) ctx.stdout("Onboarding complete.");
+      if (journal.complete && journal.steps.some(step => step.reason === "returning_workspace_move_on")) {
+        ctx.stdout("This computer is set up. Existing projects were kept in place.");
+        ctx.stdout("Next: run catalyst ready to review their checks.");
+      } else if (journal.complete) ctx.stdout("Onboarding complete.");
       else if (
         onboardReadyForWork(journal, only) &&
         (deps.requiredSteps ?? []).every((id) => journalStep(journal, id)?.state === "done")

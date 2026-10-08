@@ -969,3 +969,19 @@ test("CTC-4680 round 5: a timed-out link asks to try again, and stopping pauses 
   expect(await cancelled.ui.retryTimedOut!("linear.workspace")).toBe(false);
   expect(cancelled.ui.signal.aborted).toBe(true);
 });
+
+ test("returning workspace choice defaults to moving on instead of the first project", async () => {
+   const f = fixture("move-on");
+   expect(await f.ui.reviewProjects!([{ id: "team-cloud", key: "CTC", name: "Cloud", status: "Ready" }, { id: "team-sdk", key: "SDK", name: "SDK", status: "Merge queue needs attention" }])).toBe("move-on");
+   expect(f.selections[0]!.initialValue).toBe("move-on");
+   expect(f.selections[0]!.options.map(o => o.value)).toEqual(["move-on", "repair:team-cloud", "repair:team-sdk", "cleanup:team-cloud", "cleanup:team-sdk", "new"]);
+   f.ui.dispose();
+ });
+
+ test("project cleanup shows its preview and defaults to keeping the project", async () => {
+   const f = fixture("keep");
+   expect(await f.ui.confirmProjectCleanup!({ id: "team-sdk", key: "SDK", name: "SDK", status: "Ready" }, ["Stop mirroring org/sdk."])).toBe(false);
+   expect(f.events.find(e => e.text === "Stop mirroring org/sdk.")).toBeDefined();
+   expect(f.selections[0]!.initialValue).toBe("keep");
+   f.ui.dispose();
+ });

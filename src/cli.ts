@@ -572,11 +572,11 @@ export async function main(
               ...(deps.setupApproved
                 ? { reviewedSetup: true, confirm: async () => true }
                 : {}),
-              beforeStep: async () => {
-                if (args.flags["dry-run"] !== true)
-                  await refreshSessionIfShort(ctx, ONBOARD_STEP_MIN_MS);
-              },
               ...createOnboardRuntime(args, ctx, {
+                beforeStep: async () => {
+                  if (args.flags["dry-run"] !== true)
+                    await refreshSessionIfShort(ctx, ONBOARD_STEP_MIN_MS);
+                },
                 ui,
                 signinTimeoutMs: deps.onboardSigninTimeoutMs,
                 stageSignin: (signal) => {
@@ -867,6 +867,7 @@ async function runSetup(
           ...(flags.json ? ["--json"] : []),
           ...(flags.verbose ? ["--verbose"] : []),
           ...(flags.localSync ? ["--local-sync"] : []),
+          ...(flags.runner === undefined ? [] : [flags.runner ? "--runner" : "--no-runner"]),
           ...(flags.yes || flags.json || !terminal ? ["--yes"] : []),
         ];
         let ui: OnboardUi | undefined;
