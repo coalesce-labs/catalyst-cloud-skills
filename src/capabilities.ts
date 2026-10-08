@@ -16,6 +16,8 @@ export type CapabilityRole = "member" | "admin";
 export interface Capability {
   /** Explicit support for the bootstrap's state and lock transfer contract. */
   bootstrapHandoff?: boolean;
+  /** Revision 2 continues setup with runner flags and a returning workspace review. */
+  bootstrapHandoffVersion?: number;
   /** CTC-4625: the install engine's event protocol `setup` speaks; install.sh checks it before use. */
   engineProtocol?: number;
   /** `onboard --headless`: inputs by flag, env or file; no prompt, no browser (CTC-4633). */
@@ -41,7 +43,7 @@ export const CAPABILITIES: readonly Capability[] = [
   {verb:"hosts remove|rename",does:"remove or rename a self-hosted machine in this account",needs:"admin",routes:[],since:"0.16.0"},
   // CTC-4680: plain `catalyst setup` runs the onboard flow, so install.sh may hand off to it. install.sh
   // reads this flag rather than `setup --help`, which already exits 0 on 0.15.x.
-  { verb: "setup", does: "set up Catalyst step by step, or show install.sh's plan, progress and sign-in in this terminal", needs: "member", routes: [], since: "0.15.0", engineProtocol: 1, bootstrapHandoff: true },
+  { verb: "setup", does: "set up Catalyst step by step, or show install.sh's plan, progress and sign-in in this terminal", needs: "member", routes: [], since: "0.15.0", engineProtocol: 1, bootstrapHandoff: true, bootstrapHandoffVersion: 2 },
   { verb: "onboard", does: "run and resume Catalyst setup with a saved step record", needs: "member", routes: [], since: "0.14.0", bootstrapHandoff: true, headless: true },
   { verb: "status", does: "say whether this machine is connected, as whom, and to which cloud", needs: "member", routes: [], since: "0.1.0" },
   { verb: "me", does: "read the person's seat, role and Linear identity", needs: "member", routes: [], since: "0.1.0" },
