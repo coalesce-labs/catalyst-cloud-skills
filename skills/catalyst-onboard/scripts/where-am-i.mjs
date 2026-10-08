@@ -565,7 +565,7 @@ if (!connected) {
       : "a workspace owner or admin";
     const mapWhere = verbAvailable("team map")
       ? "catalyst team list"
-      : link("/settings/linear-teams");
+      : link("/settings/projects");
     const projectOwner =
       blockedProjects.length > 0 ? blockedProjects[0].owner : mapOwner;
     const projectWhere = blockedProjects.length > 0 ? null : mapWhere;
@@ -927,12 +927,12 @@ const recheckStep = () => {
     return {
       action: `a workspace owner or admin runs ${cmds.join(" and ")} (or presses Re-check on the projects page); then run this again`,
       owner: "a workspace owner or admin",
-      where: link("/settings/linear-teams"),
+      where: link("/settings/projects"),
     };
   return {
     action: "press Re-check on the projects page, then run this again",
     owner: "a workspace owner or admin",
-    where: link("/settings/linear-teams"),
+    where: link("/settings/projects"),
   };
 };
 
@@ -989,7 +989,7 @@ if (!connected) {
           : "no project has a readiness check yet, so whether a host is connected cannot be read.",
       ],
       teamRows === null ? "a workspace owner or admin" : step.owner,
-      teamRows === null ? link("/settings/linear-teams") : step.where,
+      teamRows === null ? link("/settings/projects") : step.where,
     ).next =
       teamRows === null
         ? "refresh the contract (catalyst contract --refresh), then run this again; the project list could not be read, so the host check cannot be either"
@@ -1293,7 +1293,7 @@ const NEXT = {
       : verbAvailable("team map")
         ? "pick ONE project: run catalyst team list, then catalyst team map <KEY> (or team adopt <KEY>) and approve its preview"
         : verbAdminOnly("team map")
-          ? "a workspace owner or admin maps ONE project: catalyst team map <KEY>, or Map my stages on the projects page"
+          ? "a workspace owner or admin maps ONE project: catalyst team map <KEY>, or Map my stages on the project's Linear workflow page (Settings → Your projects → the project → Linear workflow for <KEY>)"
           : "pick ONE project and map its stages (or adopt the Catalyst workflow)",
   repositories:
     "install the GitHub App on the Integrations page, granting it the repository you want worked; register it on Your projects and attach it to the project before continuing",

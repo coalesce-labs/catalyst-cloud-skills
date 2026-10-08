@@ -114,7 +114,7 @@ const TEAM_CHECK_IDS = [
 // below on day one. Add either the day a rule needs its literal route written down.
 const SETTINGS_ROUTES = [
   "/settings/connections",
-  "/settings/linear-teams",
+  "/settings/linear-teams/$teamKey",
   "/settings/projects",
   "/settings/projects/$projectId/repositories/$repoId/environment/declaration",
   "/settings/projects/$projectId/repositories/$repoId/merging",

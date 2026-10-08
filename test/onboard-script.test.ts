@@ -1566,7 +1566,7 @@ describe("where-am-i.mjs: a mapped project that was never checked", () => {
     const d = part(doc, "repository declarations");
     expect(d.verdict).toBe("unreadable");
     expect(d.lines[0]).toMatch(/no project has a readiness check yet/);
-    expect(d.where).toBe("https://cloud.example/settings/linear-teams");
+    expect(d.where).toBe("https://cloud.example/settings/projects");
     expect(doc.next?.part).toBe("repository declarations");
     expect(doc.next?.action).toMatch(/Re-check/);
     expect(doc.finished).toBe(false);
@@ -1617,7 +1617,7 @@ describe("where-am-i.mjs: a step is a command when this person's CLI can run it,
       /^a workspace owner or admin runs catalyst team check ENG/,
     );
     expect(doc.next?.owner).toBe("a workspace owner or admin");
-    expect(doc.next?.where).toBe("https://cloud.example/settings/linear-teams");
+    expect(doc.next?.where).toBe("https://cloud.example/settings/projects");
   });
 
   test("an older CLI (no capabilities verb) and a cloud that does not serve the route both keep the page", () => {
@@ -1638,7 +1638,7 @@ describe("where-am-i.mjs: a step is a command when this person's CLI can run it,
       "press Re-check on the projects page, then run this again",
     );
     expect(olderCloud.next?.where).toBe(
-      "https://cloud.example/settings/linear-teams",
+      "https://cloud.example/settings/projects",
     );
   });
 
