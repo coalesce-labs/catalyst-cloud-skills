@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.16.1
+
+Setup lists your existing projects and lets you finish this computer without choosing a team again.
+
+- Keep your saved machine name when setup finds an existing installation, even if its settings file is missing.
+- Check readiness across projects that share a Linear team, with a clear next action when a check cannot finish.
+- Remove recognized older background jobs automatically. Preserve shared data and explain any cleanup that needs attention.
+- Recheck the existing installation before offering a replacement, and distinguish an ended enrollment from one that could not be verified.
+
 ## 0.16.0
 
 The CLI, skills and plugin now share the 0.16 release line with the SDK and installer. The CLI installs the matching Node replica module for local cache commands. Update the CLI and update the Catalyst plugin through your agent's plugin manager.
