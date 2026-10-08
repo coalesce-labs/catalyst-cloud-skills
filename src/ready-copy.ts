@@ -289,7 +289,7 @@ const CHECK_COMMANDS: Record<string, (key: string) => string> = {
   webhook_covers_team: (key) => `an owner or admin registers the repository with catalyst onboard --team ${key} --repo <owner/name>`,
   hosts_current: () => "run catalyst onboard --runner on the machine that runs the work",
   tools_resolvable: () => "set the missing secret with catalyst secret set NAME --repo <owner/name>, or fix the repository's .catalyst/catalyst.toml",
-  reviewer_required: () => "relax the merge policy with catalyst var set CATALYST_MERGE_EVIDENCE_POLICY --repo <owner/name>, or configure a reviewer",
+  reviewer_required: () => "relax the merge policy with catalyst var set CATALYST_MERGE_EVIDENCE_POLICY --repo <owner/name> (if .catalyst/catalyst.toml declares the policy, change it there instead, because the declaration wins), or configure a reviewer",
 };
 
 const AGAIN = "run catalyst ready again in a few minutes";
