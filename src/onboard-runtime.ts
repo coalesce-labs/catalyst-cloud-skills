@@ -15,6 +15,9 @@ import { cmdLegacy, findLegacy, type LegacyDeps } from "./legacy.js";
 import { personalConsentAdapter } from "./onboard-personal.js";
 import { boundedOnboardSignin } from "./onboard-signin.js";
 import { existingLinearAdapters } from "./onboard-existing.js";
+import { returningWorkspaceAdapters } from "./onboard-returning.js";
+import { archiveReturningProject } from "./onboard-project-cleanup.js";
+import { CREATE_TEAM_CHOICE } from "./onboard-team-create.js";
 import { linearWorkspaceAdapter } from "./onboard-workspace.js";
 import { firstProjectAdapters } from "./onboard-projects.js";
 import { onboardCapacityAdapter } from "./onboard-capacity.js";
@@ -53,6 +56,7 @@ import { TIMED_OUT_REASONS } from "./setup-onboard-copy.js";
 import { fetchMe } from "./transport.js";
 
 export interface OnboardRuntimeHooks {
+  beforeStep?: (id: OnboardStepId) => Promise<void>;
   settings?: OnboardSettingsHooks;
   ui?: OnboardUi;
   login: (ctx: Ctx, signal?: AbortSignal) => Promise<number>;
@@ -286,14 +290,14 @@ export function createOnboardRuntime(
         ? (message, run) => waitFor(message, run)
         : undefined,
     });
+  let newProjectRequested = false;
   const linear = existingLinearAdapters(
     args,
     hooks.ui?.chooseTeam
-      ? (teams, create) =>
-          hooks.ui!.chooseTeam!(
-            teams.map((team) => ({ ...team })),
-            create,
-          )
+      ? async (teams, create) => {
+          if (newProjectRequested) { newProjectRequested = false; return CREATE_TEAM_CHOICE; }
+          return hooks.ui!.chooseTeam!(teams.map(team => ({ ...team })), create);
+        }
       : undefined,
     hooks.ui?.nameNewTeam
       ? (question) => hooks.ui!.nameNewTeam!(question)
@@ -631,7 +635,17 @@ export function createOnboardRuntime(
   }
   // Public auth discovery and the existing /me sign-in bootstrap establish identity before the
   // tenant-bound step guards can run. Unsupported/local-only steps make no endpoint requests.
+  let reviewActive = false;
+  returningWorkspaceAdapters(adapters, args, hooks.ui?.reviewProjects?.bind(hooks.ui),
+    text => hooks.ui ? hooks.ui.message(text) : ctx.stderr(text),
+    () => { newProjectRequested = true; }, () => reviewActive,
+    (project, stepCtx, journal, signal) => archiveReturningProject(project, stepCtx, journal,
+      hooks.ui?.confirmProjectCleanup?.bind(hooks.ui), signal));
   return {
+    beforeStep: async id => {
+      await hooks.beforeStep?.(id);
+      if (id === "linear.workspace") reviewActive = true;
+    },
     identity: (journal) => identity(ctx, journal),
     ...(hooks.stageSignin ? { stageSignin: hooks.stageSignin } : {}),
     bindSignals: true,

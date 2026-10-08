@@ -7,6 +7,8 @@ import { valuesFacts, valuesFix } from "./ready-copy.js";
 
 /** What a person reads for a step that is not done. Each line ends in an action they can take. */
 const REASONS: Record<string, string> = {
+  legacy_cleanup_failed:
+    "An earlier Catalyst installation could not be removed. Run catalyst legacy --remove to see the exact item and its blocker, fix that blocker, then run catalyst setup again. Shared data folders are kept.",
   account_identity_unverified:
     "Your login changed while AI accounts were checked. Run catalyst onboard again to verify your person and workspace.",
   account_inventory_unavailable:
@@ -99,6 +101,11 @@ const REASONS: Record<string, string> = {
   local_sync_capability_unavailable:
     "Local sync was selected but could not be verified.",
   member_scope: "Your workspace administrator handles this step.",
+  returning_workspace_move_on: "Existing projects were left in place while this computer was set up. Run catalyst ready to review their checks, or catalyst setup --team <TEAM KEY> to repair one.",
+  returning_inventory_unverified: "Setup could not verify this workspace's existing projects. Run catalyst ready to check the workspace, then run catalyst setup again. Its projects have been kept in place.",
+  returning_project_cleanup_requested: "Review the selected project's archive preview before making any change.",
+  returning_project_cleanup_unverified: "Setup could not confirm this project's archive state. Run catalyst project list to inspect it, then run catalyst setup again to review any remaining changes. Do not repeat an archive based on this message alone.",
+  returning_project_cleanup_changed: "This project's repositories changed after the preview. Run catalyst setup again to review its current project list before archiving.",
   member_team_required:
     "Setup needs your Linear team to check what Catalyst can work on. Run catalyst setup again with --team <KEY>, using your team's key from Linear.",
   onboarding_checks_pending: "Some required checks are still unverified.",
@@ -190,6 +197,10 @@ const REASONS: Record<string, string> = {
   automations_compatible: "Nothing to change.",
   workflow_unavailable:
     "Setup could not read the team's workflow. Run catalyst onboard again to retry.",
+  capacity_context_unverified:
+    "Setup could not confirm this project's registered repositories and its default repository for capacity. Run catalyst ready to see the project checks, then run catalyst setup again. Starting a ticket checks its own repository's admission.",
+  capacity_identity_unverified:
+    "Setup could not confirm your workspace and administrator role for the capacity check. Run catalyst login, then run catalyst setup again.",
   capacity_admission_unverified:
     "No runner is allowed to take work for this workspace yet. Enroll a self-hosted runner host, or ask Catalyst to enable cloud runners for it. Then run catalyst onboard.",
   capacity_currently_full:
@@ -203,7 +214,7 @@ const REASONS: Record<string, string> = {
   runner_identity_unverified:
     "A workspace owner or administrator enrolls a runner. Sign in as one with catalyst login, then run catalyst onboard --runner.",
   runner_context_unverified:
-    "Setup could not confirm the selected Linear team. Run catalyst onboard again.",
+    "Setup could not confirm a project for this machine. Keep its existing installation and credentials. Run catalyst setup --runner --team <TEAM KEY> for the project this machine should serve.",
   runner_directory_unavailable:
     "Setup could not prepare the runner folder in Catalyst's state directory. Check its permissions, then run catalyst onboard again.",
   runner_image_unpinned:
@@ -218,12 +229,18 @@ const REASONS: Record<string, string> = {
     "Setup could not read the group of the Docker socket at /var/run/docker.sock. Check that Docker is running, then run catalyst onboard again.",
   runner_engine_unsupported:
     "Runner setup needs local Docker Desktop or OrbStack on Mac, or native Linux Docker at /var/run/docker.sock. Select a supported local engine, then run catalyst onboard --runner.",
+  runner_installation_unverified:
+    "Setup found a possible existing machine installation but could not verify its Compose files and identity. Keep its files and credentials. Run docker compose -p catalyst-host logs supervisor to check it, then run catalyst setup --runner again.",
   runner_enrollment_unavailable:
     "Setup could not read this workspace's runner hosts. Run catalyst onboard again to retry.",
   runner_enrolled_for_other_team:
     "This runner is enrolled for another Linear team. Keep using that team, or ask your administrator to revoke the old enrollment before setting up this machine for the selected team.",
+  runner_enrollment_revoked:
+    "Catalyst confirms that this machine's saved enrollment was revoked. Keep its credential and organization key. Ask your workspace administrator to review the enrollment before replacing it, then run catalyst setup --runner.",
+  runner_credential_unverified:
+    "Setup could not read this machine's saved enrollment. Keep its credential and organization key. Run docker compose -p catalyst-host logs supervisor to check the error, then run catalyst setup --runner.",
   runner_enrollment_stale:
-    "This machine still holds the credential of a runner enrollment that was revoked. Stop the runner with docker compose -p catalyst-host down, remove the credential with docker volume rm catalyst-host_host-credential (this also removes the organization key), then run catalyst onboard --runner.",
+    "Setup could not match this machine's saved enrollment with Catalyst. Keep its credential and organization key, then run catalyst setup --runner to check again.",
   runner_login_refresh_required:
     "Renew your login with catalyst login, then run catalyst onboard.",
   runner_join_token_unavailable:
