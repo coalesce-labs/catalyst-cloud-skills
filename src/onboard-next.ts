@@ -224,6 +224,8 @@ const REASONS: Record<string, string> = {
     "Setup could not read the group of the Docker socket at /var/run/docker.sock. Check that Docker is running, then run catalyst onboard again.",
   runner_engine_unsupported:
     "Runner setup needs local Docker Desktop or OrbStack on Mac, or native Linux Docker at /var/run/docker.sock. Select a supported local engine, then run catalyst onboard --runner.",
+  runner_installation_unverified:
+    "Setup found a possible existing machine installation but could not verify its Compose files and identity. Keep its files and credentials. Run docker compose -p catalyst-host logs supervisor to check it, then run catalyst setup --runner again.",
   runner_enrollment_unavailable:
     "Setup could not read this workspace's runner hosts. Run catalyst onboard again to retry.",
   runner_enrolled_for_other_team:

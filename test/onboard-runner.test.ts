@@ -923,6 +923,39 @@ describe("bringing the host up", () => {
     });
   });
 
+  test("reuses the verified existing installation after the workstation state root changes", async () => {
+    const f = fixture({ selected: true });
+    withOrgKey(f);
+    await run(f);
+    const before = f.engine.calls.filter(c => c === "composeUp").length;
+    f.engine.installation = async () => ({ dir: f.dir, hostName: "catalyst-laptop", baseUrl: "https://cloud.example.test" });
+    const alternative = join(f.ctx.home, "different-state");
+    f.ctx.env.CATALYST_STATE_DIR = alternative;
+    expect(await f.adapter.check(f.ctx, f.journal)).toMatchObject({ state: "done", evidence: { hostId: "host-1" } });
+    expect(existsSync(alternative)).toBe(false);
+    expect(f.engine.calls.filter(c => c === "composeUp")).toHaveLength(before);
+    expect(f.state.mints).toHaveLength(1);
+  });
+  test("an existing installation for another project keeps its config before an attempted repair", async () => {
+    const f = fixture({ selected: true });
+    withOrgKey(f);
+    await run(f);
+    f.engine.installation = async () => ({ dir: f.dir, hostName: "catalyst-laptop", baseUrl: "https://cloud.example.test" });
+    f.engine.enrollment = async () => ({ hostId: "host-other", tenant: "account-a", team: "B", enrollmentKind: "self_hosted" });
+    const before = readFileSync(join(f.dir, ".env"), "utf8");
+    expect((await f.adapter.act!(f.ctx, f.journal)).reason).toBe("runner_enrolled_for_other_team");
+    expect(readFileSync(join(f.dir, ".env"), "utf8")).toBe(before);
+    expect(f.state.mints).toHaveLength(1);
+  });
+  test("an unverifiable existing installation is preserved before preparing replacement files", async () => {
+    const f = fixture({ selected: true });
+    f.engine.installation = async () => "unverified";
+    expect((await run(f)).reason).toBe("runner_installation_unverified");
+    expect(existsSync(f.dir)).toBe(false);
+    expect(f.state.mints).toHaveLength(0);
+    expect(f.engine.calls).not.toContain("composeUp");
+  });
+
   test("a healthy exact enrollment is recognized after its machine is renamed", async () => {
     const f = fixture({ selected: true });
     withOrgKey(f);
@@ -973,6 +1006,31 @@ describe("the Docker engine", () => {
       },
     };
   }
+
+  test("discovers the exact owned Compose directory and public machine identity", async () => {
+    const f = fixture({ selected: true });
+    f.engine.files.set("CATALYST_ORG_KEY_FILE", ORG_KEY);
+    await run(f);
+    const config = {
+      Image: SUPERVISOR,
+      Env: ["CATALYST_HOST_NAME=catalyst-laptop", "CATALYST_MIRROR_URL=https://cloud.example.test"],
+      Labels: {
+        "com.docker.compose.project": "catalyst-host",
+        "com.docker.compose.service": "supervisor",
+        "com.docker.compose.project.working_dir": f.dir,
+        "com.docker.compose.project.config_files": join(f.dir, "compose.yaml"),
+      },
+    };
+    const inspect = (value: unknown, code = 0) => dockerRunnerEngine({ exec: recordingExec({
+      "ps --all": { code: 0, stdout: "0123456789ab" },
+      inspect: { code, stdout: JSON.stringify(value) },
+    }).exec }).installation!(f.ctx.home, SUPERVISOR);
+    expect(await inspect([{ Config: config }])).toEqual({ dir: f.dir, hostName: "catalyst-laptop", baseUrl: "https://cloud.example.test" });
+    expect(await inspect([{ Config: { ...config, Image: "unrelated:latest" } }])).toBe("unverified");
+    expect(await inspect([{ Config: config }], 1)).toBe("unverified");
+    expect(await dockerRunnerEngine({ exec: recordingExec({ "ps --all": { code: 0, stdout: "" } }).exec }).installation!(f.ctx.home, SUPERVISOR)).toBe("missing");
+    expect(await dockerRunnerEngine({ exec: recordingExec({ "ps --all": { code: 1, stdout: "" } }).exec }).installation!(f.ctx.home, SUPERVISOR)).toBe("unverified");
+  });
 
   test("Compose runs in the runner directory with the caller's CATALYST_ variables removed", async () => {
     const r = recordingExec();
