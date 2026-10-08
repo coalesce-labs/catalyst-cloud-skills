@@ -576,7 +576,7 @@ function action(
       return link(
         key
           ? `/settings/linear-teams/${encodeURIComponent(key)}/adopt`
-          : "/settings/linear-teams",
+          : "/settings/projects",
         "set up the team's Catalyst workflow",
       );
     }

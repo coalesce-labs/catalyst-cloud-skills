@@ -518,7 +518,7 @@ export function onboardReasonText(
       "linear.workspace": ["connect Linear", "/settings/connections", " and connect it there"],
       "linear.adopt": [
         "set up the team's Catalyst workflow",
-        key ? `/settings/linear-teams/${encodeURIComponent(key)}/adopt` : "/settings/linear-teams",
+        key ? `/settings/linear-teams/${encodeURIComponent(key)}/adopt` : "/settings/projects",
         "",
       ],
     };

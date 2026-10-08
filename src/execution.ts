@@ -54,7 +54,7 @@ export const EXCLUSION_REASONS: Record<string, string> = {
 export const UNKNOWN_REASONS: Record<string, string> = {
   ordering_never_published: "the dispatch order has never been published for this team — usually because the team has no saved stage mapping, which does not clear by itself",
   ordering_stale: "the dispatch order is stale",
-  workflow_mapping_unknown: "the team has no saved stage mapping for dispatch, pr, done and canceled (or a mapped stage was deleted); it does not clear by itself — a tenant owner or admin maps the team in Settings → Linear teams",
+  workflow_mapping_unknown: "the team has no saved stage mapping for dispatch, pr, done and canceled (or a mapped stage was deleted); it does not clear by itself — a workspace owner or admin maps the team on its Linear workflow page (Settings → Your projects → the project → Linear workflow for <team>), or runs catalyst team map <KEY>",
   ticket_unknown: "the ticket is not in the mirror",
   dependency_snapshot_unknown: "the dependency snapshot has never completed",
   blocker_unknown: "a blocking relation could not be resolved",
