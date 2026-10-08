@@ -51,6 +51,7 @@ const GLOBAL_FLAGS: FlagTable = {
 
 /** Per-verb flag tables. A verb absent here accepts only the global flags. */
 export const FLAG_TABLES: Record<string, FlagTable> = {
+  hosts: { yes: { value: false, help: "confirm removal without a terminal" } },
   login: {
     "start-replica": {
       value: false,
@@ -72,6 +73,10 @@ export const FLAG_TABLES: Record<string, FlagTable> = {
   },
   install: {},
   onboard: {
+    "machine-name": {
+      value: true,
+      help: "name this self-hosted machine (default: its hostname)",
+    },
     verbose: { value: false, help: "show granted permissions for connected steps in interactive setup" },
     team: {
       value: true,
@@ -512,6 +517,8 @@ export const FLAG_TABLES: Record<string, FlagTable> = {
 };
 
 export const VERB_USAGE: Record<string, string> = {
+  hosts:
+    "hosts [list] | hosts remove <name-or-id> [--yes] | hosts rename <name-or-id> <new-name> [--json]",
   setup:
     "setup [onboard options]   (sets up Catalyst step by step; same as catalyst onboard) | setup --engine <file> --engine-sha256 <hex> [-- <install options>]   (run by install.sh; install.sh --help lists the options)",
   login:

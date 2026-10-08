@@ -10,7 +10,6 @@ import {
   statSync,
   writeFileSync,
 } from "node:fs";
-import { randomBytes } from "node:crypto";
 import { hostname, tmpdir } from "node:os";
 import { join } from "node:path";
 import { loadConfig, normalizeBaseUrl, packageRoot, type Ctx } from "./config.js";
@@ -243,8 +242,10 @@ export function dockerRunnerEngine(
         const anonymousEnv: NodeJS.ProcessEnv = { ...env, DOCKER_CONFIG: config };
         delete anonymousEnv.DOCKER_CONTEXT;
         delete anonymousEnv.DOCKER_AUTH_CONFIG;
-        return (await docker(["--host", host, "--config", config, "pull", "--quiet", ref],
-          { env: anonymousEnv, signal, timeoutMs: 900_000 })).code === 0;
+        return (
+          (await docker(["--host", host, "--config", config, "pull", "--quiet", ref],
+          { env: anonymousEnv, signal, timeoutMs: 900_000 },
+            )).code === 0);
       } catch { return false; }
       finally { if (config) rmSync(config, { recursive: true, force: true }); }
     },
@@ -284,7 +285,9 @@ export function dockerRunnerEngine(
       ];
       return (await docker(args, { signal })).code === 0;
     },
-    async nativeEgressStatus(nowMs,signal){return nativeLocal && await nativeEgressReady(nowMs,signal);},
+    async nativeEgressStatus(nowMs,signal) {
+      return nativeLocal && (await nativeEgressReady(nowMs, signal));
+    },
     async socketGid() {
       if (!nativeLocal) return null;
       try {
@@ -311,7 +314,10 @@ export function dockerRunnerEngine(
         RUNNER_UID,
         ...paths,
       ];
-      return (await docker(args, { cwd: dir, signal, timeoutMs: 120_000 })).code === 0;
+      return (
+        (await docker(args, { cwd: dir, signal, timeoutMs: 120_000 })).code ===
+        0
+      );
     },
     async hasVolumeFile(dir, variable, signal) {
       return (
@@ -383,7 +389,7 @@ export function dockerRunnerEngine(
         { cwd: dir, input: candidate ? `${candidate}\n` : undefined, signal, timeoutMs: 120_000 });
       const status = read.stdout.trim();
       return read.code === 0 && ["valid", "different", "missing", "invalid", "unavailable"].includes(status)
-        ? status as RunnerOrgKeyStatus : "unavailable";
+        ? (status as RunnerOrgKeyStatus) : "unavailable";
     },
     async writeVolumeFile(dir, variable, value, signal) {
       if (variable !== "CATALYST_ORG_KEY_FILE") return false;
@@ -410,7 +416,10 @@ export function dockerRunnerEngine(
         [...compose(dir), "ps", "--status", "running", "--services"],
         { cwd: dir, signal },
       );
-      return read.code === 0 && read.stdout.split("\n").some((line) => line.trim() === "supervisor");
+      return (
+        read.code === 0 &&
+        read.stdout.split("\n").some((line) => line.trim() === "supervisor")
+      );
     },
   };
 }
@@ -459,7 +468,9 @@ function parseHosts(body: unknown): ListedHost[] | null {
       hostName: host.hostName,
       team: host.team,
       revoked: host.revokedAtMs !== null,
-      capacity: capability ? (capability.runtimeLive ? (capability.placeableCapacity as number) : 0) : null,
+      capacity: capability ? capability.runtimeLive
+          ? (capability.placeableCapacity as number)
+          : 0 : null,
       failing: capability ? (capability.failingRequired as string[]) : [],
     });
   }
@@ -503,12 +514,10 @@ function writePrivate(path: string, text: string): void {
 /** Enrollment uses the stored host id and exact team/name. Two machines with one hostname must not
  * share it: a random suffix, kept in `.env` from the first write on. */
 export function runnerDefaultHostName(): string {
-  const suffix = randomBytes(3).toString("hex");
-  const base = `catalyst-${hostname().split(".")[0] ?? "host"}`
+  const base = (hostname().split(".")[0] ?? "machine")
     .replace(/[^A-Za-z0-9._-]/g, "-")
-    .slice(0, 55);
-  const name = `${base}-${suffix}`;
-  return HOST_NAME.test(name) ? name : `catalyst-host-${suffix}`;
+    .slice(0, 63);
+  return HOST_NAME.test(base) ? base : "machine";
 }
 
 export interface OnboardRunnerInput {
@@ -518,6 +527,7 @@ export interface OnboardRunnerInput {
   choose?: () => Promise<boolean | null>;
   engine?: RunnerEngine;
   hostName?: () => string;
+  chooseName?: (defaultName: string) => Promise<string | null>;
   message?: (text: string) => void;
   sleep?: (ms: number) => Promise<void>;
   /** How long a check waits for the host to enroll and advertise. */
@@ -536,10 +546,12 @@ interface Prepared {
   images: { supervisor: string; watchdog: string; runner: string };
 }
 
-export function onboardRunnerAdapter(input: OnboardRunnerInput = {}): OnboardAdapter {
+export function onboardRunnerAdapter(input: OnboardRunnerInput = {},
+): OnboardAdapter {
   const engine = input.engine ?? dockerRunnerEngine();
   const sleep =
-    input.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
+    input.sleep ??
+    ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
   const waitMs = input.waitMs ?? 120_000;
   const pollMs = input.pollMs ?? 5_000;
   // One question per run: the engine checks again after acting, and the receipt row is "running"
@@ -549,6 +561,7 @@ export function onboardRunnerAdapter(input: OnboardRunnerInput = {}): OnboardAda
   // only reports on it, so an unattended check never restarts a runner the person stopped.
   let mayAct = false;
   let acted = false;
+  let chosenName: string | undefined;
   const selected = { selected: true };
 
   async function decide(journal: OnboardJournal): Promise<boolean | null> {
@@ -635,7 +648,9 @@ export function onboardRunnerAdapter(input: OnboardRunnerInput = {}): OnboardAda
     joinToken?: string,
   ): Promise<Record<string, string> | null> {
     const saved = readEnvFile(join(p.dir, ".env")) ?? {};
-    const name = saved.CATALYST_HOST_NAME || (input.hostName ?? runnerDefaultHostName)();
+    const name =
+      saved.CATALYST_HOST_NAME ||
+      chosenName || (input.hostName ?? runnerDefaultHostName)();
     const gid = p.info.vm ? 0 : await engine.socketGid();
     if (!HOST_NAME.test(name) || gid === null) return null;
     return {
@@ -740,10 +755,34 @@ export function onboardRunnerAdapter(input: OnboardRunnerInput = {}): OnboardAda
       const name = want.CATALYST_HOST_NAME!;
       let enrolled: RunnerEnrollment | null = null;
       const live = (hosts: ListedHost[] | null) =>
-        hosts?.find((host) => host.hostId === enrolled?.hostId && host.hostName === name && host.team === p.teamKey && !host.revoked);
+        hosts?.find(
+          (host) =>
+            host.hostId === enrolled?.hostId && host.team === p.teamKey && !host.revoked,
+        );
       let hosts = await listHosts(ctx, p, signal);
       if (!hosts) return waiting("runner_enrollment_unavailable", selected);
-      if (hosts.some((host) => host.hostName === name && !host.revoked && host.team !== p.teamKey))
+      const existingCredential = await engine.enrollment(p.dir, signal);
+      if (
+        (!existingCredential || isUnenrolled(existingCredential)) &&
+        hosts.some(
+          (host) =>
+            host.hostName === name && !host.revoked && host.team !== p.teamKey,
+        )
+      )
+        return waiting("runner_enrolled_for_other_team", {
+          ...selected,
+          hostName: name,
+        });
+      if (
+        existingCredential &&
+        !isUnenrolled(existingCredential) &&
+        hosts.some(
+          (host) =>
+            host.hostId === existingCredential.hostId &&
+            !host.revoked &&
+            host.team !== p.teamKey,
+        )
+      )
         return waiting("runner_enrolled_for_other_team", { ...selected, hostName: name });
       const running = await engine.composeRunning(p.dir, signal);
       const changed = !saved || Object.entries(want).some(([key, value]) => saved[key] !== value);
@@ -764,7 +803,11 @@ export function onboardRunnerAdapter(input: OnboardRunnerInput = {}): OnboardAda
           return waiting("runner_identity_unverified", hostEvidence);
         if (enrolled && enrolled.team !== p.teamKey)
           return waiting("runner_enrolled_for_other_team", hostEvidence);
-        if (enrolled && !hosts.some((host) => host.hostId === enrolled!.hostId && host.hostName === name && !host.revoked))
+        if (enrolled &&
+          !hosts.some(
+            (host) => host.hostId === enrolled!.hostId && !host.revoked,
+          )
+        )
           return waiting("runner_enrollment_stale", hostEvidence);
         const host = live(hosts);
         if (host && host.capacity !== null) break;
@@ -827,6 +870,18 @@ export function onboardRunnerAdapter(input: OnboardRunnerInput = {}): OnboardAda
       } catch {
         return { state: "failed", reason: "runner_directory_unavailable", evidence: selected };
       }
+      if (
+        !readEnvFile(join(p.dir, ".env"))?.CATALYST_HOST_NAME &&
+        chosenName === undefined
+      ) {
+        const suggested = (input.hostName ?? runnerDefaultHostName)();
+        const name = input.chooseName
+          ? await input.chooseName(suggested)
+          : suggested;
+        if (name === null || !HOST_NAME.test(name))
+          return waiting("runner_name_required", selected);
+        chosenName = name;
+      }
       let want = await desiredEnv(p);
       if (!want) return waiting("runner_docker_socket_unreadable", selected);
       const writeEnv = (values: Record<string, string>): boolean => {
@@ -863,13 +918,16 @@ export function onboardRunnerAdapter(input: OnboardRunnerInput = {}): OnboardAda
       const enrolled = isUnenrolled(credential) ? null : credential;
       const hosts = await listHosts(ctx, p, signal);
       if (!hosts) return waiting("runner_enrollment_unavailable", selected);
-      if (hosts.some((host) => host.hostName === name && !host.revoked && host.team !== p.teamKey))
+      if (!enrolled &&
+        hosts.some((host) => host.hostName === name && !host.revoked && host.team !== p.teamKey,
+        ))
         return waiting("runner_enrolled_for_other_team", { ...selected, hostName: name });
       if (enrolled && (enrolled.tenant !== p.account || enrolled.enrollmentKind !== "self_hosted"))
         return waiting("runner_identity_unverified", { ...selected, hostName: name });
       if (enrolled && enrolled.team !== p.teamKey)
         return waiting("runner_enrolled_for_other_team", { ...selected, hostName: name });
-      if (hasCredential && !isUnenrolled(credential) && (!enrolled || !hosts.some((host) => host.hostId === enrolled.hostId && host.hostName === name && host.team === p.teamKey && !host.revoked)))
+      if (hasCredential && !isUnenrolled(credential) && (!enrolled || !hosts.some((host) => host.hostId === enrolled.hostId && host.team === p.teamKey && !host.revoked,
+          )))
         return waiting("runner_enrollment_stale", { ...selected, hostName: name });
       // A lost volume also lost the secret that redeemed the old token. Mint a new token and match
       // the new host id from the supervisor's credential, never an old advertisement with this name.

@@ -450,6 +450,16 @@ export function createOnboardRuntime(
         ? () => hooks.ui!.chooseRunner!()
         : undefined,
       engine: hooks.runnerEngine,
+      hostName:
+        typeof args.flags["machine-name"] === "string"
+          ? () => String(args.flags["machine-name"])
+          : undefined,
+      chooseName:
+        interactiveWait &&
+        hooks.ui?.nameMachine &&
+        args.flags["machine-name"] === undefined
+          ? (name) => hooks.ui!.nameMachine!(name)
+          : undefined,
       sleep: hooks.sleep,
       message: (text) => (hooks.ui ? hooks.ui.message(text) : ctx.stderr(text)),
     }),

@@ -12,7 +12,7 @@ import {
 } from "node:fs";
 import { spawn } from "node:child_process";
 import { createServer } from "node:http";
-import { tmpdir } from "node:os";
+import { hostname, tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
 import { writeConfig, type Ctx, type CustomerConfig } from "../src/config.js";
@@ -679,6 +679,13 @@ describe("bringing the host up", () => {
     expect(f.engine.calls).not.toContain("composeUp");
   });
 
+  test("a renamed enrolled machine remains recognized when another team takes its old name",async()=>{
+    const f=fixture({selected:true});withOrgKey(f);await run(f);
+    const own=f.state.hosts[0];if(!own)throw new Error("missing enrollment");own.hostName="studio-mac";
+    f.state.hosts.push({...own,hostId:"host-other",hostName:"catalyst-laptop",team:"B"});
+    expect((await run(f)).state).toBe("done");expect(f.state.mints).toHaveLength(1);
+  });
+
   test("a rerun on an enrolled, running host mints nothing and changes nothing", async () => {
     const f = fixture({ selected: true });
     withOrgKey(f);
@@ -839,11 +846,9 @@ describe("bringing the host up", () => {
     expect((await run(f)).reason).toBe("runner_org_key_file_invalid");
   });
 
-  test("the default host name carries a random suffix so two machines never share one", () => {
-    const a = runnerDefaultHostName(),
-      b = runnerDefaultHostName();
-    expect(a).not.toBe(b);
-    for (const name of [a, b]) expect(name).toMatch(/^catalyst-[A-Za-z0-9._-]+-[0-9a-f]{6}$/);
+  test("the machine name defaults to the hostname; enrollment IDs distinguish machines",()=>{
+    expect(runnerDefaultHostName()).toBe(hostname().split(".")[0]?.replace(/[^A-Za-z0-9._-]/g,"-").slice(0,63));
+    expect(runnerDefaultHostName()).toMatch(/^[A-Za-z0-9][A-Za-z0-9._-]{0,62}$/);
   });
 
   test("a misshaped session network is reported, never replaced", async () => {
