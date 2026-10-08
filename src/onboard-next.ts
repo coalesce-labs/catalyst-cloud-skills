@@ -103,6 +103,9 @@ const REASONS: Record<string, string> = {
   member_scope: "Your workspace administrator handles this step.",
   returning_workspace_move_on: "Existing projects were left in place while this computer was set up. Run catalyst ready to review their checks, or catalyst setup --team <TEAM KEY> to repair one.",
   returning_inventory_unverified: "Setup could not verify this workspace's existing projects. Run catalyst ready to check the workspace, then run catalyst setup again. Its projects have been kept in place.",
+  returning_project_cleanup_requested: "Review the selected project's archive preview before making any change.",
+  returning_project_cleanup_unverified: "Setup could not confirm this project's archive state. Run catalyst project list to inspect it, then run catalyst setup again to review any remaining changes. Do not repeat an archive based on this message alone.",
+  returning_project_cleanup_changed: "This project's repositories changed after the preview. Run catalyst setup again to review its current project list before archiving.",
   member_team_required:
     "Setup needs your Linear team to check what Catalyst can work on. Run catalyst setup again with --team <KEY>, using your team's key from Linear.",
   onboarding_checks_pending: "Some required checks are still unverified.",

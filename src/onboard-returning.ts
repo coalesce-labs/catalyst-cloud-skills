@@ -9,8 +9,10 @@ export interface ReturningProject {
   key: string;
   name: string;
   status: string;
+  repositories?: Array<{ id: string; name: string; status: "active" | "paused" }>;
 }
-export type ReturningChoice = "move-on" | "new" | { repair: string };
+export type ReturningChoice = "move-on" | "new" | { repair: string } | { cleanup: string };
+export type CleanupReturningProject = (project: ReturningProject, ctx: Ctx, journal: OnboardJournal, signal?: AbortSignal) => Promise<OnboardStepResult>;
 export type ReviewReturningProjects = (projects: readonly ReturningProject[]) => Promise<ReturningChoice | null>;
 const object = (v: unknown): Record<string, unknown> | null =>
   v !== null && typeof v === "object" && !Array.isArray(v) ? v as Record<string, unknown> : null;
@@ -43,7 +45,7 @@ export async function readReturningProjects(ctx: Ctx, journal: OnboardJournal, s
   const clean = (text: string) => text.replace(/[\u0000-\u001f\u007f-\u009f]/g, "").slice(0, 120);
   for (const value of list.repositories) {
     const row = object(value);
-    if (typeof row?.id !== "string" || !/^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/.test(row.id) || seen.has(row.id) ||
+    if (typeof row?.id !== "string" || !/^[A-Za-z0-9][A-Za-z0-9_.:-]{0,255}$/.test(row.id) || seen.has(row.id) ||
       typeof row.linearTeamId !== "string" || !/^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/.test(row.linearTeamId) ||
       typeof row.name !== "string" || !row.name.trim() ||
       !(row.linearTeamKey === null || typeof row.linearTeamKey === "string") ||
@@ -51,10 +53,13 @@ export async function readReturningProjects(ctx: Ctx, journal: OnboardJournal, s
       typeof row.githubRepoOwner !== "string" || typeof row.githubRepoName !== "string" ||
       !repository.test(`${row.githubRepoOwner}/${row.githubRepoName}`)) return { reason: "returning_inventory_unverified" };
     seen.add(row.id);
-    if (row.status === "archived" || configured.some(p => p.id === row.linearTeamId)) continue;
+    if (row.status === "archived") continue;
+    const savedProject = configured.find(p => p.id === row.linearTeamId);
+    const linked = { id: row.id, name: `${row.githubRepoOwner}/${row.githubRepoName}`, status: row.status as "active" | "paused" };
+    if (savedProject) { savedProject.repositories!.push(linked); continue; }
     const team = "reason" in inventory ? undefined : inventory.teams.find(t => t.id === row.linearTeamId);
     configured.push({ id: row.linearTeamId, key: team?.key ?? clean(row.linearTeamKey as string ?? ""),
-      name: team?.name ?? clean(row.name), status: "Readiness could not be checked. Run catalyst ready to check it." });
+      name: team?.name ?? clean(row.name), status: "Readiness could not be checked. Run catalyst ready to check it.", repositories: [linked] });
   }
   // Bound the whole readiness summary, including a workspace with many projects.
   const deadline = new AbortController();
@@ -81,6 +86,10 @@ export async function readReturningProjects(ctx: Ctx, journal: OnboardJournal, s
       }));
     }
   } finally { clearTimeout(timer); }
+  for (const project of configured) {
+    const paused = project.repositories?.filter(r => r.status === "paused") ?? [];
+    if (paused.length) project.status = `Paused: ${paused.map(r => r.name).join(", ")}. ${project.status === "Ready" ? "Readiness checks pass." : project.status}`;
+  }
   return { projects: configured };
 }
 
@@ -97,11 +106,13 @@ export function returningWorkspaceAdapters(
   message: (text: string) => void,
   newProject: () => void,
   active: () => boolean = () => true,
+  cleanup?: CleanupReturningProject,
 ): void {
   if (args.flags.team !== undefined || args.flags.only !== undefined || args.flags.headless === true) return;
-  let mode: "unread" | "continue" | "move-on" | "unknown" = "unread";
+  let mode: "unread" | "continue" | "move-on" | "unknown" | "cleanup" = "unread";
   let count = 0;
-  const scope = async (ctx: Ctx, journal: OnboardJournal, signal?: AbortSignal): Promise<OnboardStepResult | null> => {
+  let cleanupProject: ReturningProject | undefined;
+  const scope = async (ctx: Ctx, journal: OnboardJournal, signal?: AbortSignal, act = false): Promise<OnboardStepResult | null> => {
     if (!active()) return null;
     if (mode === "unread") {
       if (!["owner", "admin"].includes(loadConfig(ctx.home)?.user?.role ?? "")) { mode = "continue"; return null; }
@@ -117,12 +128,23 @@ export function returningWorkspaceAdapters(
           if (!choice || signal?.aborted) return { state: "waiting", reason: "interrupted" };
           if (choice === "move-on") mode = "move-on";
           else if (choice === "new") { mode = "continue"; newProject(); }
+          else if ("cleanup" in choice) {
+            cleanupProject = inventory.projects.find(p => p.id === choice.cleanup);
+            mode = cleanupProject ? "cleanup" : "unknown";
+          }
           else if (inventory.projects.some(p => p.id === choice.repair)) {
             args.flags.team = choice.repair;
             mode = "continue";
           } else mode = "unknown";
         }
       }
+    }
+    if (mode === "cleanup") {
+      if (!act) return { state: "pending", reason: "returning_project_cleanup_requested" };
+      if (!cleanup || !cleanupProject) return { state: "waiting", reason: "returning_project_cleanup_unverified" };
+      const result = await cleanup(cleanupProject, ctx, journal, signal);
+      if (result.state !== "done") return result;
+      mode = "move-on";
     }
     if (mode === "unknown") return { state: "waiting", reason: "returning_inventory_unverified" };
     return mode === "move-on" ? { state: "skipped", reason: "returning_workspace_move_on", evidence: { projectCount: count } } : null;
@@ -135,7 +157,7 @@ export function returningWorkspaceAdapters(
       check: async (ctx, journal, signal) =>
         (mode === "unread" && id !== "linear.workspace" ? null : await scope(ctx, journal, signal)) ?? adapter.check(ctx, journal, signal),
       ...(adapter.act ? { act: async (ctx: Ctx, journal: OnboardJournal, signal?: AbortSignal) =>
-        (mode === "unread" && id !== "linear.workspace" ? null : await scope(ctx, journal, signal)) ?? adapter.act!(ctx, journal, signal) } : {}),
+        (mode === "unread" && id !== "linear.workspace" ? null : await scope(ctx, journal, signal, true)) ?? adapter.act!(ctx, journal, signal) } : {}),
     };
   }
 }

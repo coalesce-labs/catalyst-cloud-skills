@@ -16,6 +16,7 @@ import { personalConsentAdapter } from "./onboard-personal.js";
 import { boundedOnboardSignin } from "./onboard-signin.js";
 import { existingLinearAdapters } from "./onboard-existing.js";
 import { returningWorkspaceAdapters } from "./onboard-returning.js";
+import { archiveReturningProject } from "./onboard-project-cleanup.js";
 import { CREATE_TEAM_CHOICE } from "./onboard-team-create.js";
 import { linearWorkspaceAdapter } from "./onboard-workspace.js";
 import { firstProjectAdapters } from "./onboard-projects.js";
@@ -637,7 +638,9 @@ export function createOnboardRuntime(
   let reviewActive = false;
   returningWorkspaceAdapters(adapters, args, hooks.ui?.reviewProjects?.bind(hooks.ui),
     text => hooks.ui ? hooks.ui.message(text) : ctx.stderr(text),
-    () => { newProjectRequested = true; }, () => reviewActive);
+    () => { newProjectRequested = true; }, () => reviewActive,
+    (project, stepCtx, journal, signal) => archiveReturningProject(project, stepCtx, journal,
+      hooks.ui?.confirmProjectCleanup?.bind(hooks.ui), signal));
   return {
     beforeStep: async id => {
       await hooks.beforeStep?.(id);
