@@ -25,6 +25,7 @@ import {
   type RunnerEngineInfo,
 } from "../src/onboard-runner.js";
 import type { OnboardJournal } from "../src/onboard.js";
+import { onboardReasonText } from "../src/onboard-next.js";
 
 const now = new Date("2026-10-02T12:00:00.000Z");
 const SUPERVISOR = `ghcr.io/coalesce-labs/catalyst-supervisor@sha256:${"a".repeat(64)}`;
@@ -83,6 +84,7 @@ function fakeEngine(
     },
     socketGid: async () => 991,
     nativeEgressStatus: async()=>true,
+    vmCapabilities: async () => { engine.calls.push("vmCapabilities"); return "ready"; },
     claimDirs: async (dir, paths) => {
       engine.calls.push(`claimDirs ${paths.length}`);
       return true;
@@ -472,6 +474,45 @@ describe("opting in", () => {
 });
 
 describe("prerequisites", () => {
+  test.each([
+    "runner_home_mount_unwritable", "runner_container_host_unreachable",
+    "runner_container_network_unreachable", "runner_engine_probe_unavailable",
+  ] as const)("a failed VM capability probe stops before enrollment or start: %s", async reason => {
+    const engine = fakeEngine();
+    engine.vmCapabilities = async (dir, image, baseUrl) => {
+      engine.calls.push("vmCapabilities");
+      expect(dir).toBe(f.dir); expect(image).toBe(SUPERVISOR);
+      expect(baseUrl).toBe("https://cloud.example.test");
+      return reason;
+    };
+    const f = fixture({ selected: true, runnerCloud: true, engine });
+    const result = await run(f);
+    expect(result).toMatchObject({ state: "waiting", reason, evidence: { selected: true } });
+    expect(engine.calls).toContain("vmCapabilities");
+    expect(engine.calls).not.toContain("composeUp");
+    expect(engine.calls.some(call => call.startsWith("writeVolumeFile") || call.startsWith("createNetwork"))).toBe(false);
+    expect(f.state.mints).toEqual([]); expect(f.state.keyMints).toEqual([]);
+    expect(f.state.admissionWrites).toEqual([]);
+    const text = onboardReasonText({ id: "runner", state: "waiting", reason });
+    expect(text).toContain("catalyst onboard --runner");
+    if (reason === "runner_home_mount_unwritable") {
+      expect(text).toContain("writable"); expect(text).toContain("Colima");
+      expect(text).toContain("uid 10001");
+    }
+    if (reason === "runner_container_host_unreachable") expect(text).toContain("reach this Mac");
+    if (reason === "runner_container_network_unreachable") expect(text).toContain("health endpoint");
+  });
+
+  test("a remote endpoint is named before any local change or cloud request", async () => {
+    const engine = fakeEngine({ arch: "arm64", vm: true, unsupported: true,
+      unsupportedReason: "runner_engine_nonlocal" });
+    const f = fixture({ selected: true, engine });
+    expect((await run(f)).reason).toBe("runner_engine_nonlocal");
+    expect(existsSync(f.dir)).toBe(false); expect(f.requests).toEqual([]);
+    expect(onboardReasonText({ id: "runner", state: "waiting", reason: "runner_engine_nonlocal" }))
+      .toContain("unix:///");
+  });
+
   test("no Docker engine is said plainly and skipped, with nothing written", async () => {
     const f = fixture({ selected: true, engine: fakeEngine(null) });
     expect(await run(f)).toEqual({
@@ -1150,20 +1191,28 @@ describe("the Docker engine", () => {
     expect(r.runs[0]!.args.join(" ")).toContain('mv -f "$tmp" "$CATALYST_ORG_KEY_FILE"');
   });
 
-  test("info reads the engine architecture and whether it runs in a VM", async () => {
+  test.each([
+    ["Ubuntu 24.04 (Colima)", "unix:///Users/person/.colima/default/docker.sock"],
+    ["Rancher Desktop", "unix:///Users/person/.rd/docker.sock"],
+    ["OrbStack", "unix:///Users/person/.orbstack/run/docker.sock"],
+    ["Docker Desktop", "unix:///Users/person/.docker/run/docker.sock"],
+    ["another Linux engine", "unix:///var/run/docker.sock"],
+  ])("macOS accepts %s by local Linux engine capabilities", async (operatingSystem, endpoint) => {
     const r = recordingExec({
       "info": {
         code: 0,
-        stdout: JSON.stringify({ Architecture: "aarch64", OperatingSystem: "Docker Desktop", OSType: "linux" }),
+        stdout: JSON.stringify({ Architecture: "aarch64", OperatingSystem: operatingSystem, OSType: "linux" }),
       },
       "compose version": { code: 0, stdout: "v2.40.0" },
     });
-    const engine = dockerRunnerEngine({ exec: r.exec, env: { DOCKER_HOST: "unix:///var/run/docker.sock" }, platform: "darwin" });
+    const engine = dockerRunnerEngine({ exec: r.exec, env: { DOCKER_HOST: endpoint }, platform: "darwin" });
     expect(await engine.info()).toEqual({ arch: "arm64", vm: true });
+    expect(await engine.socketGid()).toBeNull();
+    expect(r.runs.some(row => row.args.join(" ") === "compose version")).toBe(true);
   });
 
   test.each([
-    { platform: "darwin" as const, operatingSystem: "Colima", endpoint: "unix:///var/run/docker.sock" },
+    { platform: "darwin" as const, operatingSystem: "Ubuntu (Colima)", endpoint: "tcp://remote:2376" },
     { platform: "linux" as const, operatingSystem: "Ubuntu", endpoint: "tcp://remote:2376" },
     { platform: "darwin" as const, operatingSystem: "Docker Desktop", endpoint: "ssh://remote" },
     { platform: "linux" as const, operatingSystem: "Ubuntu", endpoint: "unix:///run/user/1000/docker.sock" },
