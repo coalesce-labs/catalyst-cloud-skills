@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.16.2
+
+Setup keeps verified earlier Catalyst skill copies and reports where it moved them.
+
 ## 0.16.1
 
 Setup lists your existing projects and lets you finish this computer without choosing a team again.
