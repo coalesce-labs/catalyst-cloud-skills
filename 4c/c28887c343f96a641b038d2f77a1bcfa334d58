@@ -1,0 +1,1 @@
+Also persist an explicit CATALYST_SLOTS cap with the disk policy so the recorded one-slot install setting is honored through Compose env filtering.
