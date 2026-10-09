@@ -1,1 +1,6 @@
-Fix the missing test-helper closing brace reported by normal CI typecheck; no probe behavior or test gate change.
+Revision history for #332:
+
+rev 2 (content) 2026-10-09 15:00 UTC — Fix the missing test-helper closing brace reported by normal CI typecheck; no probe behavior or test gate change.
+rev 1 (initial) 2026-10-09 15:00 UTC
+
+<!-- mergify-revision-data: {"schema_version":1,"pull_number":332,"entries":[{"number":1,"change_type":"initial","old_sha":null,"new_sha":"6f5416fe0966b0727d6cab094387713962989a0c","timestamp_iso":"2026-10-09T15:00:39Z","reason":"","replay_sha":null,"compare_url":null},{"number":2,"change_type":"content","old_sha":"6f5416fe0966b0727d6cab094387713962989a0c","new_sha":"25a8be752a8964bbb3bc2e05058f5af6c2c50389","timestamp_iso":"2026-10-09T15:00:39Z","reason":"Fix the missing test-helper closing brace reported by normal CI typecheck; no probe behavior or test gate change.","replay_sha":null,"compare_url":"https://github.com/coalesce-labs/catalyst-cloud-skills/compare/6f5416fe0966b0727d6cab094387713962989a0c...25a8be752a8964bbb3bc2e05058f5af6c2c50389"}]} -->
