@@ -1,0 +1,6 @@
+Revision history for #334:
+
+rev 2 (content) 2026-10-09 16:28 UTC — Also persist an explicit CATALYST_SLOTS cap with the disk policy so the recorded one-slot install setting is honored through Compose env filtering.
+rev 1 (initial) 2026-10-09 16:28 UTC
+
+<!-- mergify-revision-data: {"schema_version":1,"pull_number":334,"entries":[{"number":1,"change_type":"initial","old_sha":null,"new_sha":"7d399670efad4b563352eb9c93f11342f1e50b8e","timestamp_iso":"2026-10-09T16:28:56Z","reason":"","replay_sha":null,"compare_url":null},{"number":2,"change_type":"content","old_sha":"7d399670efad4b563352eb9c93f11342f1e50b8e","new_sha":"4cc28887c343f96a641b038d2f77a1bcfa334d58","timestamp_iso":"2026-10-09T16:28:56Z","reason":"Also persist an explicit CATALYST_SLOTS cap with the disk policy so the recorded one-slot install setting is honored through Compose env filtering.","replay_sha":null,"compare_url":"https://github.com/coalesce-labs/catalyst-cloud-skills/compare/7d399670efad4b563352eb9c93f11342f1e50b8e...4cc28887c343f96a641b038d2f77a1bcfa334d58"}]} -->
