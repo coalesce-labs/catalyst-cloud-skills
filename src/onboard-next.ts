@@ -228,7 +228,17 @@ const REASONS: Record<string, string> = {
   runner_docker_socket_unreadable:
     "Setup could not read the group of the Docker socket at /var/run/docker.sock. Check that Docker is running, then run catalyst onboard again.",
   runner_engine_unsupported:
-    "Runner setup needs local Docker Desktop or OrbStack on Mac, or native Linux Docker at /var/run/docker.sock. Select a supported local engine, then run catalyst onboard --runner.",
+    "Runner setup needs a local Linux Docker engine with Compose on Mac, or native Linux Docker at /var/run/docker.sock. Select a local engine, then run catalyst onboard --runner.",
+  runner_engine_nonlocal:
+    "The selected Docker endpoint is not a verified local unix:/// socket, or DOCKER_CONTEXT conflicts with DOCKER_HOST. Select a local Docker context and clear the conflicting variable, then run catalyst onboard --runner.",
+  runner_home_mount_unwritable:
+    "A container could not read and write the runner home mounts as uid 10001. Share Catalyst's state directory with your Docker VM and enable writable mounts. For Colima, configure a writable home mount with ownership mapping for uid 10001, then restart the VM and run catalyst onboard --runner.",
+  runner_container_host_unreachable:
+    "A container could not reach this Mac. Enable container-to-host networking in your Docker VM and allow the setup process through the Mac firewall, then run catalyst onboard --runner.",
+  runner_container_network_unreachable:
+    "A container could not reach Catalyst's health endpoint. Check the Docker VM's DNS, proxy and outbound HTTPS access, then run catalyst onboard --runner.",
+  runner_engine_probe_unavailable:
+    "Setup could not complete the container capability probe. Check Docker access and the pinned supervisor image, then run catalyst onboard --runner. Setup has not enrolled or started this machine.",
   runner_installation_unverified:
     "Setup found a possible existing machine installation but could not verify its Compose files and identity. Keep its files and credentials. Run docker compose -p catalyst-host logs supervisor to check it, then run catalyst setup --runner again.",
   runner_enrollment_unavailable:
