@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.16.4
+
+Setup keeps this computer's saved disk limits when it updates the service that runs your work.
+
 ## 0.16.3
 
 Setup checks your local Docker engine's capabilities on macOS and explains mount or network problems.
