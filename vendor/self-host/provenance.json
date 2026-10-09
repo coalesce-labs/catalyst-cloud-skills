@@ -1,8 +1,8 @@
 {
   "repository": "coalesce-labs/catalyst-cloud",
-  "commit": "3efb201e119fb9ce5a3f636c3212fcbed2d7efef",
+  "commit": "081ce3fefd52bfa0b0ac76b3d6f87ce373b71c7d",
   "sha256": {
-    "deploy/self-host/compose.yaml": "302f4cd6740572bf1a40386f8ec0d3a1b6919fe8c5e303f232c36969d8f36a53",
+    "deploy/self-host/compose.yaml": "aa3572bdcbd84c3e13634947dabe941c055ea68df607a140149efb000c6598e8",
     "deploy/self-host/linux-session-egress/session-egress.py": "a20cedfa1e883127ec461e4b7f9588d379fe1633b8244ecd703c81f589d3f142",
     "deploy/self-host/linux-session-egress/catalyst-session-egress.service": "703c150ab23ec87aea47cfc394f63e061b66c4b8c1454a88a9be879c161ce2a5",
     "deploy/self-host/linux-session-egress/catalyst-session-egress-attest.service": "94fa75ea0616f6a1172fc20ca637a5727c36456357e4a977d5bdd65f2fad2e8d",
