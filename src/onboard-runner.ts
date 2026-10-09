@@ -18,6 +18,7 @@ import { nativeEgressReady, NATIVE_EGRESS_DIR } from "./onboard-runner-egress.js
 import { runnerAdmission, issueRunnerOrgKey, verifyRunnerRoutes } from "./onboard-runner-cloud.js";
 import { verifyOnboardRoutes } from "./onboard-capabilities.js";
 import { liveTeamKey, onboardTeamAdmission } from "./onboard-capacity.js";
+import { runnerVmCapabilities, type RunnerVmCapability } from "./onboard-runner-probes.js";
 import {
   readExistingOnboardJson,
   readOnboardTeamInventory,
@@ -61,11 +62,11 @@ const DIRS = ["slots", "thoughts", "locks"] as const;
 
 export interface RunnerEngineInfo {
   arch: "amd64" | "arm64";
-  /** Docker Desktop or OrbStack: the engine runs in a VM, its socket is gid 0 and shared
-   * directories keep the container's uid. */
+  /** On macOS the Linux engine runs in a VM. Bind mounts must pass the supervisor uid probe. */
   vm: boolean;
   /** A reachable engine whose bind paths/socket ownership cannot be verified locally. */
   unsupported?: true;
+  unsupportedReason?: "runner_engine_nonlocal";
 }
 export interface RunnerEnrollment {
   hostId: string;
@@ -98,6 +99,8 @@ export interface RunnerEngine {
   createNetwork(name: string, signal?: AbortSignal): Promise<boolean>;
   socketGid(): Promise<number | null>;
   nativeEgressStatus?(nowMs:number,signal?:AbortSignal):Promise<boolean>;
+  /** Verifies bind paths and connectivity before enrollment or starting the supervisor. */
+  vmCapabilities(dir: string, image: string, baseUrl: string, signal?: AbortSignal): Promise<RunnerVmCapability>;
   /** Native Linux only: hands the host directories to the runner uid through the supervisor image. */
   claimDirs(dir: string, paths: string[], signal?: AbortSignal): Promise<boolean>;
   hasVolumeFile(
@@ -224,12 +227,15 @@ export function dockerRunnerEngine(
       const arch = arches[String(body.Architecture)];
       if (body.OSType !== "linux" || !arch) return null;
       if ((await docker(["compose", "version"], { signal })).code !== 0) return null;
-      const vm = /docker desktop|orbstack/i.test(String(body.OperatingSystem));
       const host = await endpoint(signal);
       const platform = deps.platform ?? process.platform;
+      const vm = platform === "darwin" || /docker desktop|orbstack/i.test(String(body.OperatingSystem));
+      const localSocket = host?.startsWith("unix:///") === true;
       nativeLocal = platform === "linux" && !vm && host === "unix:///var/run/docker.sock";
-      const supportedVm = platform === "darwin" && vm && host?.startsWith("unix:///");
-      return { arch, vm, ...(!nativeLocal && !supportedVm ? { unsupported: true as const } : {}) };
+      const supportedVm = platform === "darwin" && localSocket;
+      return { arch, vm, ...(!nativeLocal && !supportedVm ? {
+        unsupported: true as const, ...(!localSocket ? { unsupportedReason: "runner_engine_nonlocal" as const } : {}),
+      } : {}) };
     },
     async installation(home, supervisorImage, signal) {
       const listed = await docker(["ps", "--all", "--filter", `label=com.docker.compose.project=${RUNNER_PROJECT}`,
@@ -327,6 +333,10 @@ export function dockerRunnerEngine(
     },
     async nativeEgressStatus(nowMs,signal) {
       return nativeLocal && (await nativeEgressReady(nowMs, signal));
+    },
+    async vmCapabilities(dir, image, baseUrl, signal) {
+      return runnerVmCapabilities({ paths: DIRS.map(sub => join(dir, sub)), image, baseUrl,
+        exec: docker, env, signal });
     },
     async socketGid() {
       if (!nativeLocal) return null;
@@ -635,7 +645,7 @@ export function onboardRunnerAdapter(input: OnboardRunnerInput = {},
       };
     const info = await engine.info(signal);
     if (!info) return { state: "skipped", reason: "runner_docker_missing", evidence: selected };
-    if (info.unsupported) return waiting("runner_engine_unsupported", selected);
+    if (info.unsupported) return waiting(info.unsupportedReason ?? "runner_engine_unsupported", selected);
     const cfg = loadConfig(ctx.home);
     const account = journal.account ?? journal.tenant;
     if (
@@ -963,6 +973,10 @@ export function onboardRunnerAdapter(input: OnboardRunnerInput = {},
         const arch = await engine.imageArch(ref, signal);
         if (!arch) return waiting("runner_images_unavailable", { ...selected, image: ref });
         if (arch !== p.info.arch) return waiting("runner_image_emulated", { ...selected, image: ref });
+      }
+      if (p.info.vm) {
+        const capability = await engine.vmCapabilities(p.dir, p.images.supervisor, p.baseUrl, signal);
+        if (capability !== "ready") return waiting(capability, selected);
       }
       const network = await engine.network(RUNNER_SESSION_NETWORK, signal);
       if (network === "misshaped") return waiting("runner_session_network_misshaped", selected);

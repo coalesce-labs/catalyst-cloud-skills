@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.16.3
+
+Setup checks your local Docker engine's capabilities on macOS and explains mount or network problems.
+
 ## 0.16.2
 
 Setup keeps verified earlier Catalyst skill copies and reports where it moved them.
