@@ -1,0 +1,1 @@
+Fix the missing test-helper closing brace reported by normal CI typecheck; no probe behavior or test gate change.
