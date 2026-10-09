@@ -868,6 +868,68 @@ describe("bringing the host up", () => {
     expect(f.state.mints).toHaveLength(1);
   });
 
+  test("a stale compose is refreshed without losing the saved disk policy or enrollment", async () => {
+    const f = fixture({ selected: true });
+    withOrgKey(f);
+    expect((await run(f)).state).toBe("done");
+    const policy = [
+      "CATALYST_SLOTS=1", "CATALYST_SLOT_DISK_MODE=budget", "CATALYST_SLOT_DISK_BUDGET_GIB=12",
+      "CATALYST_DISK_BUDGET_GIB=32", "CATALYST_WORKSPACE_RETENTION_HOURS=1",
+      "CATALYST_HOST_FREE_FLOOR_GIB=45", "CATALYST_HOST_DISK_SAMPLE_DIR=/host/samples",
+      "CATALYST_HOST_DISK_SAMPLE_FILE=/var/lib/catalyst/host-disk/sample.json",
+    ];
+    const envPath = join(f.dir, ".env");
+    writeFileSync(envPath, readFileSync(envPath, "utf8") + policy.join("\n") + "\n");
+    const beforeEnv = readFileSync(envPath);
+    const beforeCredential = f.engine.files.get("CATALYST_HOST_CREDENTIAL_FILE");
+    writeFileSync(join(f.dir, "compose.yaml"), "services: {}\n");
+    f.engine.calls.length = 0;
+    expect((await run(f)).state).toBe("done");
+    expect(f.engine.calls.filter(call => call === "composeUp")).toHaveLength(1);
+    expect(readFileSync(envPath)).toEqual(beforeEnv);
+    expect(f.engine.files.get("CATALYST_HOST_CREDENTIAL_FILE")).toBe(beforeCredential);
+    expect(f.state.mints).toHaveLength(1);
+    const rendered = readFileSync(join(f.dir, "compose.yaml"), "utf8");
+    expect(rendered).toBe(readFileSync(join(__dirname, "..", "vendor/self-host/compose.yaml"), "utf8"));
+    expect(rendered).toContain("${CATALYST_HOST_DISK_SAMPLE_DIR:-./host-disk}:/var/lib/catalyst/host-disk:ro");
+    expect(rendered).toContain("CATALYST_HOST_FREE_FLOOR_GIB: ${CATALYST_HOST_FREE_FLOOR_GIB:-25}");
+    expect(rendered).toContain("CATALYST_HOST_DISK_SAMPLE_FILE: ${CATALYST_HOST_DISK_SAMPLE_FILE:-}");
+    expect(existsSync(join(f.dir, "host-disk"))).toBe(true);
+  });
+
+  test("a stale compose remains untouched when this run has not selected runner repair", async () => {
+    const f = fixture({ selected: true });
+    withOrgKey(f);
+    expect((await run(f)).state).toBe("done");
+    const stale = "services: {}\n";
+    writeFileSync(join(f.dir, "compose.yaml"), stale);
+    f.engine.calls.length = 0;
+    const adapter = onboardRunnerAdapter({ selected: false, engine: f.engine });
+    // Reporting without --runner never applies an update.
+    await adapter.check(f.ctx, f.journal);
+    expect(readFileSync(join(f.dir, "compose.yaml"), "utf8")).toBe(stale);
+    expect(f.engine.calls).not.toContain("composeUp");
+  });
+
+  test("an explicit disk policy overrides saved values while retaining other saved settings", async () => {
+    const f = fixture({ selected: true });
+    withOrgKey(f);
+    expect((await run(f)).state).toBe("done");
+    const envPath = join(f.dir, ".env");
+    writeFileSync(envPath, readFileSync(envPath, "utf8") + "CATALYST_HOST_FREE_FLOOR_GIB=25\nCATALYST_DISK_BUDGET_GIB=32\n");
+    f.ctx.env.CATALYST_SLOTS = "1";
+    f.ctx.env.CATALYST_HOST_FREE_FLOOR_GIB = "45";
+    f.ctx.env.CATALYST_HOST_DISK_SAMPLE_DIR = "/host/fresh-samples";
+    f.ctx.env.CATALYST_HOST_DISK_SAMPLE_FILE = "/var/lib/catalyst/host-disk/sample.json";
+    expect((await run(f)).state).toBe("done");
+    const env = readFileSync(envPath, "utf8");
+    expect(env).toContain("CATALYST_SLOTS=1\n");
+    expect(env).toContain("CATALYST_HOST_FREE_FLOOR_GIB=45\n");
+    expect(env).toContain("CATALYST_HOST_DISK_SAMPLE_DIR=/host/fresh-samples\n");
+    expect(env).toContain("CATALYST_HOST_DISK_SAMPLE_FILE=/var/lib/catalyst/host-disk/sample.json\n");
+    expect(env).toContain("CATALYST_DISK_BUDGET_GIB=32\n");
+  });
+
   test("an explicitly supplied replacement organization key replaces the saved key", async () => {
     const f = fixture({ selected: true });
     withOrgKey(f);

@@ -59,6 +59,13 @@ const JOIN_TOKENS = "/api/v1/hosts/join-tokens";
 const CAPACITY = "/api/v1/me/runner-capacity";
 const RUNNER_UID = "10001:10001";
 const DIRS = ["slots", "thoughts", "locks"] as const;
+const DISK_POLICY_KEYS = [
+  "CATALYST_SLOTS",
+  "CATALYST_SLOT_DISK_MODE", "CATALYST_SLOT_DISK_BUDGET_GIB", "CATALYST_DISK_BUDGET_GIB",
+  "CATALYST_WORKSPACE_STORAGE", "CATALYST_WORKSPACE_RETENTION_HOURS",
+  "CATALYST_HOST_FREE_FLOOR_GIB", "CATALYST_HOST_DISK_SAMPLE_DIR", "CATALYST_HOST_DISK_SAMPLE_FILE",
+] as const;
+
 
 export interface RunnerEngineInfo {
   arch: "amd64" | "arm64";
@@ -716,6 +723,7 @@ export function onboardRunnerAdapter(input: OnboardRunnerInput = {},
 
   async function desiredEnv(
     p: Prepared,
+    ctx: Ctx,
     joinToken?: string,
   ): Promise<Record<string, string> | null> {
     const saved = readEnvFile(join(p.dir, ".env")) ?? {};
@@ -735,6 +743,10 @@ export function onboardRunnerAdapter(input: OnboardRunnerInput = {},
       CATALYST_THOUGHTS_DIR: join(p.dir, "thoughts"),
       CATALYST_POOL_LOCK_DIR: join(p.dir, "locks"),
       CATALYST_SESSION_EGRESS_DIR: p.info.vm ? join(p.dir, "session-egress") : NATIVE_EGRESS_DIR,
+      // Saved policy stays in merged(). An explicit value in this run overrides it.
+      ...Object.fromEntries(DISK_POLICY_KEYS.flatMap(key =>
+        ctx.env[key] === undefined ? [] : [[key, ctx.env[key]!]],
+      )),
     };
   }
   /** The step owns its own keys only; a person's tuning (CATALYST_SLOTS and the rest) is kept. */
@@ -819,7 +831,7 @@ export function onboardRunnerAdapter(input: OnboardRunnerInput = {},
       const p = await prepare(ctx, journal, signal);
       if (!("dir" in p)) return p;
       const saved = readEnvFile(join(p.dir, ".env"));
-      const want = await desiredEnv(p);
+      const want = await desiredEnv(p, ctx);
       if (!want) return waiting("runner_docker_socket_unreadable", selected);
       const name = want.CATALYST_HOST_NAME!;
       let enrolled: RunnerEnrollment | null = null;
@@ -854,7 +866,15 @@ export function onboardRunnerAdapter(input: OnboardRunnerInput = {},
       )
         return waiting("runner_enrolled_for_other_team", { ...selected, hostName: name });
       const running = await engine.composeRunning(p.dir, signal);
-      const changed = !saved || Object.entries(want).some(([key, value]) => saved[key] !== value);
+      let composeMatches = false;
+      try {
+        composeMatches = readFileSync(join(p.dir, "compose.yaml")).equals(
+          readFileSync(join(packageRoot(), "vendor", "self-host", "compose.yaml")),
+        );
+      } catch {
+        /* A missing or unreadable compose needs an explicitly authorized repair. */
+      }
+      const changed = !saved || !composeMatches || Object.entries(want).some(([key, value]) => saved[key] !== value);
       const hostEvidence = { ...selected, hostName: name };
       const pending = (): OnboardStepResult =>
         mayAct ? { state: "pending" } : waiting("runner_needs_runner_flag", hostEvidence);
@@ -927,6 +947,9 @@ export function onboardRunnerAdapter(input: OnboardRunnerInput = {},
         }
         // Mounted read-only into the supervisor (uid 10001), which reads the egress attestation.
         mkdirSync(join(p.dir, "session-egress"), { recursive: true, mode: 0o755 });
+        // The canonical compose binds host-native disk samples read-only. A custom sample
+        // directory belongs to its operator; only create the install's default directory.
+        mkdirSync(join(p.dir, "host-disk"), { recursive: true, mode: 0o755 });
         const compose = readFileSync(join(packageRoot(), "vendor", "self-host", "compose.yaml"));
         let current: Buffer | null = null;
         try {
@@ -951,7 +974,7 @@ export function onboardRunnerAdapter(input: OnboardRunnerInput = {},
           return waiting("runner_name_required", selected);
         chosenName = name;
       }
-      let want = await desiredEnv(p);
+      let want = await desiredEnv(p, ctx);
       if (!want) return waiting("runner_docker_socket_unreadable", selected);
       const writeEnv = (values: Record<string, string>): boolean => {
         try {
@@ -1013,7 +1036,7 @@ export function onboardRunnerAdapter(input: OnboardRunnerInput = {},
       if (!hasCredential || (isUnenrolled(credential) && credential.tokenSpent)) {
         const token = await mintJoinToken(ctx, p, name, signal);
         if (typeof token !== "string") return token;
-        want = (await desiredEnv(p, token))!;
+        want = (await desiredEnv(p, ctx, token))!;
         if (!writeEnv(want))
           return { state: "failed", reason: "runner_directory_unavailable", evidence: selected };
       }
