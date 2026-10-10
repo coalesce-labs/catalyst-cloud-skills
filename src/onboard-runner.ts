@@ -19,7 +19,7 @@ import { runnerAdmission, issueRunnerOrgKey, verifyRunnerRoutes } from "./onboar
 import { verifyOnboardRoutes } from "./onboard-capabilities.js";
 import { liveTeamKey, onboardTeamAdmission } from "./onboard-capacity.js";
 import { runnerVmCapabilities, type RunnerVmCapability } from "./onboard-runner-probes.js";
-import { installDarwinThoughtsCustody, type DarwinThoughtsInstallResult } from "./onboard-runner-custody.js";
+import { darwinThoughtsInstallRefusal, installDarwinThoughtsCustody, type DarwinThoughtsInstallResult } from "./onboard-runner-custody.js";
 import { canonicalDarwinThoughtsJson, parseDarwinThoughtsAuthority } from "../vendor/self-host/darwin-thoughts-custody/verifier.mjs";
 import {
   readExistingOnboardJson,
@@ -328,12 +328,14 @@ export function dockerRunnerEngine(
         const hostName = names[0].slice("CATALYST_HOST_NAME=".length);
         const baseUrl = origins[0].slice("CATALYST_MIRROR_URL=".length);
         if (!HOST_NAME.test(hostName)) return "unverified";
-        // A running older pin is still ours only when the self-owned Compose environment
-        // names that exact pinned image and the same runtime identity. Setup can then move it
-        // to the desired pin after the normal enrollment and custody checks.
+        // The saved intent is either this exact old pin or the exact requested replacement.
+        // The latter resumes an upgrade stopped after persisting intent but before activation.
+        // Both paths require an immutable runtime pin from the same repository and identity.
         if (config.Image !== supervisorImage &&
           (!saved || !IMAGE_REF.test(saved.CATALYST_SUPERVISOR_IMAGE ?? "") ||
-            config.Image !== saved.CATALYST_SUPERVISOR_IMAGE ||
+            typeof config.Image !== "string" || !IMAGE_REF.test(config.Image) ||
+            (config.Image !== saved.CATALYST_SUPERVISOR_IMAGE && saved.CATALYST_SUPERVISOR_IMAGE !== supervisorImage) ||
+            config.Image.split("@sha256:")[0] !== supervisorImage.split("@sha256:")[0] ||
             saved.CATALYST_SUPERVISOR_IMAGE.split("@sha256:")[0] !== supervisorImage.split("@sha256:")[0] ||
             saved.CATALYST_HOST_NAME !== hostName ||
             normalizeBaseUrl(saved.CATALYST_MIRROR_URL ?? "") !== normalizeBaseUrl(baseUrl))) return "unverified";
@@ -1079,8 +1081,6 @@ export function onboardRunnerAdapter(input: OnboardRunnerInput = {},
           return false;
         }
       };
-      if (!writeEnv(want))
-        return { state: "failed", reason: "runner_directory_unavailable", evidence: selected };
       for (const ref of Object.values(p.images)) {
         if (!(await engine.imageArch(ref, signal)) && !p.info.vm) {
           await engine.pull(ref, signal);
@@ -1109,11 +1109,15 @@ export function onboardRunnerAdapter(input: OnboardRunnerInput = {},
             readFileSync(join(packageRoot(), "vendor", "self-host", "compose.darwin-thoughts.yaml"), "utf8"));
           receivedCustody = { dir: p.dir, result };
           want = (await desiredEnv(p, ctx))!;
-          if (!writeEnv(want)) return { state: "failed", reason: "runner_directory_unavailable", evidence: selected };
-        } catch {
-          return waiting(signal?.aborted ? "interrupted" : "runner_thoughts_custody_unavailable", selected);
+        } catch (error) {
+          const custodyReason = darwinThoughtsInstallRefusal(error);
+          if (!signal?.aborted && custodyReason) input.message?.(`Setup could not verify local storage (${custodyReason}).`);
+          return waiting(signal?.aborted ? "interrupted" : "runner_thoughts_custody_unavailable",
+            { ...selected, ...(custodyReason ? { custodyReason } : {}) });
         }
       }
+      if (!writeEnv(want))
+        return { state: "failed", reason: "runner_directory_unavailable", evidence: selected };
       const network = await engine.network(RUNNER_SESSION_NETWORK, signal);
       if (network === "misshaped") return waiting("runner_session_network_misshaped", selected);
       if (network === "unavailable") return waiting("runner_session_network_unavailable",selected);

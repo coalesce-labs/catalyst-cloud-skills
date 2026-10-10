@@ -581,7 +581,7 @@ describe("prerequisites", () => {
     expect(f.state.mints).toEqual([]);
     expect(f.state.keyMints).toEqual([]);
     expect(f.state.admissionWrites).toEqual([]);
-    expect(readFileSync(join(f.dir, ".env"), "utf8")).not.toContain("CATALYST_THOUGHTS_CUSTODY_AUTHORITY=");
+    expect(existsSync(join(f.dir, ".env"))).toBe(false);
   });
 
   test("fresh native custody reaches the VM installer before credential work and persists only public authority channels", async () => {
@@ -1903,6 +1903,37 @@ describe("owner-managed preserving replacement through the existing CLI path", (
     const x = retained();
     x.row.Config.Image = `ghcr.io/coalesce-labs/catalyst-supervisor@sha256:${"f".repeat(64)}`;
     expect((await x.f.adapter.act!(x.f.ctx, x.f.journal)).reason).toBe("runner_installation_unverified");
+    expect(x.f.engine.calls).not.toContain("composeUp");
+  });
+  function actOwned(f: ReturnType<typeof fixture>) {
+    if (!f.adapter.act) throw Error("fixture must provide an installer action");
+    return f.adapter.act(f.ctx, f.journal);
+  }
+  test("resumes the exact requested pin after an interrupted owner-managed upgrade", async () => {
+    const x = retained();
+    writeFileSync(join(x.f.dir, ".env"), readFileSync(join(x.f.dir, ".env"), "utf8").replace(/CATALYST_SUPERVISOR_IMAGE=[^\n]+/, `CATALYST_SUPERVISOR_IMAGE=${SUPERVISOR}`), { mode: 0o600 });
+    expect(await actOwned(x.f)).toEqual({ state: "done" });
+    expect(x.f.engine.calls.filter(call => call === "composeUp")).toHaveLength(1);
+    expect(x.f.engine.files.get("CATALYST_HOST_CREDENTIAL_FILE")).toBe(x.credential);
+    expect(x.f.state.mints).toEqual([]);
+  });
+  test("a custody refusal preserves the old pin and permits a supported retry", async () => {
+    const x = retained();
+    const before = readFileSync(join(x.f.dir, ".env"));
+    const custody = x.f.engine.nativeThoughtsCustody;
+    x.f.engine.nativeThoughtsCustody = async () => { throw Error("native custody refused"); };
+    expect((await actOwned(x.f)).reason).toBe("runner_thoughts_custody_unavailable");
+    expect(readFileSync(join(x.f.dir, ".env"))).toEqual(before);
+    expect(x.f.engine.calls).not.toContain("composeUp");
+    x.f.engine.nativeThoughtsCustody = custody;
+    expect(await actOwned(x.f)).toEqual({ state: "done" });
+    expect(x.f.engine.calls.filter(call => call === "composeUp")).toHaveLength(1);
+  });
+  test.each(["latest", `ghcr.io/another-publisher/supervisor@sha256:${"f".repeat(64)}`])("requested saved intent never adopts a foreign or unpinned runtime image: %s", async image => {
+    const x = retained();
+    x.row.Config.Image = image;
+    writeFileSync(join(x.f.dir, ".env"), readFileSync(join(x.f.dir, ".env"), "utf8").replace(/CATALYST_SUPERVISOR_IMAGE=[^\n]+/, `CATALYST_SUPERVISOR_IMAGE=${SUPERVISOR}`), { mode: 0o600 });
+    expect((await actOwned(x.f)).reason).toBe("runner_installation_unverified");
     expect(x.f.engine.calls).not.toContain("composeUp");
   });
   test("a matching saved and running pin from another image repository stays unverified", async () => {

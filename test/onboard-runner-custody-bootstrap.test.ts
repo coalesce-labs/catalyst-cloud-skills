@@ -3,7 +3,7 @@ import { createHash, generateKeyPairSync, sign } from "node:crypto";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { receiveDarwinThoughtsBootstrapForTest } from "../src/onboard-runner-custody.js";
+import { darwinThoughtsInstallRefusal, receiveDarwinThoughtsBootstrapForTest } from "../src/onboard-runner-custody.js";
 import {
   canonicalDarwinThoughtsJson,
   deriveDarwinThoughtsTargets,
@@ -22,7 +22,7 @@ const CID = "c".repeat(64);
 const LABEL = "dev.catalystcloud.custody-token";
 type Mode = "complete" | "ack-timeout" | "ack-invalid" | "foreign-label" |
   "foreign-image" | "foreign-name" | "foreign-cache" | "foreign-daemon" |
-  "rm-noop" | "late-create";
+  "rm-noop" | "late-create" | "proof-refused" | "unknown-refusal";
 interface State {
   mode: Mode; calls: string[][]; created?: string[]; removed: boolean; inspectCount: number;
   row?: { Id: string; Name: string; Image: string; Config: { Image: string; Labels: Record<string, string> } };
@@ -100,6 +100,9 @@ describe("production custody bootstrap helper ACK and cleanup", () => {
       else if(args[0]==='ps')out(state.row&&!state.removed?state.row.Id:'');
       else if(args[0]==='start'){
         if(args.at(-1)!==${JSON.stringify(CID)})throw Error('fixture_foreign_start');
+        if(state.mode==='proof-refused'||state.mode==='unknown-refusal'){
+          save();process.stderr.write('darwin_thoughts_custody:'+(state.mode==='proof-refused'?'file_owner':'secret_lowercase_value')+'\\nprivate credential payload must never appear\\n');process.exit(1);
+        }
         out(JSON.stringify(${JSON.stringify(proof)}));
       }
       else if(args[0]==='rm'){
@@ -175,5 +178,17 @@ describe("production custody bootstrap helper ACK and cleanup", () => {
     const mounts = args.flatMap((arg, index) => arg === "--mount" ? [args[index + 1]!] : []);
     expect(mounts).toContain("type=bind,src=" + f.authority.responsesRoot + ",dst=" + f.authority.responsesRoot + ",readonly");
     expect(mounts).toContain("type=bind,src=" + f.authority.requestsRoot + ",dst=" + f.authority.requestsRoot);
+  });
+  it.each(["proof-refused", "unknown-refusal"] as const)("receives only a closed refusal code and still removes its helper: %s", async mode => {
+    const f = fixture(mode);
+    let error: unknown;
+    try { await receiveDarwinThoughtsBootstrapForTest(f.input); } catch (caught) { error = caught; }
+    expect(error).toBeInstanceOf(Error);
+    expect(darwinThoughtsInstallRefusal(error)).toBe(mode === "proof-refused" ? "bootstrap_proof_refused:file_owner" : "bootstrap_proof_refused");
+    expect(String(error)).not.toContain("private credential");
+    removedAndAbsent(f.state());
+  });
+  it("never treats an arbitrary error message as a safe installer refusal", () => {
+    expect(darwinThoughtsInstallRefusal(Error("darwin_thoughts_custody_install:private credential payload"))).toBeUndefined();
   });
 });
