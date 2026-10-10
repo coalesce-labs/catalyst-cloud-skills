@@ -31,7 +31,7 @@ describe("native installer command absolute receiving deadline", () => {
   function instrument(receives: boolean) {
     instrumentation.execFile.mockImplementation((_file: string, _args: string[], options: CommandOptions, callback: Callback) => {
       const child = new EventEmitter();
-      const kill = vi.fn(() => false);
+      const kill = vi.fn((_signal: string) => false);
       Object.assign(child, { pid: 424242, kill });
       children.push({ kill, event: child });
       if (receives) timers.add(setTimeout(() => callback(null, " known receipt ", ""), 10));

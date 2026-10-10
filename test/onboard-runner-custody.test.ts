@@ -151,7 +151,7 @@ describe("native Darwin custody installer", () => {
     expect(fs.readFileSync(first.configPath)).toEqual(config); expect(fs.readFileSync(keyFile)).toEqual(key);
     expect(f.calls.filter(call => call.kind === "bootstrap")).toHaveLength(2);
   });
-  it.each(["uid", "euid", "home"])("refuses a changed actual native %s before bootstrap", async (field) => {
+  it.each(["uid", "euid", "home"] satisfies ("uid" | "euid" | "home")[])("refuses a changed actual native %s before bootstrap", async (field) => {
     const f = fixture(); await f.harness.install(f.input); f.calls.length = 0;
     if (field === "home") f.principal.home = join(home, "different"); else f.principal[field] = 502;
     await expect(f.harness.install(f.input)).rejects.toThrow(/principal|authority|owner/);
