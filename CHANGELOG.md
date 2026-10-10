@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.16.8
+
+Setup can resume an update stopped by a local storage check. Failed access checks keep the earlier settings and report which check stopped setup.
+
 ## 0.16.7
 
 Setup can update an existing installation that still runs its saved, older image version. Headless setup names which key input Catalyst rejected and shows how to try a saved personal login when one is available. Installer checks leave existing skill files in place until the installer updates them.
