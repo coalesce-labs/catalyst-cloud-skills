@@ -42,16 +42,16 @@ import {
 /** The Compose project name the vendored file declares. */
 export const RUNNER_PROJECT = "catalyst-host";
 export const RUNNER_SESSION_NETWORK = "catalyst-session-v1";
-/** Public multi-architecture images: host images from main 0b5495e144 (run 36999325814),
- * runner from main 48b5876e56 (run 37057503445). Explicit environment image values override
+/** Public multi-architecture images from main 3d657787e8: host run 38043266620,
+ * runner run 38042751509. Explicit environment image values override
  * these pins; the runner also preserves a saved image before choosing its default. */
 export const RUNNER_HOST_IMAGES = {
   supervisor:
-    "ghcr.io/coalesce-labs/catalyst-supervisor@sha256:fff1582e3ef763eae6728f195a8e3834383955ee03d39bcfe567f4a7361a8982",
+    "ghcr.io/coalesce-labs/catalyst-supervisor@sha256:a0a8f383b5869eddc8346b7d07fd98d92fe1cd4cfc57956cbbe9dc42d79a4727",
   watchdog:
-    "ghcr.io/coalesce-labs/catalyst-deadline-watchdog@sha256:b64e38f9ee34240d1e3d256e954eb8de20e2d3e51ed873019d350aa60be639c1",
+    "ghcr.io/coalesce-labs/catalyst-deadline-watchdog@sha256:a5999dbf229ac432b83c2ed3fe43fa251366baceb73af2f57590890a6a758f0d",
   runner:
-    "ghcr.io/coalesce-labs/catalyst-runner@sha256:50eeb256b4693fc42c81458bdfc887137a0df757260601f2a869738578d00782",
+    "ghcr.io/coalesce-labs/catalyst-runner@sha256:88c6143f6c95f92fca9ca385f3c5145389e6d6d0532398c52d225d0edfcf2ea8",
 } as const;
 const IMAGE_REF = /^[a-z0-9][a-z0-9._:/-]{0,255}@sha256:[0-9a-f]{64}$/;
 const HOST_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,62}$/;
