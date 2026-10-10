@@ -19,6 +19,8 @@ import { runnerAdmission, issueRunnerOrgKey, verifyRunnerRoutes } from "./onboar
 import { verifyOnboardRoutes } from "./onboard-capabilities.js";
 import { liveTeamKey, onboardTeamAdmission } from "./onboard-capacity.js";
 import { runnerVmCapabilities, type RunnerVmCapability } from "./onboard-runner-probes.js";
+import { installDarwinThoughtsCustody, type DarwinThoughtsInstallResult } from "./onboard-runner-custody.js";
+import { canonicalDarwinThoughtsJson, parseDarwinThoughtsAuthority } from "../vendor/self-host/darwin-thoughts-custody/verifier.mjs";
 import {
   readExistingOnboardJson,
   readOnboardTeamInventory,
@@ -34,22 +36,22 @@ import {
 
 // "Run Catalyst's work on this machine": the self-hosted host from catalyst-cloud's deploy/self-host
 // (a supervisor and a deadline watchdog under Compose), enrolled with the person's own owner or
-// admin login. Never the operator token. Missing host images are pulled anonymously with an empty
-// disposable Docker config. Customer delivery uses public GHCR pins, without registry credentials.
+// admin login. Never the operator token. Native Linux pulls missing images anonymously with an
+// empty disposable Docker config; Darwin custody receives only already-cached pinned images.
 
 /** The Compose project name the vendored file declares. */
 export const RUNNER_PROJECT = "catalyst-host";
 export const RUNNER_SESSION_NETWORK = "catalyst-session-v1";
-/** Public multi-architecture images: host images from main 0b5495e144 (run 36999325814),
- * runner from main 48b5876e56 (run 37057503445). Explicit environment image values override
+/** Public multi-architecture images from main 3d657787e8: host run 38043266620,
+ * runner run 38042751509. Explicit environment image values override
  * these pins; the runner also preserves a saved image before choosing its default. */
 export const RUNNER_HOST_IMAGES = {
   supervisor:
-    "ghcr.io/coalesce-labs/catalyst-supervisor@sha256:fff1582e3ef763eae6728f195a8e3834383955ee03d39bcfe567f4a7361a8982",
+    "ghcr.io/coalesce-labs/catalyst-supervisor@sha256:a0a8f383b5869eddc8346b7d07fd98d92fe1cd4cfc57956cbbe9dc42d79a4727",
   watchdog:
-    "ghcr.io/coalesce-labs/catalyst-deadline-watchdog@sha256:b64e38f9ee34240d1e3d256e954eb8de20e2d3e51ed873019d350aa60be639c1",
+    "ghcr.io/coalesce-labs/catalyst-deadline-watchdog@sha256:a5999dbf229ac432b83c2ed3fe43fa251366baceb73af2f57590890a6a758f0d",
   runner:
-    "ghcr.io/coalesce-labs/catalyst-runner@sha256:50eeb256b4693fc42c81458bdfc887137a0df757260601f2a869738578d00782",
+    "ghcr.io/coalesce-labs/catalyst-runner@sha256:88c6143f6c95f92fca9ca385f3c5145389e6d6d0532398c52d225d0edfcf2ea8",
 } as const;
 const IMAGE_REF = /^[a-z0-9][a-z0-9._:/-]{0,255}@sha256:[0-9a-f]{64}$/;
 const HOST_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,62}$/;
@@ -59,6 +61,27 @@ const JOIN_TOKENS = "/api/v1/hosts/join-tokens";
 const CAPACITY = "/api/v1/me/runner-capacity";
 const RUNNER_UID = "10001:10001";
 const DIRS = ["slots", "thoughts", "locks"] as const;
+const CUSTODY_KEYS = [
+  "CATALYST_THOUGHTS_CUSTODY_AUTHORITY",
+  "CATALYST_THOUGHTS_CUSTODY_REQUESTS_DIR",
+  "CATALYST_THOUGHTS_CUSTODY_RESPONSES_DIR",
+] as const;
+
+/** A persisted authority selects bindings, never substitutes for a fresh native proof. */
+function persistedCustody(dir: string, values: Record<string, string> | null): "absent" | "invalid" | "installed" {
+  const present = CUSTODY_KEYS.map(key => values?.[key] ?? "");
+  if (present.every(value => !value)) return "absent";
+  if (present.some(value => !value)) return "invalid";
+  try {
+    const authority = parseDarwinThoughtsAuthority(JSON.parse(present[0]!));
+    return canonicalDarwinThoughtsJson(authority) === present[0] &&
+      authority.thoughtsRoot === join(dir, "thoughts") && authority.locksRoot === join(dir, "locks") &&
+      authority.requestsRoot === present[1] && authority.responsesRoot === present[2] &&
+      authority.requestsRoot === join(dir, "..", "darwin-thoughts-requests") &&
+      authority.responsesRoot === join(dir, "..", "darwin-thoughts-responses")
+      ? "installed" : "invalid";
+  } catch { return "invalid"; }
+}
 const DISK_POLICY_KEYS = [
   "CATALYST_SLOTS",
   "CATALYST_SLOT_DISK_MODE", "CATALYST_SLOT_DISK_BUDGET_GIB", "CATALYST_DISK_BUDGET_GIB",
@@ -108,6 +131,11 @@ export interface RunnerEngine {
   nativeEgressStatus?(nowMs:number,signal?:AbortSignal):Promise<boolean>;
   /** Verifies bind paths and connectivity before enrollment or starting the supervisor. */
   vmCapabilities(dir: string, image: string, baseUrl: string, signal?: AbortSignal): Promise<RunnerVmCapability>;
+  /** Installs the native authority and receives a fresh proof before VM credential work. */
+  nativeThoughtsCustody?(
+    input: { dir: string; supervisorImage: string; runnerImage: string },
+    signal?: AbortSignal,
+  ): Promise<DarwinThoughtsInstallResult>;
   /** Native Linux only: hands the host directories to the runner uid through the supervisor image. */
   claimDirs(dir: string, paths: string[], signal?: AbortSignal): Promise<boolean>;
   hasVolumeFile(
@@ -184,27 +212,36 @@ export function dockerRunnerEngine(
       return { code: 1, stdout: "" };
     }
   };
-  const compose = (dir: string) => [
-    "compose",
-    "--project-name",
-    RUNNER_PROJECT,
-    "--file",
-    join(dir, "compose.yaml"),
-    "--env-file",
-    join(dir, ".env"),
-  ];
-  const supervisorShell = (dir: string, script: string) => [
-    ...compose(dir),
-    "run",
-    "--rm",
-    "-T",
-    "--no-deps",
-    "--entrypoint",
-    "sh",
-    "supervisor",
-    "-c",
-    script,
-  ];
+  const compose = (dir: string): string[] | null => {
+    const custody = persistedCustody(dir, readEnvFile(join(dir, ".env")));
+    if (custody === "invalid") return null;
+    return [
+      "compose",
+      "--project-name",
+      RUNNER_PROJECT,
+      "--file",
+      join(dir, "compose.yaml"),
+      ...(custody === "installed" ? ["--file", join(dir, "compose.darwin-thoughts.yaml")] : []),
+      "--env-file",
+      join(dir, ".env"),
+    ];
+  };
+  const supervisorShell = (dir: string, script: string): string[] | null => {
+    const files = compose(dir);
+    if (!files) return null;
+    return [
+      ...files,
+      "run",
+      "--rm",
+      "-T",
+      "--no-deps",
+      "--entrypoint",
+      "sh",
+      "supervisor",
+      "-c",
+      script,
+    ];
+  };
   let nativeLocal = false;
   const endpoint = async (signal?: AbortSignal): Promise<string | null> => {
     // Reject conflicting selectors rather than infer precedence across Docker/Compose versions.
@@ -260,13 +297,29 @@ export function dockerRunnerEngine(
         const labels = config?.Labels;
         const dir = labels?.["com.docker.compose.project.working_dir"];
         if (config?.Image !== supervisorImage || labels?.["com.docker.compose.project"] !== RUNNER_PROJECT ||
-          labels?.["com.docker.compose.service"] !== "supervisor" || typeof dir !== "string" || !isAbsolute(dir) ||
-          labels?.["com.docker.compose.project.config_files"] !== join(dir, "compose.yaml")) return "unverified";
+          labels?.["com.docker.compose.service"] !== "supervisor" || typeof dir !== "string" || !isAbsolute(dir)) return "unverified";
         const inHome = relative(realpathSync(home), realpathSync(dir));
         if (inHome === ".." || inHome.startsWith("../") || isAbsolute(inHome) || !lstatSync(dir).isDirectory()) return "unverified";
+        const saved = readEnvFile(join(dir, ".env"));
+        const custody = persistedCustody(dir, saved);
+        if (custody === "invalid") return "unverified";
+        const files = [join(dir, "compose.yaml"), ...(custody === "installed" ? [join(dir, "compose.darwin-thoughts.yaml")] : [])];
+        if (labels?.["com.docker.compose.project.config_files"] !== files.join(",")) return "unverified";
         for (const path of [join(dir, "compose.yaml"), join(dir, ".env")]) {
           const stat = lstatSync(path);
           if (!stat.isFile() || stat.uid !== process.getuid?.() || (stat.mode & 0o022) !== 0) return "unverified";
+        }
+        if (custody === "installed") {
+          for (const path of [join(dir, ".env"), join(dir, "compose.darwin-thoughts.yaml")]) {
+            const stat = lstatSync(path);
+            if (!stat.isFile() || stat.nlink !== 1 || stat.uid !== process.getuid?.() ||
+              (stat.mode & 0o7777) !== 0o600) return "unverified";
+          }
+          for (const key of CUSTODY_KEYS.slice(1)) {
+            const stat = lstatSync(saved![key]!);
+            if (!stat.isDirectory() || stat.uid !== process.getuid?.() ||
+              (stat.mode & 0o7777) !== 0o700) return "unverified";
+          }
         }
         if (!Array.isArray(config.Env) || !config.Env.every((entry: unknown) => typeof entry === "string")) return "unverified";
         const names = config.Env.filter((entry: string) => entry.startsWith("CATALYST_HOST_NAME="));
@@ -345,6 +398,9 @@ export function dockerRunnerEngine(
       return runnerVmCapabilities({ paths: DIRS.map(sub => join(dir, sub)), image, baseUrl,
         exec: docker, env, signal });
     },
+    async nativeThoughtsCustody(input, signal) {
+      return installDarwinThoughtsCustody({ ...input, deadlineMs: Date.now() + 30_000 }, signal);
+    },
     async socketGid() {
       if (!nativeLocal) return null;
       try {
@@ -354,8 +410,10 @@ export function dockerRunnerEngine(
       }
     },
     async claimDirs(dir, paths, signal) {
+      const files = compose(dir);
+      if (!files) return false;
       const args = [
-        ...compose(dir),
+        ...files,
         "run",
         "--rm",
         "-T",
@@ -377,9 +435,11 @@ export function dockerRunnerEngine(
       );
     },
     async hasVolumeFile(dir, variable, signal) {
+      const args = supervisorShell(dir, `test -s "$${variable}"`);
+      if (!args) return false;
       return (
         (
-          await docker(supervisorShell(dir, `test -s "$${variable}"`), {
+          await docker(args, {
             cwd: dir,
             signal,
             timeoutMs: 120_000,
@@ -388,6 +448,8 @@ export function dockerRunnerEngine(
       );
     },
     async enrollment(dir, signal) {
+      const files = compose(dir);
+      if (!files) return null;
       const script = `(() => { const {readFileSync}=require("node:fs");
         try { const state=JSON.parse(readFileSync(process.env.CATALYST_HOST_CREDENTIAL_FILE,"utf8"));
           if (state.version!==1 || typeof state.secret!=="string" || !/^[A-Za-z0-9_-]{32,256}$/.test(state.secret)) process.exit(1);
@@ -401,7 +463,7 @@ export function dockerRunnerEngine(
           if (!e) process.exit(1);
           process.stdout.write(JSON.stringify({hostId:e.hostId,tenant:e.tenant,team:e.team,enrollmentKind:e.enrollmentKind}));
         } catch { process.exit(1); } })();`;
-      const read = await docker([...compose(dir), "run", "--rm", "-T", "--no-deps", "--entrypoint", "bun", "supervisor", "-e", script],
+      const read = await docker([...files, "run", "--rm", "-T", "--no-deps", "--entrypoint", "bun", "supervisor", "-e", script],
         { cwd: dir, signal, timeoutMs: 120_000 });
       if (read.code !== 0) return null;
       try {
@@ -414,6 +476,8 @@ export function dockerRunnerEngine(
       } catch { return null; }
     },
     async orgKeyStatus(dir, account, baseUrl, candidate, signal) {
+      const files = compose(dir);
+      if (!files) return "unavailable";
       // Only a status leaves the container. No stored key or provider response is printed.
       const script = `(async () => {
         const {readFileSync,lstatSync}=require("node:fs");
@@ -442,7 +506,7 @@ export function dockerRunnerEngine(
           return status(proposed && proposed!==stored ? "different" : "valid");
         } catch { return status("unavailable"); }
       })().catch(()=>process.stdout.write("unavailable"));`;
-      const read = await docker([...compose(dir), "run", "--rm", "-T", "--no-deps", "--entrypoint", "bun", "supervisor", "-e", script, baseUrl, account],
+      const read = await docker([...files, "run", "--rm", "-T", "--no-deps", "--entrypoint", "bun", "supervisor", "-e", script, baseUrl, account],
         { cwd: dir, input: candidate ? `${candidate}\n` : undefined, signal, timeoutMs: 120_000 });
       const status = read.stdout.trim();
       return read.code === 0 && ["valid", "different", "missing", "invalid", "unavailable"].includes(status)
@@ -451,9 +515,11 @@ export function dockerRunnerEngine(
     async writeVolumeFile(dir, variable, value, signal) {
       if (variable !== "CATALYST_ORG_KEY_FILE") return false;
       const script = `umask 077 && tmp=$(mktemp "$${variable}.onboard.XXXXXX") && trap 'rm -f "$tmp"' EXIT && cat > "$tmp" && test -s "$tmp" && chmod 600 "$tmp" && mv -f "$tmp" "$${variable}"`;
+      const args = supervisorShell(dir, script);
+      if (!args) return false;
       return (
         (
-          await docker(supervisorShell(dir, script), {
+          await docker(args, {
             cwd: dir,
             input: `${value}\n`,
             signal,
@@ -463,14 +529,18 @@ export function dockerRunnerEngine(
       );
     },
     async composeUp(dir, signal) {
+      const files = compose(dir);
+      if (!files) return false;
       return (
-        (await docker([...compose(dir), "up", "--detach"], { cwd: dir, signal, timeoutMs: 600_000 }))
+        (await docker([...files, "up", "--detach"], { cwd: dir, signal, timeoutMs: 600_000 }))
           .code === 0
       );
     },
     async composeRunning(dir, signal) {
+      const files = compose(dir);
+      if (!files) return false;
       const read = await docker(
-        [...compose(dir), "ps", "--status", "running", "--services"],
+        [...files, "ps", "--status", "running", "--services"],
         { cwd: dir, signal },
       );
       return (
@@ -620,6 +690,7 @@ export function onboardRunnerAdapter(input: OnboardRunnerInput = {},
   let mayAct = false;
   let acted = false;
   let chosenName: string | undefined;
+  let receivedCustody: { dir: string; result: DarwinThoughtsInstallResult } | undefined;
   const selected = { selected: true };
 
   async function decide(journal: OnboardJournal): Promise<boolean | null> {
@@ -742,6 +813,11 @@ export function onboardRunnerAdapter(input: OnboardRunnerInput = {},
       CATALYST_SLOTS_DIR: join(p.dir, "slots"),
       CATALYST_THOUGHTS_DIR: join(p.dir, "thoughts"),
       CATALYST_POOL_LOCK_DIR: join(p.dir, "locks"),
+      ...(p.info.vm && receivedCustody?.dir === p.dir ? {
+        CATALYST_THOUGHTS_CUSTODY_AUTHORITY: receivedCustody.result.envAuthority,
+        CATALYST_THOUGHTS_CUSTODY_REQUESTS_DIR: receivedCustody.result.requestsRoot,
+        CATALYST_THOUGHTS_CUSTODY_RESPONSES_DIR: receivedCustody.result.responsesRoot,
+      } : {}),
       CATALYST_SESSION_EGRESS_DIR: p.info.vm ? join(p.dir, "session-egress") : NATIVE_EGRESS_DIR,
       // Saved policy stays in merged(). An explicit value in this run overrides it.
       ...Object.fromEntries(DISK_POLICY_KEYS.flatMap(key =>
@@ -834,6 +910,9 @@ export function onboardRunnerAdapter(input: OnboardRunnerInput = {},
       const want = await desiredEnv(p, ctx);
       if (!want) return waiting("runner_docker_socket_unreadable", selected);
       const name = want.CATALYST_HOST_NAME!;
+      if (p.info.vm && persistedCustody(p.dir, saved) !== "installed")
+        return mayAct && !afterAct ? { state: "pending" } : waiting(
+          mayAct ? "runner_thoughts_custody_unavailable" : "runner_needs_runner_flag", { ...selected, hostName: name });
       let enrolled: RunnerEnrollment | null = null;
       const live = (hosts: ListedHost[] | null) =>
         hosts?.find(
@@ -870,6 +949,9 @@ export function onboardRunnerAdapter(input: OnboardRunnerInput = {},
       try {
         composeMatches = readFileSync(join(p.dir, "compose.yaml")).equals(
           readFileSync(join(packageRoot(), "vendor", "self-host", "compose.yaml")),
+        );
+        if (p.info.vm) composeMatches = composeMatches && readFileSync(join(p.dir, "compose.darwin-thoughts.yaml")).equals(
+          readFileSync(join(packageRoot(), "vendor", "self-host", "compose.darwin-thoughts.yaml")),
         );
       } catch {
         /* A missing or unreadable compose needs an explicitly authorized repair. */
@@ -939,11 +1021,12 @@ export function onboardRunnerAdapter(input: OnboardRunnerInput = {},
       try {
         mkdirSync(p.dir, { recursive: true, mode: 0o700 });
         if (lstatSync(p.dir).isSymbolicLink()) throw new Error("runner_directory_unsafe");
-        chmodSync(p.dir, 0o700);
+        if (!p.info.vm) chmodSync(p.dir, 0o700);
         for (const sub of DIRS) {
           mkdirSync(join(p.dir, sub), { recursive: true, mode: 0o700 });
           // On native Linux the runner uid owns these after the first run; leave them alone.
-          if (statSync(join(p.dir, sub)).uid === process.getuid?.()) chmodSync(join(p.dir, sub), 0o700);
+          // The native Darwin installer must receive existing thoughts custody without adoption.
+          if ((!p.info.vm || sub === "slots") && statSync(join(p.dir, sub)).uid === process.getuid?.()) chmodSync(join(p.dir, sub), 0o700);
         }
         // Mounted read-only into the supervisor (uid 10001), which reads the egress attestation.
         mkdirSync(join(p.dir, "session-egress"), { recursive: true, mode: 0o755 });
@@ -990,7 +1073,7 @@ export function onboardRunnerAdapter(input: OnboardRunnerInput = {},
       if (!writeEnv(want))
         return { state: "failed", reason: "runner_directory_unavailable", evidence: selected };
       for (const ref of Object.values(p.images)) {
-        if (!(await engine.imageArch(ref, signal))) {
+        if (!(await engine.imageArch(ref, signal)) && !p.info.vm) {
           await engine.pull(ref, signal);
         }
         const arch = await engine.imageArch(ref, signal);
@@ -1000,6 +1083,27 @@ export function onboardRunnerAdapter(input: OnboardRunnerInput = {},
       if (p.info.vm) {
         const capability = await engine.vmCapabilities(p.dir, p.images.supervisor, p.baseUrl, signal);
         if (capability !== "ready") return waiting(capability, selected);
+        try {
+          if (!engine.nativeThoughtsCustody) return waiting("runner_thoughts_custody_unavailable", selected);
+          const result = await engine.nativeThoughtsCustody({ dir: p.dir,
+            supervisorImage: p.images.supervisor, runnerImage: p.images.runner }, signal);
+          if (signal?.aborted) return waiting("interrupted", selected);
+          const values = {
+            CATALYST_THOUGHTS_CUSTODY_AUTHORITY: result.envAuthority,
+            CATALYST_THOUGHTS_CUSTODY_REQUESTS_DIR: result.requestsRoot,
+            CATALYST_THOUGHTS_CUSTODY_RESPONSES_DIR: result.responsesRoot,
+          };
+          if (persistedCustody(p.dir, values) !== "installed" ||
+            canonicalDarwinThoughtsJson(result.authority) !== result.envAuthority)
+            return waiting("runner_thoughts_custody_unavailable", selected);
+          writePrivate(join(p.dir, "compose.darwin-thoughts.yaml"),
+            readFileSync(join(packageRoot(), "vendor", "self-host", "compose.darwin-thoughts.yaml"), "utf8"));
+          receivedCustody = { dir: p.dir, result };
+          want = (await desiredEnv(p, ctx))!;
+          if (!writeEnv(want)) return { state: "failed", reason: "runner_directory_unavailable", evidence: selected };
+        } catch {
+          return waiting(signal?.aborted ? "interrupted" : "runner_thoughts_custody_unavailable", selected);
+        }
       }
       const network = await engine.network(RUNNER_SESSION_NETWORK, signal);
       if (network === "misshaped") return waiting("runner_session_network_misshaped", selected);

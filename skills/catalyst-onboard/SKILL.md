@@ -4,7 +4,7 @@ description: >-
   Set up Catalyst Cloud and say whether setup is working. Walks a person from nothing to their first ticket running, one step at a time: the coding account, the project, the integrations and connected accounts, each repository's settings file, then one real ticket moving. Also logs this machine in, reads the readiness verdict with who can fix each failure, and checks the optional local replica. Use when someone says "set me up", "onboard me", "I just signed up", "get me started", "what do I do first", "log me in", "which account is this machine on", "am I set up", "what is missing", "why does nothing happen" or "is the replica running", when a login expired, or when a skill script exits 2 saying this machine is not connected. Does every step a key can do through the catalyst CLI, hands over the exact page for the steps only a browser can do, and never claims a step it did not watch succeed.
 allowed-tools: Bash(catalyst:*) Bash(npx -p @catalyst-cloud/cli catalyst:*)
 ---
-<!-- vendored-from: @catalyst-cloud/catalyst-skills@0.16.4 — written in this repository for customer accounts -->
+<!-- vendored-from: @catalyst-cloud/catalyst-skills@0.16.5 — written in this repository for customer accounts -->
 
 # Onboard me
 
@@ -55,6 +55,7 @@ Scripts are run, never read; each prints `--help`.
 | logging in, a refused or expired login, which account this is, the Linear identity | `references/connecting-this-machine.md` |
 | anything reports not ready, a check id, or who fixes something | `references/reading-ready.md` |
 | the coding account or the `host` part, or before saying work can run | `references/what-a-phase-needs.md`; a credential to replace, `references/replacing-a-credential.md` |
+| preserving an existing paused Darwin runner during owner-managed replacement | `references/preserving-runner-replacement.md` |
 | which steps a command does and which need a browser, or confirming a page that said it worked | `references/what-the-browser-owns.md` |
 | the repository's `.catalyst/catalyst.toml` and its approval; its AGENTS.md block and agent layout | `references/declaring-a-repository.md`; `references/repository-agent-setup.md` |
 | the replica or event cache | `references/local-sync.md` |

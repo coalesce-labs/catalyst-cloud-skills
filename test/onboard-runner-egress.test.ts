@@ -12,7 +12,7 @@ const pins={
 test('customer package carries the four exact reviewed native producer artifacts',()=>{
  const root=join(packageRoot(),'vendor/self-host');
  const manifest=JSON.parse(readFileSync(join(root,'provenance.json'),'utf8'));
- expect(manifest.commit).toBe('081ce3fefd52bfa0b0ac76b3d6f87ce373b71c7d');
+ expect(manifest.commit).toBe('3d657787e8d4a0295068d0ea67ea3e7a1f4707a2');
  for(const [name,digest] of Object.entries(pins)){
   expect(createHash('sha256').update(readFileSync(join(root,'linux-session-egress',name))).digest('hex')).toBe(digest);
   expect(manifest.sha256['deploy/self-host/linux-session-egress/'+name]).toBe(digest);
