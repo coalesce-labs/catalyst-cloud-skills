@@ -10,6 +10,12 @@ import {
   verifyDarwinThoughtsCustodyResponse,
 } from "../vendor/self-host/darwin-thoughts-custody/verifier.mjs";
 
+const PROCESS_UID = process.getuid?.();
+const PROCESS_GID = process.getgid?.();
+if (PROCESS_UID === undefined || PROCESS_GID === undefined) throw Error("native fixture requires POSIX identity");
+const NATIVE_UID = PROCESS_UID === 0 ? 501 : PROCESS_UID;
+const NATIVE_GID = PROCESS_UID === 0 ? 20 : PROCESS_GID;
+
 const IMAGE = "ghcr.io/coalesce-labs/catalyst-supervisor@sha256:" + "a".repeat(64);
 const IMAGE_ID = "sha256:" + "d".repeat(64);
 const CID = "c".repeat(64);
@@ -38,7 +44,7 @@ describe("production custody bootstrap helper ACK and cleanup", () => {
     const authority = {
       version: 1 as const, installationId: "a".repeat(64),
       publicKey: key.publicKey.export({ type: "spki", format: "der" }).toString("base64"),
-      nativeUid: 501, nativeGid: 20, nativeHome: home,
+      nativeUid: NATIVE_UID, nativeGid: NATIVE_GID, nativeHome: home,
       endpoint: "unix://" + join(home, "engine.sock"), daemonId: "selected-daemon",
       thoughtsRoot: join(home, "thoughts"), locksRoot: join(home, "locks"),
       requestsRoot: join(home, "requests"), responsesRoot: join(home, "responses"),
@@ -57,8 +63,8 @@ describe("production custody bootstrap helper ACK and cleanup", () => {
     const engineLock = identity(targets.lockSource, 10001, 10001);
     const payload = canonicalDarwinThoughtsJson({ version: 1, kind: "accepted", authority, request,
       observedAtMs: now, expiresAtMs: deadlineMs, nativeBootId: "native-boot",
-      producerInstance: "e".repeat(64), nativeCheckout: identity(targets.checkoutSource, 501, 20),
-      nativeLock: identity(targets.lockSource, 501, 20), engineCheckout, engineLock });
+      producerInstance: "e".repeat(64), nativeCheckout: identity(targets.checkoutSource, NATIVE_UID, NATIVE_GID),
+      nativeLock: identity(targets.lockSource, NATIVE_UID, NATIVE_GID), engineCheckout, engineLock });
     const bytes = Buffer.from(canonicalDarwinThoughtsJson({ version: 1, payload,
       signature: sign(null, Buffer.from(payload), key.privateKey).toString("base64") }));
     const proof = { bytes: bytes.toString("base64"), request, engineCheckout, engineLock };

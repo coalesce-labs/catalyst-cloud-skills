@@ -5,6 +5,12 @@ import { dirname, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createDarwinThoughtsInstallerTestHarness, installDarwinThoughtsCustody } from "../src/onboard-runner-custody.js";
 
+const PROCESS_UID = process.getuid?.();
+const PROCESS_GID = process.getgid?.();
+if (PROCESS_UID === undefined || PROCESS_GID === undefined) throw Error("native fixture requires POSIX identity");
+const NATIVE_UID = PROCESS_UID === 0 ? 501 : PROCESS_UID;
+const NATIVE_GID = PROCESS_UID === 0 ? 20 : PROCESS_GID;
+const FOREIGN_UID = NATIVE_UID + 1;
 const NOW = 1791619200000;
 const SUPERVISOR = "ghcr.io/coalesce-labs/catalyst-supervisor@sha256:" + "a".repeat(64);
 const RUNNER = "ghcr.io/coalesce-labs/catalyst-runner@sha256:" + "b".repeat(64);
@@ -26,7 +32,7 @@ describe("native Darwin custody installer", () => {
   function fixture() {
     const dir = join(home, "self-host");
     fs.mkdirSync(dir, { mode: 0o750 });
-    const principal = { platform: "darwin", uid: 501, euid: 501, gid: 20, home };
+    const principal = { platform: "darwin", uid: NATIVE_UID, euid: NATIVE_UID, gid: NATIVE_GID, home };
     const overrides = new Map<string, bigint>();
     const calls: Array<Record<string, unknown>> = [];
     let endpoint = "unix://" + join(home, "engine.sock");
@@ -38,7 +44,7 @@ describe("native Darwin custody installer", () => {
       principal: () => principal, now: () => NOW,
       stat: (path: string, stat: fs.BigIntStats): fs.BigIntStats =>
         path === home || path.startsWith(home + "/")
-          ? Object.assign(Object.create(stat), { uid: overrides.get(path) ?? 501n, gid: 20n }) as fs.BigIntStats : stat,
+          ? Object.assign(Object.create(stat), { uid: overrides.get(path) ?? BigInt(NATIVE_UID), gid: BigInt(NATIVE_GID) }) as fs.BigIntStats : stat,
       executables: () => ({
         nodeExecutable: fs.realpathSync(process.execPath), dockerExecutable: fs.realpathSync("/usr/bin/false"),
       }),
@@ -68,7 +74,7 @@ describe("native Darwin custody installer", () => {
         const payload = canonical({
           version: 1, kind: "accepted", authority, request, observedAtMs: NOW,
           expiresAtMs: input.deadlineMs, nativeBootId: "native-boot", producerInstance: "c".repeat(64),
-          nativeCheckout: identity(checkout, 501, 20), nativeLock: identity(lock, 501, 20),
+          nativeCheckout: identity(checkout, NATIVE_UID, NATIVE_GID), nativeLock: identity(lock, NATIVE_UID, NATIVE_GID),
           engineCheckout, engineLock,
         });
         const key = wrongSignature ? generateKeyPairSync("ed25519").privateKey :
@@ -104,7 +110,7 @@ describe("native Darwin custody installer", () => {
       fs.mkdirSync(target, { mode: 0o755 }); fs.symlinkSync(target, local);
     } else fs.mkdirSync(local, { mode: 0o755 });
     const dir = join(local, "self-host"); fs.mkdirSync(dir, { mode: 0o750 });
-    if (kind === "foreign") f.overrides.set(local, 502n);
+    if (kind === "foreign") f.overrides.set(local, BigInt(FOREIGN_UID));
     else if (kind !== "symlink") fs.chmodSync(local, kind === "group_writable" ? 0o775 : 0o777);
     await expect(f.harness.install({ ...f.input, dir })).rejects.toThrow(/owner|custody|unsafe/);
     expect(f.calls).toEqual([]);
@@ -127,7 +133,7 @@ describe("native Darwin custody installer", () => {
   it("creates native private state and returns authority only after actual signed startup receiving", async () => {
     const f = fixture();
     const result = await f.harness.install(f.input);
-    expect(result.authority).toMatchObject({ nativeUid: 501, nativeGid: 20, nativeHome: home,
+    expect(result.authority).toMatchObject({ nativeUid: NATIVE_UID, nativeGid: NATIVE_GID, nativeHome: home,
       endpoint: "unix://" + join(home, "engine.sock"), thoughtsRoot: join(f.dir, "thoughts"), locksRoot: join(f.dir, "locks") });
     expect(result.requestsRoot).toBe(join(home, "darwin-thoughts-requests"));
     expect(result.responsesRoot).toBe(join(home, "darwin-thoughts-responses"));
@@ -153,13 +159,13 @@ describe("native Darwin custody installer", () => {
   });
   it.each(["uid", "euid", "home"] satisfies ("uid" | "euid" | "home")[])("refuses a changed actual native %s before bootstrap", async (field) => {
     const f = fixture(); await f.harness.install(f.input); f.calls.length = 0;
-    if (field === "home") f.principal.home = join(home, "different"); else f.principal[field] = 502;
+    if (field === "home") f.principal.home = join(home, "different"); else f.principal[field] = FOREIGN_UID;
     await expect(f.harness.install(f.input)).rejects.toThrow(/principal|authority|owner/);
     expect(f.calls).toEqual([]);
   });
   it("refuses another native owner's thoughts root rather than adopting/chowning", async () => {
     const f = fixture(); fs.mkdirSync(join(f.dir, "thoughts"), { mode: 0o750 });
-    f.overrides.set(join(f.dir, "thoughts"), 502n);
+    f.overrides.set(join(f.dir, "thoughts"), BigInt(FOREIGN_UID));
     await expect(f.harness.install(f.input)).rejects.toThrow(/owner|custody/);
     expect(fs.lstatSync(join(f.dir, "thoughts")).mode & 0o7777).toBe(0o750);
     expect(f.calls).toEqual([]);
