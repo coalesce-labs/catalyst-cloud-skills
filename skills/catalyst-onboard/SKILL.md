@@ -55,6 +55,7 @@ Scripts are run, never read; each prints `--help`.
 | logging in, a refused or expired login, which account this is, the Linear identity | `references/connecting-this-machine.md` |
 | anything reports not ready, a check id, or who fixes something | `references/reading-ready.md` |
 | the coding account or the `host` part, or before saying work can run | `references/what-a-phase-needs.md`; a credential to replace, `references/replacing-a-credential.md` |
+| preserving an existing paused Darwin runner during owner-managed replacement | `references/preserving-runner-replacement.md` |
 | which steps a command does and which need a browser, or confirming a page that said it worked | `references/what-the-browser-owns.md` |
 | the repository's `.catalyst/catalyst.toml` and its approval; its AGENTS.md block and agent layout | `references/declaring-a-repository.md`; `references/repository-agent-setup.md` |
 | the replica or event cache | `references/local-sync.md` |
