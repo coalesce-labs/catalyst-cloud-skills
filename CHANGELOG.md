@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.16.5
+## 0.16.6
 
 On macOS, setup verifies access to your workspace files before starting work and gives a repair step when that check fails.
 
