@@ -33,6 +33,13 @@ describe("native Darwin custody installer", () => {
     const dir = join(home, "self-host");
     fs.mkdirSync(dir, { mode: 0o750 });
     const principal = { platform: "darwin", uid: NATIVE_UID, euid: NATIVE_UID, gid: NATIVE_GID, home };
+    // These ports inspect and pin executables, but never launch them. Keep real protected
+    // fixture bytes independent of the CI toolcache's Node owner and write permissions.
+    const executables = {
+      nodeExecutable: join(home, "fixture-node"), dockerExecutable: join(home, "fixture-docker"),
+    };
+    fs.writeFileSync(executables.nodeExecutable, "#!/bin/sh\nexit 0\n", { mode: 0o700, flag: "wx" });
+    fs.writeFileSync(executables.dockerExecutable, "#!/bin/sh\nexit 1\n", { mode: 0o700, flag: "wx" });
     const overrides = new Map<string, bigint>();
     const calls: Array<Record<string, unknown>> = [];
     let endpoint = "unix://" + join(home, "engine.sock");
@@ -45,9 +52,7 @@ describe("native Darwin custody installer", () => {
       stat: (path: string, stat: fs.BigIntStats): fs.BigIntStats =>
         path === home || path.startsWith(home + "/")
           ? Object.assign(Object.create(stat), { uid: overrides.get(path) ?? BigInt(NATIVE_UID), gid: BigInt(NATIVE_GID) }) as fs.BigIntStats : stat,
-      executables: () => ({
-        nodeExecutable: fs.realpathSync(process.execPath), dockerExecutable: fs.realpathSync("/usr/bin/false"),
-      }),
+      executables: () => executables,
       artifacts: () => ({
         producer: Buffer.from("// generated producer"), watchdog: Buffer.from("// generated watchdog"),
         deadline: Buffer.from("// generated deadline"),
@@ -85,7 +90,7 @@ describe("native Darwin custody installer", () => {
       },
     });
     const input = { dir, supervisorImage: SUPERVISOR, runnerImage: RUNNER, deadlineMs: NOW + 10_000 };
-    return { dir, principal, overrides, calls, input, harness,
+    return { dir, principal, overrides, calls, input, harness, executables,
       state: join(dirname(dir), "darwin-thoughts-custody"),
       setEndpoint: (value: string) => { endpoint = value; },
       setCached: (value: boolean) => { cached = value; },
@@ -124,6 +129,13 @@ describe("native Darwin custody installer", () => {
     expect(f.calls).toEqual([]);
     expect(fs.lstatSync(f.state).mode & 0o7777).toBe(0o755);
   });
+  it.each(["nodeExecutable", "dockerExecutable"] satisfies ("nodeExecutable" | "dockerExecutable")[])("refuses group-writable %s before Engine receiving", async (field) => {
+    const f = fixture(); fs.chmodSync(f.executables[field], 0o775);
+    await expect(f.harness.install(f.input)).rejects.toThrow(/executable_custody_unsafe/);
+    expect(f.calls).toEqual([]);
+    expect(fs.existsSync(join(f.state, "private-key.der"))).toBe(false);
+    expect(fs.lstatSync(f.executables[field]).mode & 0o7777).toBe(0o775);
+  });
   it("refuses an already-cancelled installer before any native state or Engine work", async () => {
     const f = fixture(); const controller = new AbortController(); controller.abort();
     await expect(f.harness.install(f.input, controller.signal)).rejects.toThrow(/abort|cancel/);
@@ -142,6 +154,14 @@ describe("native Darwin custody installer", () => {
     const config = JSON.parse(fs.readFileSync(result.configPath, "utf8"));
     expect(Object.keys(config).sort()).toEqual(["authority", "dockerExecutable", "dockerExecutableSha256", "privateKeyFile", "supervisorImage", "version"]);
     expect(config.dockerExecutableSha256).toBe(createHash("sha256").update(fs.readFileSync(config.dockerExecutable)).digest("hex"));
+    expect(config.dockerExecutable).toBe(f.executables.dockerExecutable);
+    const runtime = JSON.parse(fs.readFileSync(join(f.state, "runtime.json"), "utf8"));
+    expect(runtime.nodeExecutable).toBe(f.executables.nodeExecutable);
+    expect(runtime.nodeExecutableSha256).toBe(createHash("sha256").update(fs.readFileSync(f.executables.nodeExecutable)).digest("hex"));
+    for (const executable of Object.values(f.executables)) {
+      expect(fs.lstatSync(executable).uid).toBe(PROCESS_UID);
+      expect(fs.lstatSync(executable).mode & 0o7777).toBe(0o700);
+    }
     expect(fs.lstatSync(f.state).mode & 0o7777).toBe(0o700);
     for (const file of ["producer.json", "private-key.der", "producer.mjs", "watchdog.mjs", "watchdog-deadline.mjs"])
       expect(fs.lstatSync(join(f.state, file)).mode & 0o7777).toBe(0o600);
