@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.16.7
+
+Setup can update an existing installation that still runs its saved, older image version. Headless setup names which key input Catalyst rejected and shows how to try a saved personal login when one is available. Installer checks leave existing skill files in place until the installer updates them.
+
 ## 0.16.6
 
 On macOS, setup verifies access to your workspace files before starting work and gives a repair step when that check fails.

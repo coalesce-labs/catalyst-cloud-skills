@@ -717,6 +717,7 @@ export function createClackOnboardUi(
     async reviewProjects(projects) {
       stop();
       if (abort.signal.aborted) return null;
+      if (!interactive) return "move-on";
       const answer = await select({
         ...options,
         message: "What should setup do with this workspace's projects?",
