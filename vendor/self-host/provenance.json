@@ -1,9 +1,9 @@
 {
   "repository": "coalesce-labs/catalyst-cloud",
-  "commit": "42f16024ee3fd268369f1e5617b6a50543186d3a",
+  "commit": "209207202e68d0105fd5253b0ccaa40af11fb57d",
   "sha256": {
     "deploy/self-host/compose.yaml": "0ffb7671c7ea49d8490d6e97093ada0afcb31da3b00092a8768150b090cca0bc",
-    "deploy/self-host/compose.darwin-thoughts.yaml": "539a419ab9580984a6ad0f86c04901c7e6c7ee9d341f2d69749f7eef4c6f833b",
+    "deploy/self-host/compose.darwin-thoughts.yaml": "6269d66d6f487175ab8560d0648e65c8a0eccb86f69a8dc24daf41d8ae1dcf02",
     "deploy/self-host/darwin-thoughts-custody/producer.mjs": "0e0f1bbdac23813e8ee57b6eb4ae3dfd24c3f1c51ebe0c3d119a1448734ea05e",
     "deploy/self-host/darwin-thoughts-custody/verifier.mjs": "2d8c9b5c35e38a25a45098b7606a216109557fb0466113098f503e9d6c8f6b4c",
     "deploy/self-host/darwin-thoughts-custody/verifier.d.mts": "624428ced2eb18b045b761b49e20b7f52c0fc6c3132689571103ece7b4a1083f",

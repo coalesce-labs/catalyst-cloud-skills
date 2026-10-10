@@ -2,6 +2,8 @@
 # The signing key and producer configuration remain on the native host, outside every mount.
 services:
   supervisor:
+    environment:
+      CATALYST_THOUGHTS_CUSTODY_AUTHORITY: ${CATALYST_THOUGHTS_CUSTODY_AUTHORITY:?set installed Darwin authority}
     volumes:
       - type: bind
         source: ${CATALYST_THOUGHTS_CUSTODY_REQUESTS_DIR:?set installed Darwin requests root}
