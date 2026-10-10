@@ -19,7 +19,8 @@ import { runnerAdmission, issueRunnerOrgKey, verifyRunnerRoutes } from "./onboar
 import { verifyOnboardRoutes } from "./onboard-capabilities.js";
 import { liveTeamKey, onboardTeamAdmission } from "./onboard-capacity.js";
 import { runnerVmCapabilities, type RunnerVmCapability } from "./onboard-runner-probes.js";
-import { darwinThoughtsInstallRefusal, installDarwinThoughtsCustody, type DarwinThoughtsInstallResult } from "./onboard-runner-custody.js";
+import { darwinThoughtsInstallException, darwinThoughtsInstallRefusal, installDarwinThoughtsCustody, type DarwinThoughtsInstallResult } from "./onboard-runner-custody.js";
+import { emitCustodyFailure, type CustodyFailureCase, type CustodyFailureDetails } from "./onboard-runner-telemetry.js";
 import { canonicalDarwinThoughtsJson, parseDarwinThoughtsAuthority } from "../vendor/self-host/darwin-thoughts-custody/verifier.mjs";
 import {
   readExistingOnboardJson,
@@ -842,6 +843,16 @@ export function onboardRunnerAdapter(input: OnboardRunnerInput = {},
     ...Object.fromEntries(Object.entries(saved ?? {}).filter(([key]) => !(key in want))),
   });
 
+  async function refuseCustody(ctx: Ctx, journal: OnboardJournal, failureCase: CustodyFailureCase,
+    message: string, details: Omit<CustodyFailureDetails, "custodyFailureCase"> = {}, signal?: AbortSignal): Promise<OnboardStepResult> {
+    if (signal?.aborted) return waiting("interrupted", selected);
+    input.message?.(message);
+    const evidence = { custodyFailureCase: failureCase, ...details };
+    const delivered = await emitCustodyFailure(ctx, journal, evidence, signal);
+    return waiting("runner_thoughts_custody_unavailable", { ...selected, ...evidence,
+      custodyTelemetry: delivered ? "sent" : "unavailable" });
+  }
+
   async function listHosts(
     ctx: Ctx,
     p: Prepared,
@@ -1092,28 +1103,36 @@ export function onboardRunnerAdapter(input: OnboardRunnerInput = {},
       if (p.info.vm) {
         const capability = await engine.vmCapabilities(p.dir, p.images.supervisor, p.baseUrl, signal);
         if (capability !== "ready") return waiting(capability, selected);
+        if (!engine.nativeThoughtsCustody) return refuseCustody(ctx, journal, "capability_missing",
+          "Setup could not verify local storage: this engine has no native storage-check capability.", {}, signal);
+        let custodyReturned = false;
         try {
-          if (!engine.nativeThoughtsCustody) return waiting("runner_thoughts_custody_unavailable", selected);
           const result = await engine.nativeThoughtsCustody({ dir: p.dir,
             supervisorImage: p.images.supervisor, runnerImage: p.images.runner }, signal);
+          custodyReturned = true;
           if (signal?.aborted) return waiting("interrupted", selected);
           const values = {
             CATALYST_THOUGHTS_CUSTODY_AUTHORITY: result.envAuthority,
             CATALYST_THOUGHTS_CUSTODY_REQUESTS_DIR: result.requestsRoot,
             CATALYST_THOUGHTS_CUSTODY_RESPONSES_DIR: result.responsesRoot,
           };
-          if (persistedCustody(p.dir, values) !== "installed" ||
-            canonicalDarwinThoughtsJson(result.authority) !== result.envAuthority)
-            return waiting("runner_thoughts_custody_unavailable", selected);
+          const custodyResultInstalled = persistedCustody(p.dir, values) === "installed";
+          const custodyAuthorityMatched = canonicalDarwinThoughtsJson(result.authority) === result.envAuthority;
+          if (!custodyResultInstalled || !custodyAuthorityMatched)
+            return refuseCustody(ctx, journal, "result_unverified",
+              "Setup could not verify local storage: the returned installation or authority did not match.",
+              { custodyResultInstalled, custodyAuthorityMatched }, signal);
           writePrivate(join(p.dir, "compose.darwin-thoughts.yaml"),
             readFileSync(join(packageRoot(), "vendor", "self-host", "compose.darwin-thoughts.yaml"), "utf8"));
           receivedCustody = { dir: p.dir, result };
           want = (await desiredEnv(p, ctx))!;
         } catch (error) {
           const custodyReason = darwinThoughtsInstallRefusal(error);
-          if (!signal?.aborted && custodyReason) input.message?.(`Setup could not verify local storage (${custodyReason}).`);
-          return waiting(signal?.aborted ? "interrupted" : "runner_thoughts_custody_unavailable",
-            { ...selected, ...(custodyReason ? { custodyReason } : {}) });
+          const failureCase = custodyReturned ? "result_unverified" : "call_threw";
+          const details = { ...darwinThoughtsInstallException(error), ...(custodyReason ? { custodyReason } : {}) };
+          return refuseCustody(ctx, journal, failureCase,
+            `Setup could not verify local storage: ${custodyReturned ? "recording the result failed" : "the native check threw"} (${details.custodyErrorClass}: ${details.custodyErrorMessage}).`,
+            details, signal);
         }
       }
       if (!writeEnv(want))

@@ -3,7 +3,7 @@ import { createHash, generateKeyPairSync, sign } from "node:crypto";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { darwinThoughtsInstallRefusal, receiveDarwinThoughtsBootstrapForTest } from "../src/onboard-runner-custody.js";
+import { darwinThoughtsInstallException, darwinThoughtsInstallRefusal, receiveDarwinThoughtsBootstrapForTest } from "../src/onboard-runner-custody.js";
 import {
   canonicalDarwinThoughtsJson,
   deriveDarwinThoughtsTargets,
@@ -186,6 +186,7 @@ describe("production custody bootstrap helper ACK and cleanup", () => {
     expect(error).toBeInstanceOf(Error);
     expect(darwinThoughtsInstallRefusal(error)).toBe(mode === "proof-refused" ? "bootstrap_proof_refused:file_owner" : "bootstrap_proof_refused");
     expect(String(error)).not.toContain("private credential");
+    expect(darwinThoughtsInstallException(error)).toMatchObject({ custodyErrorClass: "CustodyInstallError", custodyErrorMessage: String(error).replace(/^CustodyInstallError: /, ""), custodyErrorMessageRedacted: false });
     removedAndAbsent(f.state());
   });
   it("never treats an arbitrary error message as a safe installer refusal", () => {

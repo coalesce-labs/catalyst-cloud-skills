@@ -25,7 +25,7 @@ import {
   type RunnerEngine,
   type RunnerEngineInfo,
 } from "../src/onboard-runner.js";
-import type { OnboardJournal } from "../src/onboard.js";
+import { readOnboardJournal, writeOnboardJournal, type OnboardJournal } from "../src/onboard.js";
 import { onboardReasonText } from "../src/onboard-next.js";
 
 const now = new Date("2026-10-02T12:00:00.000Z");
@@ -583,6 +583,44 @@ describe("prerequisites", () => {
     expect(f.state.admissionWrites).toEqual([]);
     expect(existsSync(join(f.dir, ".env"))).toBe(false);
   });
+
+  test.each(["capability_missing", "result_unverified", "call_threw"] as const)(
+    "reports custody case %s in output, journal and actual OTLP payload without credentials", async failureCase => {
+      const engine = fakeEngine();
+      expect(typeof engine.nativeThoughtsCustody).toBe("function");
+      if (failureCase === "capability_missing") Object.defineProperty(engine, "nativeThoughtsCustody", { value: undefined });
+      else if (failureCase === "result_unverified") engine.nativeThoughtsCustody = async ({ dir }) => {
+        const value = nativeCustodyFixture(dir);
+        return { ...value, authority: { ...value.authority, installationId: "b".repeat(64) } };
+      };
+      else engine.nativeThoughtsCustody = async () => { throw new TypeError(JOIN_TOKEN + ORG_KEY); };
+      const f = fixture({ selected: true, runnerCloud: true, engine });
+      const original = f.ctx.fetch;
+      const sent: string[] = [];
+      f.ctx.fetch = async (input, init) => {
+        const url = String(input);
+        if (url.endsWith("/api/v1/telemetry/token")) return Response.json({ token: "ctc_tel_fixture_export", account: "account-a", scope: "telemetry:write", endpoint: "https://cloud.example.test/api/v1/telemetry" });
+        if (url.endsWith("/api/v1/telemetry/v1/logs")) { sent.push(String(init?.body)); return Response.json({}); }
+        return original(input, init);
+      };
+      const result = await run(f);
+      expect(result).toMatchObject({ reason: "runner_thoughts_custody_unavailable", evidence: { custodyFailureCase: failureCase, custodyTelemetry: "sent" } });
+      expect(f.messages.join("\n")).toContain("Setup could not verify local storage:");
+      if (failureCase === "call_threw") expect(result.evidence).toMatchObject({ custodyErrorClass: "TypeError", custodyErrorMessageRedacted: true });
+      if (failureCase === "result_unverified") expect(result.evidence).toMatchObject({ custodyResultInstalled: true, custodyAuthorityMatched: false });
+      expect(sent).toHaveLength(1);
+      expect(sent[0]).toContain('"eventName":"onboarding.runner.custody.refused"');
+      expect(sent[0]).toContain('"stringValue":"' + failureCase + '"');
+      expect(sent[0]).not.toContain(JOIN_TOKEN); expect(sent[0]).not.toContain(ORG_KEY);
+      if (result.state !== "waiting") throw Error("expected a custody refusal receipt");
+      f.journal.steps = [{ ...result, id: "runner", state: result.state }];
+      const path = join(f.home, "diagnostic-journal.json");
+      writeOnboardJournal(path, f.journal);
+      expect(readOnboardJournal(path, f.journal.cli)?.steps[0]?.evidence).toEqual(result.evidence);
+      expect(engine.calls).not.toContain("composeUp");
+      secretsNowhere(f);
+    },
+  );
 
   test("fresh native custody reaches the VM installer before credential work and persists only public authority channels", async () => {
     const engine = fakeEngine();

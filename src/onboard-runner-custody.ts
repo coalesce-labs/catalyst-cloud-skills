@@ -72,11 +72,19 @@ interface Ports {
 const LABEL = "dev.catalystcloud.runner.darwin-thoughts-custody";
 const vendor = resolve(dirname(fileURLToPath(import.meta.url)), "../vendor/self-host/darwin-thoughts-custody");
 class CustodyInstallError extends Error {
-  constructor(readonly reason: string) { super("darwin_thoughts_custody_install:" + reason); }
+  constructor(readonly reason: string) { super("darwin_thoughts_custody_install:" + reason); this.name = "CustodyInstallError"; }
 }
 /** Only our fixed installer errors may reach output; never forward command stderr or causes. */
 export function darwinThoughtsInstallRefusal(error: unknown): string | undefined {
   return error instanceof CustodyInstallError ? error.reason : undefined;
+}
+/** Unknown exception text can contain credentials. Keep its class, and explicitly redact it. */
+export function darwinThoughtsInstallException(error: unknown): { custodyErrorClass: string; custodyErrorMessage: string; custodyErrorMessageRedacted: boolean } {
+  const known = error instanceof CustodyInstallError;
+  const classes = new Set(["Error", "TypeError", "RangeError", "SyntaxError", "AbortError", "CustodyInstallError"]);
+  return { custodyErrorClass: error instanceof Error && classes.has(error.name) ? error.name : "Error",
+    custodyErrorMessage: known ? error.message : "Unclassified local storage exception; message withheld to protect credentials.",
+    custodyErrorMessageRedacted: !known };
 }
 function fail(reason: string): never { throw new CustodyInstallError(reason); }
 const VERIFIER_REFUSALS = new Set([

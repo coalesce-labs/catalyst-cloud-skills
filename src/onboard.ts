@@ -503,6 +503,14 @@ function normalizeStep(value: unknown, fallbackAt: string): OnboardStep | null {
     "actor",
     // CTC-4716: which AI accounts the workspace may add, so the step's text offers only those.
     "aiAccountKinds",
+    "custodyFailureCase",
+    "custodyErrorClass",
+    "custodyErrorMessage",
+    "custodyErrorMessageRedacted",
+    "custodyReason",
+    "custodyResultInstalled",
+    "custodyAuthorityMatched",
+    "custodyTelemetry",
   ] as const) {
     const item = evidence?.[key];
     if (
