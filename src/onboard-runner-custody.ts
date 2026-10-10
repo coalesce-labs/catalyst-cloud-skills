@@ -71,7 +71,29 @@ interface Ports {
 }
 const LABEL = "dev.catalystcloud.runner.darwin-thoughts-custody";
 const vendor = resolve(dirname(fileURLToPath(import.meta.url)), "../vendor/self-host/darwin-thoughts-custody");
-function fail(reason: string): never { throw Error("darwin_thoughts_custody_install:" + reason); }
+class CustodyInstallError extends Error {
+  constructor(readonly reason: string) { super("darwin_thoughts_custody_install:" + reason); this.name = "CustodyInstallError"; }
+}
+/** Only our fixed installer errors may reach output; never forward command stderr or causes. */
+export function darwinThoughtsInstallRefusal(error: unknown): string | undefined {
+  return error instanceof CustodyInstallError ? error.reason : undefined;
+}
+/** Unknown exception text can contain credentials. Keep its class, and explicitly redact it. */
+export function darwinThoughtsInstallException(error: unknown): { custodyErrorClass: string; custodyErrorMessage: string; custodyErrorMessageRedacted: boolean } {
+  const known = error instanceof CustodyInstallError;
+  const classes = new Set(["Error", "TypeError", "RangeError", "SyntaxError", "AbortError", "CustodyInstallError"]);
+  return { custodyErrorClass: error instanceof Error && classes.has(error.name) ? error.name : "Error",
+    custodyErrorMessage: known ? error.message : "Unclassified local storage exception; message withheld to protect credentials.",
+    custodyErrorMessageRedacted: !known };
+}
+function fail(reason: string): never { throw new CustodyInstallError(reason); }
+const VERIFIER_REFUSALS = new Set([
+  "ancestor", "ancestor_identity", "bootstrap_directory", "bootstrap_owner", "bootstrap_path",
+  "channel_identity", "cleanup", "deadline", "directory", "engine_identity", "exchange",
+  "file_owner", "git_descriptor", "git_path", "invalid", "noncanonical_json", "nonce_collision",
+  "path", "producer_refused", "signature", "size", "substituted_file", "substituted_request",
+  "unsafe_directory", "unsafe_file",
+]);
 function path(value: string): string {
   if (!isAbsolute(value) || normalize(value) !== value || value.includes("\0") ||
       value.endsWith("/") || value === "/") fail("principal_path_unsafe");
@@ -525,7 +547,10 @@ async function actualBootstrap(input: BootstrapInput): Promise<BootstrapReceipt>
         beforeStartImage.code !== 0 || beforeStartImage.stdout !== cachedImage) fail("bootstrap_cleanup_unproved");
     id = receiveIdentity(await docker(["inspect", name]), id);
     const started = await docker(["start", "--attach", id]);
-    if (started.code !== 0) fail("bootstrap_proof_refused");
+    if (started.code !== 0) {
+      const reported = /darwin_thoughts_custody:([a-z_]+)(?![a-z_])/.exec(started.stderr)?.[1];
+      fail("bootstrap_proof_refused" + (reported && VERIFIER_REFUSALS.has(reported) ? ":" + reported : ""));
+    }
     const value = JSON.parse(started.stdout) as { bytes?: string; request?: unknown; engineCheckout?: unknown; engineLock?: unknown; engineGit?: unknown };
     if (typeof value.bytes !== "string" || value.bytes.length > 21848 ||
         Buffer.from(value.bytes, "base64").toString("base64") !== value.bytes) fail("bootstrap_signed_receipt_unavailable");

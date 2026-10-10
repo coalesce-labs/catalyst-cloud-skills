@@ -25,7 +25,7 @@ import {
   type RunnerEngine,
   type RunnerEngineInfo,
 } from "../src/onboard-runner.js";
-import type { OnboardJournal } from "../src/onboard.js";
+import { readOnboardJournal, writeOnboardJournal, type OnboardJournal } from "../src/onboard.js";
 import { onboardReasonText } from "../src/onboard-next.js";
 
 const now = new Date("2026-10-02T12:00:00.000Z");
@@ -581,8 +581,46 @@ describe("prerequisites", () => {
     expect(f.state.mints).toEqual([]);
     expect(f.state.keyMints).toEqual([]);
     expect(f.state.admissionWrites).toEqual([]);
-    expect(readFileSync(join(f.dir, ".env"), "utf8")).not.toContain("CATALYST_THOUGHTS_CUSTODY_AUTHORITY=");
+    expect(existsSync(join(f.dir, ".env"))).toBe(false);
   });
+
+  test.each(["capability_missing", "result_unverified", "call_threw"] as const)(
+    "reports custody case %s in output, journal and actual OTLP payload without credentials", async failureCase => {
+      const engine = fakeEngine();
+      expect(typeof engine.nativeThoughtsCustody).toBe("function");
+      if (failureCase === "capability_missing") Object.defineProperty(engine, "nativeThoughtsCustody", { value: undefined });
+      else if (failureCase === "result_unverified") engine.nativeThoughtsCustody = async ({ dir }) => {
+        const value = nativeCustodyFixture(dir);
+        return { ...value, authority: { ...value.authority, installationId: "b".repeat(64) } };
+      };
+      else engine.nativeThoughtsCustody = async () => { throw new TypeError(JOIN_TOKEN + ORG_KEY); };
+      const f = fixture({ selected: true, runnerCloud: true, engine });
+      const original = f.ctx.fetch;
+      const sent: string[] = [];
+      f.ctx.fetch = async (input, init) => {
+        const url = String(input);
+        if (url.endsWith("/api/v1/telemetry/token")) return Response.json({ token: "ctc_tel_fixture_export", account: "account-a", scope: "telemetry:write", endpoint: "https://cloud.example.test/api/v1/telemetry" });
+        if (url.endsWith("/api/v1/telemetry/v1/logs")) { sent.push(String(init?.body)); return Response.json({}); }
+        return original(input, init);
+      };
+      const result = await run(f);
+      expect(result).toMatchObject({ reason: "runner_thoughts_custody_unavailable", evidence: { custodyFailureCase: failureCase, custodyTelemetry: "sent" } });
+      expect(f.messages.join("\n")).toContain("Setup could not verify local storage:");
+      if (failureCase === "call_threw") expect(result.evidence).toMatchObject({ custodyErrorClass: "TypeError", custodyErrorMessageRedacted: true });
+      if (failureCase === "result_unverified") expect(result.evidence).toMatchObject({ custodyResultInstalled: true, custodyAuthorityMatched: false });
+      expect(sent).toHaveLength(1);
+      expect(sent[0]).toContain('"eventName":"onboarding.runner.custody.refused"');
+      expect(sent[0]).toContain('"stringValue":"' + failureCase + '"');
+      expect(sent[0]).not.toContain(JOIN_TOKEN); expect(sent[0]).not.toContain(ORG_KEY);
+      if (result.state !== "waiting") throw Error("expected a custody refusal receipt");
+      f.journal.steps = [{ ...result, id: "runner", state: result.state }];
+      const path = join(f.home, "diagnostic-journal.json");
+      writeOnboardJournal(path, f.journal);
+      expect(readOnboardJournal(path, f.journal.cli)?.steps[0]?.evidence).toEqual(result.evidence);
+      expect(engine.calls).not.toContain("composeUp");
+      secretsNowhere(f);
+    },
+  );
 
   test("fresh native custody reaches the VM installer before credential work and persists only public authority channels", async () => {
     const engine = fakeEngine();
@@ -1903,6 +1941,37 @@ describe("owner-managed preserving replacement through the existing CLI path", (
     const x = retained();
     x.row.Config.Image = `ghcr.io/coalesce-labs/catalyst-supervisor@sha256:${"f".repeat(64)}`;
     expect((await x.f.adapter.act!(x.f.ctx, x.f.journal)).reason).toBe("runner_installation_unverified");
+    expect(x.f.engine.calls).not.toContain("composeUp");
+  });
+  function actOwned(f: ReturnType<typeof fixture>) {
+    if (!f.adapter.act) throw Error("fixture must provide an installer action");
+    return f.adapter.act(f.ctx, f.journal);
+  }
+  test("resumes the exact requested pin after an interrupted owner-managed upgrade", async () => {
+    const x = retained();
+    writeFileSync(join(x.f.dir, ".env"), readFileSync(join(x.f.dir, ".env"), "utf8").replace(/CATALYST_SUPERVISOR_IMAGE=[^\n]+/, `CATALYST_SUPERVISOR_IMAGE=${SUPERVISOR}`), { mode: 0o600 });
+    expect(await actOwned(x.f)).toEqual({ state: "done" });
+    expect(x.f.engine.calls.filter(call => call === "composeUp")).toHaveLength(1);
+    expect(x.f.engine.files.get("CATALYST_HOST_CREDENTIAL_FILE")).toBe(x.credential);
+    expect(x.f.state.mints).toEqual([]);
+  });
+  test("a custody refusal preserves the old pin and permits a supported retry", async () => {
+    const x = retained();
+    const before = readFileSync(join(x.f.dir, ".env"));
+    const custody = x.f.engine.nativeThoughtsCustody;
+    x.f.engine.nativeThoughtsCustody = async () => { throw Error("native custody refused"); };
+    expect((await actOwned(x.f)).reason).toBe("runner_thoughts_custody_unavailable");
+    expect(readFileSync(join(x.f.dir, ".env"))).toEqual(before);
+    expect(x.f.engine.calls).not.toContain("composeUp");
+    x.f.engine.nativeThoughtsCustody = custody;
+    expect(await actOwned(x.f)).toEqual({ state: "done" });
+    expect(x.f.engine.calls.filter(call => call === "composeUp")).toHaveLength(1);
+  });
+  test.each(["latest", `ghcr.io/another-publisher/supervisor@sha256:${"f".repeat(64)}`])("requested saved intent never adopts a foreign or unpinned runtime image: %s", async image => {
+    const x = retained();
+    x.row.Config.Image = image;
+    writeFileSync(join(x.f.dir, ".env"), readFileSync(join(x.f.dir, ".env"), "utf8").replace(/CATALYST_SUPERVISOR_IMAGE=[^\n]+/, `CATALYST_SUPERVISOR_IMAGE=${SUPERVISOR}`), { mode: 0o600 });
+    expect((await actOwned(x.f)).reason).toBe("runner_installation_unverified");
     expect(x.f.engine.calls).not.toContain("composeUp");
   });
   test("a matching saved and running pin from another image repository stays unverified", async () => {
