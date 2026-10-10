@@ -296,7 +296,7 @@ export function dockerRunnerEngine(
         const config = rows[0]?.Config;
         const labels = config?.Labels;
         const dir = labels?.["com.docker.compose.project.working_dir"];
-        if (config?.Image !== supervisorImage || labels?.["com.docker.compose.project"] !== RUNNER_PROJECT ||
+        if (labels?.["com.docker.compose.project"] !== RUNNER_PROJECT ||
           labels?.["com.docker.compose.service"] !== "supervisor" || typeof dir !== "string" || !isAbsolute(dir)) return "unverified";
         const inHome = relative(realpathSync(home), realpathSync(dir));
         if (inHome === ".." || inHome.startsWith("../") || isAbsolute(inHome) || !lstatSync(dir).isDirectory()) return "unverified";
@@ -328,6 +328,15 @@ export function dockerRunnerEngine(
         const hostName = names[0].slice("CATALYST_HOST_NAME=".length);
         const baseUrl = origins[0].slice("CATALYST_MIRROR_URL=".length);
         if (!HOST_NAME.test(hostName)) return "unverified";
+        // A running older pin is still ours only when the self-owned Compose environment
+        // names that exact pinned image and the same runtime identity. Setup can then move it
+        // to the desired pin after the normal enrollment and custody checks.
+        if (config.Image !== supervisorImage &&
+          (!saved || !IMAGE_REF.test(saved.CATALYST_SUPERVISOR_IMAGE ?? "") ||
+            config.Image !== saved.CATALYST_SUPERVISOR_IMAGE ||
+            saved.CATALYST_SUPERVISOR_IMAGE.split("@sha256:")[0] !== supervisorImage.split("@sha256:")[0] ||
+            saved.CATALYST_HOST_NAME !== hostName ||
+            normalizeBaseUrl(saved.CATALYST_MIRROR_URL ?? "") !== normalizeBaseUrl(baseUrl))) return "unverified";
         return { dir, hostName, baseUrl: normalizeBaseUrl(baseUrl) };
       } catch { return "unverified"; }
     },

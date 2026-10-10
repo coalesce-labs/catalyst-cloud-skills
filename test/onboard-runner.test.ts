@@ -1791,7 +1791,7 @@ describe("owner-managed preserving replacement through the existing CLI path", (
     for (const leaf of ["slots", "thoughts", "locks"])
       mkdirSync(join(f.dir, leaf), { mode: leaf === "slots" ? 0o700 : 0o750 });
     const old = `ghcr.io/coalesce-labs/catalyst-supervisor@sha256:${"d".repeat(64)}`;
-    const original = `CATALYST_SUPERVISOR_IMAGE=${old}\nCATALYST_RUNNER_IMAGE=${RUNNER}\nCATALYST_HOST_NAME=catalyst-laptop\nCATALYST_HOST_JOIN_TOKEN=${JOIN_TOKEN}\nCATALYST_SLOTS=8\n`;
+    const original = `CATALYST_SUPERVISOR_IMAGE=${old}\nCATALYST_RUNNER_IMAGE=${RUNNER}\nCATALYST_HOST_NAME=catalyst-laptop\nCATALYST_MIRROR_URL=https://cloud.example.test\nCATALYST_HOST_JOIN_TOKEN=${JOIN_TOKEN}\nCATALYST_SLOTS=8\n`;
     writeFileSync(join(f.dir, ".env"), original, { mode: 0o600 });
     writeFileSync(
       join(f.dir, "compose.yaml"),
@@ -1863,30 +1863,21 @@ describe("owner-managed preserving replacement through the existing CLI path", (
       return nativeCustodyFixture(dir);
     };
     const hasFile = f.engine.hasVolumeFile;
-    const enrollment = f.engine.enrollment;
     f.engine.hasVolumeFile = async (...args) => {
       expect(received).toBe(true);
       return hasFile(...args);
     };
-    f.engine.enrollment = async (...args) => {
-      expect(received).toBe(true);
-      return enrollment(...args);
-    };
     return {
       f,
       credential,
+      row,
       removedOutsideCli: () => {
         present = false;
       },
     };
   }
-  test("a verified owner-managed missing CID reuses standard paths, retained volume enrollment and tuning", async () => {
+  test("a verified owner-managed old pin upgrades through standard paths, retaining enrollment and tuning", async () => {
     const x = retained();
-    expect((await x.f.adapter.check(x.f.ctx, x.f.journal)).reason).toBe(
-      "runner_installation_unverified",
-    );
-    expect(x.f.engine.calls).not.toContain("composeUp");
-    x.removedOutsideCli();
     expect(await x.f.adapter.act!(x.f.ctx, x.f.journal)).toEqual({
       state: "done",
     });
@@ -1907,6 +1898,48 @@ describe("owner-managed preserving replacement through the existing CLI path", (
     for (const leaf of ["thoughts", "locks"])
       expect(statSync(join(x.f.dir, leaf)).mode & 0o777).toBe(0o750);
     secretsNowhere(x.f);
+  });
+  test("a running image that differs from the saved pin stays unverified", async () => {
+    const x = retained();
+    x.row.Config.Image = `ghcr.io/coalesce-labs/catalyst-supervisor@sha256:${"f".repeat(64)}`;
+    expect((await x.f.adapter.act!(x.f.ctx, x.f.journal)).reason).toBe("runner_installation_unverified");
+    expect(x.f.engine.calls).not.toContain("composeUp");
+  });
+  test("a matching saved and running pin from another image repository stays unverified", async () => {
+    const x = retained();
+    const foreign = `ghcr.io/another-publisher/supervisor@sha256:${"f".repeat(64)}`;
+    x.row.Config.Image = foreign;
+    writeFileSync(join(x.f.dir, ".env"), readFileSync(join(x.f.dir, ".env"), "utf8").replace(/CATALYST_SUPERVISOR_IMAGE=[^\n]+/, `CATALYST_SUPERVISOR_IMAGE=${foreign}`), { mode: 0o600 });
+    x.f.engine.enrollment = async () => { throw new Error("must not read enrollment from foreign image"); };
+    expect((await x.f.adapter.act!(x.f.ctx, x.f.journal)).reason).toBe("runner_installation_unverified");
+    expect(x.f.engine.calls).not.toContain("composeUp");
+  });
+  test("an unpinned saved image stays unverified", async () => {
+    const x = retained();
+    writeFileSync(join(x.f.dir, ".env"), readFileSync(join(x.f.dir, ".env"), "utf8").replace(/CATALYST_SUPERVISOR_IMAGE=[^\n]+/, "CATALYST_SUPERVISOR_IMAGE=latest"), { mode: 0o600 });
+    expect((await x.f.adapter.act!(x.f.ctx, x.f.journal)).reason).toBe("runner_installation_unverified");
+    expect(x.f.engine.calls).not.toContain("composeUp");
+  });
+  test("an old pin with a different saved runtime identity stays unverified", async () => {
+    const x = retained();
+    writeFileSync(join(x.f.dir, ".env"), readFileSync(join(x.f.dir, ".env"), "utf8").replace("CATALYST_HOST_NAME=catalyst-laptop", "CATALYST_HOST_NAME=someone-else"), { mode: 0o600 });
+    expect((await x.f.adapter.act!(x.f.ctx, x.f.journal)).reason).toBe("runner_installation_unverified");
+    expect(x.f.engine.calls).not.toContain("composeUp");
+  });
+  test("an old pin with a different saved cloud URL stays unverified", async () => {
+    const x = retained();
+    writeFileSync(join(x.f.dir, ".env"), readFileSync(join(x.f.dir, ".env"), "utf8").replace("CATALYST_MIRROR_URL=https://cloud.example.test", "CATALYST_MIRROR_URL=https://other.example.test"), { mode: 0o600 });
+    x.f.engine.enrollment = async () => { throw new Error("must not read enrollment from mismatched cloud"); };
+    expect((await x.f.adapter.act!(x.f.ctx, x.f.journal)).reason).toBe("runner_installation_unverified");
+    expect(x.f.engine.calls).not.toContain("composeUp");
+  });
+  test("a missing old container can still be replaced through the verified saved enrollment", async () => {
+    const x = retained();
+    x.removedOutsideCli();
+    expect(await x.f.adapter.act!(x.f.ctx, x.f.journal)).toEqual({ state: "done" });
+    expect(x.f.engine.files.get("CATALYST_HOST_CREDENTIAL_FILE")).toBe(x.credential);
+    expect(x.f.state.mints).toEqual([]);
+    expect(x.f.engine.calls.filter((call) => call === "composeUp")).toHaveLength(1);
   });
   test.each(["uncached target", "native custody refusal"])(
     "refuses %s before reading or changing retained credentials or activating Compose",
