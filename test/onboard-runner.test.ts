@@ -1780,3 +1780,158 @@ describe("runner admission without a repository capacity mapping", () => {
     expect(await run(f)).toMatchObject({ state: "waiting", reason: "runner_host_not_ready", evidence: { capacity: 0 } });
   });
 });
+
+describe("owner-managed preserving replacement through the existing CLI path", () => {
+  function retained() {
+    const f = fixture({ selected: true });
+    delete f.ctx.env.CATALYST_STATE_DIR;
+    delete f.ctx.env.XDG_STATE_HOME;
+    f.dir = join(f.home, ".local", "state", "catalyst", "runner");
+    mkdirSync(f.dir, { recursive: true, mode: 0o700 });
+    for (const leaf of ["slots", "thoughts", "locks"])
+      mkdirSync(join(f.dir, leaf), { mode: leaf === "slots" ? 0o700 : 0o750 });
+    const old = `ghcr.io/coalesce-labs/catalyst-supervisor@sha256:${"d".repeat(64)}`;
+    const original = `CATALYST_SUPERVISOR_IMAGE=${old}\nCATALYST_RUNNER_IMAGE=${RUNNER}\nCATALYST_HOST_NAME=catalyst-laptop\nCATALYST_HOST_JOIN_TOKEN=${JOIN_TOKEN}\nCATALYST_SLOTS=8\n`;
+    writeFileSync(join(f.dir, ".env"), original, { mode: 0o600 });
+    writeFileSync(
+      join(f.dir, "compose.yaml"),
+      "name: catalyst-host\nservices: {}\n",
+      { mode: 0o644 },
+    );
+    const credential = JSON.stringify({
+      version: 1,
+      enrollment: {
+        hostId: "retained-host",
+        tenant: "account-a",
+        team: "A",
+        enrollmentKind: "self_hosted",
+      },
+    });
+    f.engine.files.set("CATALYST_HOST_CREDENTIAL_FILE", credential);
+    f.engine.files.set("CATALYST_ORG_KEY_FILE", ORG_KEY);
+    f.state.enrollOnUp = false;
+    f.state.hosts.push({
+      hostId: "retained-host",
+      hostName: "catalyst-laptop",
+      team: "A",
+      enrollmentKind: "self_hosted",
+      revokedAtMs: null,
+      capability: f.state.capability,
+    });
+    let present = true;
+    const row = {
+      Config: {
+        Image: old,
+        Env: [
+          "CATALYST_HOST_NAME=catalyst-laptop",
+          "CATALYST_MIRROR_URL=https://cloud.example.test",
+        ],
+        Labels: {
+          "com.docker.compose.project": "catalyst-host",
+          "com.docker.compose.service": "supervisor",
+          "com.docker.compose.project.working_dir": f.dir,
+          "com.docker.compose.project.config_files": join(
+            f.dir,
+            "compose.yaml",
+          ),
+        },
+      },
+    };
+    const actual = dockerRunnerEngine({
+      exec: async (args) => {
+        if (args[0] === "ps")
+          return { code: 0, stdout: present ? "e".repeat(64) : "" };
+        if (args[0] === "inspect")
+          return { code: 0, stdout: JSON.stringify([row]) };
+        return { code: 1, stdout: "" };
+      },
+    });
+    f.engine.installation = actual.installation;
+    let received = false;
+    f.engine.nativeThoughtsCustody = async ({
+      dir,
+      supervisorImage,
+      runnerImage,
+    }) => {
+      expect(dir).toBe(f.dir);
+      expect(supervisorImage).toBe(SUPERVISOR);
+      expect(runnerImage).toBe(RUNNER);
+      for (const image of [SUPERVISOR, WATCHDOG, RUNNER])
+        expect(f.engine.calls).toContain(`imageArch ${image}`);
+      expect(f.engine.calls).not.toContain("composeUp");
+      received = true;
+      return nativeCustodyFixture(dir);
+    };
+    const hasFile = f.engine.hasVolumeFile;
+    const enrollment = f.engine.enrollment;
+    f.engine.hasVolumeFile = async (...args) => {
+      expect(received).toBe(true);
+      return hasFile(...args);
+    };
+    f.engine.enrollment = async (...args) => {
+      expect(received).toBe(true);
+      return enrollment(...args);
+    };
+    return {
+      f,
+      credential,
+      removedOutsideCli: () => {
+        present = false;
+      },
+    };
+  }
+  test("a verified owner-managed missing CID reuses standard paths, retained volume enrollment and tuning", async () => {
+    const x = retained();
+    expect((await x.f.adapter.check(x.f.ctx, x.f.journal)).reason).toBe(
+      "runner_installation_unverified",
+    );
+    expect(x.f.engine.calls).not.toContain("composeUp");
+    x.removedOutsideCli();
+    expect(await x.f.adapter.act!(x.f.ctx, x.f.journal)).toEqual({
+      state: "done",
+    });
+    expect(x.f.engine.files.get("CATALYST_HOST_CREDENTIAL_FILE")).toBe(
+      x.credential,
+    );
+    expect(x.f.engine.files.get("CATALYST_ORG_KEY_FILE")).toBe(ORG_KEY);
+    expect(x.f.state.mints).toEqual([]);
+    expect(x.f.state.keyMints).toEqual([]);
+    expect(x.f.state.admissionWrites).toEqual([]);
+    expect(x.f.engine.calls.filter((c) => c === "composeUp")).toHaveLength(1);
+    const saved = readFileSync(join(x.f.dir, ".env"), "utf8");
+    expect(saved).toContain(`CATALYST_SUPERVISOR_IMAGE=${SUPERVISOR}`);
+    expect(saved).toContain(`CATALYST_WATCHDOG_IMAGE=${WATCHDOG}`);
+    expect(saved).toContain(`CATALYST_RUNNER_IMAGE=${RUNNER}`);
+    expect(saved).toContain("CATALYST_SLOTS=8");
+    expect(saved).toContain(`CATALYST_HOST_JOIN_TOKEN=${JOIN_TOKEN}`);
+    for (const leaf of ["thoughts", "locks"])
+      expect(statSync(join(x.f.dir, leaf)).mode & 0o777).toBe(0o750);
+    secretsNowhere(x.f);
+  });
+  test.each(["uncached target", "native custody refusal"])(
+    "refuses %s before reading or changing retained credentials or activating Compose",
+    async (kind) => {
+      const x = retained();
+      x.removedOutsideCli();
+      if (kind === "uncached target") x.f.engine.images.delete(SUPERVISOR);
+      else
+        x.f.engine.nativeThoughtsCustody = async () => {
+          throw new Error("native custody refused");
+        };
+      expect((await x.f.adapter.act!(x.f.ctx, x.f.journal)).state).toBe(
+        "waiting",
+      );
+      expect(x.f.engine.files.get("CATALYST_HOST_CREDENTIAL_FILE")).toBe(
+        x.credential,
+      );
+      expect(x.f.engine.files.get("CATALYST_ORG_KEY_FILE")).toBe(ORG_KEY);
+      expect(x.f.state.mints).toEqual([]);
+      expect(x.f.state.keyMints).toEqual([]);
+      expect(x.f.state.admissionWrites).toEqual([]);
+      expect(x.f.engine.calls).not.toContain("composeUp");
+      expect(x.f.engine.calls.some((call) => call.startsWith("pull "))).toBe(
+        false,
+      );
+    },
+  );
+});
