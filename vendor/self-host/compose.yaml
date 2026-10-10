@@ -70,9 +70,9 @@ services:
       # engine resolves a bind source on the HOST. A path that exists only inside this container
       # mounts an empty directory into the phase.
       - ${CATALYST_SLOTS_DIR:-/srv/catalyst/slots}:${CATALYST_SLOTS_DIR:-/srv/catalyst/slots}
-      # Thoughts stay as today (CTC-3493): a tenant's thoughts checkout and its pool lock directory
-      # are SHARED and read-write across that tenant's session containers, and every thoughts sync
-      # runs under thoughts.lock. The supervisor keeps one subdirectory per tenant under each root,
+      # Shared tenant thoughts and pool locks. Native Linux sessions use a read-write checkout.
+      # Darwin custody sessions expose a read-only model alias and a protected root publisher alias.
+      # Every thoughts sync runs under thoughts.lock. The supervisor keeps one subdirectory per tenant under each root,
       # so two projects on one engine never share a checkout or a lock. Same path on both sides for
       # the same reason as the slots: the supervisor binds these into session containers, and the
       # engine resolves bind sources on the host. Never mounted into a setup container.
@@ -100,6 +100,7 @@ services:
       CATALYST_HOST_FREE_FLOOR_GIB: ${CATALYST_HOST_FREE_FLOOR_GIB:-25}
       CATALYST_HOST_DISK_SAMPLE_FILE: ${CATALYST_HOST_DISK_SAMPLE_FILE:-}
       CATALYST_THOUGHTS_DIR: ${CATALYST_THOUGHTS_DIR:-/srv/catalyst/thoughts}
+      CATALYST_THOUGHTS_CUSTODY_AUTHORITY: ${CATALYST_THOUGHTS_CUSTODY_AUTHORITY:-}
       CATALYST_POOL_LOCK_DIR: ${CATALYST_POOL_LOCK_DIR:-/srv/catalyst/locks}
       CATALYST_ORG_KEY_FILE: ${CATALYST_ORG_KEY_FILE:-/var/lib/catalyst/host-credential/org-key}
       # `attempt`: sessions use their grant's own credential and the host holds no org key (CTC-4921).

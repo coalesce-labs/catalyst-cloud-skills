@@ -1,5 +1,6 @@
-import { createHash } from "node:crypto";
+import { createHash, generateKeyPairSync } from "node:crypto";
 import {
+  chmodSync,
   existsSync,
   mkdtempSync,
   mkdirSync,
@@ -43,12 +44,22 @@ afterEach(() => {
 });
 
 interface FakeEngine extends RunnerEngine {
+  nativeThoughtsCustody(input: { dir: string; supervisorImage: string; runnerImage: string }, signal?: AbortSignal): Promise<ReturnType<typeof nativeCustodyFixture>>;
   calls: string[];
   images: Map<string, string>;
   networkState: "ready" | "missing" | "misshaped";
   running: boolean;
   files: Map<string, string>;
   upError: boolean;
+}
+const custodyKey = generateKeyPairSync("ed25519").publicKey.export({ type: "spki", format: "der" }).toString("base64");
+function nativeCustodyFixture(dir: string) {
+  const state = join(dir, "..", "darwin-thoughts-custody");
+  const authority = { version: 1 as const, installationId: "a".repeat(64), publicKey: custodyKey,
+    nativeUid: 501, nativeGid: 20, nativeHome: join(dir, "..", ".."), endpoint: "unix:///fixture/docker.sock", daemonId: "fixture-daemon",
+    thoughtsRoot: join(dir, "thoughts"), locksRoot: join(dir, "locks"), requestsRoot: join(dir, "..", "darwin-thoughts-requests"), responsesRoot: join(dir, "..", "darwin-thoughts-responses") };
+  return { authority, envAuthority: JSON.stringify(Object.fromEntries(Object.entries(authority).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0))),
+    requestsRoot: authority.requestsRoot, responsesRoot: authority.responsesRoot, configPath: join(state, "producer.json"), serviceLabel: "dev.catalystcloud.runner.darwin-thoughts-custody" };
 }
 function fakeEngine(
   info: RunnerEngineInfo | null = { arch: "arm64", vm: true },
@@ -85,6 +96,7 @@ function fakeEngine(
     socketGid: async () => 991,
     nativeEgressStatus: async()=>true,
     vmCapabilities: async () => { engine.calls.push("vmCapabilities"); return "ready"; },
+    nativeThoughtsCustody: async ({ dir }) => { engine.calls.push("nativeThoughtsCustody"); return nativeCustodyFixture(dir); },
     claimDirs: async (dir, paths) => {
       engine.calls.push(`claimDirs ${paths.length}`);
       return true;
@@ -489,6 +501,7 @@ describe("prerequisites", () => {
     const result = await run(f);
     expect(result).toMatchObject({ state: "waiting", reason, evidence: { selected: true } });
     expect(engine.calls).toContain("vmCapabilities");
+    expect(engine.calls).not.toContain("nativeThoughtsCustody");
     expect(engine.calls).not.toContain("composeUp");
     expect(engine.calls.some(call => call.startsWith("writeVolumeFile") || call.startsWith("createNetwork"))).toBe(false);
     expect(f.state.mints).toEqual([]); expect(f.state.keyMints).toEqual([]);
@@ -537,7 +550,7 @@ describe("prerequisites", () => {
     expect(f.engine.calls).toEqual(["info"]);
   });
 
-  test("missing images are pulled without credentials, and stop the step before a token is minted", async () => {
+  test("missing cached VM images stop before custody, pulls, enrollment or Compose", async () => {
     const engine = fakeEngine();
     engine.images.delete(SUPERVISOR);
     const f = fixture({ selected: true, engine });
@@ -547,9 +560,103 @@ describe("prerequisites", () => {
       reason: "runner_images_unavailable",
       evidence: { selected: true, image: SUPERVISOR },
     });
-    expect(engine.calls).toContain(`pull ${SUPERVISOR}`);
+    expect(engine.calls.some(call => call.startsWith("pull "))).toBe(false);
+    expect(engine.calls).not.toContain("nativeThoughtsCustody");
     expect(f.state.mints).toEqual([]);
     expect(engine.calls).not.toContain("composeUp");
+  });
+
+  test("native custody refusal stops a VM before credential helpers, join, key mint, admission or Compose", async () => {
+    const engine = fakeEngine();
+    engine.nativeThoughtsCustody = async () => { engine.calls.push("nativeThoughtsCustody"); throw new Error("darwin_thoughts_custody_install:foreign_owner"); };
+    const enrollment = engine.enrollment;
+    engine.enrollment = async (...args) => { engine.calls.push("credential-helper"); return enrollment(...args); };
+    const f = fixture({ selected: true, runnerCloud: true, engine });
+    const result = await run(f);
+    expect(result).toMatchObject({ state: "waiting", reason: "runner_thoughts_custody_unavailable" });
+    expect(engine.calls).toContain("nativeThoughtsCustody");
+    expect(engine.calls).not.toContain("credential-helper");
+    expect(engine.calls).not.toContain("composeUp");
+    expect(engine.calls.some(call => call.startsWith("writeVolumeFile"))).toBe(false);
+    expect(f.state.mints).toEqual([]);
+    expect(f.state.keyMints).toEqual([]);
+    expect(f.state.admissionWrites).toEqual([]);
+    expect(readFileSync(join(f.dir, ".env"), "utf8")).not.toContain("CATALYST_THOUGHTS_CUSTODY_AUTHORITY=");
+  });
+
+  test("fresh native custody reaches the VM installer before credential work and persists only public authority channels", async () => {
+    const engine = fakeEngine();
+    const f = fixture({ selected: true, runnerCloud: true, engine });
+    let custodyReceived = false;
+    engine.nativeThoughtsCustody = async (input) => {
+      expect(input).toEqual({ dir: f.dir, supervisorImage: SUPERVISOR, runnerImage: RUNNER });
+      expect(engine.calls).toContain("vmCapabilities");
+      expect(f.state.mints).toEqual([]); expect(f.state.keyMints).toEqual([]); expect(f.state.admissionWrites).toEqual([]);
+      expect(engine.calls).not.toContain("composeUp");
+      custodyReceived = true;
+      return nativeCustodyFixture(f.dir);
+    };
+    const hasVolumeFile = engine.hasVolumeFile;
+    engine.hasVolumeFile = async (...args) => { expect(custodyReceived).toBe(true); return hasVolumeFile(...args); };
+    expect((await run(f)).state).toBe("done");
+    expect(custodyReceived).toBe(true);
+    const installed = nativeCustodyFixture(f.dir);
+    const persisted = readFileSync(join(f.dir, ".env"), "utf8");
+    expect(persisted).toContain("CATALYST_THOUGHTS_CUSTODY_AUTHORITY='" + installed.envAuthority + "'");
+    expect(persisted).toContain("CATALYST_THOUGHTS_CUSTODY_REQUESTS_DIR=" + installed.requestsRoot);
+    expect(persisted).toContain("CATALYST_THOUGHTS_CUSTODY_RESPONSES_DIR=" + installed.responsesRoot);
+    expect(persisted).not.toContain("private-key.der");
+    expect(persisted).not.toContain("producer.json");
+    expect(existsSync(join(f.dir, "compose.darwin-thoughts.yaml"))).toBe(true);
+  });
+
+  test("native custody receives existing VM install root mode without adopting unsafe permissions", async () => {
+    const receiveMode = async (input: { dir: string }) => {
+      if ((statSync(input.dir).mode & 0o7777) !== 0o700)
+        throw new Error("darwin_thoughts_custody_install:directory_custody_unsafe");
+      return nativeCustodyFixture(input.dir);
+    };
+    const healthyEngine = fakeEngine();
+    healthyEngine.nativeThoughtsCustody = receiveMode;
+    const healthy = fixture({ selected: true, runnerCloud: true, engine: healthyEngine });
+    mkdirSync(healthy.dir, { recursive: true, mode: 0o700 });
+    chmodSync(healthy.dir, 0o700);
+    expect((await run(healthy)).state).toBe("done");
+    expect(statSync(healthy.dir).mode & 0o7777).toBe(0o700);
+
+    const unsafeEngine = fakeEngine();
+    unsafeEngine.nativeThoughtsCustody = receiveMode;
+    const enrollment = unsafeEngine.enrollment;
+    unsafeEngine.enrollment = async (...args) => {
+      unsafeEngine.calls.push("credential-helper");
+      return enrollment(...args);
+    };
+    const unsafe = fixture({ selected: true, runnerCloud: true, engine: unsafeEngine });
+    mkdirSync(unsafe.dir, { recursive: true, mode: 0o700 });
+    chmodSync(unsafe.dir, 0o777);
+    expect(statSync(unsafe.dir).mode & 0o7777).toBe(0o777);
+    expect(await run(unsafe)).toMatchObject({ state: "waiting", reason: "runner_thoughts_custody_unavailable" });
+    expect(statSync(unsafe.dir).mode & 0o7777).toBe(0o777);
+    expect(unsafeEngine.calls).not.toContain("credential-helper");
+    expect(unsafeEngine.calls).not.toContain("composeUp");
+    expect(unsafeEngine.calls.some(call => call.startsWith("writeVolumeFile"))).toBe(false);
+    expect(unsafe.state.mints).toEqual([]);
+    expect(unsafe.state.keyMints).toEqual([]);
+    expect(unsafe.state.admissionWrites).toEqual([]);
+  });
+
+  test("native Linux keeps cached-image pulls and never invokes Darwin custody", async () => {
+    const engine = fakeEngine({ arch: "amd64", vm: false });
+    for (const ref of [SUPERVISOR, WATCHDOG, RUNNER]) engine.images.set(ref, "amd64");
+    engine.images.delete(SUPERVISOR);
+    engine.pull = async (ref) => { engine.calls.push(`pull ${ref}`); engine.images.set(ref, "amd64"); return true; };
+    const f = fixture({ selected: true, runnerCloud: true, engine });
+    expect((await run(f)).state).toBe("done");
+    expect(engine.calls).toContain(`pull ${SUPERVISOR}`);
+    expect(engine.calls).toContain("claimDirs 3");
+    expect(engine.calls).not.toContain("nativeThoughtsCustody");
+    expect(readFileSync(join(f.dir, ".env"), "utf8")).not.toContain("CATALYST_THOUGHTS_CUSTODY_");
+    expect(existsSync(join(f.dir, "compose.darwin-thoughts.yaml"))).toBe(false);
   });
 
   test("the default host images are digest-pinned", () => {
@@ -829,6 +936,8 @@ describe("bringing the host up", () => {
 
   test("a saved yes alone only reports: an unattended run never restarts a stopped runner", async () => {
     const f = fixture();
+    const enrollment = f.engine.enrollment;
+    f.engine.enrollment = async (...args) => { f.engine.calls.push("credential-helper"); return enrollment(...args); };
     withOrgKey(f);
     f.journal.steps.push({
       id: "runner",
@@ -840,6 +949,8 @@ describe("bringing the host up", () => {
       reason: "runner_needs_runner_flag",
     });
     expect(f.engine.calls).not.toContain("composeUp");
+    expect(f.engine.calls).not.toContain("nativeThoughtsCustody");
+    expect(f.engine.calls).not.toContain("credential-helper");
     expect(f.state.mints).toEqual([]);
     expect(existsSync(f.dir)).toBe(false);
   });
@@ -1156,8 +1267,14 @@ describe("the Docker engine", () => {
     };
   }
 
+  test("the production Engine exposes the closed native custody installer port", () => {
+    expect(dockerRunnerEngine().nativeThoughtsCustody).toBeTypeOf("function");
+  });
+
   test("discovers the exact owned Compose directory and public machine identity", async () => {
-    const f = fixture({ selected: true });
+    const engine = fakeEngine({ arch: "amd64", vm: false });
+    for (const ref of [SUPERVISOR, WATCHDOG, RUNNER]) engine.images.set(ref, "amd64");
+    const f = fixture({ selected: true, engine });
     f.engine.files.set("CATALYST_ORG_KEY_FILE", ORG_KEY);
     await run(f);
     const config = {
@@ -1201,6 +1318,54 @@ describe("the Docker engine", () => {
     ]);
     expect(r.runs[0]!.cwd).toBe("/r");
     expect(r.runs[0]!.env).toEqual({ PATH: "/bin", DOCKER_HOST: "unix:///x.sock" });
+  });
+
+  test("persisted native custody selects exactly the base and Darwin Compose files", async () => {
+    const f = fixture();
+    mkdirSync(f.dir, { recursive: true, mode: 0o700 });
+    const custody = nativeCustodyFixture(f.dir);
+    writeFileSync(join(f.dir, ".env"), `CATALYST_THOUGHTS_CUSTODY_AUTHORITY='${custody.envAuthority}'\nCATALYST_THOUGHTS_CUSTODY_REQUESTS_DIR=${custody.requestsRoot}\nCATALYST_THOUGHTS_CUSTODY_RESPONSES_DIR=${custody.responsesRoot}\n`, { mode: 0o600 });
+    writeFileSync(join(f.dir, "compose.darwin-thoughts.yaml"), "services: {}\n", { mode: 0o600 });
+    const r = recordingExec();
+    const engine = dockerRunnerEngine({ exec: r.exec, env: {} });
+    expect(await engine.composeUp(f.dir)).toBe(true);
+    expect(r.runs[0]!.args).toEqual(["compose", "--project-name", "catalyst-host", "--file", join(f.dir, "compose.yaml"), "--file", join(f.dir, "compose.darwin-thoughts.yaml"), "--env-file", join(f.dir, ".env"), "up", "--detach"]);
+  });
+
+  test("partial persisted native custody refuses Compose rather than silently dropping the Darwin override", async () => {
+    const f = fixture();
+    mkdirSync(f.dir, { recursive: true, mode: 0o700 });
+    writeFileSync(join(f.dir, ".env"), "CATALYST_THOUGHTS_CUSTODY_AUTHORITY='{}'\n", { mode: 0o600 });
+    const r = recordingExec();
+    const engine = dockerRunnerEngine({ exec: r.exec, env: {} });
+    expect(await engine.composeUp(f.dir)).toBe(false);
+    expect(r.runs).toEqual([]);
+  });
+
+  test("installation receives an exact two-file Darwin identity only with private custody files", async () => {
+    const f = fixture();
+    mkdirSync(f.dir, { recursive: true, mode: 0o700 });
+    const custody = nativeCustodyFixture(f.dir);
+    writeFileSync(join(f.dir, "compose.yaml"), "services: {}\n", { mode: 0o644 });
+    const override = join(f.dir, "compose.darwin-thoughts.yaml");
+    writeFileSync(override, "services: {}\n", { mode: 0o600 });
+    writeFileSync(join(f.dir, ".env"), `CATALYST_THOUGHTS_CUSTODY_AUTHORITY='${custody.envAuthority}'\nCATALYST_THOUGHTS_CUSTODY_REQUESTS_DIR=${custody.requestsRoot}\nCATALYST_THOUGHTS_CUSTODY_RESPONSES_DIR=${custody.responsesRoot}\n`, { mode: 0o600 });
+    for (const root of [custody.requestsRoot, custody.responsesRoot]) mkdirSync(root, { mode: 0o700 });
+    const config = { Image: SUPERVISOR, Env: ["CATALYST_HOST_NAME=catalyst-laptop", "CATALYST_MIRROR_URL=https://cloud.example.test"], Labels: {
+      "com.docker.compose.project": "catalyst-host", "com.docker.compose.service": "supervisor",
+      "com.docker.compose.project.working_dir": f.dir,
+      "com.docker.compose.project.config_files": join(f.dir, "compose.yaml") + "," + override,
+    } };
+    const inspect = () => dockerRunnerEngine({ exec: recordingExec({ "ps --all": { code: 0, stdout: "0123456789ab" }, inspect: { code: 0, stdout: JSON.stringify([{ Config: config }]) } }).exec }).installation!(f.ctx.home, SUPERVISOR);
+    expect(await inspect()).toEqual({ dir: f.dir, hostName: "catalyst-laptop", baseUrl: "https://cloud.example.test" });
+    writeFileSync(override, "services: {}\n");
+    // chmod, rather than creation mode, makes the broad permissions meaningful on an existing file.
+    const { chmodSync } = await import("node:fs");
+    chmodSync(override, 0o666);
+    expect(await inspect()).toBe("unverified");
+    chmodSync(override, 0o600);
+    config.Labels["com.docker.compose.project.config_files"] += ",/foreign/override.yaml";
+    expect(await inspect()).toBe("unverified");
   });
 
   test("handing folders to the runner uid gives root back only CHOWN", async () => {

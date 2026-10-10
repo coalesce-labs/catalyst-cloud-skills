@@ -8,8 +8,8 @@ import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const commit = "081ce3fefd52bfa0b0ac76b3d6f87ce373b71c7d";
-const files = ["deploy/self-host/compose.yaml", ...[
+const commit = "42f16024ee3fd268369f1e5617b6a50543186d3a";
+const files = ["deploy/self-host/compose.yaml", "deploy/self-host/compose.darwin-thoughts.yaml", ...["producer.mjs", "verifier.mjs", "verifier.d.mts", "watchdog.mjs", "watchdog-deadline.mjs", "service.plist.in", "manifest.json"].map(name => "deploy/self-host/darwin-thoughts-custody/"+name), ...[
   "session-egress.py", "catalyst-session-egress.service", "catalyst-session-egress-attest.service", "catalyst-session-egress-attest.timer",
 ].map(name => "deploy/self-host/linux-session-egress/"+name)];
 const target = join(root, "vendor/self-host");

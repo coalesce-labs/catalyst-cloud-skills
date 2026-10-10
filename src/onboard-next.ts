@@ -239,6 +239,8 @@ const REASONS: Record<string, string> = {
     "A container could not reach Catalyst's health endpoint. Check the Docker VM's DNS, proxy and outbound HTTPS access, then run catalyst onboard --runner.",
   runner_engine_probe_unavailable:
     "Setup could not complete the container capability probe. Check Docker access and the pinned supervisor image, then run catalyst onboard --runner. Setup has not enrolled or started this machine.",
+  runner_thoughts_custody_unavailable:
+    "Setup could not verify protected access to this Mac's shared work files. Keep their ownership and permissions. Check Docker access, then run catalyst onboard --runner. If the check still fails, ask Catalyst support to inspect it.",
   runner_installation_unverified:
     "Setup found a possible existing machine installation but could not verify its Compose files and identity. Keep its files and credentials. Run docker compose -p catalyst-host logs supervisor to check it, then run catalyst setup --runner again.",
   runner_enrollment_unavailable:
